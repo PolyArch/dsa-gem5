@@ -467,6 +467,26 @@ decode OPCODE default Unknown::unknown() {
         }
     }
 
+    //     0x0: fence({{
+    //     }}, IsNonSpeculative, IsMemBarrier, No_OpClass);
+    //     0x1: fence_i({{
+    //    }}, IsNonSpeculative, IsSerializeAfter, No_OpClass);
+
+    format IOp {
+        0x0b: decode FUNCT3 {
+            0x0: sb_cfg({{
+                xc->setSDReg(RS1,SD_MEM_ADDR);
+                xc->callSDFunc(SB_CFG);
+            }}, IsNonSpeculative, No_OpClass);
+        }
+
+        0x7b: decode FUNCT3 {
+            0x4: sb_wait({{
+                xc->callSDFunc(SB_WAIT);
+            }}, IsNonSpeculative, IsMemBarrier, IsSerializeAfter, No_OpClass);
+        }
+    }
+
     format FPR4Op {
         0x43: decode FUNCT2 {
             0x0: fmadd_s({{

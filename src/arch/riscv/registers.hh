@@ -47,6 +47,9 @@
 #ifndef __ARCH_RISCV_REGISTERS_HH__
 #define __ARCH_RISCV_REGISTERS_HH__
 
+#define ISA_HAS_CC_REGS
+#define ISA_HAS_SD
+
 #include <map>
 #include <string>
 
@@ -100,6 +103,32 @@ const char* const RegisterNames[] = {"zero", "ra", "sp", "gp",
     "s4", "s5", "s6", "s7",
     "s8", "s9", "s10", "s11",
     "t3", "t4", "t5", "t6"};
+
+#ifdef ISA_HAS_SD
+const int NumSDRegs = 16;
+enum SDRegIdx {
+   SD_MEM_ADDR, SD_INDEX_ADDR, SD_ACCESS_SIZE, SD_STRIDE, SD_SCRATCH_ADDR,
+   SD_NUM_STRIDES, SD_NUM_BYTES, SD_CONSTANT, SD_IN_PORT, SD_OUT_PORT,
+   SD_IND_PORT, SD_IND_TYPE, SD_WAIT_MASK, SD_SHIFT_BYTES, SD_GARBAGE,
+   SD_NUM_REG
+};
+const char* const SDRegNames[] = {"stride", "acc-size"};
+enum SDCmdIdx {
+    SB_CFG,
+    SB_MEM_SCR,
+    SB_MEM_PRT,
+    SB_SCR_PRT,
+    SB_SCR_MEM,
+    SB_PRT_MEM,
+    SB_PRT_PRT,
+    SB_IND_PRT,
+    SB_PRT_IND,
+    SB_CNS_PRT,
+    SB_WAIT,
+    SB_NUM_CMDS
+};
+#endif
+
 
 const int SyscallNumReg = ArgumentRegs[7];
 const int SyscallArgumentRegs[] = {ArgumentRegs[0], ArgumentRegs[1],

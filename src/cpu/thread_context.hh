@@ -309,6 +309,10 @@ class ThreadContext
     virtual void setCCRegFlat(int idx, CCReg val) = 0;
     /** @} */
 
+
+    //HAS_SD
+    virtual void setSDReg(uint64_t val, int sd_idx) {}
+
 };
 
 /**
@@ -511,6 +515,13 @@ class ProxyThreadContext : public ThreadContext
 
     void setCCRegFlat(int idx, CCReg val)
     { actualTC->setCCRegFlat(idx, val); }
+
+
+    //HAS_SD
+    void setSDReg(uint64_t val, int sd_idx) {
+      actualTC->setSDReg(val, sd_idx);
+    }
+
 };
 
 /** @{ */

@@ -68,6 +68,7 @@ if 'MinorCPU' in env['CPU_MODELS']:
     DebugFlag('MinorTrace', 'MinorTrace cycle-by-cycle state trace')
     DebugFlag('MinorTiming', 'Extra timing for instructions')
 
+
     CompoundFlag('Minor', [
         'MinorCPU', 'MinorExecute', 'MinorInterrupt', 'MinorMem',
         'MinorScoreboard'])

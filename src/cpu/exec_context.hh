@@ -292,6 +292,18 @@ class ExecContext {
                                    ThreadID tid = InvalidThreadID) = 0;
 #endif
 
+
+#ifdef ISA_HAS_SD
+    /**
+     * @{
+     * @name SD-Specific Interfaces
+     */
+
+       /** Reads an integer register. */
+    virtual void setSDReg(const StaticInst *si, int idx, int sd_idx) {}
+    virtual void callSDFunc(int sd_func_opcode) {}
+#endif
+
     /** @} */
 };
 

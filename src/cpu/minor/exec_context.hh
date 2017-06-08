@@ -53,13 +53,14 @@
 #ifndef __CPU_MINOR_EXEC_CONTEXT_HH__
 #define __CPU_MINOR_EXEC_CONTEXT_HH__
 
+#include "cpu/base.hh"
 #include "cpu/exec_context.hh"
 #include "cpu/minor/execute.hh"
 #include "cpu/minor/pipeline.hh"
-#include "cpu/base.hh"
 #include "cpu/simple_thread.hh"
-#include "mem/request.hh"
 #include "debug/MinorExecute.hh"
+#include "debug/SD.hh"
+#include "mem/request.hh"
 
 namespace Minor
 {
@@ -355,6 +356,17 @@ class ExecContext : public ::ExecContext
 
     AddressMonitor *getAddrMonitor() override
     { return getCpuPtr()->getCpuAddrMonitor(inst->id.threadId); }
+
+
+#ifdef ISA_HAS_SD
+    void setSDReg(uint64_t val, int sd_idx) {
+        thread.setSDReg(val, sd_idx);
+    }
+    void callSDFunc(int sd_func_opcode) {
+        DPRINTF(SD, "Do SD_COMMAND %d.\n", sd_func_opcode);
+    }
+#endif
+
 };
 
 }

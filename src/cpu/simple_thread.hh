@@ -58,6 +58,7 @@
 #include "debug/CCRegs.hh"
 #include "debug/FloatRegs.hh"
 #include "debug/IntRegs.hh"
+#include "debug/SD.hh"
 #include "mem/page_table.hh"
 #include "mem/request.hh"
 #include "sim/byteswap.hh"
@@ -115,6 +116,10 @@ class SimpleThread : public ThreadState
     TheISA::CCReg ccRegs[TheISA::NumCCRegs];
 #endif
     TheISA::ISA *const isa;    // one "instance" of the current ISA.
+
+#ifdef ISA_HAS_SD
+    TheISA::IntReg sdRegs[TheISA::NumIntRegs];
+#endif
 
     TheISA::PCState _pcState;
 
@@ -456,6 +461,16 @@ class SimpleThread : public ThreadState
     void setCCRegFlat(int idx, CCReg val)
     { panic("setCCRegFlat w/no CC regs!\n"); }
 #endif
+
+#ifdef ISA_HAS_SD
+    void setSDReg(uint64_t val, int sd_idx)
+    {
+        DPRINTF(SD, "Setting SD Reg %d to %llu.\n", sd_idx, val);
+        sdRegs[sd_idx] = val;
+    }
+
+#endif
+
 };
 
 
