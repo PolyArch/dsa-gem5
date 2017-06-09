@@ -184,6 +184,35 @@ output header {{
         std::string
         generateDisassembly(Addr pc, const SymbolTable *symtab) const;
     };
+
+    /**
+     * Base class for SD-type operations
+     */
+    class SDOp : public RiscvStaticInst
+    {
+      protected:
+        int64_t i_imm;
+        int64_t s_imm;
+
+        /// Constructor
+        SDOp(const char *mnem, MachInst _machInst, OpClass __opClass)
+            : RiscvStaticInst(mnem, _machInst, __opClass),i_imm(IMM12),s_imm(0)
+        {
+
+            if (IMMSIGN > 0)
+                i_imm |= ~((uint64_t)0x7FF);
+
+            s_imm |= IMM5;
+            s_imm |= IMM7 << 5;
+            if (IMMSIGN > 0)
+                s_imm |= ~((uint64_t)0x7FF);
+
+            }
+
+        std::string
+        generateDisassembly(Addr pc, const SymbolTable *symtab) const;
+    };
+
 }};
 
 //Outputs to decoder.cc
@@ -260,6 +289,16 @@ output decoder {{
         ss << mnemonic << ' ' << regName(_destRegIdx[0]) << ", " << imm;
         return ss.str();
     }
+
+    std::string
+    SDOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+    {
+        std::stringstream ss;
+        ss << mnemonic << ' ' << regName(_destRegIdx[0]) << ", "
+           << regName(_srcRegIdx[0]) << regName(_srcRegIdx[1])
+           <<  ", " << i_imm << ", " << s_imm << "\n";
+        return ss.str();
+    }
 }};
 
 def format ROp(code, *opt_flags) {{
@@ -312,6 +351,14 @@ def format UOp(code, *opt_flags) {{
 
 def format UJOp(code, *opt_flags) {{
     iop = InstObjParams(name, Name, 'UJOp', code, opt_flags)
+    header_output = BasicDeclare.subst(iop)
+    decoder_output = BasicConstructor.subst(iop)
+    decode_block = BasicDecode.subst(iop)
+    exec_output = BasicExecute.subst(iop)
+}};
+
+def format SDOp(code, *opt_flags) {{
+    iop = InstObjParams(name, Name, 'SDOp', code, opt_flags)
     header_output = BasicDeclare.subst(iop)
     decoder_output = BasicConstructor.subst(iop)
     decode_block = BasicDecode.subst(iop)

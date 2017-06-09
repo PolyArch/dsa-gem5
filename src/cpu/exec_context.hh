@@ -300,7 +300,7 @@ class ExecContext {
      */
 
        /** Reads an integer register. */
-    virtual void setSDReg(const StaticInst *si, int idx, int sd_idx) {}
+    virtual void setSDReg(uint64_t val, int sd_idx) {}
     virtual void callSDFunc(int sd_func_opcode) {}
 #endif
 
