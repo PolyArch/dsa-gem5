@@ -465,8 +465,12 @@ class SimpleThread : public ThreadState
 #ifdef ISA_HAS_SD
     void setSDReg(uint64_t val, int sd_idx)
     {
-        DPRINTF(SD, "Setting SD Reg %d to %llu.\n", sd_idx, val);
+        DPRINTF(SD, "Setting SD Reg %s to %llu.\n", SDRegNames[sd_idx], val);
         sdRegs[sd_idx] = val;
+    }
+
+    uint64_t getSDReg(int sd_idx) {
+        return sdRegs[sd_idx];
     }
 
 #endif

@@ -1470,8 +1470,18 @@ LSQ::needsToTick()
     return ret;
 }
 
+
 void
 LSQ::pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
+                 unsigned int size, Addr addr, Request::Flags flags,
+                 uint64_t *res) {
+    pushRequest(inst,  0,  isLoad,data,size,addr,flags,res);
+}
+
+
+void
+LSQ::pushRequest(MinorDynInstPtr inst, int sd_stream_idx, 
+                 bool isLoad, uint8_t *data,
                  unsigned int size, Addr addr, Request::Flags flags,
                  uint64_t *res)
 {

@@ -715,6 +715,11 @@ class LSQ : public Named
                      unsigned int size, Addr addr, Request::Flags flags,
                      uint64_t *res);
 
+    void pushRequest(MinorDynInstPtr inst, int sd_stream_idx,
+                     bool isLoad, uint8_t *data,
+                     unsigned int size, Addr addr, Request::Flags flags,
+                     uint64_t *res);
+
     /** Push a predicate failed-representing request into the queues just
      *  to maintain commit order */
     void pushFailedRequest(MinorDynInstPtr inst);

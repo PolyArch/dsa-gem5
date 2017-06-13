@@ -65,6 +65,7 @@ Execute::Execute(const std::string &name_,
     Latch<ForwardInstData>::Output inp_,
     Latch<BranchData>::Input out_) :
     Named(name_),
+    softbrain(this),
     inp(inp_),
     out(out_),
     cpu(cpu_),
@@ -595,29 +596,39 @@ Execute::issue(ThreadID thread_id)
                     fu->provides(inst->staticInst->opClass()) : true);
 
                 if (inst->isNoCostInst()) {
-                    /* Issue free insts. to a fake numbered FU */
-                    fu_index = noCostFUIndex;
+                    if (inst->staticInst->isSDStream() && !softbrain.can_add_stream()) {
+                        issued = false;
+                        //DPRINTF(SD,"Can't issue stream b/c buffer is full");
+                    } else if(inst->staticInst->isSDWait() &&
+                        !softbrain.done(false,inst->staticInst->imm()) ) {
+                        issued = false;
+                        //DPRINTF(SD,"Wait blocked, mask: %x\n",inst->staticInst->imm());
+                    } else {
+                        /* Issue free insts. to a fake numbered FU */
+                        fu_index = noCostFUIndex;
 
-                    /* And start the countdown on activity to allow
-                     *  this instruction to get to the end of its FU */
-                    cpu.activityRecorder->activity();
+                        /* And start the countdown on activity to allow
+                         *  this instruction to get to the end of its FU */
+                        cpu.activityRecorder->activity();
 
-                    /* Mark the destinations for this instruction as
-                     *  busy */
-                    scoreboard[thread_id].markupInstDests(inst, cpu.curCycle() +
-                        Cycles(0), cpu.getContext(thread_id), false);
+                        /* Mark the destinations for this instruction as
+                         *  busy */
+                        scoreboard[thread_id].markupInstDests(inst, cpu.curCycle() +
+                            Cycles(0), cpu.getContext(thread_id), false);
 
-                    DPRINTF(MinorExecute, "Issuing %s to %d\n", inst->id, noCostFUIndex);
-                    inst->fuIndex = noCostFUIndex;
-                    inst->extraCommitDelay = Cycles(0);
-                    inst->extraCommitDelayExpr = NULL;
+                        DPRINTF(MinorExecute, "Issuing %s to %d\n", 
+                            inst->id, noCostFUIndex);
+                        inst->fuIndex = noCostFUIndex;
+                        inst->extraCommitDelay = Cycles(0);
+                        inst->extraCommitDelayExpr = NULL;
 
-                    /* Push the instruction onto the inFlight queue so
-                     *  it can be committed in order */
-                    QueuedInst fu_inst(inst);
-                    thread.inFlightInsts->push(fu_inst);
+                        /* Push the instruction onto the inFlight queue so
+                        *  it can be committed in order */
+                        QueuedInst fu_inst(inst);
+                        thread.inFlightInsts->push(fu_inst);
 
-                    issued = true;
+                        issued = true;
+                    }
 
                 } else if (!fu_is_capable || fu->alreadyPushed()) {
                     /* Skip */
@@ -1403,6 +1414,15 @@ Execute::evaluate()
      *  free up input spaces in the LSQ's requests queue */
     lsq.step();
 
+    /* Let softbrain tick for one cycle
+     */
+
+    bool softbrain_done = !softbrain.in_use(); //= softbrain.done(false,0);
+    if(!softbrain_done) {
+      softbrain.step();
+      cpu.activityRecorder->activity();
+    }
+
     /* Check interrupts first.  Will halt commit if interrupt found */
     bool interrupted = false;
     ThreadID interrupt_tid = checkInterrupts(branch, interrupted);
@@ -1541,7 +1561,8 @@ Execute::evaluate()
         }
     }
 
-    DPRINTF(Activity, "Need to tick num issued insts: %s%s%s%s%s%s\n",
+    DPRINTF(Activity, "Need to tick num issued insts: %s%s%s%s%s%s%s\n",
+       (!softbrain_done ? "(softbrain in use)" : ""),
        (num_issued != 0 ? " (issued some insts)" : ""),
        (becoming_stalled ? "(becoming stalled)" : "(not becoming stalled)"),
        (can_issue_next ? " (can issued next inst)" : ""),
@@ -1550,6 +1571,7 @@ Execute::evaluate()
        (interrupted ? " (interrupted)" : ""));
 
     bool need_to_tick =
+       !softbrain_done || /* Softbrain is not done yet*/
        num_issued != 0 || /* Issued some insts this cycle */
        !becoming_stalled || /* Some FU pipelines can still move */
        can_issue_next || /* Can still issue a new inst */
@@ -1863,4 +1885,219 @@ Execute::getDcachePort()
     return lsq.getDcachePort();
 }
 
+// Softbrain additions:
+Fault
+Execute::readMem(Addr addr, uint8_t * data, unsigned size,
+                         Request::Flags flags, ThreadContext* thread)
+{
+    // use the CPU's statically allocated read request and packet objects
+    Request *req = &data_read_req;
+
+    //The size of the data we're trying to read.
+    int fullSize = size;
+
+    //The address of the second part of this access if it needs to be split
+    //across a cache line boundary.
+    Addr secondAddr = roundDown(addr + size - 1, cpu.cacheLineSize());
+
+    if (secondAddr > addr)
+        size = secondAddr - addr;
+
+    uint64_t dcache_latency = 0;
+
+    req->taskId(cpu.taskId());
+    while (1) {
+        req->setVirt(0, addr, size, flags, cpu.dataMasterId(), thread->pcState().instAddr());
+
+        // translate to physical address
+        Fault fault = thread->getDTBPtr()->translateAtomic(req, thread,
+                                                          BaseTLB::Read);
+
+        // Now do the access.
+        if (fault == NoFault && !req->getFlags().isSet(Request::NO_ACCESS)) {
+            Packet pkt(req, Packet::makeReadCmd(req));
+            pkt.dataStatic(data);
+
+            //if (req->isMmappedIpr())
+            //    dcache_latency += TheISA::handleIprRead(thread->getTC(), &pkt);
+            //else {
+                //if (cpu.fastmem && system->isMemAddr(pkt.getAddr()))
+                //    system->getPhysMem().access(&pkt);
+                //else
+            auto& dcachePort = lsq.getDcachePort();
+                    dcache_latency += dcachePort.sendAtomic(&pkt);
+            //}
+            //dcache_access = true;
+
+            assert(!pkt.isError());
+
+            if (req->isLLSC()) {
+                TheISA::handleLockedRead(thread, req);
+            }
+        }
+
+        //If there's a fault, return it
+        if (fault != NoFault) {
+            if (req->isPrefetch()) {
+                return NoFault;
+            } else {
+                return fault;
+            }
+        }
+
+        //If we don't need to access a second cache line, stop now.
+        if (secondAddr <= addr)
+        {
+            /*if (req->isLockedRMW() && fault == NoFault) {
+                assert(!locked);
+                locked = true;
+            }*/
+
+            return fault;
+        }
+
+        /*
+         * Set up for accessing the second cache line.
+         */
+
+        //Move the pointer we're reading into to the correct location.
+        data += size;
+        //Adjust the size to get the remaining bytes.
+        size = addr + fullSize - secondAddr;
+        //And access the right address.
+        addr = secondAddr;
+    }
 }
+
+
+Fault
+Execute::writeMem(uint8_t *data, unsigned size, Addr addr,
+                  Request::Flags flags, uint64_t *res, ThreadContext* thread)
+{
+    //SimpleExecContext& t_info = *threadInfo[curThread];
+    //SimpleThread* thread = t_info.thread;
+    //static uint8_t zero_array[64] = {};
+
+    //if (data == NULL) {
+    //    assert(size <= 64);
+    //    assert(flags & Request::CACHE_BLOCK_ZERO);
+    //    // This must be a cache block cleaning request
+    //    data = zero_array;
+    //}
+
+    // use the CPU's statically allocated write request and packet objects
+    Request *req = &data_write_req;
+
+    //if (traceData)
+    //    traceData->setMem(addr, size, flags);
+
+    //The size of the data we're trying to read.
+    int fullSize = size;
+
+    //The address of the second part of this access if it needs to be split
+    //across a cache line boundary.
+    Addr secondAddr = roundDown(addr + size - 1, cpu.cacheLineSize());
+
+    if (secondAddr > addr)
+        size = secondAddr - addr;
+
+    int dcache_latency = 0;
+
+    req->taskId(cpu.taskId());
+    while (1) {
+        req->setVirt(0, addr, size, flags, cpu.dataMasterId(), thread->pcState().instAddr());
+
+        // translate to physical address
+        Fault fault = thread->getDTBPtr()->translateAtomic(req, thread, BaseTLB::Write);
+
+        // Now do the access.
+        if (fault == NoFault) {
+            MemCmd cmd = MemCmd::WriteReq; // default
+            bool do_access = true;  // flag to suppress cache access
+
+            //if (req->isLLSC()) {
+            //    cmd = MemCmd::StoreCondReq;
+            //    do_access = TheISA::handleLockedWrite(thread, req, dcachePort.cacheBlockMask);
+            //} else if (req->isSwap()) {
+            //    cmd = MemCmd::SwapReq;
+            //    if (req->isCondSwap()) {
+            //        assert(res);
+            //        req->setExtraData(*res);
+            //    }
+            //}
+
+            if (do_access && !req->getFlags().isSet(Request::NO_ACCESS)) {
+                Packet pkt = Packet(req, cmd);
+                pkt.dataStatic(data);
+
+                //if (req->isMmappedIpr()) {
+                //    dcache_latency +=
+                //        TheISA::handleIprWrite(thread->getTC(), &pkt);
+                //} else {
+                 //   if (fastmem && system->isMemAddr(pkt.getAddr()))
+                 //       system->getPhysMem().access(&pkt);
+                 //   else
+
+                       auto& dcachePort = lsq.getDcachePort();
+                        dcache_latency += dcachePort.sendAtomic(&pkt);
+
+                    // Notify other threads on this CPU of write
+                    //threadSnoop(&pkt, curThread);
+                //}
+                //dcache_access = true;
+                assert(!pkt.isError());
+
+                //if (req->isSwap()) {
+                //    assert(res);
+                //    memcpy(res, pkt.getConstPtr<uint8_t>(), fullSize);
+                //}
+            }
+
+            //if (res && !req->isSwap()) {
+            //    *res = req->getExtraData();
+            //}
+        }
+
+        //If there's a fault or we don't need to access a second cache line,
+        //stop now.
+        if (fault != NoFault || secondAddr <= addr)
+        {
+            //if (req->isLockedRMW() && fault == NoFault) {
+            //    assert(locked);
+            //    locked = false;
+            //}
+
+
+           // if (fault != NoFault && req->isPrefetch()) {
+            //    return NoFault;
+            //} else {
+                return fault;
+            //}
+        }
+
+        /*
+         * Set up for accessing the second cache line.
+         */
+
+        //Move the pointer we're reading into to the correct location.
+        data += size;
+        //Adjust the size to get the remaining bytes.
+        size = addr + fullSize - secondAddr;
+        //And access the right address.
+        addr = secondAddr;
+    }
+}
+
+
+
+
+}
+
+
+
+
+
+
+
+
+

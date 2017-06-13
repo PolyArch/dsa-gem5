@@ -475,81 +475,81 @@ decode OPCODE default Unknown::unknown() {
     format SDOp {
         0x0b: decode FUNCT3 {
             0x0: sb_cfg({{
-                xc->setSDReg(RS1,SD_MEM_ADDR);
+                xc->setSDReg(Rs1,SD_MEM_ADDR);
                 xc->setSDReg(i_imm,SD_CFG_SIZE);
                 xc->callSDFunc(SB_CFG);
             }}, IsNonSpeculative, No_OpClass);
         }
         0x2b: decode FUNCT3 {
             0x0: sb_dma_scr({{
-                xc->setSDReg(RS1,SD_NUM_STRIDES);
-                xc->setSDReg(RS2,SD_SCRATCH_ADDR);
+                xc->setSDReg(Rs1,SD_NUM_STRIDES);
+                xc->setSDReg(Rs2,SD_SCRATCH_ADDR);
                 xc->callSDFunc(SB_MEM_SCR);
-            }}, IsNonSpeculative, No_OpClass);
+            }}, IsSDStream, IsNonSpeculative, No_OpClass);
             0x1: sb_scr_rd({{
-                xc->setSDReg(RS1,SD_SCRATCH_ADDR);
-                xc->setSDReg(RS2,SD_NUM_STRIDES);
+                xc->setSDReg(Rs1,SD_SCRATCH_ADDR);
+                xc->setSDReg(Rs2,SD_NUM_STRIDES);
                 xc->setSDReg(s_imm,SD_IN_PORT);
                 xc->callSDFunc(SB_SCR_PRT);
-            }}, IsNonSpeculative, No_OpClass);
+            }}, IsSDStream, IsNonSpeculative, No_OpClass);
             0x2: sb_dma_rd({{
-                xc->setSDReg(RS1,SD_MEM_ADDR);
-                xc->setSDReg(RS2,SD_NUM_STRIDES);
+                xc->setSDReg(Rs1,SD_MEM_ADDR);
+                xc->setSDReg(Rs2,SD_NUM_STRIDES);
                 xc->setSDReg(s_imm,SD_IN_PORT);
                 xc->callSDFunc(SB_MEM_PRT);
-            }}, IsNonSpeculative, No_OpClass);
+            }}, IsSDStream, IsNonSpeculative, No_OpClass);
             0x4: sb_const({{
-                xc->setSDReg(RS1,SD_NUM_ELEM);
-                xc->setSDReg(RS2,SD_CONSTANT);
+                xc->setSDReg(Rs1,SD_CONSTANT);
+                xc->setSDReg(Rs2,SD_NUM_ELEM);
                 xc->setSDReg(s_imm,SD_IN_PORT);
                 xc->callSDFunc(SB_CNS_PRT);
-            }}, IsNonSpeculative, No_OpClass);
+            }}, IsSDStream, IsNonSpeculative, No_OpClass);
 
         }
         0x5b: decode FUNCT3 {
-            0x0: sb_wr_rd({{
-                xc->setSDReg(RS1,SD_NUM_ELEM);
-                xc->setSDReg(i_imm & 0x3f, SD_IN_PORT);
-                xc->setSDReg(i_imm >> 6,   SD_OUT_PORT);
-                xc->callSDFunc(SB_PRT_PRT);
-            }}, IsNonSpeculative, No_OpClass);
             0x4: sb_wr_dma({{
-                xc->setSDReg(RS1,SD_MEM_ADDR);
-                xc->setSDReg(RS2, SD_NUM_STRIDES);
+                xc->setSDReg(Rs1,SD_MEM_ADDR);
+                xc->setSDReg(Rs2, SD_NUM_STRIDES);
                 xc->setSDReg(0x3f & s_imm, SD_OUT_PORT);
                 xc->setSDReg( (s_imm & 0x40) ? 2 : 0, SD_SHIFT_BYTES);
                 xc->setSDReg( (s_imm & 0x100) ? 1 : 0, SD_GARBAGE);
-                xc->callSDFunc(SB_CFG);
-            }}, IsNonSpeculative, No_OpClass);
+                xc->callSDFunc(SB_PRT_MEM);
+            }}, IsSDStream, IsNonSpeculative, No_OpClass);
+            0x5: sb_wr_rd({{
+                xc->setSDReg(Rs1,SD_NUM_ELEM);
+                xc->setSDReg(i_imm & 0x3f, SD_OUT_PORT);
+                xc->setSDReg(i_imm >> 6,   SD_IN_PORT);
+                xc->callSDFunc(SB_PRT_PRT);
+            }}, IsSDStream, IsNonSpeculative, No_OpClass);
         }
         0x7b: decode FUNCT3 {
             0x0: sb_stride({{
-                xc->setSDReg(RS1,SD_STRIDE);
-                xc->setSDReg(RS2,SD_ACCESS_SIZE);
+                xc->setSDReg(Rs1,SD_STRIDE);
+                xc->setSDReg(Rs2,SD_ACCESS_SIZE);
             }}, No_OpClass);
             0x1: sb_dma_addr({{
-                xc->setSDReg(RS1,SD_MEM_ADDR);
+                xc->setSDReg(Rs1,SD_MEM_ADDR);
             }}, No_OpClass);
             0x4: sb_wait({{
-                xc->setSDReg(RS1,SD_WAIT_MASK);
+                xc->setSDReg(Rs1,SD_WAIT_MASK);
                 xc->callSDFunc(SB_WAIT);
-            }}, IsNonSpeculative, IsMemBarrier, IsSerializeAfter, No_OpClass);
+            }}, IsSDWait, IsNonSpeculative, IsMemBarrier, IsSerializeAfter, No_OpClass);
             0x5: sb_ind({{
-                xc->setSDReg(RS1,SD_INDEX_ADDR);
-                xc->setSDReg(RS2,SD_NUM_ELEM);
+                xc->setSDReg(Rs1,SD_INDEX_ADDR);
+                xc->setSDReg(Rs2,SD_NUM_ELEM);
                 xc->setSDReg(s_imm & 0x1F, SD_IND_PORT); //only 5 bits
                 xc->setSDReg((s_imm >> 5) & 0x1F, SD_IN_PORT);
                 xc->setSDReg(s_imm >> 10, SD_IND_TYPE);
                 xc->callSDFunc(SB_IND_PRT);
-            }}, IsNonSpeculative, No_OpClass);
+            }}, IsSDStream, IsNonSpeculative, No_OpClass);
             0x6: sb_ind_wr({{
-                xc->setSDReg(RS1,SD_INDEX_ADDR);
-                xc->setSDReg(RS2,SD_NUM_ELEM);
+                xc->setSDReg(Rs1,SD_INDEX_ADDR);
+                xc->setSDReg(Rs2,SD_NUM_ELEM);
                 xc->setSDReg(s_imm & 0x1F, SD_IND_PORT); //only 5 bits
                 xc->setSDReg((s_imm >> 5) & 0x1F, SD_IN_PORT);
                 xc->setSDReg(s_imm >> 10, SD_IND_TYPE);
                 xc->callSDFunc(SB_PRT_IND);
-            }}, IsNonSpeculative, No_OpClass);
+            }}, IsSDStream, IsNonSpeculative, No_OpClass);
         }
     }
 
@@ -1028,7 +1028,7 @@ decode OPCODE default Unknown::unknown() {
                 }
             }}, FloatCvtOp);
             0x2c: fsqrt_s({{
-                assert(RS2 == 0);
+                assert(Rs2 == 0);
                 uint32_t temp;
                 float fs1 = reinterpret_cast<float&>(temp = Fs1_bits);
                 float fd;
@@ -1040,7 +1040,7 @@ decode OPCODE default Unknown::unknown() {
                 Fd_bits = (uint64_t)reinterpret_cast<uint32_t&>(fd);
             }}, FloatSqrtOp);
             0x2d: fsqrt_d({{
-                assert(RS2 == 0);
+                assert(Rs2 == 0);
                 Fd = std::sqrt(Fs1);
             }}, FloatSqrtOp);
             0x50: decode ROUND_MODE {

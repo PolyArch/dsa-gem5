@@ -190,6 +190,9 @@ output header {{
      */
     class SDOp : public RiscvStaticInst
     {
+      public:
+        virtual uint64_t imm() { return s_imm; }
+
       protected:
         int64_t i_imm;
         int64_t s_imm;

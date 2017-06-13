@@ -68,8 +68,7 @@ namespace Minor
 
 /** The constructed pipeline.  Kept out of MinorCPU to keep the interface
  *  between the CPU and its grubby implementation details clean. */
-class Pipeline : public Ticked
-{
+class Pipeline : public Ticked {
   protected:
     MinorCPU &cpu;
 

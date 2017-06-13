@@ -57,7 +57,7 @@ namespace Minor
 {
 /** Forward declared to break the cyclic inclusion dependencies between
  *  pipeline and cpu */
-class Pipeline;
+class  Pipeline;
 
 /** Minor will use the SimpleThread state for now */
 typedef SimpleThread MinorThread;

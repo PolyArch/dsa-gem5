@@ -134,4 +134,3 @@ m4env.Library('elf', [m4env.SharedObject(f) for f in elf_files])
 main.Prepend(CPPPATH=Dir('.'))
 main.Append(LIBS=['elf'])
 main.Prepend(LIBPATH=[Dir('.')])
-

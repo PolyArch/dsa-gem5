@@ -173,6 +173,8 @@ class StaticInst : public RefCounted, public StaticInstFlags
     //This flag doesn't do anything yet
     bool isMicroBranch() const { return flags[IsMicroBranch]; }
     //@}
+    bool isSDStream() const { return flags[IsSDStream]; }
+    bool isSDWait() const { return flags[IsSDWait]; }
 
     void setFirstMicroop() { flags[IsFirstMicroop] = true; }
     void setLastMicroop() { flags[IsLastMicroop] = true; }
@@ -216,6 +218,11 @@ class StaticInst : public RefCounted, public StaticInstFlags
 
     /// The binary machine instruction.
     const ExtMachInst machInst;
+
+    /**
+     * Obtain the immediate field
+     */
+    virtual uint64_t imm() { return 0; }
 
   protected:
 
