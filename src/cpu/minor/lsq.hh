@@ -52,6 +52,17 @@
 #include "cpu/minor/pipe_data.hh"
 #include "cpu/minor/trace.hh"
 
+struct SDMemReqInfo {
+    uint64_t scr_addr;
+    int port=-1;
+    std::vector <bool> mask;
+    bool last;
+    SDMemReqInfo(uint64_t scr_addr_, int port_, 
+                    std::vector<bool>& mask_, bool last_)
+        : scr_addr(scr_addr_), port(port_), mask(mask_), last(last_) {}
+};
+typedef SDMemReqInfo *SDMemReqInfoPtr;
+
 namespace Minor
 {
 
@@ -131,6 +142,10 @@ class LSQ : public Named
         /** Load/store indication used for building packet.  This isn't
          *  carried by Request so we need to keep it here */
         bool isLoad;
+
+
+        /** Stream Dataflow Id */
+        SDMemReqInfoPtr sdInfo;
 
         /** Dynamically allocated and populated data carried for
          *  building write packets */
@@ -366,11 +381,14 @@ class LSQ : public Named
 
       public:
         SingleDataRequest(LSQ &port_, MinorDynInstPtr inst_,
-            bool isLoad_, PacketDataPtr data_ = NULL, uint64_t *res_ = NULL) :
+            bool isLoad_,  PacketDataPtr data_ = NULL, 
+            uint64_t *res_ = NULL, SDMemReqInfoPtr sdInfo_=NULL) :
             LSQRequest(port_, inst_, isLoad_, data_, res_),
             packetInFlight(false),
             packetSent(false)
-        { }
+        { 
+          sdInfo=sdInfo_;
+        }
     };
 
     class SplitDataRequest : public LSQRequest
@@ -592,6 +610,9 @@ class LSQ : public Named
      * for forwarding. */
     StoreBuffer storeBuffer;
 
+    // Per-stream transfer queues for re-ordering
+    std::vector<LSQQueue> sd_transfers;
+
   protected:
     /** Count of the number of mem. accesses which have left the
      *  requests queue and are in the 'wild' in the memory system and who
@@ -676,6 +697,12 @@ class LSQ : public Named
     /** Sanity check and pop the head response */
     void popResponse(LSQRequestPtr response);
 
+    /** Stream dataflow versions of the above */
+    LSQRequestPtr findResponse(int streamId);
+
+    /** Sanity check and pop the head response */
+    void popResponse(int streamId);
+
     /** Must check this before trying to insert into the store buffer */
     bool canPushIntoStoreBuffer() const { return storeBuffer.canInsert(); }
 
@@ -715,10 +742,9 @@ class LSQ : public Named
                      unsigned int size, Addr addr, Request::Flags flags,
                      uint64_t *res);
 
-    void pushRequest(MinorDynInstPtr inst, int sd_stream_idx,
-                     bool isLoad, uint8_t *data,
+    void pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
                      unsigned int size, Addr addr, Request::Flags flags,
-                     uint64_t *res);
+                     uint64_t *res, SDMemReqInfoPtr sdInfo);
 
     /** Push a predicate failed-representing request into the queues just
      *  to maintain commit order */

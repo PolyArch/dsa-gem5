@@ -75,6 +75,7 @@ LSQ::LSQRequest::LSQRequest(LSQ &port_, MinorDynInstPtr inst_, bool isLoad_,
     port(port_),
     inst(inst_),
     isLoad(isLoad_),
+    sdInfo(NULL),
     data(data_),
     packet(NULL),
     request(),
@@ -226,6 +227,7 @@ LSQ::clearMemBarrier(MinorDynInstPtr inst)
     if (is_last_barrier)
         lastMemBarrier[inst->id.threadId] = 0;
 }
+
 
 void
 LSQ::SingleDataRequest::finish(const Fault &fault_, RequestPtr request_,
@@ -883,10 +885,14 @@ LSQ::tryToSendToTransfers(LSQRequestPtr request)
         return;
     }
 
-    if (transfers.unreservedRemainingSpace() == 0) {
-        DPRINTF(MinorMem, "No space to insert request into transfers"
-            " queue\n");
-        return;
+    if(request->sdInfo==NULL) {
+        if (transfers.unreservedRemainingSpace() == 0) {
+            DPRINTF(MinorMem, "No space to insert request into transfers"
+                " queue\n");
+            return;
+        }
+    } else {
+        assert(sd_transfers[request->sdInfo->port].unreservedRemainingSpace()>0);
     }
 
     if (request->isComplete() || request->state == LSQRequest::Failed) {
@@ -898,7 +904,7 @@ LSQ::tryToSendToTransfers(LSQRequestPtr request)
         return;
     }
 
-    if (!execute.instIsRightStream(request->inst)) {
+    if (request->sdInfo==NULL && !execute.instIsRightStream(request->inst)) {
         /* Wrong stream, try to abort the transfer but only do so if
          *  there are no packets in flight */
         if (request->hasPacketsInMemSystem()) {
@@ -1159,17 +1165,25 @@ void
 LSQ::moveFromRequestsToTransfers(LSQRequestPtr request)
 {
     assert(!requests.empty() && requests.front() == request);
-    assert(transfers.unreservedRemainingSpace() != 0);
 
-    /* Need to count the number of stores in the transfers
-     *  queue so that loads know when their store buffer forwarding
-     *  results will be correct (only when all those stores
-     *  have reached the store buffer) */
-    if (!request->isLoad)
-        numStoresInTransfers++;
+    if(request->sdInfo==NULL) { //normal processor side requests
+        assert(transfers.unreservedRemainingSpace() != 0);
 
-    requests.pop();
-    transfers.push(request);
+        /* Need to count the number of stores in the transfers
+         *  queue so that loads know when their store buffer forwarding
+         *  results will be correct (only when all those stores
+         *  have reached the store buffer) */
+        if (!request->isLoad)
+            numStoresInTransfers++;
+
+        requests.pop();
+        transfers.push(request);
+    } else { //Stream-dataflow requests
+        int streamId = request->sdInfo->port;
+        assert(sd_transfers[streamId].unreservedRemainingSpace() != 0);
+        requests.pop();
+        sd_transfers[streamId].push(request);
+    }
 }
 
 bool
@@ -1315,6 +1329,14 @@ LSQ::LSQ(std::string name_, std::string dcache_port_name_,
     retryRequest(NULL),
     cacheBlockMask(~(cpu_.cacheLineSize() - 1))
 {
+    /*TODO:  Fix this to separate out:
+     * 1. The number of streams supported (currently 100, too high)
+     * 2. The size of each transfer queue (currently identical to transfers)
+     */
+    for(int i = 0; i < 100; ++i) { 
+      sd_transfers.emplace_back(name_ + ".sd_transfers", "addr", transfers_queue_size);
+    }
+
     if (in_memory_system_limit < 1) {
         fatal("%s: executeMaxAccessesInMemory must be >= 1 (%d)\n", name_,
             in_memory_system_limit);
@@ -1350,6 +1372,8 @@ LSQ::~LSQ()
 
 LSQ::LSQRequest::~LSQRequest()
 {
+    if (sdInfo) 
+        delete sdInfo;
     if (packet)
         delete packet;
     if (data)
@@ -1372,6 +1396,53 @@ LSQ::step()
 
     storeBuffer.step();
 }
+
+LSQ::LSQRequestPtr
+LSQ::findResponse(int streamId) {
+    LSQ::LSQRequestPtr ret = NULL;
+    if(!sd_transfers[streamId].empty()) {
+        LSQRequestPtr request = sd_transfers[streamId].front();
+        bool complete = request->isComplete();
+        bool can_store = storeBuffer.canInsert();
+        bool to_str_buf = request->state == LSQRequest::StoreToStoreBuffer;
+
+        if(complete || (to_str_buf && can_store)) {
+            ret = request;
+        }
+    }
+
+    if (ret) {
+        DPRINTF(MinorMem, "Found matching memory response for stream: %d\n",
+        streamId);
+    } else {
+        DPRINTF(MinorMem, "No matching memory response for stream: %d\n",
+            streamId);
+    }
+    return ret;
+}
+
+void
+LSQ::popResponse(int streamId) {
+    assert(!sd_transfers[streamId].empty());
+    LSQ::LSQRequestPtr response = sd_transfers[streamId].front();
+    sd_transfers[streamId].pop();
+
+    //if (!response->isLoad)
+    //    numStoresInTransfers--;
+
+    if (response->issuedToMemory)
+        numAccessesIssuedToMemory--;
+
+    //FIXME: It's unclear whether we should delete the response at this point!
+    if (response->state != LSQRequest::StoreInStoreBuffer) {
+        DPRINTF(MinorMem, "Deleting %s request: %s\n",
+            (response->isLoad ? "load" : "store"),
+            *(response->inst));
+
+        delete response;
+    }
+}
+
 
 LSQ::LSQRequestPtr
 LSQ::findResponse(MinorDynInstPtr inst)
@@ -1475,15 +1546,14 @@ void
 LSQ::pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
                  unsigned int size, Addr addr, Request::Flags flags,
                  uint64_t *res) {
-    pushRequest(inst,  0,  isLoad,data,size,addr,flags,res);
+    pushRequest(inst,  isLoad,data,size,addr,flags,res, NULL /*no sd info*/);
 }
 
 
 void
-LSQ::pushRequest(MinorDynInstPtr inst, int sd_stream_idx, 
-                 bool isLoad, uint8_t *data,
+LSQ::pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
                  unsigned int size, Addr addr, Request::Flags flags,
-                 uint64_t *res)
+                 uint64_t *res,  SDMemReqInfoPtr sdInfo)
 {
     bool needs_burst = transferNeedsBurst(addr, size, lineWidth);
     LSQRequestPtr request;
@@ -1514,7 +1584,7 @@ LSQ::pushRequest(MinorDynInstPtr inst, int sd_stream_idx,
             *this, inst, isLoad, request_data, res);
     } else {
         request = new SingleDataRequest(
-            *this, inst, isLoad, request_data, res);
+            *this, inst, isLoad, request_data, res, sdInfo);
     }
 
     if (inst->traceData)

@@ -206,8 +206,9 @@ void softsim_t::step() {
   _ticker->tick();
 }
 
-softsim_t::softsim_t(softsim_interf_t* softsim_interf) : 
+softsim_t::softsim_t(softsim_interf_t* softsim_interf, Minor::LSQ* lsq) : 
   _sim_interf(softsim_interf),
+  _lsq(lsq),
   debug(true),
   _dma_c(this),
   _scr_r_c(this,&_dma_c),
@@ -914,14 +915,76 @@ void scratch_read_controller_t::schedule_streams() {
 //HACK
  static bool DOUBLE_PORT=true;
 
+void apply_mask(uint64_t* raw_data, vector<bool>  mask, std::vector<SBDT> data) {
+  SBDT* u64data = (SBDT*)raw_data;
+  for(int i = 0; i < mask.size(); ++i) {
+    if(mask[i]) {
+      data.push_back(u64data[i]);
+    }
+  }
+}
 
 // ---------------------STREAM CONTROLLER TIMING ------------------------------------
 // If response, can issue load
 // Limitations: 1 Response per cycle (512 bits/cycle)
 void dma_controller_t::cycle(){
-  //Response from memory
-  //bool handled_req=false;
+  //Handle response from real memory
+  for(unsigned i = 0; i < _sb->_soft_config.in_ports_active.size(); ++i) {
+    int cur_port = _sb->_soft_config.in_ports_active[i];
+    if(Minor::LSQ::LSQRequestPtr response = _sb->_lsq->findResponse(cur_port)) {
+      auto& in_vp = _sb->port_interf().in_port(cur_port);
 
+      PacketPtr packet = response->packet;
+      assert(packet);
+      vector<SBDT> data;
+      apply_mask(packet->getPtr<uint64_t>(), response->sdInfo->mask, data);
+
+      if(in_vp.can_push_vp(data.size())) {
+
+        if(DEBUG::MEM_REQ) {
+          _sb->_ticker->timestamp();
+          std::cout << "data into port " << cur_port << ":" 
+                    << data.size() << "elements" << "\n";
+        }
+
+        if(_sb->_ticker->in_roi()) {
+          _sb->_stat_mem_bytes_rd+=data.size()*DATA_WIDTH;
+        }
+        in_vp.push_data(data);
+
+        //BEGIN HACK
+        if(cur_port==25) { //TRIPPLE PORT : )
+          auto& in_vp1 = _sb->port_interf().in_port(cur_port+1);
+          auto& in_vp2 = _sb->port_interf().in_port(cur_port+2);
+          in_vp1.push_data(data);
+          in_vp2.push_data(data);
+        }
+        if(cur_port==26) { //DOUBLE PORT : )
+          DOUBLE_PORT=true;
+          auto& in_vp1 = _sb->port_interf().in_port(cur_port+1);
+          in_vp1.push_data(data);
+        }
+        //END HACK
+
+        if(response->sdInfo->last) {
+          auto& in_vp = _sb->port_interf().in_port(cur_port);
+          if(DEBUG::VP_SCORE2) {
+            cout << "SOURCE: DMA->PORT2\n";
+          }
+
+          in_vp.set_status(port_data_t::STATUS::FREE);
+          break;
+        }
+      }
+    }
+  }
+  //FIXME: Implement reads to cache
+
+
+  //FIXME: Eliminate fake mem
+
+  //Response from fake memory
+  //bool handled_req=false;
   bool blocked_ivp[64] = {0}; 
 
   for(auto i = _fake_mem.begin(), e = _fake_mem.end(); i!=e; ++i) {
@@ -1052,14 +1115,19 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
       if(dma_s.stream_active() && _fake_mem.size() < MAX_MEM_REQS) {
         auto& in_vp = _sb->port_interf().in_port(dma_s._in_port);
 
-        if(in_vp.num_can_push() > 8) { //make sure vp isn't full
-          pull_data(dma_s,data,mem_complete_cyc);
+        req_read(dma_s,-1/*scratch_addr*/);
 
+        /*
+        if(in_vp.num_can_push() > 8) { //make sure vp isn't full
+
+
+          pull_data(dma_s,data,mem_complete_cyc);
+         */
           if(dma_s.empty()) {
             if(DEBUG::VP_SCORE2) { cout << "SOURCE: DMA->PORT \n";}
             in_vp.set_status(port_data_t::STATUS::COMPLETE, LOC::DMA);
           }
-  
+        /*
           mem_complete_cyc=std::max(mem_complete_cyc,
                                     _prev_port_cycle[dma_s._in_port]+1);
         
@@ -1068,8 +1136,8 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
                 std::forward_as_tuple(0,dma_s._in_port,data,
                                      dma_s.empty(),dma_s.id()));
           _prev_port_cycle[dma_s._in_port]=mem_complete_cyc;
-          return;
-        }
+        }*/
+        return;
       }
     } else if(which==_dma_port_streams.size()) {
       //READ TO SCRATCH
@@ -1174,6 +1242,41 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
     }
   }
 }
+
+void dma_controller_t::req_read(mem_stream_base_t& stream,
+                                uint64_t scr_addr) {
+  addr_t prev_addr = 0;
+  addr_t addr = stream.cur_addr();
+  addr_t base_addr = addr & MEM_MASK;  //this is the request address...
+  addr_t max_addr = base_addr+MEM_WIDTH;
+
+  assert(addr!=0 && "cannot load address 0x0");
+  std::fill(mask.begin(), mask.end(), 0); 
+  int words=0;
+
+  while(addr < max_addr && addr > prev_addr  && stream.stream_active()) {
+    prev_addr=addr;
+    mask[(addr-base_addr)/DATA_WIDTH]=1;
+    addr = stream.pop_addr();
+    words+=1;
+  }
+
+  //TODO: add l2_miss statistics -- probably somewhere else....
+  if(_sb->_ticker->in_roi()) {
+    _sb->_stat_tot_mem_fetched+=words*DATA_WIDTH;
+    _sb->_stat_tot_loads+=1;
+  }
+
+  stream.check_set_empty(); //do this first so last is set
+
+  bool last = stream.empty();
+  SDMemReqInfoPtr sdInfo = new SDMemReqInfo(scr_addr,stream.in_port(),mask,last);
+  //make request
+  _sb->_lsq->pushRequest(stream.minst(),true/*isLoad*/,NULL/*data*/,
+              MEM_WIDTH/*cache line*/, base_addr, 0/*flags*/, 0 /*res*/,
+              sdInfo);
+}
+
 
 void dma_controller_t::pull_data(mem_stream_base_t& stream, 
                                  std::vector<SBDT>& data, 

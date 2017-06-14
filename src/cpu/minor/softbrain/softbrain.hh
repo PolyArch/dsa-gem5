@@ -22,6 +22,7 @@
 #include "ticker.hh"
 #include "softsim_interf.hh"
 #include "cpu/minor/dyn_inst.hh"
+#include "cpu/minor/lsq.hh"
 
 using namespace SB_CONFIG;
 
@@ -901,6 +902,9 @@ class dma_controller_t : public data_controller_t {
   void finish_cycle();
   bool done(bool show, int mask);
 
+
+  void req_read(mem_stream_base_t& stream, uint64_t scr_addr);
+
   void make_request(unsigned s, unsigned t, unsigned& which);
   void pull_data(mem_stream_base_t& stream, std::vector<SBDT>& data, 
                  uint64_t& comp_cyc, bool for_scr=false);
@@ -1089,7 +1093,7 @@ class softsim_t
 public:
 
   //Simulator Interface
-  softsim_t(softsim_interf_t* softsim_interf);
+  softsim_t(softsim_interf_t* softsim_interf, Minor::LSQ* lsq);
 
   void run_until(uint64_t i);
   void roi_entry(bool enter);
@@ -1147,6 +1151,7 @@ public:
 
 private:
   softsim_interf_t* _sim_interf;
+  Minor::LSQ* _lsq;
   std::ofstream in_port_verif, out_port_verif, scr_wr_verif, scr_rd_verif, cmd_verif;
 
   SBDT ld_mem8(addr_t addr,uint64_t& cycle, Minor::MinorDynInstPtr m) 

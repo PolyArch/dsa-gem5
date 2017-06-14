@@ -95,9 +95,6 @@ class Execute : public Named, public softsim_interf_t
     }
     void inform_cycle(uint64_t cycle) {}
 
-
-    softsim_t softbrain;
-
   protected:
     /** Input port carrying instructions from Decode */
     Latch<ForwardInstData>::Output inp;
@@ -151,6 +148,9 @@ class Execute : public Named, public softsim_interf_t
 
     /** Dcache port to pass on to the CPU.  Execute owns this */
     LSQ lsq;
+
+    /* softbrain unit */
+    softsim_t softbrain;
 
     /** Scoreboard of instruction dependencies */
     std::vector<Scoreboard> scoreboard;
