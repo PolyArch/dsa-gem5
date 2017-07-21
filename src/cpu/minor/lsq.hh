@@ -52,14 +52,20 @@
 #include "cpu/minor/pipe_data.hh"
 #include "cpu/minor/trace.hh"
 
+
 struct SDMemReqInfo {
     uint64_t scr_addr;
     int port=-1;
     std::vector <bool> mask;
+    std::vector <int> map;
     bool last;
+    bool isConfig = 0;
     SDMemReqInfo(uint64_t scr_addr_, int port_, 
                     std::vector<bool>& mask_, bool last_)
         : scr_addr(scr_addr_), port(port_), mask(mask_), last(last_) {}
+    SDMemReqInfo(uint64_t scr_addr_, int port_, 
+                    std::vector<int>& map_, bool last_)
+        : scr_addr(scr_addr_), port(port_), map(map_), last(last_) {}
 };
 typedef SDMemReqInfo *SDMemReqInfoPtr;
 
@@ -443,7 +449,7 @@ class LSQ : public Named
       public:
         SplitDataRequest(LSQ &port_, MinorDynInstPtr inst_,
             bool isLoad_, PacketDataPtr data_ = NULL,
-            uint64_t *res_ = NULL);
+            uint64_t *res_ = NULL, SDMemReqInfoPtr sdInfo_=NULL);
 
         ~SplitDataRequest();
 

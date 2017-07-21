@@ -573,6 +573,17 @@ Execute::issue(ThreadID thread_id)
             issued = true;
             discarded = true;
         } else {
+            if (inst->staticInst->isSDStream() && !softbrain.can_add_stream()) {
+                issued = false;
+                //DPRINTF(SD,"Can't issue stream b/c buffer is full");
+                continue;
+            } else if(inst->staticInst->isSDWait() &&
+                !softbrain.done(false,inst->staticInst->imm()) ) {
+                issued = false;
+                //DPRINTF(SD,"Wait blocked, mask: %x\n",inst->staticInst->imm());
+                continue;
+            }
+
             /* Try and issue an instruction into an FU, assume we didn't and
              * fix that in the loop */
             issued = false;
@@ -596,14 +607,7 @@ Execute::issue(ThreadID thread_id)
                     fu->provides(inst->staticInst->opClass()) : true);
 
                 if (inst->isNoCostInst()) {
-                    if (inst->staticInst->isSDStream() && !softbrain.can_add_stream()) {
-                        issued = false;
-                        //DPRINTF(SD,"Can't issue stream b/c buffer is full");
-                    } else if(inst->staticInst->isSDWait() &&
-                        !softbrain.done(false,inst->staticInst->imm()) ) {
-                        issued = false;
-                        //DPRINTF(SD,"Wait blocked, mask: %x\n",inst->staticInst->imm());
-                    } else {
+ 
                         /* Issue free insts. to a fake numbered FU */
                         fu_index = noCostFUIndex;
 
@@ -628,8 +632,6 @@ Execute::issue(ThreadID thread_id)
                         thread.inFlightInsts->push(fu_inst);
 
                         issued = true;
-                    }
-
                 } else if (!fu_is_capable || fu->alreadyPushed()) {
                     /* Skip */
                     if (!fu_is_capable) {

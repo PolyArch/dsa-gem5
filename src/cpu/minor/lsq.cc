@@ -48,8 +48,10 @@
 #include "cpu/minor/exec_context.hh"
 #include "cpu/minor/execute.hh"
 #include "cpu/minor/pipeline.hh"
+#include "softbrain/softbrain.hh"
 #include "debug/Activity.hh"
 #include "debug/MinorMem.hh"
+
 
 namespace Minor
 {
@@ -321,7 +323,8 @@ LSQ::SplitDataRequest::finish(const Fault &fault_, RequestPtr request_,
 }
 
 LSQ::SplitDataRequest::SplitDataRequest(LSQ &port_, MinorDynInstPtr inst_,
-    bool isLoad_, PacketDataPtr data_, uint64_t *res_) :
+    bool isLoad_, PacketDataPtr data_, uint64_t *res_,
+    SDMemReqInfoPtr sdInfo_) :
     LSQRequest(port_, inst_, isLoad_, data_, res_),
     translationEvent(*this),
     numFragments(0),
@@ -334,6 +337,8 @@ LSQ::SplitDataRequest::SplitDataRequest(LSQ &port_, MinorDynInstPtr inst_,
 {
     /* Don't know how many elements are needed until the request is
      *  populated by the caller. */
+
+    sdInfo = sdInfo_;
 }
 
 LSQ::SplitDataRequest::~SplitDataRequest()
@@ -892,7 +897,8 @@ LSQ::tryToSendToTransfers(LSQRequestPtr request)
             return;
         }
     } else {
-        assert(sd_transfers[request->sdInfo->port].unreservedRemainingSpace()>0);
+        //We should have checked from the accelerator side if there was space
+        assert(sd_transfers[request->sdInfo->port].remainingSpace()>0);
     }
 
     if (request->isComplete() || request->state == LSQRequest::Failed) {
@@ -1180,7 +1186,7 @@ LSQ::moveFromRequestsToTransfers(LSQRequestPtr request)
         transfers.push(request);
     } else { //Stream-dataflow requests
         int streamId = request->sdInfo->port;
-        assert(sd_transfers[streamId].unreservedRemainingSpace() != 0);
+        assert(sd_transfers[streamId].remainingSpace() != 0);
         requests.pop();
         sd_transfers[streamId].push(request);
     }
@@ -1334,7 +1340,8 @@ LSQ::LSQ(std::string name_, std::string dcache_port_name_,
      * 2. The size of each transfer queue (currently identical to transfers)
      */
     for(int i = 0; i < 100; ++i) { 
-      sd_transfers.emplace_back(name_ + ".sd_transfers", "addr", transfers_queue_size);
+        //Logically this would be implemented with a single queue
+      sd_transfers.emplace_back(name_ + ".sd_transfers", "addr", 16);
     }
 
     if (in_memory_system_limit < 1) {
@@ -1394,6 +1401,13 @@ LSQ::step()
     if (!requests.empty())
         tryToSendToTransfers(requests.front());
 
+    if (!sd_transfers[MEM_WR_STREAM].empty()) {
+        if(canPushIntoStoreBuffer()) {
+            sendStoreToStoreBuffer(sd_transfers[MEM_WR_STREAM].front());
+            popResponse(MEM_WR_STREAM);
+        }
+    }
+
     storeBuffer.step();
 }
 
@@ -1433,14 +1447,13 @@ LSQ::popResponse(int streamId) {
     if (response->issuedToMemory)
         numAccessesIssuedToMemory--;
 
-    //FIXME: It's unclear whether we should delete the response at this point!
     if (response->state != LSQRequest::StoreInStoreBuffer) {
         DPRINTF(MinorMem, "Deleting %s request: %s\n",
             (response->isLoad ? "load" : "store"),
             *(response->inst));
 
         delete response;
-    }
+    } 
 }
 
 
@@ -1581,7 +1594,7 @@ LSQ::pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
 
     if (needs_burst) {
         request = new SplitDataRequest(
-            *this, inst, isLoad, request_data, res);
+            *this, inst, isLoad, request_data, res, sdInfo);
     } else {
         request = new SingleDataRequest(
             *this, inst, isLoad, request_data, res, sdInfo);

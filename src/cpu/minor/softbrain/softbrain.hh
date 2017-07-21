@@ -51,6 +51,8 @@ using namespace SB_CONFIG;
 
 #define MAX_WAIT (1000) //max cycles to wait for forward progress
 
+#define SCR_STREAM (32)
+#define MEM_WR_STREAM (33)
 
 //bit std::vectors for sb_wait
 #define WAIT_SCR_WR   1 //wait for just scratch
@@ -792,12 +794,12 @@ struct indirect_base_stream_t : public base_stream_t {
     if(_type==0) {
       return val;
     }
-    //TODO:
+    //TODO: index in word is always 0 for now, and index mask is always full mask 
     return (val >> (_index_in_word * index_size())) & index_mask();
-  }  
+  }
 
-  virtual LOC src() {return LOC::PORT;}
-  virtual LOC dest() {return LOC::PORT;}
+  virtual LOC src()  { return LOC::PORT; }
+  virtual LOC dest() { return LOC::PORT; }
 
   bool stream_active() {
     return _num_elements!=0;
@@ -852,9 +854,7 @@ struct indirect_wr_stream_t : public indirect_base_stream_t {
     base_stream_t::print_status();
   }
 };
-
-
-
+ 
 // Each controller forwards up to one "block" of data per cycle.
 class data_controller_t {
   public:
@@ -863,8 +863,6 @@ class data_controller_t {
   }
   softsim_t* _sb;
 };
-
-
 
 //Limitations: 1 simultaneously active scratch stream
 class dma_controller_t : public data_controller_t {
@@ -902,20 +900,13 @@ class dma_controller_t : public data_controller_t {
   void finish_cycle();
   bool done(bool show, int mask);
 
+  int req_read(mem_stream_base_t& stream, uint64_t scr_addr);
+  void req_write(port_dma_stream_t& stream, port_data_t& vp);
 
-  void req_read(mem_stream_base_t& stream, uint64_t scr_addr);
+  void ind_read_req(indirect_stream_t& stream, uint64_t scr_addr);
+  void ind_write_req(indirect_wr_stream_t& stream);
 
   void make_request(unsigned s, unsigned t, unsigned& which);
-  void pull_data(mem_stream_base_t& stream, std::vector<SBDT>& data, 
-                 uint64_t& comp_cyc, bool for_scr=false);
-
-  void pull_data_indirect(indirect_stream_t& stream, std::vector<SBDT>& data, 
-                 uint64_t& comp_cyc, bool for_scr=false);
-
-  void write_data_port(port_dma_stream_t& stream, port_data_t& vp,uint64_t& cycle_mem_complete);
-  //void write_data(scr_dma_stream_t& stream, data_buffer& buf);
-  void write_indirect(indirect_wr_stream_t& stream,uint64_t& cycle_mem_complete);
-
 
   void print_status();
   void cycle_status();
@@ -987,7 +978,7 @@ class dma_controller_t : public data_controller_t {
   //address to stream -> [stream_index, data]
   std::multimap<uint64_t, fake_mem_req> _fake_mem;
   std::vector<uint64_t> _prev_port_cycle;
-  uint64_t _prev_scr_cycle;
+  uint64_t _prev_scr_cycle=0;
   int _fake_scratch_reqs=0;
 
   //std::unordered_map<uint64_t, uint64_t> port_youngest_data;
