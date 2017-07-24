@@ -53,6 +53,7 @@ using namespace SB_CONFIG;
 
 #define SCR_STREAM (32)
 #define MEM_WR_STREAM (33)
+#define CONFIG_STREAM (34)
 
 //bit std::vectors for sb_wait
 #define WAIT_SCR_WR   1 //wait for just scratch
@@ -1109,7 +1110,8 @@ public:
   // Interface from instructions to streams
   // IF SB_TIMING, these just send the commands to the respective controllers
   // ELSE, they carry out all operations that are possible at that point
-  void configure(addr_t addr, int size);
+  void req_config(addr_t addr, int size);
+  void configure(addr_t addr, int size, uint64_t* bits);
   void load_dma_to_scratch(addr_t mem_addr, uint64_t stride, 
       uint64_t access_size, uint64_t num_strides, addr_t scratch_addr);
   void load_dma_to_port(addr_t mem_addr, uint64_t stride, 
@@ -1137,7 +1139,7 @@ public:
   void step();
   bool done(bool show = false, int mask = 0);
 
-
+  bool is_in_config() {return _in_config;}
   bool can_add_stream();
 
 private:
@@ -1246,13 +1248,14 @@ private:
   void do_cgra();
   void execute_pdg(unsigned instance);
 
-
   void forward_progress() {_waiting_cycles=0;}
 
   //members------------------------
   ticker_t* _ticker=NULL;
   soft_config_t _soft_config;
   port_interf_t _port_interf;
+
+  bool _in_config=false;
 
   Minor::MinorDynInstPtr _cur_minst;
 
@@ -1318,7 +1321,6 @@ private:
   //
   std::map<SB_CONFIG::sb_inst_t,int> _total_histo;
   std::map<int,int> _vport_histo;
-
 
   //Stuff for tracking stats
   uint64_t _waiting_cycles=0;

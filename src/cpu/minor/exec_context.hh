@@ -369,7 +369,7 @@ class ExecContext : public ::ExecContext
         softsim_t& sb = execute.getSB();
         sb.set_cur_minst(inst);
         switch(sd_func_opcode) {
-            case SB_CFG: sb.configure(
+            case SB_CFG: sb.req_config(
                 thread.getSDReg(SD_MEM_ADDR),      thread.getSDReg(SD_CFG_SIZE)); 
             break;
             case SB_MEM_SCR: sb.load_dma_to_scratch(

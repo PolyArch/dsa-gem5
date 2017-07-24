@@ -51,7 +51,7 @@ void port_data_t::reset() {
   assert(_outstanding==0);
   assert(_status==STATUS::FREE);
   //assert(_loc==LOC::NONE); TODO: should this be enforced?
-  assert(_mem_data.size()==0);
+  assert(_mem_data.size()==0); //FIXME: Is this still true?
 
   assert(_num_in_flight==0);
   assert(_num_ready==0);
@@ -939,6 +939,41 @@ void apply_map(uint64_t* raw_data, const vector<int>& imap, std::vector<SBDT>& d
 void dma_controller_t::cycle(){
   //Handle response from REAL memory
 
+  //Memory read to config
+  if(Minor::LSQ::LSQRequestPtr response =_sb->_lsq->findResponse(CONFIG_STREAM)) {
+    PacketPtr packet = response->packet;
+    _sb->configure(packet->getAddr(),packet->getSize(),packet->getPtr<uint64_t>());
+    _sb->_lsq->popResponse(SCR_STREAM);
+  }
+
+  //memory read to scratch
+  if(Minor::LSQ::LSQRequestPtr response =_sb->_lsq->findResponse(SCR_STREAM)) {
+
+    PacketPtr packet = response->packet;
+    if(packet->getSize()!=MEM_WIDTH) {
+      assert(0 && "weird memory response size");
+    }
+    vector<SBDT> data;
+    apply_mask(packet->getPtr<uint64_t>(), response->sdInfo->mask, data);
+
+    if(_scr_write_buffer.push_data(response->sdInfo->scr_addr, data)) {
+      if(DEBUG::MEM_REQ) {
+        _sb->_ticker->timestamp();
+        std::cout << "data into scratch " << response->sdInfo->scr_addr 
+                  << ":" << data.size() << "elements" << "\n";
+      }
+      if(_sb->_ticker->in_roi()) {
+        _sb->_stat_mem_bytes_rd+=data.size();
+      }
+
+      //handled_req=true;
+      _fake_scratch_reqs--;
+
+      _sb->_lsq->popResponse(SCR_STREAM);
+    }
+  }
+
+
   //Memory Read to Ports
   for(unsigned i = 0; i < _sb->_soft_config.in_ports_active.size(); ++i) {
     int cur_port = _sb->_soft_config.in_ports_active[i];
@@ -996,32 +1031,6 @@ void dma_controller_t::cycle(){
         _sb->_lsq->popResponse(cur_port);
         break;
       }
-    }
-  }
-  //Memory read to scratch
-  if(Minor::LSQ::LSQRequestPtr response =_sb->_lsq->findResponse(SCR_STREAM)) {
-
-    PacketPtr packet = response->packet;
-    if(packet->getSize()!=MEM_WIDTH) {
-      assert(0 && "weird memory response size");
-    }
-    vector<SBDT> data;
-    apply_mask(packet->getPtr<uint64_t>(), response->sdInfo->mask, data);
-
-    if(_scr_write_buffer.push_data(response->sdInfo->scr_addr, data)) {
-      if(DEBUG::MEM_REQ) {
-        _sb->_ticker->timestamp();
-        std::cout << "data into scratch " << response->sdInfo->scr_addr 
-                  << ":" << data.size() << "elements" << "\n";
-      }
-      if(_sb->_ticker->in_roi()) {
-        _sb->_stat_mem_bytes_rd+=data.size();
-      }
-
-      //handled_req=true;
-      _fake_scratch_reqs--;
-
-      _sb->_lsq->popResponse(SCR_STREAM);
     }
   }
 
@@ -1377,7 +1386,6 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
   bool first=true;
   addr_t base_addr=0;
   addr_t prev_addr=0;
-  //addr_t max_addr=0;
 
   unsigned bytes_written = 0;
 
@@ -1399,7 +1407,6 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
     if(first) {
       first=false;
       base_addr = addr & MEM_MASK;
-      //max_addr = base_addr+MEM_WIDTH;
     } else { //not first
       if(prev_addr + stream_size != addr) { //addr > max_addr || addr < base_addr) {
         break;
@@ -2551,17 +2558,34 @@ void softsim_t::execute_pdg(unsigned instance) {
   }
 }
 
-// For now we will go with the non-tining version of this...
-void softsim_t::configure(addr_t addr, int size) {
+void softsim_t::req_config(addr_t addr, int size) {
+  assert(_in_config ==false);
+  _in_config=true;
+
+  if(debug && (DEBUG::SB_COMMAND || DEBUG::SCR_BARRIER)  ) {
+    _ticker->timestamp();
+    cout << "SB_CONFIGURE(request): " << addr << " " << size << "\n";
+  }
+  SDMemReqInfoPtr sdInfo = new SDMemReqInfo(CONFIG_STREAM);
+
+  _lsq->pushRequest(_cur_minst,true/*isLoad*/,NULL/*data*/,
+              MEM_WIDTH/*cache line*/, addr, 0/*flags*/, 0 /*res*/,
+              sdInfo);
+}
+
+// Configure once you get all the bits
+void softsim_t::configure(addr_t addr, int size, uint64_t* bits) {
   //Slice 0: In Ports Activge
   //Slice 1: Out Ports Active
   //2,3,4: Reserved for delay  (4 bits each)
   //5+: switch/fu configuration
   //size - num of 64bit slices
+  assert(_in_config==true);
+  _in_config=false;
 
   if(debug && (DEBUG::SB_COMMAND || DEBUG::SCR_BARRIER)  ) {
     _ticker->timestamp();
-    cout << "SB_CONFIGURE: " << addr << " " << size << "\n";
+    cout << "SB_CONFIGURE(response): " << addr << " " << size << "\n";
   }
 
   _soft_config.reset(); //resets to no configuration
@@ -2575,9 +2599,7 @@ void softsim_t::configure(addr_t addr, int size) {
   //assert(_sched);
   
   for(int i = 0; i < size; ++i) { //load in 64bit slices
-    uint64_t ignored;
-    uint64_t bits = _sim_interf->ld_mem(addr + i * sizeof(uint64_t),ignored, _cur_minst);
-    _sched->slices().write(i,bits);                                     //slices into bitslice object
+    _sched->slices().write(i,bits[i]);           
   }
  
   _soft_config.inst_histo = _sched->interpretConfigBits();

@@ -66,6 +66,8 @@ struct SDMemReqInfo {
     SDMemReqInfo(uint64_t scr_addr_, int port_, 
                     std::vector<int>& map_, bool last_)
         : scr_addr(scr_addr_), port(port_), map(map_), last(last_) {}
+    SDMemReqInfo(int port_)
+        : scr_addr(-1), port(port_), last(false) {}
 };
 typedef SDMemReqInfo *SDMemReqInfoPtr;
 

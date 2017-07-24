@@ -573,15 +573,24 @@ Execute::issue(ThreadID thread_id)
             issued = true;
             discarded = true;
         } else {
-            if (inst->staticInst->isSDStream() && !softbrain.can_add_stream()) {
+            if (inst->staticInst->isSDStream() && 
+                (!softbrain.can_add_stream() || 
+                    softbrain.is_in_config()) ) {
                 issued = false;
                 //DPRINTF(SD,"Can't issue stream b/c buffer is full");
-                continue;
+                //continue;
+                break;
             } else if(inst->staticInst->isSDWait() &&
                 !softbrain.done(false,inst->staticInst->imm()) ) {
                 issued = false;
                 //DPRINTF(SD,"Wait blocked, mask: %x\n",inst->staticInst->imm());
-                continue;
+                //continue;
+                break;
+            } else if(inst->staticInst->isSDConfig() && 
+                      softbrain.is_in_config() ) {
+                issued = false;
+                //continue;
+                break;
             }
 
             /* Try and issue an instruction into an FU, assume we didn't and

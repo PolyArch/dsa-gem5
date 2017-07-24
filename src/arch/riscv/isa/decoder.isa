@@ -478,7 +478,7 @@ decode OPCODE default Unknown::unknown() {
                 xc->setSDReg(Rs1,SD_MEM_ADDR);
                 xc->setSDReg(i_imm,SD_CFG_SIZE);
                 xc->callSDFunc(SB_CFG);
-            }}, IsNonSpeculative, No_OpClass);
+            }}, IsSDConfig, IsNonSpeculative, No_OpClass);
         }
         0x2b: decode FUNCT3 {
             0x0: sb_dma_scr({{
