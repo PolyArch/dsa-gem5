@@ -369,6 +369,9 @@ class ExecContext : public ::ExecContext
         softsim_t& sb = execute.getSB();
         sb.set_cur_minst(inst);
         switch(sd_func_opcode) {
+            case SB_BEGIN_ROI: sb.roi_entry(true); break;
+            case SB_END_ROI: sb.roi_entry(false); break;
+            case SB_STATS: sb.print_stats(); break;
             case SB_CFG: sb.req_config(
                 thread.getSDReg(SD_MEM_ADDR),      thread.getSDReg(SD_CFG_SIZE)); 
             break;

@@ -573,9 +573,13 @@ Execute::issue(ThreadID thread_id)
             issued = true;
             discarded = true;
         } else {
+            if(inst->staticInst->isSD() && softbrain.is_in_config()) {
+               issued=false;
+               break;
+            }
+            //break down by type
             if (inst->staticInst->isSDStream() && 
-                (!softbrain.can_add_stream() || 
-                    softbrain.is_in_config()) ) {
+                !softbrain.can_add_stream()) {
                 issued = false;
                 //DPRINTF(SD,"Can't issue stream b/c buffer is full");
                 //continue;
@@ -586,12 +590,7 @@ Execute::issue(ThreadID thread_id)
                 //DPRINTF(SD,"Wait blocked, mask: %x\n",inst->staticInst->imm());
                 //continue;
                 break;
-            } else if(inst->staticInst->isSDConfig() && 
-                      softbrain.is_in_config() ) {
-                issued = false;
-                //continue;
-                break;
-            }
+            } 
 
             /* Try and issue an instruction into an FU, assume we didn't and
              * fix that in the loop */
@@ -967,6 +966,10 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
         /* This instruction can suspend, need to be able to communicate
          * backwards, so no other branches may evaluate this cycle*/
         completed_inst = false;
+    } else if (inst->staticInst->isSD() &&  softbrain.is_in_config()) {
+      completed_inst = false;
+      /* Don't execute any instructions if if softbrain is in config mode!
+       */
     } else {
         ExecContext context(cpu, *cpu.threads[thread_id], *this, inst);
 

@@ -797,10 +797,10 @@ struct indirect_base_stream_t : public base_stream_t {
     }
     //TODO: index in word is always 0 for now, and index mask is always full mask 
     return (val >> (_index_in_word * index_size())) & index_mask();
-  }
+  }  
 
-  virtual LOC src()  { return LOC::PORT; }
-  virtual LOC dest() { return LOC::PORT; }
+  virtual LOC src() {return LOC::PORT;}
+  virtual LOC dest() {return LOC::PORT;}
 
   bool stream_active() {
     return _num_elements!=0;
@@ -855,7 +855,9 @@ struct indirect_wr_stream_t : public indirect_base_stream_t {
     base_stream_t::print_status();
   }
 };
- 
+
+
+
 // Each controller forwards up to one "block" of data per cycle.
 class data_controller_t {
   public:
@@ -864,6 +866,8 @@ class data_controller_t {
   }
   softsim_t* _sb;
 };
+
+
 
 //Limitations: 1 simultaneously active scratch stream
 class dma_controller_t : public data_controller_t {
@@ -1139,6 +1143,8 @@ public:
   void step();
   bool done(bool show = false, int mask = 0);
 
+
+  bool set_in_config() {return _in_config = true;}
   bool is_in_config() {return _in_config;}
   bool can_add_stream();
 
@@ -1221,6 +1227,7 @@ private:
     }
   }
 
+
   bool can_add_dma_port_stream()   {return _in_port_queue.size()  < _queue_size;} 
   bool can_add_port_dma_stream()   {return _in_port_queue.size()  < _queue_size;}
   bool can_add_scr_port_stream()   {return _in_port_queue.size()  < _queue_size;}
@@ -1247,6 +1254,7 @@ private:
 
   void do_cgra();
   void execute_pdg(unsigned instance);
+
 
   void forward_progress() {_waiting_cycles=0;}
 
@@ -1292,6 +1300,9 @@ private:
   uint64_t _stat_comp_instances = 0;
   uint64_t _stat_scratch_read_bytes = 0;
   uint64_t _stat_scratch_write_bytes = 0;
+  uint64_t _stat_scratch_reads = 0;
+  uint64_t _stat_scratch_writes = 0;
+
   uint64_t _stat_start_cycle = 0;
   uint64_t _stat_stop_cycle = 0;
   uint64_t _stat_commands_issued = 0;
@@ -1317,10 +1328,12 @@ private:
   int _stat_scr_bytes_rd=0;
   int _stat_cmds_issued=0;
   int _stat_cmds_complete=0;
+  int _stat_sb_insts=0;
 
   //
   std::map<SB_CONFIG::sb_inst_t,int> _total_histo;
   std::map<int,int> _vport_histo;
+
 
   //Stuff for tracking stats
   uint64_t _waiting_cycles=0;

@@ -18,6 +18,9 @@ const char* const SDRegNames[] = {
   };
 
 enum SDCmdIdx {
+    SB_BEGIN_ROI,
+    SB_END_ROI,
+    SB_STATS,
     SB_CFG,
     SB_MEM_SCR,
     SB_MEM_PRT,
@@ -34,6 +37,9 @@ enum SDCmdIdx {
 
 
 const char* const SDCmdNames[] = {
+    "SB_BEGIN_ROI",
+    "SB_END_ROI",
+    "SB_STATS",
     "CFG",
     "MEM_SCR",
     "MEM_PRT",

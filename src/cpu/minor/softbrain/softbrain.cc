@@ -125,6 +125,7 @@ SBDT port_data_t::peek_data(int i) {
 }
 
 
+
 //Throw away data in CGRA input ports
 void port_data_t::pop(unsigned instances) {
   assert(_num_ready >= instances);
@@ -264,9 +265,9 @@ softsim_t::softsim_t(softsim_interf_t* softsim_interf, Minor::LSQ* lsq) :
 
 
 void softsim_t::timestamp(){_ticker->timestamp();}
-void softsim_t::run_until(uint64_t i) {_ticker->run_until(i);} 
-void softsim_t::roi_entry(bool enter) {_ticker->roi_entry(enter);}
-void softsim_t::set_not_in_use()  {_ticker->set_not_in_use();}
+ void softsim_t::run_until(uint64_t i) {_ticker->run_until(i);} 
+ void softsim_t::roi_entry(bool enter) {_ticker->roi_entry(enter);}
+ void softsim_t::set_not_in_use()  {_ticker->set_not_in_use();}
 bool softsim_t::in_use() { return _ticker->in_use();}
 bool softsim_t::can_add_stream() {
    _ticker->set_in_use();
@@ -376,9 +377,9 @@ void softsim_t::clear_cycle() {
   //std::map<int,int> _stat_ovp_put;
   //std::map<int,int> _stat_ovp_get;
   //
-  if(_ticker->in_roi()) {
-    _stat_tot_mem_stored+=_stat_mem_bytes_wr;
-  }
+  //if(_ticker->in_roi()) {
+  //  _stat_tot_mem_stored+=_stat_mem_bytes_wr;
+  //}
 
   _stat_mem_bytes_wr=0;
   _stat_mem_bytes_rd=0;
@@ -437,6 +438,9 @@ void softsim_t::reset_statistics() { //currently unused
   _stat_comp_instances = 0;
   _stat_scratch_read_bytes = 0;
   _stat_scratch_write_bytes = 0;
+  _stat_scratch_reads = 0;
+  _stat_scratch_writes = 0;
+
   _stat_start_cycle = 0;
   _stat_stop_cycle = 0;
   _stat_commands_issued = 0;
@@ -452,8 +456,15 @@ void softsim_t::reset_statistics() { //currently unused
 
 
 void softsim_t::pedantic_statistics(std::ostream& out) {
-  out << "Total Loads:" << _stat_tot_loads << "\n";
-  out << "Total Stores:" << _stat_tot_stores << "\n";
+   out << "Scratch Read bytes: " << _stat_scratch_read_bytes << "\n";
+   out << "Scratch Write bytes:" << _stat_scratch_write_bytes << "\n";
+
+   double scratch_per_cyc = ((double)(_stat_scratch_reads+_stat_scratch_writes))/((double)_roi_cycles);
+   out << "Scratch access per cycle: " << scratch_per_cyc << "\n\n";
+   double l2_acc_per_cyc = ((double)(_stat_tot_loads+_stat_tot_stores))/((double)_roi_cycles);
+   out << "L2 accesses per cycle: " << l2_acc_per_cyc << "\n\n";
+   double l2_miss_per_cyc = ((double)(_stat_tot_mem_load_acc+_stat_tot_mem_store_acc))/((double)_roi_cycles);
+   out << "L2 misses per cycle:       " << l2_miss_per_cyc << "\n\n";
 
   out << "CGRA Activity Histogram (inst/switch:times used)\n";
   for(auto i : _total_histo) {
@@ -485,7 +496,8 @@ void softsim_t::print_statistics(std::ostream& out) {
      return;  // If we don't want to print stats
    }
 
-   out << "*** SOFTBRAIN STATISTICS ***\n";
+   out << "\n*** SOFTBRAIN STATISTICS ***\n";
+   out.precision(4);
    out << dec;
    //out << "Start Cycle: " << _stat_start_cycle << "\n";
    //out << "Stop  Cycle: " << _stat_stop_cycle << "\n\n";
@@ -495,20 +507,39 @@ void softsim_t::print_statistics(std::ostream& out) {
    out << "Simulator ROI Time: " << ((double)_ticker->elpased_time_in_roi())
                                     /1000000000 << " sec\n";
 
-   out << "Comp. Instances:" << _stat_comp_instances << "\n";
-   out << "Scratch Read bytes:" << _stat_scratch_read_bytes << "\n";
-   out << "Scratch Write bytes:" << _stat_scratch_write_bytes << "\n";
-   out << "Commands Issued:" << _stat_commands_issued << "\n\n";
-
-   out << "Avg. Mem Req Size:" 
-     << ((double)_stat_tot_mem_fetched)/((double)_stat_tot_loads) << "\n";
+   out << "Comp. Instances: " << _stat_comp_instances << "\n";
+   out << "Commands Issued: " << _stat_commands_issued << "\n\n";
 
    out << "Activity Ratio: " 
       << ((double)_stat_comp_instances)/((double)_roi_cycles) << "\n";
-   out << "Mem loads per cycle:" << ((double)_stat_tot_mem_load_acc+1)/((double)_roi_cycles) << "\n";
-   out << "Mem stores per cycle:" << ((double)_stat_tot_mem_store_acc+1)/((double)_roi_cycles) << "\n";
-   double mem_per_cyc = ((double)(_stat_tot_mem_load_acc+_stat_tot_mem_store_acc+1))/((double)_roi_cycles);
-   out << "Mem acc per cycle:" << mem_per_cyc << "\n\n";
+   out << "SB Insts / Computation Instance: "
+      << ((double)_stat_sb_insts)/((double)_stat_comp_instances) << "\n";
+   out << "SB Insts / Cycle: "
+      << ((double)_stat_sb_insts)/((double)_roi_cycles) << " (overall activity factor)\n";
+
+   out << "\n";
+   out << "Avg. Scratch Read Port Req Size:  " 
+     << ((double)_stat_scratch_read_bytes)/((double)_stat_scratch_reads) << "\n";
+   out << "Avg. Scratch Write Port Req Size: " 
+     << ((double)_stat_scratch_write_bytes)/((double)_stat_scratch_writes) << "\n";
+
+   out << "Scratch reads per cycle:  " << ((double)_stat_scratch_reads)/((double)_roi_cycles) << "\n";
+   out << "Scratch writes per cycle: " << ((double)_stat_scratch_writes)/((double)_roi_cycles) << "\n";
+   out << "\n";
+
+
+   out << "Avg. L2 Load Port Req Size:  " 
+     << ((double)_stat_tot_mem_fetched)/((double)_stat_tot_loads) << "\n";
+   out << "Avg. L2 Store Port Req Size: " 
+     << ((double)_stat_tot_mem_stored)/((double)_stat_tot_stores) << "\n";
+
+   out << "L2 loads per cycle:    " << ((double)_stat_tot_loads)/((double)_roi_cycles) << "\n";
+   out << "L2 stores per cycle:   " << ((double)_stat_tot_stores)/((double)_roi_cycles) << "\n";
+   out << "\n";
+
+   out << "L2 load misses per cycle:  " << ((double)_stat_tot_mem_load_acc)/((double)_roi_cycles) << "\n";
+   out << "L2 store misses per cycle: " << ((double)_stat_tot_mem_store_acc)/((double)_roi_cycles) << "\n";
+   out << "\n";
 
    out << "Multicore Cycle Estimates: (1-10 cores): ";
    for(int i = 1; i <= 10; ++i) { // estimate performance
@@ -526,7 +557,7 @@ void softsim_t::print_statistics(std::ostream& out) {
      double active_ratio = ((double)(_stat_comp_instances)/i)/((double)cycles);
      out << active_ratio << " ";
    }
-   out << "\n";
+   out << "\n\n";
 }
 
 //wait and print stats
@@ -942,8 +973,8 @@ void dma_controller_t::cycle(){
   //Memory read to config
   if(Minor::LSQ::LSQRequestPtr response =_sb->_lsq->findResponse(CONFIG_STREAM)) {
     PacketPtr packet = response->packet;
-    _sb->configure(packet->getAddr(),packet->getSize(),packet->getPtr<uint64_t>());
-    _sb->_lsq->popResponse(SCR_STREAM);
+    _sb->configure(packet->getAddr(),packet->getSize()/8,packet->getPtr<uint64_t>());
+    _sb->_lsq->popResponse(CONFIG_STREAM);
   }
 
   //memory read to scratch
@@ -1189,13 +1220,13 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
           int words_read = req_read(_dma_scr_stream,
                                     _dma_scr_stream._scratch_addr);
 
-          //need to update scratch address for next time
+        //need to update scratch address for next time
           _dma_scr_stream._scratch_addr+= words_read * DATA_WIDTH;
 
-          _fake_scratch_reqs++;
+        _fake_scratch_reqs++;
 
-          return;
-        }
+        return;
+      }
       }
     } else if(which < _dma_port_streams.size()+1+_indirect_streams.size()) {
       int which_indirect = which - (_dma_port_streams.size()+1);
@@ -1236,7 +1267,7 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
         if((out_port.mem_size()>0) && //TODO:  unoptimal if we didn't wait?
            (dma_s._garbage || (_sb->_lsq->canRequest() &&
            _sb->_lsq->sd_transfers[MEM_WR_STREAM].unreservedRemainingSpace()>0))) {
-          
+
           _sb->_lsq->sd_transfers[MEM_WR_STREAM].reserve();
           if(dma_s._garbage) {
             while(dma_s.stream_active() && out_port.mem_size()>0) {
@@ -1290,12 +1321,12 @@ int dma_controller_t::req_read(mem_stream_base_t& stream,
   addr_t max_addr = base_addr+MEM_WIDTH;
 
   assert(addr!=0 && "cannot load address 0x0");
-  std::fill(mask.begin(), mask.end(), 0); 
+    std::fill(mask.begin(), mask.end(), 0); 
   int words=0;
 
   while(addr < max_addr && addr > prev_addr  && stream.stream_active()) {
     prev_addr=addr;
-    mask[(addr-base_addr)/DATA_WIDTH]=1;
+      mask[(addr-base_addr)/DATA_WIDTH]=1;
     addr = stream.pop_addr();
     words+=1;
   }
@@ -1315,7 +1346,7 @@ int dma_controller_t::req_read(mem_stream_base_t& stream,
     sdInfo = new SDMemReqInfo(scr_addr, stream.in_port(), mask, last);
   } else { //READ TO SCRATCH
     sdInfo = new SDMemReqInfo(scr_addr, SCR_STREAM, mask, last);
-  }
+}
 
   //make request
   _sb->_lsq->pushRequest(stream.minst(),true/*isLoad*/,NULL/*data*/,
@@ -1338,7 +1369,7 @@ void dma_controller_t::ind_read_req(indirect_stream_t& stream,
   while(ind_vp.mem_size() && stream.stream_active()) {
     addr_t idx  = stream.calc_index(ind_vp.peek_data());
     addr_t addr = stream._index_addr + idx * stream.index_size();
- 
+
     //cout << "idx:" << idx << "\taddr:" << hex << addr << dec << "\n";
     if(first) {
       first=false;
@@ -1404,6 +1435,7 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
     addr_t addr = stream._index_addr + idx * stream.index_size();
 
     //cout << "idx:" << idx << "\taddr:" << hex << addr << dec << "\n";
+
     if(first) {
       first=false;
       base_addr = addr & MEM_MASK;
@@ -1420,6 +1452,9 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
     data64[++index]=val;
 
     //_sb->st_mem(addr,val,mem_cycle,stream.minst());
+    out_vp.pop_data();
+    bytes_written+=sizeof(SBDT);
+
     out_vp.pop_data();
     bytes_written+=sizeof(SBDT);
 
@@ -1512,9 +1547,14 @@ void dma_controller_t::req_write(port_dma_stream_t& stream, port_data_t& vp) {
   if(_sb->_ticker->in_roi()) {
     _sb->_stat_mem_bytes_wr+=bytes_written;
     _sb->_stat_tot_stores++;
+    _sb->_stat_tot_mem_stored+=bytes_written;
+
+    //bool l2_miss=(cycle_mem_complete-start_cycle)>5; 
+    //if(l2_miss) {
+    //  _sb->_stat_tot_mem_load_acc++;
+    //}
   }
 }
-
 
 
 //WRITE SCRATCH -> DMA NOT IMPLEMENTED
@@ -1533,6 +1573,7 @@ void dma_controller_t::write_data(scr_dma_stream_t& stream) {
   stream.check_set_empty();
 }
 */
+
 
 void scratch_read_controller_t::cycle() {
   for(int i=0; i < 2; ++i) {
@@ -1590,6 +1631,8 @@ void scratch_read_controller_t::cycle() {
         }
         if(_sb->_ticker->in_roi()) {
           _sb->_stat_scr_bytes_rd+=DATA_WIDTH;
+          _sb->_stat_scratch_read_bytes+=DATA_WIDTH;
+          _sb->_stat_scratch_reads++;
         }
 
       }
@@ -1637,8 +1680,13 @@ void scratch_write_controller_t::cycle() {
 
           if(_sb->_ticker->in_roi()) {
             _sb->_stat_scr_bytes_wr+=DATA_WIDTH;
+            _sb->_stat_scratch_write_bytes+=DATA_WIDTH;
           }
         }
+        if(_sb->_ticker->in_roi()) {
+          _sb->_stat_scratch_writes+=1;
+        }
+          
         bool is_empty = _port_scr_stream.check_set_empty();
         if(is_empty) {
           if(DEBUG::VP_SCORE2) {
@@ -1667,26 +1715,30 @@ void scratch_write_controller_t::cycle() {
         }
 
 
-         while(addr < max_addr && _dma_c->_scr_write_buffer.data_ready()>0) { //enough in source
-           addr = _dma_c->_scr_write_buffer._scr_address;
-           SBDT val = _dma_c->_scr_write_buffer.pop_data();
+        while(addr < max_addr && _dma_c->_scr_write_buffer.data_ready()>0) { //enough in source
+          addr = _dma_c->_scr_write_buffer._scr_address;
+          SBDT val = _dma_c->_scr_write_buffer.pop_data();
 
-           if(DEBUG::SCR_ACC) {
-             cout << hex << val << dec << "\n";
-           }
+          if(DEBUG::SCR_ACC) {
+            cout << hex << val << dec << "\n";
+          }
       
-           assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
-           std::memcpy(&_sb->scratchpad[addr], &val, sizeof(SBDT));
+          assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
+          std::memcpy(&_sb->scratchpad[addr], &val, sizeof(SBDT));
 
-           if(_sb->_ticker->in_roi()) {
-             _sb->_stat_scr_bytes_wr+=DATA_WIDTH;
-           }
-         }
+          if(_sb->_ticker->in_roi()) {
+            _sb->_stat_scr_bytes_wr+=DATA_WIDTH;
+            _sb->_stat_scratch_write_bytes+=DATA_WIDTH;
+          }
+        }
+        if(_sb->_ticker->in_roi()) {
+          _sb->_stat_scratch_writes+=1;
+        }
 
 
-         if(DEBUG::SCR_ACC) {
-           cout << "\n";
-         }
+        if(DEBUG::SCR_ACC) {
+          cout << "\n";
+        }
 
 
       }
@@ -2314,6 +2366,10 @@ void softsim_t::write_scratchpad() {
     }
 
   }
+  if(_sb->_ticker->in_roi() ) {
+    _stat_scratch_writes +=1;
+  }
+
 }
 
 //Write data to DMA engine
@@ -2397,6 +2453,10 @@ void softsim_t::cycle_cgra() {
   if(min_ready > 0) {
     forward_progress();
     execute_pdg(0);
+
+    if(_ticker->in_roi()) {
+      _stat_sb_insts+=_pdg->num_insts();
+    }
     //pop the elements from inport as they have been processed
     for(unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
       _port_interf.in_port(_soft_config.in_ports_active[i]).pop(1);
@@ -2564,12 +2624,13 @@ void softsim_t::req_config(addr_t addr, int size) {
 
   if(debug && (DEBUG::SB_COMMAND || DEBUG::SCR_BARRIER)  ) {
     _ticker->timestamp();
-    cout << "SB_CONFIGURE(request): " << addr << " " << size << "\n";
+    cout << "SB_CONFIGURE(request): " << "0x" << std::hex << addr  << " " 
+                                      << std::dec << size << "\n";
   }
   SDMemReqInfoPtr sdInfo = new SDMemReqInfo(CONFIG_STREAM);
 
   _lsq->pushRequest(_cur_minst,true/*isLoad*/,NULL/*data*/,
-              MEM_WIDTH/*cache line*/, addr, 0/*flags*/, 0 /*res*/,
+              size*8/*cache line*/, addr, 0/*flags*/, 0 /*res*/,
               sdInfo);
 }
 
@@ -2580,13 +2641,19 @@ void softsim_t::configure(addr_t addr, int size, uint64_t* bits) {
   //2,3,4: Reserved for delay  (4 bits each)
   //5+: switch/fu configuration
   //size - num of 64bit slices
-  assert(_in_config==true);
-  _in_config=false;
 
   if(debug && (DEBUG::SB_COMMAND || DEBUG::SCR_BARRIER)  ) {
     _ticker->timestamp();
-    cout << "SB_CONFIGURE(response): " << addr << " " << size << "\n";
+    cout << "SB_CONFIGURE(response): " << "0x" << std::hex << addr << " " 
+                                       << std::dec << size << "\n";
+    //for(int i = 0; i < size/8; ++i) {
+    //  cout << "0x" << std::hex << bits[i] << " ";
+    //}
+    //cout << "\n";
   }
+
+   assert(_in_config==true);
+  _in_config=false;
 
   _soft_config.reset(); //resets to no configuration
   _port_interf.reset();

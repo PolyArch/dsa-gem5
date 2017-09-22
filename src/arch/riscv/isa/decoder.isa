@@ -83,8 +83,39 @@ decode OPCODE default Unknown::unknown() {
 
     0x13: decode FUNCT3 {
         format IOp {
+            //0x0: decode RD {
+            //    0x0: decode IMM12 {
+            //        0x01: begin_roi({{
+            //            xc->callSDFunc(SB_BEGIN_ROI);
+            //            std::cout << "begin roi\n"; 
+            //        }}, No_OpClass);
+            //        0x02: end_roi({{
+            //            xc->callSDFunc(SB_END_ROI);                
+            //            std::cout << "end roi\n"; 
+            //        }}, No_OpClass);
+            //        default: nop({{
+            //          std::cout << "nop\n"; 
+            //        }}, No_OpClass);
+            //    }
+            //    default: addi({{
+            //        Rd_sd = Rs1_sd + imm;
+            //        std::cout << "addi " << RD << " " << RS1 << " " << IMM12 << " - " 
+            //                    << Rd_sd << " " << Rs1_sd << " " << imm << "\n";
+            //    }});
+            //} 
+
             0x0: addi({{
-                Rd_sd = Rs1_sd + imm;
+                if(RD == 0) {
+                    if(imm==1) {
+                        xc->callSDFunc(SB_BEGIN_ROI);
+                    } else if (imm==2){
+                        xc->callSDFunc(SB_END_ROI);
+                    } else if (imm==3){
+                        xc->callSDFunc(SB_STATS);
+                    }
+                } else {
+                    Rd_sd = Rs1_sd + imm;
+                }
             }});
             0x1: slli({{
                 Rd = Rs1 << SHAMT6;
@@ -504,7 +535,6 @@ decode OPCODE default Unknown::unknown() {
                 xc->setSDReg(s_imm,SD_IN_PORT);
                 xc->callSDFunc(SB_CNS_PRT);
             }}, IsSDStream, IsNonSpeculative, No_OpClass);
-
         }
         0x5b: decode FUNCT3 {
             0x4: sb_wr_dma({{
@@ -526,10 +556,10 @@ decode OPCODE default Unknown::unknown() {
             0x0: sb_stride({{
                 xc->setSDReg(Rs1,SD_STRIDE);
                 xc->setSDReg(Rs2,SD_ACCESS_SIZE);
-            }}, No_OpClass);
+            }}, IsSDParam, No_OpClass);
             0x1: sb_dma_addr({{
                 xc->setSDReg(Rs1,SD_MEM_ADDR);
-            }}, No_OpClass);
+            }}, IsSDParam, No_OpClass);
             0x4: sb_wait({{
                 xc->setSDReg(Rs1,SD_WAIT_MASK);
                 xc->callSDFunc(SB_WAIT);

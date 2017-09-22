@@ -176,6 +176,9 @@ class StaticInst : public RefCounted, public StaticInstFlags
     bool isSDStream() const { return flags[IsSDStream]; }
     bool isSDWait() const { return flags[IsSDWait]; }
     bool isSDConfig() const { return flags[IsSDConfig]; }
+    bool isSDParam() const {return flags[IsSDParam];}
+    bool isSD() const {return flags[IsSDStream] || flags[IsSDWait] || 
+                             flags[IsSDConfig] || flags[IsSDParam];}
 
     void setFirstMicroop() { flags[IsFirstMicroop] = true; }
     void setLastMicroop() { flags[IsLastMicroop] = true; }
