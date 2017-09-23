@@ -4,7 +4,7 @@
 #include <iostream>
 #include <fstream>
 #include <iomanip>
-
+ 
 #include "softbrain.hh"
 
 extern "C" void libsbsim_is_present() {}
@@ -17,9 +17,9 @@ void base_stream_t::set_empty(bool b) {
   assert(b && "only goes one way for now");
   assert(!_empty && "can only empty once");
 
-  if(DEBUG::SB_COMMAND_O) {
+  if(SB_DEBUG::SB_COMMAND_O) {
     if(b == true) {
-      std::cout << "COMPLETED: ";
+      std::cout << "COMPLETED: "; 
     } 
     print_status();
   }
@@ -216,44 +216,44 @@ softsim_t::softsim_t(softsim_interf_t* softsim_interf, Minor::LSQ* lsq) :
   _port_c(this) {
   _ticker = new ticker_t(this);
 
-  DEBUG::check_env();
+  SB_DEBUG::check_env();
  
   int ugh = system("mkdir -p stats/");
   ugh += system("mkdir -p viz/");
 
 
-  if(DEBUG::VERIF_MEM || DEBUG::VERIF_PORT || DEBUG::VERIF_CGRA || DEBUG::VERIF_SCR ||
-     DEBUG::VERIF_CMD) {
+  if(SB_DEBUG::VERIF_MEM || SB_DEBUG::VERIF_PORT || SB_DEBUG::VERIF_CGRA || SB_DEBUG::VERIF_SCR ||
+     SB_DEBUG::VERIF_CMD) {
     ugh += system("mkdir -p verif/");
     cout << "DUMPING VERIFICATION OUTPUTS (dir: verif/) ... SIMULATION WILL BE SLOWER\n";
     cout << "ALSO, MEMORY ACCESS STATISTICS MAY DIFFER\n";
   }
-  if(DEBUG::VERIF_PORT) {
-    in_port_verif.open(("verif/" + DEBUG::verif_name + "in_port.txt").c_str(),
+  if(SB_DEBUG::VERIF_PORT) {
+    in_port_verif.open(("verif/" + SB_DEBUG::verif_name + "in_port.txt").c_str(),
                         ofstream::trunc | ofstream::out);
     assert(in_port_verif.is_open());
-    out_port_verif.open(("verif/" + DEBUG::verif_name + "out_port.txt").c_str(),
+    out_port_verif.open(("verif/" + SB_DEBUG::verif_name + "out_port.txt").c_str(),
                         ofstream::trunc | ofstream::out);
     assert(out_port_verif.is_open());
   }
-  if(DEBUG::VERIF_SCR) {
-    scr_rd_verif.open(("verif/" + DEBUG::verif_name + "scr_rd.txt").c_str(),
+  if(SB_DEBUG::VERIF_SCR) {
+    scr_rd_verif.open(("verif/" + SB_DEBUG::verif_name + "scr_rd.txt").c_str(),
                         ofstream::trunc | ofstream::out);
     assert(scr_rd_verif.is_open() && scr_rd_verif.good());
 
-    scr_wr_verif.open(("verif/" + DEBUG::verif_name + "scr_wr.txt").c_str(),
+    scr_wr_verif.open(("verif/" + SB_DEBUG::verif_name + "scr_wr.txt").c_str(),
                         ofstream::trunc | ofstream::out);
     assert(scr_wr_verif.is_open());
   }
-  if(DEBUG::VERIF_CMD) {
-    cmd_verif.open(("verif/" + DEBUG::verif_name + "core_trace.txt").c_str(),
+  if(SB_DEBUG::VERIF_CMD) {
+    cmd_verif.open(("verif/" + SB_DEBUG::verif_name + "core_trace.txt").c_str(),
                         ofstream::trunc | ofstream::out);
     assert(cmd_verif.is_open());
   }
 
   const char* sbconfig_file = std::getenv("SBCONFIG");
 
-  if(!DEBUG::SUPRESS_SB_STATS) {
+  if(!SB_DEBUG::SUPRESS_SB_STATS) {
     std::cout << "Loading SB Config (env SBCONFIG):" << sbconfig_file <<"\n";
   }
   _sbconfig = new SbModel(sbconfig_file);
@@ -480,19 +480,19 @@ void softsim_t::pedantic_statistics(std::ostream& out) {
 
 
 void softsim_t::print_statistics(std::ostream& out) {
-   if(DEBUG::VERIF_PORT) { //flush all the log files
+   if(SB_DEBUG::VERIF_PORT) { //flush all the log files
      in_port_verif.flush();
      out_port_verif.flush();
    }
-   if(DEBUG::VERIF_SCR) {
+   if(SB_DEBUG::VERIF_SCR) {
      scr_rd_verif.flush();
      scr_wr_verif.flush();
    }
-   if(DEBUG::VERIF_CMD) {
+   if(SB_DEBUG::VERIF_CMD) {
      cmd_verif.flush();
    }
 
-   if(DEBUG::SUPRESS_SB_STATS) {
+   if(SB_DEBUG::SUPRESS_SB_STATS) {
      return;  // If we don't want to print stats
    }
 
@@ -704,7 +704,7 @@ void softsim_t::schedule_streams() {
 
     if(scheduled_in || scheduled_out || scheduled_dma_scr || scheduled_scr_dma) {
       str_issued++;
-      if(DEBUG::SB_COMMAND_I) {
+      if(SB_DEBUG::SB_COMMAND_I) {
         _ticker->timestamp();
         cout << " ISSUED:";
         ip->print_status();
@@ -729,7 +729,7 @@ void softsim_t::schedule_streams() {
   if(_dma_scr_queue.size() > 0 ) {
     bool scheduled_dma_scr = _dma_c.schedule_dma_scr(*_dma_scr_queue.front());
     if(scheduled_dma_scr) {
-      if(DEBUG::SB_COMMAND_I) {
+      if(SB_DEBUG::SB_COMMAND_I) {
         _ticker->timestamp();
         cout << " ISSUED:";
         _dma_scr_queue.front()->print_status();
@@ -746,7 +746,7 @@ void softsim_t::schedule_streams() {
   if(_scr_dma_queue.size() > 0 ) {
     bool scheduled_scr_dma = _dma_c.schedule_scr_dma(*_scr_dma_queue.front());
     if(scheduled_scr_dma) {
-      if(DEBUG::SB_COMMAND_I) {
+      if(SB_DEBUG::SB_COMMAND_I) {
         _ticker->timestamp();
         cout << " ISSUED:";
         _scr_dma_queue.front()->print_status();
@@ -964,50 +964,8 @@ void apply_map(uint64_t* raw_data, const vector<int>& imap, std::vector<SBDT>& d
   }
 }
 
-// ---------------------STREAM CONTROLLER TIMING ------------------------------------
-// If response, can issue load
-// Limitations: 1 Response per cycle (512 bits/cycle)
-void dma_controller_t::cycle(){
-  //Handle response from REAL memory
 
-  //Memory read to config
-  if(Minor::LSQ::LSQRequestPtr response =_sb->_lsq->findResponse(CONFIG_STREAM)) {
-    PacketPtr packet = response->packet;
-    _sb->configure(packet->getAddr(),packet->getSize()/8,packet->getPtr<uint64_t>());
-    _sb->_lsq->popResponse(CONFIG_STREAM);
-  }
-
-  //memory read to scratch
-  if(Minor::LSQ::LSQRequestPtr response =_sb->_lsq->findResponse(SCR_STREAM)) {
-
-    PacketPtr packet = response->packet;
-    if(packet->getSize()!=MEM_WIDTH) {
-      assert(0 && "weird memory response size");
-    }
-    vector<SBDT> data;
-    apply_mask(packet->getPtr<uint64_t>(), response->sdInfo->mask, data);
-
-    if(_scr_write_buffer.push_data(response->sdInfo->scr_addr, data)) {
-      if(DEBUG::MEM_REQ) {
-        _sb->_ticker->timestamp();
-        std::cout << "data into scratch " << response->sdInfo->scr_addr 
-                  << ":" << data.size() << "elements" << "\n";
-      }
-      if(_sb->_ticker->in_roi()) {
-        _sb->_stat_mem_bytes_rd+=data.size();
-      }
-
-      //handled_req=true;
-      _fake_scratch_reqs--;
-
-      _sb->_lsq->popResponse(SCR_STREAM);
-    }
-  }
-
-
-  //Memory Read to Ports
-  for(unsigned i = 0; i < _sb->_soft_config.in_ports_active.size(); ++i) {
-    int cur_port = _sb->_soft_config.in_ports_active[i];
+void dma_controller_t::port_resp(unsigned cur_port) {
     if(Minor::LSQ::LSQRequestPtr response = _sb->_lsq->findResponse(cur_port)) {
       auto& in_vp = _sb->port_interf().in_port(cur_port);
 
@@ -1026,7 +984,7 @@ void dma_controller_t::cycle(){
       if(in_vp.can_push_vp(data.size())) {
         bool last = response->sdInfo->last;
 
-        if(DEBUG::MEM_REQ) {
+        if(SB_DEBUG::MEM_REQ) {
           _sb->_ticker->timestamp();
           std::cout << "(real) data into port " << cur_port << ", size: " 
                     << data.size() << " elements" << (last ? "last" : "") << "\n";
@@ -1053,16 +1011,67 @@ void dma_controller_t::cycle(){
 
         if(last) {
           auto& in_vp = _sb->port_interf().in_port(cur_port);
-          if(DEBUG::VP_SCORE2) {
+          if(SB_DEBUG::VP_SCORE2) {
             cout << "SOURCE: DMA->PORT2\n";
           }
 
           in_vp.set_status(port_data_t::STATUS::FREE);
         }
         _sb->_lsq->popResponse(cur_port);
-        break;
+        return;
       }
     }
+}
+
+
+// ---------------------STREAM CONTROLLER TIMING ------------------------------------
+// If response, can issue load
+// Limitations: 1 Response per cycle (512 bits/cycle)
+void dma_controller_t::cycle(){
+  //Handle response from REAL memory
+
+  //Memory read to config
+  if(Minor::LSQ::LSQRequestPtr response =_sb->_lsq->findResponse(CONFIG_STREAM)) {
+    PacketPtr packet = response->packet;
+    _sb->configure(packet->getAddr(),packet->getSize()/8,packet->getPtr<uint64_t>());
+    _sb->_lsq->popResponse(CONFIG_STREAM);
+  }
+
+  //memory read to scratch
+  if(Minor::LSQ::LSQRequestPtr response =_sb->_lsq->findResponse(SCR_STREAM)) {
+
+    PacketPtr packet = response->packet;
+    if(packet->getSize()!=MEM_WIDTH) {
+      assert(0 && "weird memory response size");
+    }
+    vector<SBDT> data;
+    apply_mask(packet->getPtr<uint64_t>(), response->sdInfo->mask, data);
+
+    if(_scr_write_buffer.push_data(response->sdInfo->scr_addr, data)) {
+      if(SB_DEBUG::MEM_REQ) {
+        _sb->_ticker->timestamp();
+        std::cout << "data into scratch " << response->sdInfo->scr_addr 
+                  << ":" << data.size() << "elements" << "\n";
+      }
+      if(_sb->_ticker->in_roi()) {
+        _sb->_stat_mem_bytes_rd+=data.size();
+      }
+
+      //handled_req=true;
+      _fake_scratch_reqs--;
+
+      _sb->_lsq->popResponse(SCR_STREAM);
+    }
+  }
+
+
+  //Memory Read to Ports
+  for(unsigned i = 0; i < _sb->_soft_config.in_ports_active.size(); ++i) {
+    int cur_port = _sb->_soft_config.in_ports_active[i];
+    port_resp(cur_port);
+  }
+  for(unsigned i = 28; i < 32; ++i ) {  //ind read ports
+    port_resp(i);
   }
 
 
@@ -1080,7 +1089,7 @@ void dma_controller_t::cycle(){
       if(mem_req.port==-1) {
         //Handle DMA->Scratch Case
         if(_scr_write_buffer.push_data(mem_req.scr_addr, mem_req.data)) {
-          if(DEBUG::MEM_REQ) {
+          if(SB_DEBUG::MEM_REQ) {
           _sb->_ticker->timestamp();
           std::cout << "data into scratch " << mem_req.scr_addr << ":" << mem_req.data.size() << "elements" << "\n";
           }
@@ -1097,7 +1106,7 @@ void dma_controller_t::cycle(){
         //Handle DMA->Port
         auto& in_vp = _sb->port_interf().in_port(mem_req.port);
         if(!blocked_ivp[mem_req.port] &&  in_vp.can_push_vp(mem_req.data.size())) {
-          if(DEBUG::MEM_REQ) {
+          if(SB_DEBUG::MEM_REQ) {
           _sb->_ticker->timestamp();
           std::cout << "data into port " << mem_req.port << ":" << mem_req.data.size() << "elements" << "\n";
           }
@@ -1126,7 +1135,7 @@ void dma_controller_t::cycle(){
 
           if(mem_req.last) {
             auto& in_vp = _sb->port_interf().in_port(mem_req.port);
-            if(DEBUG::VP_SCORE2) {
+            if(SB_DEBUG::VP_SCORE2) {
               cout << "SOURCE: DMA->PORT2\n";
             }
 
@@ -1205,7 +1214,7 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
 
           req_read(dma_s,-1/*scratch_addr*/);
           if(dma_s.empty()) {
-            if(DEBUG::VP_SCORE2) { cout << "SOURCE: DMA->PORT \n";}
+            if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: DMA->PORT \n";}
             in_vp.set_status(port_data_t::STATUS::COMPLETE, LOC::DMA);
           }
           return;
@@ -1234,25 +1243,27 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
 
       auto& in_ind_vp = _sb->port_interf().in_port(ind_s._ind_port);
 
-      if(ind_s.stream_active() && in_ind_vp.mem_size()>0 ) {
-        auto& in_vp = _sb->port_interf().in_port(ind_s._in_port);
-        if(in_vp.num_can_push() > 8) { //make sure vp isn't full
+      if(ind_s.stream_active()) {
+        if(in_ind_vp.mem_size()>0 ) {
+          auto& in_vp = _sb->port_interf().in_port(ind_s._in_port);
+          if(in_vp.num_can_push() > 8) { //make sure vp isn't full
 
-          //pull_data_indirect(ind_s,data,mem_complete_cyc);
-          ind_read_req(ind_s,false/*for scratch*/);
+            //pull_data_indirect(ind_s,data,mem_complete_cyc);
+            ind_read_req(ind_s,-1/*for scratch*/);
 
-          if(ind_s.empty()) {
-            //destination ivp
-            if(DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect DMA->PORT \n";}
-            in_vp.set_status(port_data_t::STATUS::COMPLETE, LOC::DMA);
+            if(ind_s.empty()) {
+              //destination ivp
+              if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect DMA->PORT \n";}
+              in_vp.set_status(port_data_t::STATUS::COMPLETE, LOC::DMA);
 
-            //out_ind_vp is where we keep track of the resource
-            auto& out_ind_vp = _sb->port_interf().out_port(ind_s._ind_port);
-            if(DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect DMA->PORT \n";}
-            out_ind_vp.set_status(port_data_t::STATUS::FREE);
+              //out_ind_vp is where we keep track of the resource
+              auto& out_ind_vp = _sb->port_interf().out_port(ind_s._ind_port);
+              if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect DMA->PORT \n";}
+              out_ind_vp.set_status(port_data_t::STATUS::FREE);
+            }
+
+            return;
           }
-
-          return;
         }
       }
 
@@ -1281,7 +1292,7 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
           }
           bool is_empty = dma_s.check_set_empty();
           if(is_empty) {
-            if(DEBUG::VP_SCORE2) {cout << "SOURCE: PORT->DMA\n";}
+            if(SB_DEBUG::VP_SCORE2) {cout << "SOURCE: PORT->DMA\n";}
             out_port.set_status(port_data_t::STATUS::FREE);
           }
 
@@ -1359,6 +1370,8 @@ int dma_controller_t::req_read(mem_stream_base_t& stream,
 void dma_controller_t::ind_read_req(indirect_stream_t& stream, 
                                     uint64_t scr_addr) {  //always get the input port if getting data 
   port_data_t& ind_vp = _sb->port_interf().in_port(stream._ind_port);
+
+  cout << stream._ind_port << "\n";
 
   bool first=true;
   addr_t base_addr=0;
@@ -1476,7 +1489,7 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
 
   bool is_empty = stream.check_set_empty();
   if(is_empty) {
-    if(DEBUG::VP_SCORE2) {
+    if(SB_DEBUG::VP_SCORE2) {
       cout << "SOURCE: INDIRECT PORT -> DMA\n";
     }
     out_vp.set_status(port_data_t::STATUS::FREE);
@@ -1539,7 +1552,7 @@ void dma_controller_t::req_write(port_dma_stream_t& stream, port_data_t& vp) {
               bytes_written, init_addr, 0/*flags*/, 0 /*res*/, sdInfo);
 
 
-  if(DEBUG::MEM_REQ) {
+  if(SB_DEBUG::MEM_REQ) {
     _sb->_ticker->timestamp();
     cout << bytes_written << "-byte write request for port->dma\n";
   }
@@ -1585,7 +1598,7 @@ void scratch_read_controller_t::cycle() {
         addr_t base_addr = addr & SCR_MASK;
         addr_t max_addr = base_addr+SCR_WIDTH;
 
-        if(DEBUG::SCR_BARRIER) {
+        if(SB_DEBUG::SCR_BARRIER) {
           _sb->_ticker->timestamp();
           cout << "scr_rd " << hex << addr << " -> " << max_addr << "\n";
         }
@@ -1601,7 +1614,7 @@ void scratch_read_controller_t::cycle() {
           SBDT val=0;
           assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
           std::memcpy(&val, &_sb->scratchpad[addr], DATA_WIDTH);
-          if(DEBUG::SCR_ACC) {
+          if(SB_DEBUG::SCR_ACC) {
             cout << "scr_addr:" << hex << addr << " read " << val << "\n";
           }
           in_vp.push_data(val);
@@ -1610,7 +1623,7 @@ void scratch_read_controller_t::cycle() {
           addr = _scr_port_stream.pop_addr();
         }
 
-        if(DEBUG::VERIF_SCR) {
+        if(SB_DEBUG::VERIF_SCR) {
           _sb->scr_rd_verif << hex << setw(8) << setfill('0') << base_addr << " ";
           for(uint64_t i = base_addr; i < max_addr; ++i) {
             _sb->scr_rd_verif << setw(2) << setfill('0') << (unsigned)_sb->scratchpad[i];
@@ -1624,7 +1637,7 @@ void scratch_read_controller_t::cycle() {
 
         bool is_empty = _scr_port_stream.check_set_empty();
         if(is_empty) {
-          if(DEBUG::VP_SCORE2) {
+          if(SB_DEBUG::VP_SCORE2) {
             cout << "SOURCE: SCR->PORT\n";
           }
           in_vp.set_status(port_data_t::STATUS::FREE);
@@ -1689,7 +1702,7 @@ void scratch_write_controller_t::cycle() {
           
         bool is_empty = _port_scr_stream.check_set_empty();
         if(is_empty) {
-          if(DEBUG::VP_SCORE2) {
+          if(SB_DEBUG::VP_SCORE2) {
             cout << "SOURCE: PORT->SCR\n";
           }
           out_vp.set_status(port_data_t::STATUS::FREE);
@@ -1704,13 +1717,13 @@ void scratch_write_controller_t::cycle() {
         addr_t base_addr = addr & SCR_MASK;
         addr_t max_addr = base_addr+SCR_WIDTH;
 
-        if(DEBUG::SCR_BARRIER) {
+        if(SB_DEBUG::SCR_BARRIER) {
           _sb->_ticker->timestamp();
           cout << "scr_wr " << hex << addr << " -> " << max_addr << "\n";
         }
 
 
-        if(DEBUG::SCR_ACC) {
+        if(SB_DEBUG::SCR_ACC) {
           cout << "dma->scr buffer ready to write: " << _dma_c->_scr_write_buffer.data_ready() << "to addr:" << hex << addr << dec << "\n"; 
         }
 
@@ -1719,7 +1732,7 @@ void scratch_write_controller_t::cycle() {
           addr = _dma_c->_scr_write_buffer._scr_address;
           SBDT val = _dma_c->_scr_write_buffer.pop_data();
 
-          if(DEBUG::SCR_ACC) {
+          if(SB_DEBUG::SCR_ACC) {
             cout << hex << val << dec << "\n";
           }
       
@@ -1736,7 +1749,7 @@ void scratch_write_controller_t::cycle() {
         }
 
 
-        if(DEBUG::SCR_ACC) {
+        if(SB_DEBUG::SCR_ACC) {
           cout << "\n";
         }
 
@@ -1782,13 +1795,13 @@ void port_controller_t::cycle() {
       }
       bool is_empty = stream.check_set_empty();
       if(is_empty) {
-        if(DEBUG::VP_SCORE2) {
+        if(SB_DEBUG::VP_SCORE2) {
           cout << "SOURCE: PORT->PORT\n";
         }
         port_data_t& in_vp = _sb->port_interf().in_port(stream._in_port);
         in_vp.set_status(port_data_t::STATUS::FREE);
 
-        if(DEBUG::VP_SCORE2) {
+        if(SB_DEBUG::VP_SCORE2) {
           cout << "SOURCE: PORT->PORT\n";
         }
         port_data_t& out_vp = _sb->port_interf().out_port(stream._out_port);
@@ -1820,7 +1833,7 @@ void port_controller_t::cycle() {
       if(is_empty) {
         port_data_t& in_vp = _sb->port_interf().in_port(stream._in_port);
 
-        if(DEBUG::VP_SCORE2) {
+        if(SB_DEBUG::VP_SCORE2) {
           cout << "SOURCE: CONST->PORT\n";
         }
         in_vp.set_status(port_data_t::STATUS::FREE);
@@ -2093,7 +2106,7 @@ void softsim_t::load_dma_to_scratch(addr_t mem_addr,
   s->_stride=stride;
   s->_access_size=access_size;
 
-  if(debug && (DEBUG::SB_COMMAND || DEBUG::SCR_BARRIER)  ) {
+  if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SCR_BARRIER)  ) {
     _ticker->timestamp();
     s->print_status(); 
   }
@@ -2117,7 +2130,7 @@ void softsim_t::load_dma_to_port(addr_t mem_addr,
   s->_access_size=access_size;
   s->_in_port=in_port;
 
-  if(debug && DEBUG::SB_COMMAND) {
+  if(debug && SB_DEBUG::SB_COMMAND) {
     _ticker->timestamp();
     s->print_status(); 
   }
@@ -2144,7 +2157,7 @@ void softsim_t::write_dma(int out_port,
   s->_garbage=garbage;
 
 
-  if(debug && DEBUG::SB_COMMAND) {
+  if(debug && SB_DEBUG::SB_COMMAND) {
     _ticker->timestamp();
     s->print_status(); 
   }
@@ -2168,7 +2181,7 @@ void softsim_t::load_scratch_to_port(addr_t scratch_addr,
   s->_access_size=access_size;
   s->_in_port=in_port;
 
-  if(debug && (DEBUG::SB_COMMAND || DEBUG::SCR_BARRIER)  ) {
+  if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SCR_BARRIER)  ) {
     _ticker->timestamp();
     s->print_status(); 
   }
@@ -2192,7 +2205,7 @@ void softsim_t::write_scratchpad(int out_port,
   s->_scratch_addr=scratch_addr;
   s->_num_bytes=num_bytes;
 
-  if(debug && (DEBUG::SB_COMMAND || DEBUG::SCR_BARRIER)  ) {
+  if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SCR_BARRIER)  ) {
     _ticker->timestamp();
     s->print_status(); 
   }
@@ -2212,7 +2225,7 @@ void softsim_t::reroute(int out_port, int in_port, uint64_t num_elem) {
   s->_in_port=in_port;
   s->_num_elements=num_elem;
 
-  if(debug && DEBUG::SB_COMMAND) {
+  if(debug && SB_DEBUG::SB_COMMAND) {
     _ticker->timestamp();
     s->print_status();
   }
@@ -2237,7 +2250,7 @@ void softsim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_a
   s->_index_in_word=0;
   s->_num_elements=num_elem;
 
-  if(debug && DEBUG::SB_COMMAND) {
+  if(debug && SB_DEBUG::SB_COMMAND) {
     _ticker->timestamp();
     s->print_status();
   }
@@ -2262,7 +2275,7 @@ void softsim_t::indirect_write(int ind_port, int ind_type, int out_port,
   s->_index_in_word=0;
   s->_num_elements=num_elem;
 
-  if(debug && DEBUG::SB_COMMAND) {
+  if(debug && SB_DEBUG::SB_COMMAND) {
     _ticker->timestamp();
     s->print_status();
   }
@@ -2278,7 +2291,7 @@ void softsim_t::write_constant(int in_port, SBDT constant, uint64_t num_elem) {
   s->_constant=constant;
   s->_num_elements=num_elem; 
 
-  if(debug && DEBUG::SB_COMMAND) {
+  if(debug && SB_DEBUG::SB_COMMAND) {
     _ticker->timestamp();
     s->print_status();
   }
@@ -2533,7 +2546,7 @@ void softsim_t::do_cgra() {
 
 
 void softsim_t::execute_pdg(unsigned instance) {
-  if(DEBUG::SB_COMP) {
+  if(SB_DEBUG::SB_COMP) {
     std::cout << "inputs: ";
   }
 
@@ -2554,10 +2567,10 @@ void softsim_t::execute_pdg(unsigned instance) {
       //for each cgra port and associated pdg input
       _soft_config.input_pdg_node[i][port_idx]->set_value(val);  //value of the node
       
-      if(DEBUG::SB_COMP) {
+      if(SB_DEBUG::SB_COMP) {
         std::cout << std::hex << val << ", " << std::dec;
       }
-      if(DEBUG::VERIF_PORT) {
+      if(SB_DEBUG::VERIF_PORT) {
         in_port_verif << hex << setw(16) << setfill('0') << val << " ";
       }
     }
@@ -2579,17 +2592,17 @@ void softsim_t::execute_pdg(unsigned instance) {
 
 
   bool print = false;
-  if(DEBUG::SB_COMP) {
+  if(SB_DEBUG::SB_COMP) {
     print = true;
     std::cout <<"\n";
   }
 
-  if(DEBUG::VERIF_PORT) {
+  if(SB_DEBUG::VERIF_PORT) {
     in_port_verif << "\n";
   }
 
   //perform computation
-  _pdg->compute(print,DEBUG::VERIF_CGRA);
+  _pdg->compute(print,SB_DEBUG::VERIF_CGRA);
 
   //send outputs to corresponding output fifo
   for(unsigned i = 0; i < _soft_config.out_ports_active.size(); ++i) {
@@ -2601,7 +2614,7 @@ void softsim_t::execute_pdg(unsigned instance) {
       uint64_t val = _soft_config.output_pdg_node[i][port_idx]->retrieve();
       cur_out_port.push_val(port_idx, val);       //retreive the val from last inst
 
-      if(DEBUG::VERIF_PORT) {
+      if(SB_DEBUG::VERIF_PORT) {
         out_port_verif << hex << setw(16) << setfill('0') << val << " ";
       }
 
@@ -2609,7 +2622,7 @@ void softsim_t::execute_pdg(unsigned instance) {
     cur_out_port.inc_ready(1); //we just did one instance
   }
 
-  if(DEBUG::VERIF_PORT) {
+  if(SB_DEBUG::VERIF_PORT) {
     out_port_verif << "\n";
   }
 
@@ -2622,7 +2635,9 @@ void softsim_t::req_config(addr_t addr, int size) {
   assert(_in_config ==false);
   _in_config=true;
 
-  if(debug && (DEBUG::SB_COMMAND || DEBUG::SCR_BARRIER)  ) {
+  _ticker->set_in_use();
+
+  if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SCR_BARRIER)  ) {
     _ticker->timestamp();
     cout << "SB_CONFIGURE(request): " << "0x" << std::hex << addr  << " " 
                                       << std::dec << size << "\n";
@@ -2642,7 +2657,7 @@ void softsim_t::configure(addr_t addr, int size, uint64_t* bits) {
   //5+: switch/fu configuration
   //size - num of 64bit slices
 
-  if(debug && (DEBUG::SB_COMMAND || DEBUG::SCR_BARRIER)  ) {
+  if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SCR_BARRIER)  ) {
     _ticker->timestamp();
     cout << "SB_CONFIGURE(response): " << "0x" << std::hex << addr << " " 
                                        << std::dec << size << "\n";
@@ -2754,7 +2769,7 @@ void softsim_t::configure(addr_t addr, int size, uint64_t* bits) {
         pdg_outputs.push_back(pdg_out);
       }
       _soft_config.out_ports_lat[i]=max_lat;
-      if(DEBUG::SB_OVP_LAT) {
+      if(SB_DEBUG::SB_OVP_LAT) {
         cout << "softbrain ovp" << i << " has latency:" << max_lat << "\n";
       }
       _soft_config.output_pdg_node.push_back(pdg_outputs);

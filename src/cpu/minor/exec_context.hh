@@ -402,7 +402,7 @@ class ExecContext : public ::ExecContext
             break;
             case SB_IND_PRT: sb.indirect(
                 thread.getSDReg(SD_IND_PORT),      thread.getSDReg(SD_IND_TYPE),
-                thread.getSDReg(SD_OUT_PORT),      thread.getSDReg(SD_INDEX_ADDR),
+                thread.getSDReg(SD_IN_PORT),      thread.getSDReg(SD_INDEX_ADDR),
                 thread.getSDReg(SD_NUM_ELEM));
             break;
             case SB_PRT_IND: sb.indirect_write(

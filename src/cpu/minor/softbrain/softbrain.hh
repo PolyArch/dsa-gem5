@@ -216,7 +216,7 @@ public:
           "can only assign to a port with eqiv. loc, or if the status is FREE");
     }
 
-    if(DEBUG::VP_SCORE) {
+    if(SB_DEBUG::VP_SCORE) {
       std::cout << (_isInput ? "ip" : "op") << std::dec << _port;
       std::cout << " " << status_string();
     }
@@ -236,7 +236,7 @@ public:
       }
     }
 
-    if(DEBUG::VP_SCORE) {
+    if(SB_DEBUG::VP_SCORE) {
       std::cout << " -> " << status_string() << "\n";
     }
 
@@ -931,6 +931,8 @@ class dma_controller_t : public data_controller_t {
 
   private:
 
+  void port_resp(unsigned i);
+
   unsigned _which_read=0;
   unsigned _which=0;
   unsigned _tq, _tq_read;
@@ -962,7 +964,7 @@ class dma_controller_t : public data_controller_t {
       orig_cmd_id=((uint64_t)id)*4294967296+(ID_SOURCE++); 
       assert(d.size());
       assert(data.size());  
-      if(DEBUG::MEM_REQ) {
+      if(SB_DEBUG::MEM_REQ) {
         //_ticker->timestamp();
         if(port == -1) {
           std::cout << "mem_req to scr, scr_addr:" << scr_addr << ", words: " << d.size() << "\n";
@@ -1171,7 +1173,7 @@ private:
   bool cgra_done(bool, int mask);
 
   void verif_cmd(base_stream_t* s) {
-    if(DEBUG::VERIF_CMD) {
+    if(SB_DEBUG::VERIF_CMD) {
       cmd_verif << s->short_name();
       cmd_verif << s->mem_addr()     << " ";   
       cmd_verif << s->access_size()  << " ";   

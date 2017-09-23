@@ -2,7 +2,7 @@
 
 
 #undef DO_DBG
-#define DO_DBG(x) bool DEBUG::x = false;
+#define DO_DBG(x) bool SB_DEBUG::x = false;
 #include "dbg.h"
 
-std::string DEBUG::verif_name = std::string("");
+std::string SB_DEBUG::verif_name = std::string("");

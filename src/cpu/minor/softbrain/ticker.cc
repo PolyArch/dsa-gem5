@@ -52,7 +52,7 @@ void ticker_t::tick() {
 
   _sb->_dma_c.finish_cycle(); 
   
-   if(DEBUG::CYC_STAT) {
+   if(SB_DEBUG::CYC_STAT) {
      if(_in_roi) {
       _sb->cycle_status();
      }
