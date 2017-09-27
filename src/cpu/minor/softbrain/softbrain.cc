@@ -1277,9 +1277,12 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
         port_data_t& out_port = _sb->port_interf().out_port(dma_s._out_port);
         if((out_port.mem_size()>0) && //TODO:  unoptimal if we didn't wait?
            (dma_s._garbage || (_sb->_lsq->canRequest() &&
-           _sb->_lsq->sd_transfers[MEM_WR_STREAM].unreservedRemainingSpace()>0))) {
+          _sb->_lsq->sd_transfers[MEM_WR_STREAM].canReserve() ))) {
 
-          _sb->_lsq->sd_transfers[MEM_WR_STREAM].reserve();
+          if(!dma_s._garbage) { 
+            _sb->_lsq->sd_transfers[MEM_WR_STREAM].reserve();
+          }
+
           if(dma_s._garbage) {
             while(dma_s.stream_active() && out_port.mem_size()>0) {
               out_port.pop_data();//get rid of data
