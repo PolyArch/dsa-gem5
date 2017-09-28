@@ -957,70 +957,72 @@ void apply_mask(uint64_t* raw_data, vector<bool>  mask, std::vector<SBDT>& data)
 
 void apply_map(uint64_t* raw_data, const vector<int>& imap, std::vector<SBDT>& data) {
   //SBDT* u64data = (SBDT*)raw_data;
+
   assert(imap.size() != 0);
   data.resize(imap.size()); 
   for(int i = 0; i < imap.size(); ++i) {
+    //cout << "at imap[" << imap[i] << "], data=" << raw_data[imap[i]] << "\n";
     data[i] = raw_data[imap[i]];
   }
 }
 
 
 void dma_controller_t::port_resp(unsigned cur_port) {
-    if(Minor::LSQ::LSQRequestPtr response = _sb->_lsq->findResponse(cur_port)) {
-      auto& in_vp = _sb->port_interf().in_port(cur_port);
+  if(Minor::LSQ::LSQRequestPtr response = _sb->_lsq->findResponse(cur_port)) {
+    auto& in_vp = _sb->port_interf().in_port(cur_port);
 
-      PacketPtr packet = response->packet;
-      if(packet->getSize()!=MEM_WIDTH) {
-        assert(0 && "weird memory response size");
-      }
-
-      vector<SBDT> data;
-      if(response->sdInfo->mask.size() > 0) {
-        apply_mask(packet->getPtr<uint64_t>(), response->sdInfo->mask, data);
-      } else if(response->sdInfo->map.size() > 0) {
-        apply_map(packet->getPtr<uint64_t>(),  response->sdInfo->map, data);
-      }
-
-      if(in_vp.can_push_vp(data.size())) {
-        bool last = response->sdInfo->last;
-
-        if(SB_DEBUG::MEM_REQ) {
-          _sb->_ticker->timestamp();
-          std::cout << "(real) data into port " << cur_port << ", size: " 
-                    << data.size() << " elements" << (last ? "last" : "") << "\n";
-        }
-
-        if(_sb->_ticker->in_roi()) {
-          _sb->_stat_mem_bytes_rd+=data.size()*DATA_WIDTH;
-        }
-        in_vp.push_data(data);
-
-        //BEGIN HACK
-        if(cur_port==25) { //TRIPPLE PORT : )
-          auto& in_vp1 = _sb->port_interf().in_port(cur_port+1);
-          auto& in_vp2 = _sb->port_interf().in_port(cur_port+2);
-          in_vp1.push_data(data);
-          in_vp2.push_data(data);
-        }
-        if(cur_port==26) { //DOUBLE PORT : )
-          DOUBLE_PORT=true;
-          auto& in_vp1 = _sb->port_interf().in_port(cur_port+1);
-          in_vp1.push_data(data);
-        }
-        //END HACK
-
-        if(last) {
-          auto& in_vp = _sb->port_interf().in_port(cur_port);
-          if(SB_DEBUG::VP_SCORE2) {
-            cout << "SOURCE: DMA->PORT2\n";
-          }
-
-          in_vp.set_status(port_data_t::STATUS::FREE);
-        }
-        _sb->_lsq->popResponse(cur_port);
-        return;
-      }
+    PacketPtr packet = response->packet;
+    if(packet->getSize()!=MEM_WIDTH) {
+      assert(0 && "weird memory response size");
     }
+
+    vector<SBDT> data;
+    if(response->sdInfo->mask.size() > 0) {
+      apply_mask(packet->getPtr<uint64_t>(), response->sdInfo->mask, data);
+    } else if(response->sdInfo->map.size() > 0) {
+      apply_map(packet->getPtr<uint64_t>(),  response->sdInfo->map, data);
+    }
+
+    if(in_vp.can_push_vp(data.size())) {
+      bool last = response->sdInfo->last;
+
+      if(SB_DEBUG::MEM_REQ) {
+        _sb->_ticker->timestamp();
+        std::cout << "(real) data into port " << cur_port << ", size: " 
+                  << data.size() << " elements" << (last ? "last" : "") << "\n";
+      }
+
+      if(_sb->_ticker->in_roi()) {
+        _sb->_stat_mem_bytes_rd+=data.size()*DATA_WIDTH;
+      }
+      in_vp.push_data(data);
+
+      //BEGIN HACK
+      if(cur_port==25) { //TRIPPLE PORT : )
+        auto& in_vp1 = _sb->port_interf().in_port(cur_port+1);
+        auto& in_vp2 = _sb->port_interf().in_port(cur_port+2);
+        in_vp1.push_data(data);
+        in_vp2.push_data(data);
+      }
+      if(cur_port==26) { //DOUBLE PORT : )
+        DOUBLE_PORT=true;
+        auto& in_vp1 = _sb->port_interf().in_port(cur_port+1);
+        in_vp1.push_data(data);
+      }
+      //END HACK
+
+      if(last) {
+        auto& in_vp = _sb->port_interf().in_port(cur_port);
+        if(SB_DEBUG::VP_SCORE2) {
+          cout << "SOURCE: DMA->PORT2 (port:" << cur_port << ")\n";
+        }
+
+        in_vp.set_status(port_data_t::STATUS::FREE);
+      }
+      _sb->_lsq->popResponse(cur_port);
+      return;
+    }
+  }
 }
 
 
@@ -1064,7 +1066,6 @@ void dma_controller_t::cycle(){
     }
   }
 
-
   //Memory Read to Ports
   for(unsigned i = 0; i < _sb->_soft_config.in_ports_active.size(); ++i) {
     int cur_port = _sb->_soft_config.in_ports_active[i];
@@ -1074,89 +1075,6 @@ void dma_controller_t::cycle(){
     port_resp(i);
   }
 
-
-  //FIXME: Eliminate fake mem
-
-  //Response from fake memory
-  //bool handled_req=false;
-  bool blocked_ivp[64] = {0}; 
-
-  for(auto i = _fake_mem.begin(), e = _fake_mem.end(); i!=e; ++i) {
-    uint64_t cycle = i->first;
-    auto& mem_req = i->second;
-    if(cycle <= _sb->now()) {
-      //fix this so that we check first
-      if(mem_req.port==-1) {
-        //Handle DMA->Scratch Case
-        if(_scr_write_buffer.push_data(mem_req.scr_addr, mem_req.data)) {
-          if(SB_DEBUG::MEM_REQ) {
-          _sb->_ticker->timestamp();
-          std::cout << "data into scratch " << mem_req.scr_addr << ":" << mem_req.data.size() << "elements" << "\n";
-          }
-          if(_sb->_ticker->in_roi()) {
-            _sb->_stat_mem_bytes_rd+=mem_req.data.size();
-          }
-
-          //handled_req=true;
-          _fake_mem.erase(i);
-          _fake_scratch_reqs--;
-          break;
-        }
-      } else { 
-        //Handle DMA->Port
-        auto& in_vp = _sb->port_interf().in_port(mem_req.port);
-        if(!blocked_ivp[mem_req.port] &&  in_vp.can_push_vp(mem_req.data.size())) {
-          if(SB_DEBUG::MEM_REQ) {
-          _sb->_ticker->timestamp();
-          std::cout << "data into port " << mem_req.port << ":" << mem_req.data.size() << "elements" << "\n";
-          }
-        
-          if(_sb->_ticker->in_roi()) {
-            _sb->_stat_mem_bytes_rd+=mem_req.data.size();
-          }
-          in_vp.push_data(mem_req.data,mem_req.orig_cmd_id);
-
-          //BEGIN HACK
-          if(mem_req.port==25) { //TRIPPLE PORT : )
-            auto& in_vp1 = _sb->port_interf().in_port(mem_req.port+1);
-            auto& in_vp2 = _sb->port_interf().in_port(mem_req.port+2);
-            in_vp1.push_data(mem_req.data,mem_req.orig_cmd_id);
-            in_vp2.push_data(mem_req.data,mem_req.orig_cmd_id);
-          }
-          if(mem_req.port==26) { //DOUBLE PORT : )
-            DOUBLE_PORT=true;
-            auto& in_vp1 = _sb->port_interf().in_port(mem_req.port+1);
-            in_vp1.push_data(mem_req.data,mem_req.orig_cmd_id);
-          }
-
-          //END HACK
-
-          //handled_req=true;
-
-          if(mem_req.last) {
-            auto& in_vp = _sb->port_interf().in_port(mem_req.port);
-            if(SB_DEBUG::VP_SCORE2) {
-              cout << "SOURCE: DMA->PORT2\n";
-            }
-
-            in_vp.set_status(port_data_t::STATUS::FREE);
-          }
-
-          _fake_mem.erase(i);
-          break;
-        } else {
-          blocked_ivp[mem_req.port]=true;
-        }
-      }
-    } else {
-      break;
-    }
-  }
-  //if(handled_req) {
-  //  make_request(_tq_read, _which_read);
-  //} else {
-  //  make_request(_tq, _which);
-  //}
   make_request(0,_tq_read,_which_read); //read request
   make_request(_tq_read,_tq,_which); //write request
 }
@@ -1374,7 +1292,7 @@ void dma_controller_t::ind_read_req(indirect_stream_t& stream,
                                     uint64_t scr_addr) {  //always get the input port if getting data 
   port_data_t& ind_vp = _sb->port_interf().in_port(stream._ind_port);
 
-  cout << stream._ind_port << "\n";
+  //cout << stream._ind_port << "\n";
 
   bool first=true;
   addr_t base_addr=0;
@@ -1392,17 +1310,19 @@ void dma_controller_t::ind_read_req(indirect_stream_t& stream,
       base_addr = addr & MEM_MASK;
       max_addr = base_addr+MEM_WIDTH;
     } else { //not first
-      if(addr > max_addr || addr < base_addr) {
+      if(addr >= max_addr || addr < base_addr) {
         break;
       }
     }
 
-    int index = addr - base_addr;
+    int index = (addr - base_addr)/8; //TODO: configurable data size please!
     imap.push_back(index);
 
     stream.pop_elem();
     ind_vp.pop_data();
   }
+  stream.check_set_empty();
+
   bool last = stream.empty();
 
   SDMemReqInfoPtr sdInfo = NULL; 
@@ -1423,7 +1343,6 @@ void dma_controller_t::ind_read_req(indirect_stream_t& stream,
     _sb->_stat_tot_loads+=1;
   }
 
-  stream.check_set_empty();
 }
 
 void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {

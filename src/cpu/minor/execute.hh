@@ -152,6 +152,9 @@ class Execute : public Named, public softsim_interf_t
     /* softbrain unit */
     softsim_t softbrain;
 
+    /** cycle wait was initiated **/
+    uint64_t last_sd_issue;
+
     /** Scoreboard of instruction dependencies */
     std::vector<Scoreboard> scoreboard;
 

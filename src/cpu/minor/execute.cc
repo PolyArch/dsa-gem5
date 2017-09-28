@@ -555,6 +555,9 @@ Execute::issue(ThreadID thread_id)
         bool discarded = false;
         bool issued_mem_ref = false;
 
+        DPRINTF(MinorExecute, " ............... : %s \n", *inst);
+
+
         if (inst->isBubble()) {
             /* Skip */
             issued = true;
@@ -575,7 +578,6 @@ Execute::issue(ThreadID thread_id)
         } else {
             if(inst->staticInst->isSD() && softbrain.is_in_config()) {
                issued=false;
-               break;
             }
             //break down by type
             if (inst->staticInst->isSDStream() && 
@@ -583,14 +585,27 @@ Execute::issue(ThreadID thread_id)
                 issued = false;
                 //DPRINTF(SD,"Can't issue stream b/c buffer is full");
                 //continue;
-                break;
             } else if(inst->staticInst->isSDWait() &&
                 !softbrain.done(false,inst->staticInst->imm()) ) {
                 issued = false;
                 //DPRINTF(SD,"Wait blocked, mask: %x\n",inst->staticInst->imm());
                 //continue;
-                break;
             } 
+
+            if(inst->staticInst->isSD()) {
+              uint64_t cyc = cpu.curCycle();
+              if(!issued) {
+                if(cyc > 10000 + last_sd_issue) {
+                  DPRINTF(SD,"Instruction: %s is stalled for too long.", *inst);
+                  softbrain.print_stats();
+                  softbrain.done(true,0);
+                  assert(0 && "Max SD instruction wait");
+                }
+                break; // get out of scheduling loop
+              } else {
+                last_sd_issue = cyc;
+              }
+            }
 
             /* Try and issue an instruction into an FU, assume we didn't and
              * fix that in the loop */
