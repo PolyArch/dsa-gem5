@@ -6,6 +6,8 @@
 #include <vector>
 #include <deque>
 #include <map>
+#include <unordered_map>
+
 #include <stdio.h>
 #include <iostream>
 #include <cstdlib>
@@ -17,6 +19,8 @@
 #include <queue>
 #include <list>
 #include <sstream>
+#include <utility>
+#include <iomanip>
 
 #include "sim-debug.hh"
 #include "ticker.hh"
@@ -76,6 +80,16 @@ using namespace SB_CONFIG;
       assert(0 && "stopping"); \
     }\
   }
+
+struct pair_hash {
+    template <class T1, class T2>
+    std::size_t operator () (const std::pair<T1,T2> &p) const {
+        auto h1 = std::hash<T1>{}(p.first);
+        auto h2 = std::hash<T2>{}(p.second);
+
+        return (h1 ^ h2) + h1;  
+    }
+};
 
 
 //forward decls
@@ -398,6 +412,11 @@ public:
   addr_t _scr_address;
 };
 
+//This is a hierarchical classification of access types
+enum class STR_PAT {PURE_CONTIG, SIMPLE_REPEATED, 
+                        SIMPLE_STRIDE, OVERLAP, CONST, REC, IND,
+                        NONE, OTHER, LEN};
+
 //1.DMA -> Port    or    2.Port -> DMA
 struct base_stream_t {
   static int ID_SOURCE;
@@ -411,7 +430,7 @@ struct base_stream_t {
 
   void set_empty(bool b);
 
-  std::string name_of(LOC loc) {
+  static std::string name_of(LOC loc) {
     switch(loc) {
       case LOC::NONE: return "NONE";
       case LOC::DMA: return "DMA";
@@ -424,28 +443,26 @@ struct base_stream_t {
 
   virtual LOC src() {return LOC::NONE;}
   virtual LOC dest() {return LOC::NONE;}
+
   virtual std::string short_name() {
     return name_of(src()) + "->" + name_of(dest());
   }
 
   bool check_set_empty() {
+    inc_requests(); // check if correct
     if(!stream_active()) {
       set_empty(true); 
     } 
     return _empty;
   }
+
   virtual ~base_stream_t() { }
   virtual void print_status() {
-    if(stream_active()) {
-      std::cout << "               ACTIVE";
-    } else {
-      std::cout << "             inactive";
-    }
-    if(empty()) {
-      std::cout << "EMPTY!!!!!!!!!!!!!!!!!!!!\n";
-    } else {
-      std::cout << "\n";
-    }
+    if(stream_active())  std::cout << "               ACTIVE";
+    else                 std::cout << "             inactive";
+ 
+    if(empty())          std::cout << "EMPTY!\n";
+    else                 std::cout << "\n";
   }
 
   virtual int ivp_dest() {return -1;}
@@ -453,7 +470,8 @@ struct base_stream_t {
   void set_id() {_id=ID_SOURCE++;}
   int id() {return _id;}
 
-  void set_total_pushed(uint64_t pushed) {_total_pushed=pushed;}
+  void inc_requests() {_reqs++;}
+  uint64_t requests()     {return _reqs;}
 
   virtual uint64_t mem_addr()    {return 0;}  
   virtual uint64_t access_size() {return 0;}  
@@ -467,15 +485,28 @@ struct base_stream_t {
   virtual uint64_t wait_mask()   {return 0;} 
   virtual uint64_t shift_bytes() {return 0;} 
 
+  virtual uint64_t data_volume() {return 0;} 
+  virtual STR_PAT stream_pattern() {return STR_PAT::OTHER;} 
+
+  virtual void set_orig() {}
+
   void set_minst(Minor::MinorDynInstPtr m) {_minst=m;}
   Minor::MinorDynInstPtr minst() {return _minst;}
 
 protected:
   int _id=0;
   bool _empty=false; //presumably, when we create this, it won't be empty
-  uint64_t _total_pushed=0;
   Minor::MinorDynInstPtr _minst;
+  uint64_t _reqs=0;
 };
+
+
+
+static inline uint64_t ilog2(const uint64_t x) {
+  uint64_t y;
+  asm ("\tbsr %1, %0\n" : "=r"(y) : "r" (x));
+  return y;
+}
 
 
 struct mem_stream_base_t : public base_stream_t {
@@ -485,6 +516,12 @@ struct mem_stream_base_t : public base_stream_t {
   
   addr_t _mem_addr;     // CURRENT address of stride
   addr_t _num_strides=0;  // CURRENT strides left
+  addr_t _orig_strides=0;
+
+  virtual void set_orig() {
+    _orig_strides = _num_strides;
+  }
+
   int _shift_bytes=0;
 
   virtual uint64_t mem_addr()    {return _mem_addr;}  
@@ -492,6 +529,24 @@ struct mem_stream_base_t : public base_stream_t {
   virtual uint64_t stride()      {return _stride;} 
   virtual uint64_t num_strides() {return _num_strides;} 
   virtual uint64_t shift_bytes() {return _shift_bytes;} 
+
+  virtual STR_PAT stream_pattern() {
+    if(_access_size==0 || _orig_strides==0) {
+      return STR_PAT::NONE;
+    } else if(_access_size == _stride || _orig_strides == 1) {
+      return STR_PAT::PURE_CONTIG;
+    } else if(_stride > _access_size) { //know _orig_strides > 1
+      return STR_PAT::SIMPLE_STRIDE;
+    } else if(_stride == 0) {
+      return STR_PAT::SIMPLE_REPEATED;
+    } else { 
+      return STR_PAT::OVERLAP;
+    }
+  } 
+
+  virtual uint64_t data_volume() {
+    return _orig_strides * _access_size;
+  }
 
   addr_t cur_addr() { 
     //return _mem_addr + _bytes_in_access;
@@ -525,9 +580,7 @@ struct mem_stream_base_t : public base_stream_t {
 
   bool stream_active() {
     return _num_strides!=0;
-  }
-
- 
+  } 
 };
 
 //.........STREAM DEFINITION.........
@@ -634,9 +687,17 @@ struct scr_dma_stream_t : public mem_stream_base_t {
 struct scr_port_base_t : public base_stream_t {
   addr_t _scratch_addr; // CURRENT address
   addr_t _num_bytes=0;  // CURRENT bytes left
+  addr_t _orig_bytes=0;  // bytes left
 
   virtual uint64_t scratch_addr(){return _scratch_addr;} 
   virtual uint64_t num_bytes()   {return _num_bytes;} 
+
+  virtual uint64_t data_volume() {return _orig_bytes;}
+  virtual STR_PAT stream_pattern() {return STR_PAT::PURE_CONTIG;}
+
+  virtual void set_orig() {
+    _orig_bytes = _num_bytes;
+  }
 
   //Return next address
   addr_t pop_addr() {
@@ -701,6 +762,11 @@ struct const_port_stream_t : public base_stream_t {
   addr_t _constant;
   int _in_port;
   addr_t _num_elements;
+  addr_t _orig_elements;
+
+  virtual void set_orig() {
+    _orig_elements = _num_elements;
+  }
 
   uint64_t constant()    {return _constant;} 
   uint64_t in_port()     {return _in_port;} 
@@ -710,6 +776,10 @@ struct const_port_stream_t : public base_stream_t {
 
   virtual LOC src() {return LOC::CONST;}
   virtual LOC dest() {return LOC::PORT;}
+
+  virtual uint64_t data_volume() {return _num_elements * sizeof(SBDT);}
+  virtual STR_PAT stream_pattern() {return STR_PAT::CONST;}
+
 
   bool stream_active() {
     return _num_elements!=0;
@@ -728,6 +798,15 @@ struct port_port_stream_t : public base_stream_t {
   int _in_port;
   int _out_port;
   addr_t _num_elements;
+  addr_t _orig_elements;
+
+
+  virtual void set_orig() {
+    _orig_elements = _num_elements;
+  }
+
+  virtual uint64_t data_volume() {return _num_elements * sizeof(SBDT);}
+  virtual STR_PAT stream_pattern() {return STR_PAT::REC;}
 
   uint64_t in_port()     {return _in_port;} 
   uint64_t out_port()     {return _out_port;} 
@@ -761,10 +840,19 @@ struct indirect_base_stream_t : public base_stream_t {
   addr_t _num_elements;
   addr_t _index_addr;
 
+  addr_t _orig_elements;
+
+  virtual void set_orig() {
+    _orig_elements = _num_elements;
+  }
+
   virtual uint64_t ind_port()     {return _ind_port;} 
   virtual uint64_t ind_type()     {return _type;} 
   virtual uint64_t num_strides() {return _num_elements;} 
   virtual uint64_t index_addr() {return _index_addr;} 
+
+  virtual uint64_t data_volume() {return _num_elements * sizeof(SBDT);} //TODO: config
+  virtual STR_PAT stream_pattern() {return STR_PAT::IND;}
 
   //if index < 64 bit, the index into the word from the port
   unsigned _index_in_word; 
@@ -824,9 +912,9 @@ struct indirect_stream_t : public indirect_base_stream_t {
 
   uint64_t ind_port()     {return _ind_port;} 
   uint64_t ind_type()     {return _type;} 
-  uint64_t num_strides() {return _num_elements;} 
-  uint64_t index_addr() {return _index_addr;} 
-  uint64_t in_port()     {return _in_port;} 
+  uint64_t num_strides()  {return _num_elements;} 
+  uint64_t index_addr()   {return _index_addr;} 
+  uint64_t in_port()      {return _in_port;} 
 
   virtual int ivp_dest() {return _in_port;}
 
@@ -1079,7 +1167,94 @@ class port_controller_t : public data_controller_t {
   //std::deque<const_port_stream_t> _const_port_queue;
 };
 
-//Softbrain RISCV Extension 
+
+
+
+struct stream_stats_histo_t {
+  uint64_t vol_by_type[(int)STR_PAT::LEN];
+  uint64_t vol_by_len[64];
+  std::unordered_map<uint64_t,uint64_t> vol_by_len_map;
+  std::unordered_map<std::pair<int,int>,uint64_t,pair_hash> vol_by_source;
+  uint64_t total_vol=0;
+  uint64_t total=0;
+
+  stream_stats_histo_t() {
+    for(int i = 0; i < (int)STR_PAT::LEN; ++i) {vol_by_type[i]=0;}
+    for(int i = 0; i < 64; ++i)     {vol_by_len[i]=0;}
+  }
+
+  void add(STR_PAT t, LOC src, LOC dest, uint64_t vol) {
+    vol_by_source[std::make_pair((int)src,(int)dest)] += vol;
+    vol_by_type[(int)t] += vol;
+    vol_by_len[ilog2(vol)]+=vol;
+    vol_by_len_map[vol]+=vol;
+    total_vol+=vol;
+    total++;
+  }
+
+  std::string name_of(STR_PAT t) {
+    switch(t) {
+      case STR_PAT::PURE_CONTIG: return "PURE_CONTIG";
+      case STR_PAT::SIMPLE_REPEATED: return "REPEATED";
+      case STR_PAT::SIMPLE_STRIDE: return "STRIDE";
+      case STR_PAT::OVERLAP: return "OVERLAP";
+      case STR_PAT::CONST: return "CONST";
+      case STR_PAT::REC: return "REC";
+      case STR_PAT::IND: return "IND";
+      case STR_PAT::NONE: return "NONE";
+      case STR_PAT::OTHER: return "NONE";
+      default: return "UNDEF";
+    }
+    return "XXXXX";
+  }
+
+  void print(std::ostream& out) {
+    out << std::setprecision(2);
+    out << " by orig->dest:\n";
+    for(auto i : vol_by_source) {
+      out << base_stream_t::name_of((LOC)(i.first.first)) << "->"
+          << base_stream_t::name_of((LOC)(i.first.second)) << ": ";
+      out << ((double)i.second)/total_vol << "\n";
+    }
+
+    out << "   by pattern type:\n";
+    for(int i = 0; i < (int)STR_PAT::LEN; ++i) {
+      out << name_of((STR_PAT)i) << ": " 
+          << ((double)vol_by_type[i])/total_vol << "\n";
+    }
+    int lowest=64, highest=0;
+    for(int i = 0; i < 64; ++i) {
+      if(vol_by_len[i]) {
+        if(i < lowest) lowest=i;
+        if(i > highest) highest=i;
+      }
+    }
+    out << "    by len (log2 bins):\n";
+    for(int i = 1,x=2; i < highest; ++i,x*=2) {
+      out << i << ": " << vol_by_len[i] << "(" << x << " to " << x*2-1 << ")\n";
+    }
+  }
+
+  
+
+};
+
+struct stream_stats_t { 
+  stream_stats_histo_t reqs_histo;
+  stream_stats_histo_t vol_histo;
+
+  void add(STR_PAT t, LOC src, LOC dest, uint64_t vol, uint64_t reqs) {
+    vol_histo.add(t,src,dest,vol);
+    reqs_histo.add(t,src,dest,vol);
+  }
+
+  void print(std::ostream& out) {
+    out << "Volume ";
+    vol_histo.print(out);
+  } 
+
+};
+
 class softsim_t 
 {
   friend class ticker_t;
@@ -1092,6 +1267,13 @@ public:
 
   //Simulator Interface
   softsim_t(softsim_interf_t* softsim_interf, Minor::LSQ* lsq);
+
+  void process_stream_stats(base_stream_t& s) {
+    uint64_t    vol  = s.data_volume();
+    uint64_t    reqs = s.requests();
+    STR_PAT t        = s.stream_pattern();
+    _stream_stats.add(t,s.src(),s.dest(),vol,reqs);
+  }
 
   void run_until(uint64_t i);
   void roi_entry(bool enter);
@@ -1257,7 +1439,6 @@ private:
   void do_cgra();
   void execute_pdg(unsigned instance);
 
-
   void forward_progress() {_waiting_cycles=0;}
 
   //members------------------------
@@ -1332,10 +1513,11 @@ private:
   int _stat_cmds_complete=0;
   int _stat_sb_insts=0;
 
-  //
+
   std::map<SB_CONFIG::sb_inst_t,int> _total_histo;
   std::map<int,int> _vport_histo;
 
+  stream_stats_t _stream_stats;  
 
   //Stuff for tracking stats
   uint64_t _waiting_cycles=0;
