@@ -682,6 +682,8 @@ class LSQ : public Named
 
     virtual ~LSQ();
 
+    MinorCPU& get_cpu() {return cpu;}
+
   public:
     /** Step checks the queues to see if their are issuable transfers
      *  which were not otherwise picked up by tests at the end of other

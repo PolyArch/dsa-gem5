@@ -16,12 +16,11 @@ class ticker_t {
 
   bool in_roi() {return _in_roi;}
 
-  void run_until(uint64_t i); //In-order core is busy until cycle i
   void roi_entry(bool enter);
 
   void tick(); //Tick one time
 
-  uint64_t now() {return _sb_now;}
+  uint64_t now();
 
   void timestamp();
   uint64_t elpased_time_in_roi() {return _elapsed_time_in_roi;}
@@ -32,7 +31,6 @@ class ticker_t {
 
   private:
   softsim_t* _sb=NULL;
-  uint64_t _sb_now=0;
   bool _prev_done = true;
 
   bool _in_roi = true;

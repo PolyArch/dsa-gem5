@@ -28,6 +28,7 @@
 #include "cpu/minor/dyn_inst.hh"
 #include "cpu/minor/lsq.hh"
 
+
 using namespace SB_CONFIG;
 
 #define SBDT uint64_t           //softbrain datatype
@@ -1275,7 +1276,6 @@ public:
     _stream_stats.add(t,s.src(),s.dest(),vol,reqs);
   }
 
-  void run_until(uint64_t i);
   void roi_entry(bool enter);
   void set_not_in_use(); // tell softsim to not compute things: ) 
   bool in_use();

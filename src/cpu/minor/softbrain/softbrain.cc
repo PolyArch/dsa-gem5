@@ -6,6 +6,7 @@
 #include <iomanip>
  
 #include "softbrain.hh"
+#include "cpu/minor/cpu.hh"
 
 extern "C" void libsbsim_is_present() {}
 
@@ -201,6 +202,10 @@ void port_interf_t::initialize(SbModel* sbconfig) {
 
 
 // ---------------------------- SOFTBRAIN ------------------------------------------
+uint64_t softsim_t::now() {
+  return _lsq->get_cpu().curCycle();
+}
+
 void softsim_t::step() {
   _ticker->tick();
 }
@@ -264,7 +269,6 @@ softsim_t::softsim_t(softsim_interf_t* softsim_interf, Minor::LSQ* lsq) :
 
 
 void softsim_t::timestamp(){_ticker->timestamp();}
- void softsim_t::run_until(uint64_t i) {_ticker->run_until(i);} 
  void softsim_t::roi_entry(bool enter) {_ticker->roi_entry(enter);}
  void softsim_t::set_not_in_use()  {_ticker->set_not_in_use();}
 bool softsim_t::in_use() { return _ticker->in_use();}
@@ -582,10 +586,6 @@ void softsim_t::print_stats() {
    pedantic_statistics(stat_file);
 
 
-}
-
-uint64_t softsim_t::now() {
- return _ticker->now();
 }
 
 // --------------------------SCHEDULE STREAMS ONTO CONTROLLERS-----------------------
