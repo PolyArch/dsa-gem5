@@ -231,6 +231,8 @@ if options.simpoint_profile:
         fatal("SimPoint generation not supported with more than one CPUs")
 
 for i in xrange(np):
+    system.cpu[i].executeMaxAccessesInMemory = 20
+
     if options.smt:
         system.cpu[i].workload = multiprocesses
     elif len(multiprocesses) == 1:

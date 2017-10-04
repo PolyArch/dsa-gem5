@@ -567,9 +567,8 @@ void softsim_t::print_statistics(std::ostream& out) {
 }
 
 //wait and print stats
+//Softbrain should be complete at this point, or results will be inconsistent
 void softsim_t::print_stats() {
-  wait_until_done(true);
- 
   print_statistics(std::cout);
   print_status();
 
@@ -580,12 +579,9 @@ void softsim_t::print_stats() {
      stat_file.open("stats/default.sb-stats", ofstream::trunc | ofstream::out);
    }
 
-
    assert(stat_file.is_open());
    print_statistics(stat_file);
    pedantic_statistics(stat_file);
-
-
 }
 
 // --------------------------SCHEDULE STREAMS ONTO CONTROLLERS-----------------------
@@ -1022,6 +1018,7 @@ void dma_controller_t::port_resp(unsigned cur_port) {
         in_vp.set_status(port_data_t::STATUS::FREE);
       }
       _sb->_lsq->popResponse(cur_port);
+      _mem_read_reqs--;
       return;
     }
   }
@@ -1032,8 +1029,6 @@ void dma_controller_t::port_resp(unsigned cur_port) {
 // If response, can issue load
 // Limitations: 1 Response per cycle (512 bits/cycle)
 void dma_controller_t::cycle(){
-  //Handle response from REAL memory
-
   //Memory read to config
   if(Minor::LSQ::LSQRequestPtr response =_sb->_lsq->findResponse(CONFIG_STREAM)) {
     PacketPtr packet = response->packet;
@@ -1063,6 +1058,7 @@ void dma_controller_t::cycle(){
 
       //handled_req=true;
       _fake_scratch_reqs--;
+      _mem_read_reqs--;
 
       _sb->_lsq->popResponse(SCR_STREAM);
     }
@@ -1116,20 +1112,26 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
   //  if(_dma_port_streams.size()) { //DMA READ (addr)
   //    
   //  }
-  //}
+  //
 
   for(unsigned i = s; i < t; ++i) {
     which=(which+1)==t ? s:which+1; //rolling increment
     std::vector<SBDT> data;
 
     if(which<_dma_port_streams.size()) { //DMA READ (addr)
+
       dma_port_stream_t& dma_s = _dma_port_streams[which];
 
-      if(dma_s.stream_active() && _fake_mem.size() < MAX_MEM_REQS) {
+      if(dma_s.stream_active()) {
+//        cout << "stream active" << which << " unres remaining " 
+//             << _sb->_lsq->sd_transfers[dma_s._in_port].unreservedRemainingSpace()
+//             << " can req: " << _sb->_lsq->canRequest() << "\n";
+
         auto& in_vp = _sb->port_interf().in_port(dma_s._in_port);
 
         if(_sb->_lsq->sd_transfers[dma_s._in_port].unreservedRemainingSpace()>0 
            && _sb->_lsq->canRequest()) {
+    
           _sb->_lsq->sd_transfers[dma_s._in_port].reserve();
 
           req_read(dma_s,-1/*scratch_addr*/);
@@ -1142,20 +1144,20 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
       }
     } else if(which==_dma_port_streams.size()) {
       //READ TO SCRATCH
-      if(_dma_scr_stream.stream_active() && _fake_mem.size() < MAX_MEM_REQS) {
+      if(_dma_scr_stream.stream_active()) {
         if(_sb->_lsq->sd_transfers[SCR_STREAM].unreservedRemainingSpace()>0
-          && _sb->_lsq->canRequest()) {
+                    && _sb->_lsq->canRequest()) {
           _sb->_lsq->sd_transfers[SCR_STREAM].reserve();
           int words_read = req_read(_dma_scr_stream,
                                     _dma_scr_stream._scratch_addr);
 
-        //need to update scratch address for next time
+          //need to update scratch address for next time
           _dma_scr_stream._scratch_addr+= words_read * DATA_WIDTH;
 
-        _fake_scratch_reqs++;
+          _fake_scratch_reqs++;
 
-        return;
-      }
+          return;
+        }
       }
     } else if(which < _dma_port_streams.size()+1+_indirect_streams.size()) {
       int which_indirect = which - (_dma_port_streams.size()+1);
@@ -1289,6 +1291,8 @@ int dma_controller_t::req_read(mem_stream_base_t& stream,
   _sb->_lsq->pushRequest(stream.minst(),true/*isLoad*/,NULL/*data*/,
               MEM_WIDTH/*cache line*/, base_addr, 0/*flags*/, 0 /*res*/,
               sdInfo);
+ 
+  _mem_read_reqs++;
 
   return words;
 }
@@ -1351,6 +1355,7 @@ void dma_controller_t::ind_read_req(indirect_stream_t& stream,
     _sb->_stat_tot_loads+=1;
   }
 
+  _mem_read_reqs++;
 }
 
 void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
@@ -1882,9 +1887,9 @@ bool dma_controller_t::done(bool show, int mask) {
         return false;
       }
     }
-    if(!_fake_mem.empty()) {
+    if(mem_reqs() != 0) {
       if(show) {
-        cout << "Fake Mem contains data\n";
+        cout << "Memory requests are outstanding\n";
       }
       return false;
     }
@@ -2005,32 +2010,6 @@ bool softsim_t::cgra_done(bool show,int mask) {
   return true; 
 }
 
-
-void softsim_t::wait_until_done(bool show, int mask) {
-  uint64_t max_wait_for_progress=10000;  
-
-  if(done(false,mask)) {
-    //cout << "Done without waiting\n";
-    return;
-  }
-
-  while(!done(false,mask) && _waiting_cycles < max_wait_for_progress) {
-    _ticker->tick();
-  }
-  done(show,mask);
- 
-  //print_statistics(std::cout);
-
-  if(_waiting_cycles >= max_wait_for_progress) {
-    cout << "FATAL ERROR: SOFTBRAIN WAITING TOO LONG! (";
-    cout << dec << "waiting for:" << _waiting_cycles << "cycles)\n";
-
-    print_statistics(cerr);
-    print_status();
-    assert(0);
-  }
-
-}
 
 // ----------------------- SB STREAM COMMANDS ---------------------------------------
 #ifdef SB_TIMING

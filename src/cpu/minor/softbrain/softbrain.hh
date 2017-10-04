@@ -1016,7 +1016,7 @@ class dma_controller_t : public data_controller_t {
   bool schedule_indirect_wr(indirect_wr_stream_t&s);
 
   int scr_buf_size() {return _scr_write_buffer.size();}
-  int mem_reqs() {return _fake_mem.size();}
+  int mem_reqs() {return _mem_read_reqs + _mem_write_reqs;}
 
   private:
 
@@ -1072,7 +1072,7 @@ class dma_controller_t : public data_controller_t {
   };
   //structure for faking memory acces stime
   //address to stream -> [stream_index, data]
-  std::multimap<uint64_t, fake_mem_req> _fake_mem;
+  uint64_t _mem_read_reqs=0, _mem_write_reqs=0;
   std::vector<uint64_t> _prev_port_cycle;
   uint64_t _prev_scr_cycle=0;
   int _fake_scratch_reqs=0;
@@ -1318,7 +1318,6 @@ public:
   port_interf_t& port_interf() {
     return _port_interf;
   }
-  void wait_until_done(bool show = false, int mask =0); 
 
   void set_cur_minst(Minor::MinorDynInstPtr m) {
     assert(m);

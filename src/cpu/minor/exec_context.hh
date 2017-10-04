@@ -361,9 +361,6 @@ class ExecContext : public ::ExecContext
 
 
 #ifdef ISA_HAS_SD
-    uint64_t cycle_begin=0;
-    uint64_t total_cycles=0;
-
     void setSDReg(uint64_t val, int sd_idx) {
         thread.setSDReg(val, sd_idx);
     }
@@ -372,18 +369,9 @@ class ExecContext : public ::ExecContext
         softsim_t& sb = execute.getSB();
         sb.set_cur_minst(inst);
         switch(sd_func_opcode) {
-            case SB_BEGIN_ROI: 
-              cycle_begin=cpu.curCycle();
-              sb.roi_entry(true); 
-              break;
-            case SB_END_ROI: 
-              total_cycles += cpu.curCycle() - cycle_begin;
-              sb.roi_entry(false); 
-              break;
-            case SB_STATS: 
-              std::cout << "GEM5 ROI Cycles: " << total_cycles << "\n";
-              sb.print_stats(); 
-              break;
+            case SB_BEGIN_ROI: sb.roi_entry(true); break;
+            case SB_END_ROI: sb.roi_entry(false); break;
+            case SB_STATS: sb.print_stats(); break;
             case SB_CFG: sb.req_config(
                 thread.getSDReg(SD_MEM_ADDR),      thread.getSDReg(SD_CFG_SIZE)); 
             break;
