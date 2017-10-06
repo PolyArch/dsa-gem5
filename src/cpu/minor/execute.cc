@@ -575,6 +575,10 @@ Execute::issue(ThreadID thread_id)
                 *inst, thread.streamSeqNum);
             issued = true;
             discarded = true;
+        } else if(!thread.inFlightInsts->canReserve()) {
+            DPRINTF(MinorExecute, "Instruction: %s not issued because"
+                " there are too many in flight\n", *inst);
+            issued = false;
         } else {
             if(inst->staticInst->isSD() && softbrain.is_in_config()) {
                issued=false;
@@ -585,17 +589,21 @@ Execute::issue(ThreadID thread_id)
                 issued = false;
                 //DPRINTF(SD,"Can't issue stream b/c buffer is full");
                 //continue;
-            } else if(inst->staticInst->isSDWait() &&
-                !softbrain.done(false,inst->staticInst->imm()) ) {
+            } else if(inst->staticInst->isSDWait()) {
+              if(!softbrain.done(false,inst->staticInst->imm()) ) {
                 issued = false;
+
                 //DPRINTF(SD,"Wait blocked, mask: %x\n",inst->staticInst->imm());
                 //continue;
+              }
             } 
 
             if(inst->staticInst->isSD()) {
               uint64_t cyc = cpu.curCycle();
+              uint64_t last_event = std::max(last_sd_issue, 
+                                    softbrain.forward_progress_cycle());
               if(!issued) {
-                if(cyc > 10000 + last_sd_issue) {
+                if(cyc > 10000 + last_event) {
                   DPRINTF(SD,"Instruction: %s is stalled for too long.", *inst);
                   softbrain.print_stats();
                   softbrain.done(true,0);
@@ -629,8 +637,7 @@ Execute::issue(ThreadID thread_id)
                 bool fu_is_capable = (!inst->isFault() ?
                     fu->provides(inst->staticInst->opClass()) : true);
 
-                if (inst->isNoCostInst()) {
- 
+                if (inst->isNoCostInst()) { 
                         /* Issue free insts. to a fake numbered FU */
                         fu_index = noCostFUIndex;
 

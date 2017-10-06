@@ -986,8 +986,9 @@ void dma_controller_t::port_resp(unsigned cur_port) {
 
       if(SB_DEBUG::MEM_REQ) {
         _sb->_ticker->timestamp();
-        std::cout << "(real) data into port " << cur_port << ", size: " 
-                  << data.size() << " elements" << (last ? "last" : "") << "\n";
+        std::cout << "response for " << std::hex << packet->getAddr() << std::dec
+                  << "for port " << cur_port << ", size: " 
+                  << data.size() << " elements" << (last ? "(last)" : "") << "\n";
       }
 
       if(_sb->_ticker->in_roi()) {
@@ -1292,6 +1293,13 @@ int dma_controller_t::req_read(mem_stream_base_t& stream,
               MEM_WIDTH/*cache line*/, base_addr, 0/*flags*/, 0 /*res*/,
               sdInfo);
  
+  if(SB_DEBUG::MEM_REQ) {
+    _sb->_ticker->timestamp();
+      std::cout << "request for " << std::hex << base_addr << std::dec
+                    << " for " << words << " needed elements" << "\n";
+  }
+
+
   _mem_read_reqs++;
 
   return words;
@@ -1326,6 +1334,12 @@ void dma_controller_t::ind_read_req(indirect_stream_t& stream,
 
     int index = (addr - base_addr)/8; //TODO: configurable data size please!
     imap.push_back(index);
+
+    if(SB_DEBUG::MEM_REQ) {
+      _sb->_ticker->timestamp();
+      std::cout << "indirect request for " << std::hex << base_addr << std::dec
+                    << " for " << imap.size() << " needed elements" << "\n";
+    }
 
     stream.pop_elem();
     ind_vp.pop_data();
@@ -1801,6 +1815,25 @@ void port_controller_t::print_status() {
 
 
 bool softsim_t::done(bool show,int mask) {
+  bool d = done_internal(show, mask);
+  
+  if(show) return d;
+
+  if(SB_DEBUG::SB_WAIT) {
+    _ticker->timestamp();
+    if(d) {
+      cout << "Done Check -- Done (" << mask << ")\n";
+    } else {
+      cout << "Done Check -- NOT DONE: (" << mask << ")\n";
+      done_internal(true,mask);
+    }
+  }
+
+  return d;
+}
+
+
+bool softsim_t::done_internal(bool show, int mask) {
   if(!_dma_c.done(show,mask) || !_scr_r_c.done(show,mask) || 
      !_scr_w_c.done(show,mask) || !_port_c.done(show,mask)) {
     return false;

@@ -1326,10 +1326,11 @@ public:
   void step();
   bool done(bool show = false, int mask = 0);
 
-
   bool set_in_config() {return _in_config = true;}
   bool is_in_config() {return _in_config;}
   bool can_add_stream();
+
+  uint64_t forward_progress_cycle() { return _forward_progress_cycle; }
 
 private:
   softsim_interf_t* _sim_interf;
@@ -1346,6 +1347,8 @@ private:
     {_sim_interf->st_mem16(addr,val,cycle,m);}    
 
   //***timing-related code***
+  bool done_internal(bool show, int mask);
+
   void cycle_cgra();   //Tick on each cycle
 
   void cycle_in_interf();
@@ -1428,6 +1431,7 @@ private:
   }
   bool can_add_scr_dma_stream()    {
     if(_sbconfig->dispatch_inorder()) {
+
       return _in_port_queue.size()  < _queue_size;
     } else {      
       return _scr_dma_queue.size()  < _queue_size;
@@ -1438,7 +1442,10 @@ private:
   void do_cgra();
   void execute_pdg(unsigned instance);
 
-  void forward_progress() {_waiting_cycles=0;}
+  void forward_progress() {
+    _waiting_cycles=0; 
+    _forward_progress_cycle=now();
+  }
 
   //members------------------------
   ticker_t* _ticker=NULL;
@@ -1520,6 +1527,7 @@ private:
 
   //Stuff for tracking stats
   uint64_t _waiting_cycles=0;
+  uint64_t _forward_progress_cycle=0;
 };
 
 #if 0
