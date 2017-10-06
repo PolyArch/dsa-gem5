@@ -180,7 +180,13 @@ CoherentXBar::recvTimingReq(PacketPtr pkt, PortID slave_port_id)
     calcPacketTiming(pkt, xbar_delay);
 
     // determine how long to be crossbar layer is busy
-    Tick packetFinishTime = clockEdge(Cycles(1)) + pkt->payloadDelay;
+    //Tick packetFinishTime = clockEdge(Cycles(1)) + pkt->payloadDelay;
+
+    //BEGIN TONY HACK
+    Tick packetFinishTime =  std::max<Tick>(
+           clockEdge(Cycles(0))+pkt->payloadDelay, clockEdge(Cycles(1))); 
+    //END TONY HACK
+
 
     if (!system->bypassCaches()) {
         assert(pkt->snoopDelay == 0);
@@ -382,7 +388,14 @@ CoherentXBar::recvTimingResp(PacketPtr pkt, PortID master_port_id)
     calcPacketTiming(pkt, xbar_delay);
 
     // determine how long to be crossbar layer is busy
-    Tick packetFinishTime = clockEdge(Cycles(1)) + pkt->payloadDelay;
+    //
+    //Tick packetFinishTime = clockEdge(Cycles(1)) + pkt->payloadDelay;
+    //
+    //BEGIN TONY HACK
+    Tick packetFinishTime =  std::max<Tick>(
+        clockEdge(Cycles(0))+pkt->payloadDelay, clockEdge(Cycles(1))); 
+    //END TONY HACK
+
 
     if (snoopFilter && !system->bypassCaches()) {
         // let the snoop filter inspect the response and update its state
@@ -530,7 +543,15 @@ CoherentXBar::recvTimingSnoopResp(PacketPtr pkt, PortID slave_port_id)
     calcPacketTiming(pkt, xbar_delay);
 
     // determine how long to be crossbar layer is busy
-    Tick packetFinishTime = clockEdge(Cycles(1)) + pkt->payloadDelay;
+    // BEGIN TONY HACK
+    //Tick packetFinishTime = clockEdge(Cycles(1)) + pkt->payloadDelay;
+    
+    Tick packetFinishTime =  std::max<Tick>(
+           clockEdge(Cycles(0))+pkt->payloadDelay, clockEdge(Cycles(1))); 
+
+    //Tick packetFinishTime = clockEdge(Cycles(0)); 
+
+    //END TONY HACK
 
     // forward it either as a snoop response or a normal response
     if (forwardAsSnoop) {
