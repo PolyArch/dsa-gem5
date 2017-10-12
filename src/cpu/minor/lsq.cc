@@ -1341,7 +1341,7 @@ LSQ::LSQ(std::string name_, std::string dcache_port_name_,
      */
     for(int i = 0; i < 100; ++i) { 
         //Logically this would be implemented with a single queue
-      sd_transfers.emplace_back(name_ + ".sd_transfers", "addr", 16);
+      sd_transfers.emplace_back(name_ + ".sd_transfers", "addr", 22);
     }
 
     if (in_memory_system_limit < 1) {

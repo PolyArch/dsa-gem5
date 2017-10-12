@@ -351,7 +351,7 @@ private:
 
 //.............. Streams and Controllers .................
 
-struct data_buffer {
+struct data_buffer_base {
   static const int length = 128;
 
   bool can_push(int size) {
@@ -388,16 +388,26 @@ protected:
   int _just_pushed=0;
 };
 
-struct scratch_write_data_buffer : data_buffer {
+struct data_buffer : public data_buffer_base {
+  bool can_push_addr(int size, addr_t addr) {
+    if(size + _data.size() <= length) {
+      if((_data.size()==0) ||
+         (_dest_addr+DATA_WIDTH*_data.size()==addr)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   bool push_data(addr_t addr, std::vector<SBDT>& in_data) {
     if(!can_push(in_data.size())) {
       return false;
     }
     if(_data.size()==0) {
-      _scr_address=addr;
-      data_buffer::push_data(in_data);      
-    } else if(_scr_address+DATA_WIDTH*_data.size()==addr) {
-      data_buffer::push_data(in_data);      
+      _dest_addr=addr;
+      data_buffer_base::push_data(in_data);      
+    } else if(_dest_addr+DATA_WIDTH*_data.size()==addr) {
+      data_buffer_base::push_data(in_data);      
     } else {
       return false;
     }
@@ -405,12 +415,15 @@ struct scratch_write_data_buffer : data_buffer {
   }
 
   SBDT pop_data() {
-    _scr_address+=DATA_WIDTH;
-    return data_buffer::pop_data();
+    _dest_addr+=DATA_WIDTH;
+    return data_buffer_base::pop_data();
   }
 
-public:
-  addr_t _scr_address;
+  addr_t dest_addr() {
+    return _dest_addr;
+  }
+protected:
+  uint64_t _dest_addr;
 };
 
 //This is a hierarchical classification of access types
@@ -650,7 +663,8 @@ struct dma_scr_stream_t : public mem_stream_base_t {
   virtual LOC dest() {return LOC::SCR;}  
 
   virtual void print_status() {  
-    std::cout << "dma->scr" << "\tscr=" << _scratch_addr << "\tacc_size=" << _access_size 
+    std::cout << "dma->scr" << "\tscr=" << _scratch_addr 
+              << "\tacc_size=" << _access_size 
               << " stride=" << _stride << " bytes_comp=" << _bytes_in_access 
               << " mem_addr=" << std::hex << _mem_addr << std::dec 
               << " strides_left=" << _num_strides;
@@ -659,29 +673,56 @@ struct dma_scr_stream_t : public mem_stream_base_t {
 
 };
 
-//4.Scratch -> DMA
-//NOT USED RIGHT NOW!
+//4.Scratch -> DMA  TODO -- NEW -- CHECK
 struct scr_dma_stream_t : public mem_stream_base_t {
-  int _scratch_addr; //CURRENT scratch addr
+  int _dest_addr; //current dest addr
+
+  //NOTE/WEIRD/DONOTCHANGE: 
+  uint64_t mem_addr()    {return _mem_addr;}  //referse to memory addr
+  uint64_t access_size() {return _access_size;}  
+  uint64_t stride()      {return _stride;}
+  uint64_t num_strides() {return _num_strides;} 
+  uint64_t shift_bytes() {return _shift_bytes;} 
+//  uint64_t scratch_addr(){return _mem_addr;} 
+
+  virtual LOC src() {return LOC::SCR;}
+  virtual LOC dest() {return LOC::DMA;}
+
+  virtual void print_status() {  
+    std::cout << "scr->dma" << "\tscr=" << _mem_addr
+              << "\tacc_size=" << _access_size 
+              << " stride=" << _stride << " bytes_comp=" << _bytes_in_access 
+              << " dest_addr=" << std::hex << _dest_addr << std::dec 
+              << " strides_left=" << _num_strides;
+    base_stream_t::print_status();
+  }
+};
+
+
+//4. Scratch->Port     
+struct scr_port_stream_t : public mem_stream_base_t {
+  int _in_port;
 
   uint64_t mem_addr()    {return _mem_addr;}  
   uint64_t access_size() {return _access_size;}  
   uint64_t stride()      {return _stride;} 
   uint64_t num_strides() {return _num_strides;} 
   uint64_t shift_bytes() {return _shift_bytes;} 
-  uint64_t scratch_addr(){return _scratch_addr;} 
+//  uint64_t scratch_addr(){return _scratch_addr;} 
+  uint64_t in_port()     {return _in_port;} 
 
   virtual LOC src() {return LOC::SCR;}
-  virtual LOC dest() {return LOC::DMA;}
+  virtual LOC dest() {return LOC::PORT;}
+
+  virtual int ivp_dest() {return _in_port;}
 
   virtual void print_status() {  
-    std::cout << "scr->dma" << "\tscr=" << _scratch_addr << "\tacc_size=" << _access_size 
+    std::cout << "scr->port" << "\tport=" << _in_port << "\tacc_size=" << _access_size 
               << " stride=" << _stride << " bytes_comp=" << _bytes_in_access 
-              << " mem_addr=" << std::hex << _mem_addr << std::dec 
+              << " scr_addr=" << std::hex << _mem_addr << std::dec 
               << " strides_left=" << _num_strides;
     base_stream_t::print_status();
   }
-
 };
 
 
@@ -713,60 +754,58 @@ struct scr_port_base_t : public base_stream_t {
 
 };
 
-//4. Scratch->Port     
-struct scr_port_stream_t : public mem_stream_base_t {
-  int _in_port;
 
-  uint64_t mem_addr()    {return _mem_addr;}  
-  uint64_t access_size() {return _access_size;}  
-  uint64_t stride()      {return _stride;} 
-  uint64_t num_strides() {return _num_strides;} 
-  uint64_t shift_bytes() {return _shift_bytes;} 
-//  uint64_t scratch_addr(){return _scratch_addr;} 
-  uint64_t in_port()     {return _in_port;} 
-
-  virtual LOC src() {return LOC::SCR;}
-  virtual LOC dest() {return LOC::PORT;}
-
-  virtual int ivp_dest() {return _in_port;}
-
-  virtual void print_status() {  
-    std::cout << "scr_port" << "\tport=" << _in_port << "\tacc_size=" << _access_size 
-              << " stride=" << _stride << " bytes_comp=" << _bytes_in_access 
-              << " scr_addr=" << std::hex << _mem_addr << std::dec 
-              << " strides_left=" << _num_strides;
-    base_stream_t::print_status();
-  }
-};
-
-// 5. Port -> Scratch
+// 5. Port -> Scratch -- TODO -- NEW -- CHECK
 struct port_scr_stream_t : public scr_port_base_t {
   int _out_port;
+  uint64_t _shift_bytes; //new unimplemented
 
   uint64_t scratch_addr(){return _scratch_addr;} 
   uint64_t num_bytes()   {return _num_bytes;} 
   uint64_t out_port()    {return _out_port;} 
+  uint64_t shift_bytes()    {return _shift_bytes;} 
 
   virtual LOC src() {return LOC::PORT;}
   virtual LOC dest() {return LOC::SCR;}
 
   virtual void print_status() {  
-    std::cout << "scr->port" << "\tport=" << _out_port
-              << "\tscr=" << _scratch_addr 
-              << " bytes_left=" << _num_bytes;
+    std::cout << "port->scr" << "\tport=" << _out_port
+              << "\tscr_addr=" << _scratch_addr 
+              << " bytes_left=" << _num_bytes << " shift_bytes=" << _shift_bytes;
     base_stream_t::print_status();
   }
+
 };
 
 //Constant -> Port
 struct const_port_stream_t : public base_stream_t {
-  addr_t _constant;
   int _in_port;
+  addr_t _constant;
   addr_t _num_elements;
+  addr_t _constant2;
+  addr_t _num_elements2;
+  addr_t _iters_left;
+
+  //running counters
+  addr_t _elements_left;
+  addr_t _elements_left2;
+  addr_t _num_iters;
+
   addr_t _orig_elements;
 
+  void check_for_iter() {
+    if(!_elements_left && !_elements_left2 && _iters_left) {
+      _iters_left--;
+      _elements_left=_num_elements;
+      _elements_left2=_num_elements2;
+    }
+  }
+
   virtual void set_orig() {
-    _orig_elements = _num_elements;
+    _iters_left=_num_iters;
+    _elements_left=0;
+    _elements_left2=0;
+    check_for_iter();
   }
 
   uint64_t constant()    {return _constant;} 
@@ -778,17 +817,43 @@ struct const_port_stream_t : public base_stream_t {
   virtual LOC src() {return LOC::CONST;}
   virtual LOC dest() {return LOC::PORT;}
 
-  virtual uint64_t data_volume() {return _num_elements * sizeof(SBDT);}
-  virtual STR_PAT stream_pattern() {return STR_PAT::CONST;}
+  virtual uint64_t data_volume() {
+    return (_num_elements + _num_elements2) * _num_iters * sizeof(SBDT);
+  }
+  virtual STR_PAT stream_pattern() {
+    return STR_PAT::CONST;
+  }
 
+  uint64_t pop_item() {
+    check_for_iter();
+    if(_elements_left > 0) {
+      _elements_left--;
+      return _constant;
+    } else if(_elements_left2) {
+      _elements_left2--;
+      return _constant2;
+    }
+    assert(0&&"should not have popped");
+    return 0;
+  }
 
   bool stream_active() {
-    return _num_elements!=0;
+    return _iters_left!=0 || _elements_left!=0 || _elements_left2!=0;
   }
 
   virtual void print_status() {  
-    std::cout << "const->port" << "\tconst:" << _constant
-              << "\tport=" << _in_port << " elem_left=" << _num_elements;
+     std::cout << "const->port" << "\tport=" << _in_port;
+     if(_num_elements) {
+       std::cout << "\tconst:" << _constant << " left=" << _elements_left 
+                 << "/" << _num_elements;
+     }
+     if(_num_elements2) {
+       std::cout << "\tconst2:" << _constant2  << " left=" << _elements_left2
+                 << "/"  << _num_elements2;
+     }
+     std::cout << "\titers=" << _iters_left << "/" << _num_iters << "\n";
+
+
     base_stream_t::print_status();
   }
 
@@ -984,7 +1049,6 @@ class dma_controller_t : public data_controller_t {
     for(auto& i : _indirect_wr_streams) {i.reset();}
     for(auto& i : _port_dma_streams) {i.reset();}
     _dma_scr_stream.reset();
-    _scr_dma_stream.reset();
 
     _prev_port_cycle.resize(64); //resize to maximum conceivable ports
     mask.resize(MEM_WIDTH/DATA_WIDTH);
@@ -1006,12 +1070,10 @@ class dma_controller_t : public data_controller_t {
   void cycle_status();
 
   dma_scr_stream_t& dma_scr_stream() {return _dma_scr_stream;}
-  scr_dma_stream_t& scr_dma_stream() {return _scr_dma_stream;}
 
   bool schedule_dma_port(dma_port_stream_t& s);
   bool schedule_dma_scr(dma_scr_stream_t& s);
   bool schedule_port_dma(port_dma_stream_t& s);
-  bool schedule_scr_dma(scr_dma_stream_t& s);
   bool schedule_indirect(indirect_stream_t&s);
   bool schedule_indirect_wr(indirect_wr_stream_t&s);
 
@@ -1031,16 +1093,14 @@ class dma_controller_t : public data_controller_t {
   //This ordering defines convention of checking
   std::vector<dma_port_stream_t> _dma_port_streams;  //reads
   dma_scr_stream_t _dma_scr_stream;  
-  scratch_write_data_buffer _scr_write_buffer;
+  data_buffer _scr_write_buffer;
+  data_buffer _scr_read_buffer; 
 
   std::vector<port_dma_stream_t> _port_dma_streams; //writes
 
   std::vector<indirect_stream_t> _indirect_streams; //indirect reads
   std::vector<indirect_wr_stream_t> _indirect_wr_streams; //indirect reads
-
-  scr_dma_stream_t _scr_dma_stream; //more or less not implemetned right now
-  data_buffer _scr_read_buffer; // NOT CURRENTLY USED
-
+ 
   struct fake_mem_req {
     addr_t scr_addr;
     int port=-1;
@@ -1090,21 +1150,29 @@ class scratch_read_controller_t : public data_controller_t {
     : data_controller_t(host) {
     _dma_c=d; //save this for later
     _scr_port_stream.reset();
+    _scr_dma_stream.reset();
     mask.resize(SCR_WIDTH/DATA_WIDTH);
   }
 
+  std::vector<SBDT> read_scratch(mem_stream_base_t& stream);
   void cycle();
+
   void finish_cycle();
   bool done(bool,int);
 
+
   bool schedule_scr_port(scr_port_stream_t& s);
+  bool schedule_scr_dma(scr_dma_stream_t& s);
 
   void print_status();
   void cycle_status();
 
+  scr_dma_stream_t& scr_dma_stream() {return _scr_dma_stream;}
+
   private:
   int _which=0;
 
+  scr_dma_stream_t _scr_dma_stream;
   scr_port_stream_t _scr_port_stream;
   dma_controller_t* _dma_c;  
 };
@@ -1269,13 +1337,6 @@ public:
   //Simulator Interface
   softsim_t(softsim_interf_t* softsim_interf, Minor::LSQ* lsq);
 
-  void process_stream_stats(base_stream_t& s) {
-    uint64_t    vol  = s.data_volume();
-    uint64_t    reqs = s.requests();
-    STR_PAT t        = s.stream_pattern();
-    _stream_stats.add(t,s.src(),s.dest(),vol,reqs);
-  }
-
   void roi_entry(bool enter);
   void set_not_in_use(); // tell softsim to not compute things: ) 
   bool in_use();
@@ -1299,22 +1360,30 @@ public:
   // IF SB_TIMING, these just send the commands to the respective controllers
   // ELSE, they carry out all operations that are possible at that point
   void req_config(addr_t addr, int size);
+  void cfg_port(uint64_t config, uint64_t in_port) {} //new -- define
   void configure(addr_t addr, int size, uint64_t* bits);
   void load_dma_to_scratch(addr_t mem_addr, uint64_t stride, 
       uint64_t access_size, uint64_t num_strides, addr_t scratch_addr);
+  void write_dma_from_scratch(addr_t scratch_addr, uint64_t stride, 
+      uint64_t access_size, uint64_t num_strides, addr_t mem_addr); //new
   void load_dma_to_port(addr_t mem_addr, uint64_t stride, 
       uint64_t access_size, uint64_t num_strides, int port);
   void load_scratch_to_port(addr_t scratch_addr, uint64_t stride, 
       uint64_t access_size, uint64_t num_strides, int in_port);
-  void write_scratchpad(int out_port, addr_t scratch_addr, uint64_t num_bytes);
-  void write_dma(int out_port, uint64_t stride, uint64_t access_size, 
+  void write_scratchpad(int out_port, addr_t scratch_addr, 
+                        uint64_t num_bytes, uint64_t shift_bytes); //new
+  void write_dma(uint64_t garb_elem, //new
+      int out_port, uint64_t stride, uint64_t access_size, 
       uint64_t num_strides, addr_t mem_addr, int shift_bytes, int garbage);
   void reroute(int out_port, int in_port, uint64_t num_elem);
   void indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
     uint64_t num_elem);
   void indirect_write(int ind_port, int ind_type, int out_port, 
     addr_t index_addr, uint64_t num_elem);
-  void write_constant(int in_port, SBDT constant, uint64_t num_elem);
+  void write_constant(int num_strides, int in_port, 
+                      SBDT constant, uint64_t num_elem, 
+                      SBDT constant2, uint64_t num_elem2, 
+                      uint64_t flags); //new
   port_interf_t& port_interf() {
     return _port_interf;
   }
@@ -1331,6 +1400,16 @@ public:
   bool can_add_stream();
 
   uint64_t forward_progress_cycle() { return _forward_progress_cycle; }
+
+  Minor::MinorDynInstPtr cur_minst() {return _cur_minst;}
+
+  void process_stream_stats(base_stream_t& s) {
+    uint64_t    vol  = s.data_volume();
+    uint64_t    reqs = s.requests();
+    STR_PAT     t  = s.stream_pattern();
+    _stream_stats.add(t,s.src(),s.dest(),vol,reqs);
+  }
+
 
 private:
   softsim_interf_t* _sim_interf;

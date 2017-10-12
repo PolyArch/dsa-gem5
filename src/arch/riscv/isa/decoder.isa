@@ -510,6 +510,11 @@ decode OPCODE default Unknown::unknown() {
                 xc->setSDReg(i_imm,SD_CFG_SIZE);
                 xc->callSDFunc(SB_CFG);
             }}, IsSDConfig, IsNonSpeculative, No_OpClass);
+            0x1: sb_cfg_port({{
+                xc->setSDReg(Rs1,SD_CONSTANT);
+                xc->setSDReg(s_imm,SD_IN_PORT);
+                xc->callSDFunc(SB_CFG_PORT);
+            }}, IsSDConfig, IsNonSpeculative, No_OpClass);
         }
         0x2b: decode FUNCT3 {
             0x0: sb_dma_scr({{
@@ -529,17 +534,38 @@ decode OPCODE default Unknown::unknown() {
                 xc->setSDReg(s_imm,SD_IN_PORT);
                 xc->callSDFunc(SB_MEM_PRT);
             }}, IsSDStream, IsNonSpeculative, No_OpClass);
+            0x3: sb_scr_dma({{
+                xc->setSDReg(Rs1,SD_NUM_STRIDES);
+                xc->setSDReg(Rs2,SD_SCRATCH_ADDR);
+                xc->callSDFunc(SB_SCR_MEM);
+            }}, IsSDStream, IsNonSpeculative, No_OpClass);
             0x4: sb_const({{
-                xc->setSDReg(Rs1,SD_CONSTANT);
-                xc->setSDReg(Rs2,SD_NUM_ELEM);
-                xc->setSDReg(s_imm,SD_IN_PORT);
-                xc->callSDFunc(SB_CNS_PRT);
+                xc->setSDReg(s_imm & 0x3f, SD_IN_PORT);
+                xc->setSDReg(s_imm >> 6, SD_FLAGS);
+                if(s_imm & (1<<7)) {
+                  xc->setSDReg(Rs1,SD_CONSTANT2);
+                  xc->setSDReg(Rs2,SD_NUM_ELEM2);
+                } else {
+                  xc->setSDReg(Rs1,SD_CONSTANT);
+                  xc->setSDReg(Rs2,SD_NUM_ELEM);
+                  xc->callSDFunc(SB_CNS_PRT);
+                }
             }}, IsSDStream, IsNonSpeculative, No_OpClass);
         }
         0x5b: decode FUNCT3 {
+            0x1: sb_wr_scr({{
+                xc->setSDReg(Rs1,SD_SCRATCH_ADDR);
+                xc->setSDReg(Rs2,SD_NUM_BYTES);
+                xc->setSDReg(0x3f & s_imm, SD_OUT_PORT);
+                xc->setSDReg( (s_imm & 0x40) ? 2 : 0, SD_SHIFT_BYTES);
+                xc->callSDFunc(SB_PRT_SCR);
+            }}, IsSDStream, No_OpClass);
+            0x3: sb_garb({{
+                 xc->setSDReg(Rs1,SD_GARB_ELEM);
+            }}, IsSDStream, No_OpClass);
             0x4: sb_wr_dma({{
                 xc->setSDReg(Rs1,SD_MEM_ADDR);
-                xc->setSDReg(Rs2, SD_NUM_STRIDES);
+                xc->setSDReg(Rs2,SD_NUM_STRIDES);
                 xc->setSDReg(0x3f & s_imm, SD_OUT_PORT);
                 xc->setSDReg( (s_imm & 0x40) ? 2 : 0, SD_SHIFT_BYTES);
                 xc->setSDReg( (s_imm & 0x100) ? 1 : 0, SD_GARBAGE);
@@ -559,6 +585,9 @@ decode OPCODE default Unknown::unknown() {
             }}, IsSDParam, No_OpClass);
             0x1: sb_dma_addr({{
                 xc->setSDReg(Rs1,SD_MEM_ADDR);
+            }}, IsSDParam, No_OpClass);
+            0x2: sb_set_iter({{
+                xc->setSDReg(Rs1, SD_NUM_STRIDES);
             }}, IsSDParam, No_OpClass);
             0x4: sb_wait({{
                 xc->setSDReg(Rs1,SD_WAIT_MASK);
