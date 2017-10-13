@@ -1812,6 +1812,11 @@ Cache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
     DPRINTF(Cache, "Block addr %#llx (%s) moving from state %x to %s\n",
             addr, is_secure ? "s" : "ns", old_state, blk->print());
 
+    DPRINTF(Cache, "... %s, %s",
+            (pkt->cmd == MemCmd::WriteLineReq) ? "WriteLineReq" : "Not WriteLineReq", 
+            (pkt->cacheResponding()) ? "cacheResponding" : "Not cacheResponding");
+
+
     // if we got new data, copy it in (checking for a read response
     // and a response that has data is the same in the end)
     if (pkt->isRead()) {

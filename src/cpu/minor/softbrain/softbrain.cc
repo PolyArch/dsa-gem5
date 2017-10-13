@@ -2532,18 +2532,6 @@ void softsim_t::cycle_cgra() {
     for(unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
       _port_interf.in_port(_soft_config.in_ports_active[i]).pop(1);
     }
-
-    //cout << "issued " << now();
-    for(unsigned i = 0; i < _soft_config.out_ports_active.size(); ++i) {
-       unsigned out_port_num =  _soft_config.out_ports_active[i];
-       _port_interf.out_port(out_port_num).set_in_flight();
-       int lat = _soft_config.out_ports_lat[out_port_num];
-       //cout  << " lat: " << lat << " ";
-       _cgra_output_ready[cur_cycle + lat].push_back(out_port_num);
-    }
-
-    //cout << "min_ready" << min_ready << "\n";
-
   }
 
   if(!_cgra_output_ready.empty()) {
@@ -2662,22 +2650,37 @@ void softsim_t::execute_pdg(unsigned instance) {
   //perform computation
   _pdg->compute(print,SB_DEBUG::VERIF_CGRA);
 
+  uint64_t cur_cycle = now();
+
   //send outputs to corresponding output fifo
   for(unsigned i = 0; i < _soft_config.out_ports_active.size(); ++i) {
-    auto& cur_out_port = _port_interf.out_port(_soft_config.out_ports_active[i]);
+    int pnum = _soft_config.out_ports_active[i];
+    auto& cur_out_port = _port_interf.out_port(pnum);
+
+    bool got_discarded=false;
 
     for(unsigned port_idx = 0; port_idx < cur_out_port.port_cgra_elem(); ++port_idx) {
       //int cgra_port = cur_out_port.cgra_port_for_index(port_idx);
+      SbPDG_Output* n = _soft_config.output_pdg_node[i][port_idx];
 
-      uint64_t val = _soft_config.output_pdg_node[i][port_idx]->retrieve();
-      cur_out_port.push_val(port_idx, val);       //retreive the val from last inst
-
-      if(SB_DEBUG::VERIF_PORT) {
-        out_port_verif << hex << setw(16) << setfill('0') << val << " ";
+      if(!n->discard()) {
+        assert(got_discarded==0 && "can't discard partial vector ports\n");
+        uint64_t val = n->retrieve();
+        cur_out_port.push_val(port_idx, val);       //retreive the val from last inst
+ 
+        if(SB_DEBUG::VERIF_PORT) {
+          out_port_verif << hex << setw(16) << setfill('0') << val << " ";
+        }
+      } else {
+        got_discarded=true;
       }
-
     }
-    cur_out_port.inc_ready(1); //we just did one instance
+    if(!got_discarded) {
+      cur_out_port.inc_ready(1); //we just did one instance
+      cur_out_port.set_in_flight();
+      int lat = _soft_config.out_ports_lat[pnum];
+      _cgra_output_ready[cur_cycle + lat].push_back(pnum);
+    }
   }
 
   if(SB_DEBUG::VERIF_PORT) {
