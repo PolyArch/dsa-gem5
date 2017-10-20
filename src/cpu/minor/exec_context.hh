@@ -361,6 +361,12 @@ class ExecContext : public ::ExecContext
 
 
 #ifdef ISA_HAS_SD
+    uint64_t receiveSD() {
+      DPRINTF(SD, "Do SD_COMMAND RECEIVE\n");
+      softsim_t& sb = execute.getSB();
+      return sb.receive(thread.getSDReg(SD_OUT_PORT));
+    }
+
     void setSDReg(uint64_t val, int sd_idx) {
         thread.setSDReg(val, sd_idx);
     }

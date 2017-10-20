@@ -302,6 +302,7 @@ class ExecContext {
        /** Reads an integer register. */
     virtual void setSDReg(uint64_t val, int sd_idx) {}
     virtual void callSDFunc(int sd_func_opcode) {}
+    virtual uint64_t receiveSD() {return 0;}
 #endif
 
     /** @} */

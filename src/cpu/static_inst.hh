@@ -173,12 +173,13 @@ class StaticInst : public RefCounted, public StaticInstFlags
     //This flag doesn't do anything yet
     bool isMicroBranch() const { return flags[IsMicroBranch]; }
     //@}
+    bool isSDRecv() const { return flags[IsSDRecv]; }
     bool isSDStream() const { return flags[IsSDStream]; }
     bool isSDWait() const { return flags[IsSDWait]; }
     bool isSDConfig() const { return flags[IsSDConfig]; }
     bool isSDParam() const {return flags[IsSDParam];}
     bool isSD() const {return flags[IsSDStream] || flags[IsSDWait] || 
-                             flags[IsSDConfig] || flags[IsSDParam];}
+                             flags[IsSDConfig] || flags[IsSDParam] || flags[IsSDRecv];}
 
     void setFirstMicroop() { flags[IsFirstMicroop] = true; }
     void setLastMicroop() { flags[IsLastMicroop] = true; }
@@ -227,6 +228,7 @@ class StaticInst : public RefCounted, public StaticInstFlags
      * Obtain the immediate field
      */
     virtual uint64_t imm() { return 0; }
+    virtual uint64_t alt_imm() { return 0; }
 
   protected:
 

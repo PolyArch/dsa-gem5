@@ -551,6 +551,10 @@ decode OPCODE default Unknown::unknown() {
                   xc->callSDFunc(SB_CNS_PRT);
                 }
             }}, IsSDStream, IsNonSpeculative, No_OpClass);
+            0x5: sb_recv({{
+                xc->setSDReg(0x3f & i_imm, SD_OUT_PORT);
+                Rd = xc->receiveSD();
+            }}, IsSDRecv, IsNonSpeculative, No_OpClass);
         }
         0x5b: decode FUNCT3 {
             0x1: sb_wr_scr({{

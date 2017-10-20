@@ -1380,6 +1380,8 @@ public:
     uint64_t num_elem);
   void indirect_write(int ind_port, int ind_type, int out_port, 
     addr_t index_addr, uint64_t num_elem);
+  bool can_receive(int out_port);
+  uint64_t receive(int out_port);
   void write_constant(int num_strides, int in_port, 
                       SBDT constant, uint64_t num_elem, 
                       SBDT constant2, uint64_t num_elem2, 

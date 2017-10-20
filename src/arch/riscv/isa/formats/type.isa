@@ -192,6 +192,7 @@ output header {{
     {
       public:
         virtual uint64_t imm() { return s_imm; }
+        virtual uint64_t alt_imm() { return i_imm; }
 
       protected:
         int64_t i_imm;
@@ -209,7 +210,6 @@ output header {{
             s_imm |= IMM7 << 5;
             if (IMMSIGN > 0)
                 s_imm |= ~((uint64_t)0x7FF);
-
             }
 
         std::string

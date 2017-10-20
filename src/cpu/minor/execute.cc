@@ -990,9 +990,15 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
         /* This instruction can suspend, need to be able to communicate
          * backwards, so no other branches may evaluate this cycle*/
         completed_inst = false;
+    } else if (inst->staticInst->isSDRecv() &&
+               !softbrain.can_receive(inst->staticInst->alt_imm())) {
+      DPRINTF(SD, "Could Not Recv: %s\n", *inst);
+      completed_inst = false;
+      /* Don't commit if you can't receive on output port
+       */
     } else if (inst->staticInst->isSD() &&  softbrain.is_in_config()) {
       completed_inst = false;
-      /* Don't execute any instructions if if softbrain is in config mode!
+      /* Don't execute any instructions if softbrain is in config mode!
        */
     } else {
         ExecContext context(cpu, *cpu.threads[thread_id], *this, inst);

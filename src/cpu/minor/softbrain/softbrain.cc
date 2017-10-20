@@ -1091,7 +1091,6 @@ void dma_controller_t::finish_cycle() {
 //  for(auto& i : _dma_port_streams) {i.finish_cycle();} //TODO: maybe optimize this later?
 //  _dma_scr_stream.finish_cycle();
 //  for(auto& i : _port_dma_streams) {i.finish_cycle();}
-//  _scr_dma_stream.finish_cycle();
   _scr_write_buffer.finish_cycle();
   _scr_read_buffer.finish_cycle();
 }
@@ -1657,7 +1656,8 @@ void scratch_read_controller_t::cycle() {
 }
 
 void scratch_read_controller_t::finish_cycle() {
-//  _scr_port_stream.finish_cycle(); //TODO: maybe optimize this later?
+  //_scr_port_stream.finish_cycle(); //TODO: maybe optimize this later?
+  //_scr_dma_stream.finish_cycle();
 }
 
 void scratch_read_controller_t::print_status() {
@@ -1970,20 +1970,12 @@ bool dma_controller_t::done(bool show, int mask) {
     }
   }
 
-  //TODO: Think about scr->DMA when we need it
-    /*if(!_scr_dma_stream.empty()) {
-      if(show) {
-        cout << "SCR -> DMA Stream Not Empty\n";
-      }
-      return false;
-    }*/
-  /*
-   *    if(!_scr_read_buffer.empty_buffer()) {
-      if(show) {
-        cout << "SCR Read Buffer Not Empty\n";
-      }
-      return false;
-    }*/
+  if(!_scr_read_buffer.empty_buffer()) {
+    if(show) {
+      cout << "SCR Read Buffer Not Empty\n";
+    }
+    return false;
+  }
 
   if((mask & WAIT_SCR_WR) && _fake_scratch_reqs) {
     if(show) {
@@ -2013,6 +2005,12 @@ bool scratch_read_controller_t::done(bool show, int mask) {
     if(!_scr_port_stream.empty()) {
       if(show) {
         cout << "SCR -> PORT Stream Not Empty\n";
+      }
+      return false;
+    }
+    if(!_scr_dma_stream.empty()) {
+      if(show) {
+        cout << "SCR -> DMA Stream Not Empty\n";
       }
       return false;
     }
@@ -2085,8 +2083,8 @@ bool softsim_t::cgra_done(bool show,int mask) {
   return true; 
 }
 
-
 // ----------------------- SB STREAM COMMANDS ---------------------------------------
+
 #ifdef SB_TIMING
 
 void softsim_t::load_dma_to_scratch(addr_t mem_addr, 
@@ -2317,6 +2315,17 @@ void softsim_t::indirect_write(int ind_port, int ind_type, int out_port,
   //WAIT_FOR(can_add_indirect_stream,1500);
 
   add_indirect_stream(s);
+}
+
+bool softsim_t::can_receive(int out_port) {
+  port_data_t& out_vp = port_interf().out_port(out_port);
+  return out_vp.mem_size() != 0;
+}
+
+uint64_t softsim_t::receive(int out_port) {
+   port_data_t& out_vp = port_interf().out_port(out_port);
+   SBDT val = out_vp.pop_data(); 
+   return val;
 }
 
 void softsim_t::write_constant(int num_strides, int in_port, 

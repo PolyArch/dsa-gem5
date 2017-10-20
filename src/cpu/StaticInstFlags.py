@@ -114,6 +114,7 @@ class StaticInstFlags(Enum):
         'IsSDWait', # Stream Dataflow Wait 
         'IsSDStream', # Stream Dataflow Stream Push
         'IsSDParam', 
+        'IsSDRecv', # Stream Dataflow Stream Push
         'IsSDConfig', # Stream Dataflow Config
 
         ]
