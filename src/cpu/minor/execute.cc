@@ -583,39 +583,6 @@ Execute::issue(ThreadID thread_id)
             if(inst->staticInst->isSD() && softbrain.is_in_config()) {
                issued=false;
             }
-            //break down by type
-            if (inst->staticInst->isSDStream() && 
-                !softbrain.can_add_stream()) {
-                issued = false;
-                //DPRINTF(SD,"Can't issue stream b/c buffer is full");
-                //continue;
-            } else if(inst->staticInst->isSDWait()) {
-              if(!softbrain.done(false,inst->staticInst->imm()) ) {
-                issued = false;
-
-                //DPRINTF(SD,"Wait blocked, mask: %x\n",inst->staticInst->imm());
-                //continue;
-              } else {
-                DPRINTF(SD,"Wait complete, mask: %x\n",inst->staticInst->imm());
-              }
-            } 
-
-            if(inst->staticInst->isSD()) {
-              uint64_t cyc = cpu.curCycle();
-              uint64_t last_event = std::max(last_sd_issue, 
-                                    softbrain.forward_progress_cycle());
-              if(!issued) {
-                if(cyc > 10000 + last_event) {
-                  DPRINTF(SD,"Instruction: %s is stalled for too long.", *inst);
-                  softbrain.print_stats();
-                  softbrain.done(true,0);
-                  assert(0 && "Max SD instruction wait");
-                }
-                break; // get out of scheduling loop
-              } else {
-                last_sd_issue = cyc;
-              }
-            }
 
             /* Try and issue an instruction into an FU, assume we didn't and
              * fix that in the loop */
@@ -1001,27 +968,67 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
       /* Don't execute any instructions if softbrain is in config mode!
        */
     } else {
-        ExecContext context(cpu, *cpu.threads[thread_id], *this, inst);
+      
+        bool should_commit = true;
 
-        DPRINTF(MinorExecute, "Committing inst: %s\n", *inst);
+        //break down by type
+        if (inst->staticInst->isSDStream() && 
+            !softbrain.can_add_stream()) {
+            should_commit = false;
+            //DPRINTF(SD,"Can't issue stream b/c buffer is full");
+            //continue;
+        } else if(inst->staticInst->isSDWait()) {
+          if(!softbrain.done(false,inst->staticInst->imm()) ) {
+            should_commit = false;
 
-        fault = inst->staticInst->execute(&context,
-            inst->traceData);
+            //DPRINTF(SD,"Wait blocked, mask: %x\n",inst->staticInst->imm());
+            //continue;
+          } else {
+            DPRINTF(SD,"Wait complete, mask: %x\n",inst->staticInst->imm());
+          }
+        } 
 
-        /* Set the predicate for tracing and dump */
-        if (inst->traceData)
-            inst->traceData->setPredicate(context.readPredicate());
-
-        committed = true;
-
-        if (fault != NoFault) {
-            DPRINTF(MinorExecute, "Fault in execute of inst: %s fault: %s\n",
-                *inst, fault->name());
-            fault->invoke(thread, inst->staticInst);
+        if(inst->staticInst->isSD()) {
+          uint64_t cyc = cpu.curCycle();
+          uint64_t last_event = std::max(last_sd_issue, 
+                                softbrain.forward_progress_cycle());
+          if(!should_commit) {
+            if(cyc > 10000 + last_event) {
+              DPRINTF(SD,"Instruction: %s is stalled for too long.", *inst);
+              softbrain.print_stats();
+              softbrain.done(true,0);
+              assert(0 && "Max SD instruction wait");
+            }
+          } else {
+            last_sd_issue = cyc;
+          }
         }
 
-        doInstCommitAccounting(inst);
-        tryToBranch(inst, fault, branch);
+        if(should_commit) {
+          ExecContext context(cpu, *cpu.threads[thread_id], *this, inst);
+
+          DPRINTF(MinorExecute, "Committing inst: %s\n", *inst);
+
+          fault = inst->staticInst->execute(&context,
+              inst->traceData);
+
+          /* Set the predicate for tracing and dump */
+          if (inst->traceData)
+              inst->traceData->setPredicate(context.readPredicate());
+
+          committed = true;
+
+          if (fault != NoFault) {
+              DPRINTF(MinorExecute, "Fault in execute of inst: %s fault: %s\n",
+                  *inst, fault->name());
+              fault->invoke(thread, inst->staticInst);
+          }
+
+          doInstCommitAccounting(inst);
+          tryToBranch(inst, fault, branch);
+        } else {
+          completed_inst=false;
+        }
     }
 
     if (completed_inst) {

@@ -1886,13 +1886,16 @@ bool softsim_t::done_internal(bool show, int mask) {
     return false;
   }
 
-  if(mask==0 || mask&WAIT_CMP) {
+ //TODO: FIX 
+//  if(mask==0 || mask&WAIT_CMP) {
     if(_in_port_queue.size()) {
       if(show) {
         cout << "Main Queue Not Empty\n";
       }   
       return false;
     }
+
+  if(mask==0 || mask&WAIT_SCR_RD) {
     if(_scr_dma_queue.size()) {
       if(show) {
         cout << "SCR->DMA Queue Not Empty\n";
@@ -1900,6 +1903,7 @@ bool softsim_t::done_internal(bool show, int mask) {
       return false;
     }
   }
+//  }
   
   if(mask==0 || mask&WAIT_SCR_WR) {
     if(_dma_scr_queue.size()) {
@@ -1971,11 +1975,13 @@ bool dma_controller_t::done(bool show, int mask) {
     }
   }
 
-  if(!_scr_read_buffer.empty_buffer()) {
-    if(show) {
-      cout << "SCR Read Buffer Not Empty\n";
+  if(mask==0 || mask&WAIT_CMP || mask&WAIT_SCR_RD ) {
+    if(!_scr_read_buffer.empty_buffer()) {
+      if(show) {
+        cout << "SCR Read Buffer Not Empty\n";
+      }
+      return false;
     }
-    return false;
   }
 
   if((mask & WAIT_SCR_WR) && _fake_scratch_reqs) {
