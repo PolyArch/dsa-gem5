@@ -1638,6 +1638,7 @@ void scratch_read_controller_t::cycle() {
 
         vector<SBDT> data = read_scratch(_scr_dma_stream);
         _dma_c->_scr_read_buffer.push_data(_scr_dma_stream._dest_addr, data);
+        _scr_dma_stream._dest_addr+=data.size()*DATA_WIDTH;
       
         bool is_empty = _scr_dma_stream.check_set_empty();
         if(is_empty) {
