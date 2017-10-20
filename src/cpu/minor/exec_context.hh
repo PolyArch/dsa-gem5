@@ -428,6 +428,7 @@ class ExecContext : public ::ExecContext
                 thread.getSDReg(SD_CONSTANT),      thread.getSDReg(SD_NUM_ELEM),     
                 thread.getSDReg(SD_CONSTANT2),     thread.getSDReg(SD_NUM_ELEM2),      
                 thread.getSDReg(SD_FLAGS) );
+            break;
             case SB_WAIT:
                 if(thread.getSDReg(SD_WAIT_MASK) == 0) {
                     sb.set_not_in_use();

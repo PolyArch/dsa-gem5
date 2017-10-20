@@ -14,7 +14,8 @@ const char* const SDRegNames[] = {
    "MEM_ADDR", "INDEX_ADDR", "ACCESS_SIZE", "STRIDE", "SCRATCH_ADDR",
    "NUM_STRIDES", "NUM_ELEM", "CFG_SIZE",
    "NUM_BYTES", "CONSTANT", "IN_PORT", "OUT_PORT",
-   "IND_PORT", "IND_TYPE", "WAIT_MASK", "SHIFT_BYTES", "GARBAGE",
+   "IND_PORT", "IND_TYPE", "WAIT_MASK", "SHIFT_BYTES", "GARBAGE", "SD_GARB_ELEM", 
+   "SD_NUM_ELEM2", "SD_CONSTANT2", "SD_FLAGS",
    "NUM_REG"
   };
 
@@ -44,19 +45,22 @@ enum SDCmdIdx {
 const char* const SDCmdNames[] = {
     "SB_BEGIN_ROI",
     "SB_END_ROI",
-    "SB_STATS",
-    "CFG",
-    "MEM_SCR",
-    "MEM_PRT",
-    "SCR_PRT",
-    "SCR_MEM",
-    "PRT_MEM",
-    "PRT_PRT",
-    "IND_PRT",
-    "PRT_IND",
-    "CNS_PRT",
-    "WAIT",
-    "NUM_CMDS"
-};
+    "SB_STATS", 
+    "SB_CFG",
+    "SB_CFG_PORT",
+    "SB_MEM_SCR",
+    "SB_MEM_PRT",
+    "SB_SCR_PRT",
+    "SB_SCR_MEM",
+    "SB_PRT_SCR",
+    "SB_PRT_MEM",
+    "SB_PRT_PRT",
+    "SB_IND_PRT",
+    "SB_PRT_IND",
+    "SB_CNS_PRT",
+    "SB_SET_ITERS",
+    "SB_GARB",
+    "SB_WAIT",
+    "SB_NUM_CMDS" };
 
 #endif

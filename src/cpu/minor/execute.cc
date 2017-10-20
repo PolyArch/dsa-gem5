@@ -595,6 +595,8 @@ Execute::issue(ThreadID thread_id)
 
                 //DPRINTF(SD,"Wait blocked, mask: %x\n",inst->staticInst->imm());
                 //continue;
+              } else {
+                DPRINTF(SD,"Wait complete, mask: %x\n",inst->staticInst->imm());
               }
             } 
 
