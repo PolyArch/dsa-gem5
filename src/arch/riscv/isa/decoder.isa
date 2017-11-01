@@ -514,7 +514,14 @@ decode OPCODE default Unknown::unknown() {
                 xc->setSDReg(Rs1,SD_CONSTANT);
                 xc->setSDReg(s_imm,SD_IN_PORT);
                 xc->callSDFunc(SB_CFG_PORT);
-            }}, IsSDConfig, IsNonSpeculative, No_OpClass);
+            }}, IsSDParam, IsNonSpeculative, No_OpClass);
+            0x2: sb_cfg_ctx({{
+                if(s_imm == 0) {
+                  xc->setSDReg(Rs1,SD_CONTEXT);
+                } else {
+                  xc->setSDReg(s_imm,SD_CONTEXT);
+                }
+            }}, IsSDParam, IsNonSpeculative, No_OpClass);
         }
         0x2b: decode FUNCT3 {
             0x0: sb_dma_scr({{
@@ -577,8 +584,8 @@ decode OPCODE default Unknown::unknown() {
             }}, IsSDStream, IsNonSpeculative, No_OpClass);
             0x5: sb_wr_rd({{
                 xc->setSDReg(Rs1,SD_NUM_ELEM);
-                xc->setSDReg(i_imm & 0x3f, SD_OUT_PORT);
-                xc->setSDReg(i_imm >> 6,   SD_IN_PORT);
+                xc->setSDReg(i_imm & 0x1f, SD_OUT_PORT);
+                xc->setSDReg(i_imm >> 5,   SD_IN_PORT);
                 xc->callSDFunc(SB_PRT_PRT);
             }}, IsSDStream, IsNonSpeculative, No_OpClass);
         }

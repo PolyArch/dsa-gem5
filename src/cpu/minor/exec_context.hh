@@ -58,7 +58,7 @@
 #include "cpu/minor/execute.hh"
 #include "cpu/minor/pipeline.hh"
 #include "cpu/simple_thread.hh"
-#include "softbrain.hh"
+#include "ssim.hh"
 #include "debug/MinorExecute.hh"
 #include "debug/SD.hh"
 #include "mem/request.hh"
@@ -363,8 +363,8 @@ class ExecContext : public ::ExecContext
 #ifdef ISA_HAS_SD
     uint64_t receiveSD() {
       DPRINTF(SD, "Do SD_COMMAND RECEIVE\n");
-      softsim_t& sb = execute.getSB();
-      return sb.receive(thread.getSDReg(SD_OUT_PORT));
+      ssim_t& ssim = execute.getSSIM();
+      return ssim.receive(thread.getSDReg(SD_OUT_PORT));
     }
 
     void setSDReg(uint64_t val, int sd_idx) {
@@ -372,64 +372,64 @@ class ExecContext : public ::ExecContext
     }
     void callSDFunc(int sd_func_opcode) {
         DPRINTF(SD, "Do SD_COMMAND %d.\n", SDCmdNames[sd_func_opcode]);
-        softsim_t& sb = execute.getSB();
-        sb.set_cur_minst(inst);
+        ssim_t& ssim = execute.getSSIM();
+        ssim.set_cur_minst(inst);
         switch(sd_func_opcode) {
-            case SB_BEGIN_ROI: sb.roi_entry(true); break;
-            case SB_END_ROI: sb.roi_entry(false); break;
-            case SB_STATS: sb.print_stats(); break;
-            case SB_CFG: sb.req_config(
+            case SB_BEGIN_ROI: ssim.roi_entry(true); break;
+            case SB_END_ROI: ssim.roi_entry(false); break;
+            case SB_STATS: ssim.print_stats(); break;
+            case SB_CFG: ssim.req_config(
                 thread.getSDReg(SD_MEM_ADDR),      thread.getSDReg(SD_CFG_SIZE)); 
             break;
-            case SB_CFG_PORT: sb.cfg_port(
+            case SB_CFG_PORT: ssim.cfg_port(
                 thread.getSDReg(SD_CONSTANT),      thread.getSDReg(SD_IN_PORT)); 
             break;
-            case SB_MEM_SCR: sb.load_dma_to_scratch(
+            case SB_MEM_SCR: ssim.load_dma_to_scratch(
                 thread.getSDReg(SD_MEM_ADDR),      thread.getSDReg(SD_STRIDE),
                 thread.getSDReg(SD_ACCESS_SIZE),   thread.getSDReg(SD_NUM_STRIDES),
                 thread.getSDReg(SD_SCRATCH_ADDR)); 
             break;
-            case SB_SCR_MEM: sb.write_dma_from_scratch(
+            case SB_SCR_MEM: ssim.write_dma_from_scratch(
                 thread.getSDReg(SD_SCRATCH_ADDR),      thread.getSDReg(SD_STRIDE),
                 thread.getSDReg(SD_ACCESS_SIZE),   thread.getSDReg(SD_NUM_STRIDES),
                 thread.getSDReg(SD_MEM_ADDR)); 
             break;
-            case SB_MEM_PRT: sb.load_dma_to_port(
+            case SB_MEM_PRT: ssim.load_dma_to_port(
                 thread.getSDReg(SD_MEM_ADDR),      thread.getSDReg(SD_STRIDE),
                 thread.getSDReg(SD_ACCESS_SIZE),   thread.getSDReg(SD_NUM_STRIDES),
                 thread.getSDReg(SD_IN_PORT));      
             break;
-            case SB_SCR_PRT: sb.load_scratch_to_port(
+            case SB_SCR_PRT: ssim.load_scratch_to_port(
                 thread.getSDReg(SD_SCRATCH_ADDR),  thread.getSDReg(SD_STRIDE),
                 thread.getSDReg(SD_ACCESS_SIZE),   thread.getSDReg(SD_NUM_STRIDES),
                 thread.getSDReg(SD_IN_PORT));      
             break;
-            case SB_PRT_SCR: sb.write_scratchpad(
+            case SB_PRT_SCR: ssim.write_scratchpad(
                 thread.getSDReg(SD_OUT_PORT), thread.getSDReg(SD_SCRATCH_ADDR),  
                 thread.getSDReg(SD_NUM_BYTES), thread.getSDReg(SD_SHIFT_BYTES));      
             break;
-            case SB_PRT_MEM: sb.write_dma(
+            case SB_PRT_MEM: ssim.write_dma(
                 thread.getSDReg(SD_GARB_ELEM),
                 thread.getSDReg(SD_OUT_PORT),      thread.getSDReg(SD_STRIDE),
                 thread.getSDReg(SD_ACCESS_SIZE),   thread.getSDReg(SD_NUM_STRIDES),
                 thread.getSDReg(SD_MEM_ADDR),      thread.getSDReg(SD_SHIFT_BYTES),
                 thread.getSDReg(SD_GARBAGE));
             break;
-            case SB_PRT_PRT: sb.reroute(
+            case SB_PRT_PRT: ssim.reroute(
                 thread.getSDReg(SD_OUT_PORT),      thread.getSDReg(SD_IN_PORT),
                 thread.getSDReg(SD_NUM_ELEM));     
             break;
-            case SB_IND_PRT: sb.indirect(
+            case SB_IND_PRT: ssim.indirect(
                 thread.getSDReg(SD_IND_PORT),      thread.getSDReg(SD_IND_TYPE),
                 thread.getSDReg(SD_IN_PORT),       thread.getSDReg(SD_INDEX_ADDR),
                 thread.getSDReg(SD_NUM_ELEM));
             break;
-            case SB_PRT_IND: sb.indirect_write(
+            case SB_PRT_IND: ssim.indirect_write(
                 thread.getSDReg(SD_IN_PORT),       thread.getSDReg(SD_IND_TYPE),
                 thread.getSDReg(SD_OUT_PORT),      thread.getSDReg(SD_INDEX_ADDR),
                 thread.getSDReg(SD_NUM_ELEM));
             break;
-            case SB_CNS_PRT: sb.write_constant(
+            case SB_CNS_PRT: ssim.write_constant(
                 thread.getSDReg(SD_NUM_STRIDES),   thread.getSDReg(SD_IN_PORT),
                 thread.getSDReg(SD_CONSTANT),      thread.getSDReg(SD_NUM_ELEM),     
                 thread.getSDReg(SD_CONSTANT2),     thread.getSDReg(SD_NUM_ELEM2),      
@@ -437,7 +437,7 @@ class ExecContext : public ::ExecContext
             break;
             case SB_WAIT:
                 if(thread.getSDReg(SD_WAIT_MASK) == 0) {
-                    sb.set_not_in_use();
+                    ssim.set_not_in_use();
                     DPRINTF(SD, "Set SB Not in Use\n");
                 }
             break;

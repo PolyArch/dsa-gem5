@@ -53,14 +53,14 @@
 #include "cpu/minor/lsq.hh"
 #include "cpu/minor/pipe_data.hh"
 #include "cpu/minor/scoreboard.hh"
-#include "softbrain/softbrain.hh"
+#include "ssim/ssim.hh"
 
 namespace Minor
 {
 
 /** Execute stage.  Everything apart from fetching and decoding instructions.
  *  The LSQ lives here too. */
-class Execute : public Named, public softsim_interf_t
+class Execute : public Named
 {
 
     Request ifetch_req;
@@ -149,8 +149,8 @@ class Execute : public Named, public softsim_interf_t
     /** Dcache port to pass on to the CPU.  Execute owns this */
     LSQ lsq;
 
-    /* softbrain unit */
-    softsim_t softbrain;
+    /* StreamSim unit */
+    ssim_t ssim;
 
     /** cycle wait was initiated **/
     uint64_t last_sd_issue;
@@ -369,7 +369,7 @@ class Execute : public Named, public softsim_interf_t
 
     /** To allow ExecContext to find the LSQ */
     LSQ &getLSQ() { return lsq; }
-    softsim_t &getSB() { return softbrain;}
+    ssim_t &getSSIM() { return ssim;}
 
     /** Does the given instruction have the right stream sequence number
      *  to be committed? */

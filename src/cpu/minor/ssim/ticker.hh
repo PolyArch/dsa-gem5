@@ -4,14 +4,14 @@
 #include <time.h>
 #include <cstdint>
 #include <iostream>
-#include "softbrain.hh"
+#include "ssim.hh"
 
 class ticker_t;
-class softsim_t;
+class ssim_t;
 
 class ticker_t {
   public:
-  ticker_t(softsim_t* sb) : _sb(sb) {
+  ticker_t(ssim_t* sb) : _sb(sb) {
   }
 
   bool in_roi() {return _in_roi;}
@@ -30,7 +30,7 @@ class ticker_t {
   bool in_use() {return _in_use;}
 
   private:
-  softsim_t* _sb=NULL;
+  ssim_t* _sb=NULL;
   bool _prev_done = true;
 
   bool _in_roi = true;

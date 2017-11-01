@@ -87,7 +87,7 @@ Execute::Execute(const std::string &name_,
         params.executeLSQTransfersQueueSize,
         params.executeLSQStoreBufferSize,
         params.executeLSQMaxStoreBufferStoresPerCycle),
-    softbrain(this,&lsq),
+    ssim(&lsq),
     executeInfo(params.numThreads, ExecuteThreadInfo(params.executeCommitLimit)),
     interruptPriority(0),
     issuePriority(0),
@@ -580,7 +580,7 @@ Execute::issue(ThreadID thread_id)
                 " there are too many in flight\n", *inst);
             issued = false;
         } else {
-            if(inst->staticInst->isSD() && softbrain.is_in_config()) {
+            if(inst->staticInst->isSD() && ssim.is_in_config()) {
                issued=false;
             }
 
@@ -958,14 +958,14 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
          * backwards, so no other branches may evaluate this cycle*/
         completed_inst = false;
     } else if (inst->staticInst->isSDRecv() &&
-               !softbrain.can_receive(inst->staticInst->alt_imm())) {
+               !ssim.can_receive(inst->staticInst->alt_imm())) {
       DPRINTF(SD, "Could Not Recv: %s\n", *inst);
       completed_inst = false;
       /* Don't commit if you can't receive on output port
        */
-    } else if (inst->staticInst->isSD() &&  softbrain.is_in_config()) {
+    } else if (inst->staticInst->isSD() &&  ssim.is_in_config()) {
       completed_inst = false;
-      /* Don't execute any instructions if softbrain is in config mode!
+      /* Don't execute any instructions if ssim is in config mode!
        */
     } else {
       
@@ -973,12 +973,12 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
 
         //break down by type
         if (inst->staticInst->isSDStream() && 
-            !softbrain.can_add_stream()) {
+            !ssim.can_add_stream()) {
             should_commit = false;
             //DPRINTF(SD,"Can't issue stream b/c buffer is full");
             //continue;
         } else if(inst->staticInst->isSDWait()) {
-          if(!softbrain.done(false,inst->staticInst->imm()) ) {
+          if(!ssim.done(false,inst->staticInst->imm()) ) {
             should_commit = false;
 
             //DPRINTF(SD,"Wait blocked, mask: %x\n",inst->staticInst->imm());
@@ -991,12 +991,12 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
         if(inst->staticInst->isSD()) {
           uint64_t cyc = cpu.curCycle();
           uint64_t last_event = std::max(last_sd_issue, 
-                                softbrain.forward_progress_cycle());
+                                ssim.forward_progress_cycle());
           if(!should_commit) {
             if(cyc > 10000 + last_event) {
               DPRINTF(SD,"Instruction: %s is stalled for too long.", *inst);
-              softbrain.print_stats();
-              softbrain.done(true,0);
+              ssim.print_stats();
+              ssim.done(true,0);
               assert(0 && "Max SD instruction wait");
             }
           } else {
@@ -1465,12 +1465,12 @@ Execute::evaluate()
      *  free up input spaces in the LSQ's requests queue */
     lsq.step();
 
-    /* Let softbrain tick for one cycle
+    /* Let ssim tick for one cycle
      */
 
-    bool softbrain_done = !softbrain.in_use(); //= softbrain.done(false,0);
-    if(!softbrain_done) {
-      softbrain.step();
+    bool ssim_done = !ssim.in_use(); //= ssim.done(false,0);
+    if(!ssim_done) {
+      ssim.step();
       cpu.activityRecorder->activity();
     }
 
@@ -1613,7 +1613,7 @@ Execute::evaluate()
     }
 
     DPRINTF(Activity, "Need to tick num issued insts: %s%s%s%s%s%s%s\n",
-       (!softbrain_done ? "(softbrain in use)" : ""),
+       (!ssim_done ? "(ssim in use)" : ""),
        (num_issued != 0 ? " (issued some insts)" : ""),
        (becoming_stalled ? "(becoming stalled)" : "(not becoming stalled)"),
        (can_issue_next ? " (can issued next inst)" : ""),
@@ -1622,7 +1622,7 @@ Execute::evaluate()
        (interrupted ? " (interrupted)" : ""));
 
     bool need_to_tick =
-       !softbrain_done || /* Softbrain is not done yet*/
+       !ssim_done || /* StreamSim is not done yet*/
        num_issued != 0 || /* Issued some insts this cycle */
        !becoming_stalled || /* Some FU pipelines can still move */
        can_issue_next || /* Can still issue a new inst */
@@ -1936,7 +1936,7 @@ Execute::getDcachePort()
     return lsq.getDcachePort();
 }
 
-// Softbrain additions:
+// StreamSim additions:
 Fault
 Execute::readMem(Addr addr, uint8_t * data, unsigned size,
                          Request::Flags flags, ThreadContext* thread)

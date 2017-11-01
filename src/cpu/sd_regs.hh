@@ -1,12 +1,14 @@
 #ifndef __SD_REGS_HH__
 #define __SD_REGS_HH__
 
+//Don't forget to add to SDRegNames array
+//... someday I'll do the #macro trick to automate -- don't judge me
 enum SDRegIdx {
    SD_MEM_ADDR, SD_INDEX_ADDR, SD_ACCESS_SIZE, SD_STRIDE, SD_SCRATCH_ADDR,
    SD_NUM_STRIDES, SD_NUM_ELEM, SD_CFG_SIZE,
    SD_NUM_BYTES, SD_CONSTANT, SD_IN_PORT, SD_OUT_PORT,
    SD_IND_PORT, SD_IND_TYPE, SD_WAIT_MASK, SD_SHIFT_BYTES, SD_GARBAGE, SD_GARB_ELEM, 
-   SD_NUM_ELEM2, SD_CONSTANT2, SD_FLAGS,
+   SD_NUM_ELEM2, SD_CONSTANT2, SD_FLAGS, SD_CONTEXT,
    SD_NUM_REG
 };
 
@@ -15,7 +17,7 @@ const char* const SDRegNames[] = {
    "NUM_STRIDES", "NUM_ELEM", "CFG_SIZE",
    "NUM_BYTES", "CONSTANT", "IN_PORT", "OUT_PORT",
    "IND_PORT", "IND_TYPE", "WAIT_MASK", "SHIFT_BYTES", "GARBAGE", "SD_GARB_ELEM", 
-   "SD_NUM_ELEM2", "SD_CONSTANT2", "SD_FLAGS",
+   "SD_NUM_ELEM2", "SD_CONSTANT2", "SD_FLAGS", "SD_CONTEXT",
    "NUM_REG"
   };
 

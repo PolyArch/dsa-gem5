@@ -61,9 +61,10 @@ if 'MinorCPU' in env['CPU_MODELS']:
     Source('scoreboard.cc')
     Source('stats.cc')
 
-    Source('softbrain/softbrain.cc')
-    Source('softbrain/sim-debug.cc')
-    Source('softbrain/ticker.cc')
+    Source('ssim/stream.cc')
+    Source('ssim/ssim.cc')
+    Source('ssim/sim-debug.cc')
+    Source('ssim/ticker.cc')
 
     env.Append(CPPPATH=Dir(os.environ['RISCV']+'/include/'))
     env.Append(CPPPATH=Dir(os.environ['RISCV']+'/include/softbrain-scheduler'))
@@ -72,7 +73,7 @@ if 'MinorCPU' in env['CPU_MODELS']:
     env.Append(LIBS=['sbscheduler'])
     env.Append(LIBPATH=[Dir(os.environ['RISCV']+'/lib/')])
 
-    env.Append(CPPPATH=Dir('softbrain'))
+    env.Append(CPPPATH=Dir('ssim'))
 
     DebugFlag('MinorCPU', 'Minor CPU-level events')
     DebugFlag('MinorExecute', 'Minor Execute stage')

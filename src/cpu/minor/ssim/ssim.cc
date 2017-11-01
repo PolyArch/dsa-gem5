@@ -5,28 +5,12 @@
 #include <fstream>
 #include <iomanip>
  
-#include "softbrain.hh"
+#include "ssim.hh"
 #include "cpu/minor/cpu.hh"
 
 extern "C" void libsbsim_is_present() {}
 
 using namespace std;
-
-int base_stream_t::ID_SOURCE=0;
-
-void base_stream_t::set_empty(bool b) {
-  assert(b && "only goes one way for now");
-  assert(!_empty && "can only empty once");
-
-  if(SB_DEBUG::SB_COMMAND_O) {
-    if(b == true) {
-      std::cout << "COMPLETED: "; 
-    } 
-    print_status();
-  }
-
-  _empty=b;
-}
 
 
 // --------------------------------- CONFIG ---------------------------------------
@@ -202,16 +186,15 @@ void port_interf_t::initialize(SbModel* sbconfig) {
 
 
 // ---------------------------- SOFTBRAIN ------------------------------------------
-uint64_t softsim_t::now() {
+uint64_t ssim_t::now() {
   return _lsq->get_cpu().curCycle();
 }
 
-void softsim_t::step() {
+void ssim_t::step() {
   _ticker->tick();
 }
 
-softsim_t::softsim_t(softsim_interf_t* softsim_interf, Minor::LSQ* lsq) : 
-  _sim_interf(softsim_interf),
+ssim_t::ssim_t(Minor::LSQ* lsq) : 
   _lsq(lsq),
   debug(true),
   _dma_c(this),
@@ -268,11 +251,11 @@ softsim_t::softsim_t(softsim_interf_t* softsim_interf, Minor::LSQ* lsq) :
 }
 
 
-void softsim_t::timestamp(){_ticker->timestamp();}
- void softsim_t::roi_entry(bool enter) {_ticker->roi_entry(enter);}
- void softsim_t::set_not_in_use()  {_ticker->set_not_in_use();}
-bool softsim_t::in_use() { return _ticker->in_use();}
-bool softsim_t::can_add_stream() {
+void ssim_t::timestamp(){_ticker->timestamp();}
+ void ssim_t::roi_entry(bool enter) {_ticker->roi_entry(enter);}
+ void ssim_t::set_not_in_use()  {_ticker->set_not_in_use();}
+bool ssim_t::in_use() { return _ticker->in_use();}
+bool ssim_t::can_add_stream() {
    _ticker->set_in_use();
    return _in_port_queue.size() < _queue_size && 
                                   _dma_scr_queue.size() < _queue_size;
@@ -282,7 +265,7 @@ bool softsim_t::can_add_stream() {
 //Print out a string on one line idicating hardware status for the previous cycle
 // Buffer Sizes                                     |      Bus Activity
 // ip 1:5 2:5 7:7; op 1:2 scr_wr:1 cq:1 mem_req:14  | ip: op: scr_rd: scr_wr:   mr: mw: 
-void softsim_t::cycle_status() {
+void ssim_t::cycle_status() {
   _ticker->timestamp();
   cout << "cq " << _in_port_queue.size() 
                 << "," <<_scr_dma_queue.size() << "," <<_dma_scr_queue.size()<<" ";
@@ -374,7 +357,7 @@ void softsim_t::cycle_status() {
    //_port_c.cycle_status();
 }
 
-void softsim_t::clear_cycle() {
+void ssim_t::clear_cycle() {
   //std::map<int,int> _stat_ivp_put;
   //std::map<int,int> _stat_ivp_get;
   //std::map<int,int> _stat_ovp_put;
@@ -392,7 +375,7 @@ void softsim_t::clear_cycle() {
   //_stat_cmds_complete=0;
 }
 
-void softsim_t::print_status() {
+void ssim_t::print_status() {
    if(done(false,0)) {
      return;
    }
@@ -437,7 +420,7 @@ void softsim_t::print_status() {
 
 }
 
-void softsim_t::reset_statistics() { //currently unused
+void ssim_t::reset_statistics() { //currently unused
   _stat_comp_instances = 0;
   _stat_scratch_read_bytes = 0;
   _stat_scratch_write_bytes = 0;
@@ -458,7 +441,7 @@ void softsim_t::reset_statistics() { //currently unused
 }
 
 
-void softsim_t::pedantic_statistics(std::ostream& out) {
+void ssim_t::pedantic_statistics(std::ostream& out) {
    out << "Scratch Read bytes: " << _stat_scratch_read_bytes << "\n";
    out << "Scratch Write bytes:" << _stat_scratch_write_bytes << "\n";
 
@@ -485,7 +468,7 @@ void softsim_t::pedantic_statistics(std::ostream& out) {
 }
 
 
-void softsim_t::print_statistics(std::ostream& out) {
+void ssim_t::print_statistics(std::ostream& out) {
    if(SB_DEBUG::VERIF_PORT) { //flush all the log files
      in_port_verif.flush();
      out_port_verif.flush();
@@ -568,7 +551,7 @@ void softsim_t::print_statistics(std::ostream& out) {
 
 //wait and print stats
 //Softbrain should be complete at this point, or results will be inconsistent
-void softsim_t::print_stats() {
+void ssim_t::print_stats() {
   print_statistics(std::cout);
   print_status();
 
@@ -586,7 +569,7 @@ void softsim_t::print_stats() {
 
 // --------------------------SCHEDULE STREAMS ONTO CONTROLLERS-----------------------
 // This is essentially the stream dispatcher
-void softsim_t::schedule_streams() {
+void ssim_t::schedule_streams() {
   int str_width=_sbconfig->dispatch_width();
   int str_issued=0;
 
@@ -851,7 +834,7 @@ bool port_controller_t::schedule_const_port(const_port_stream_t& new_s) {
 
 
 /*
-void softsim_t::deschedule_streams() {
+void ssim_t::deschedule_streams() {
   _dma_c->deschedule_streams();
   _scr_r_c->deschedule_streams();
   _scr_w_c->deschedule_streams();
@@ -1857,7 +1840,7 @@ void port_controller_t::print_status() {
 
 
 
-bool softsim_t::done(bool show,int mask) {
+bool ssim_t::done(bool show,int mask) {
   bool d = done_internal(show, mask);
   
   if(show) return d;
@@ -1876,7 +1859,7 @@ bool softsim_t::done(bool show,int mask) {
 }
 
 
-bool softsim_t::done_internal(bool show, int mask) {
+bool ssim_t::done_internal(bool show, int mask) {
   if(!_dma_c.done(show,mask) || !_scr_r_c.done(show,mask) || 
      !_scr_w_c.done(show,mask) || !_port_c.done(show,mask)) {
     return false;
@@ -1886,14 +1869,15 @@ bool softsim_t::done_internal(bool show, int mask) {
     return false;
   }
 
- //TODO: FIX 
-//  if(mask==0 || mask&WAIT_CMP) {
+ //TODO: FIX  -- this can be optimized!
+  //if(_sbconfig->dispatch_inorder() || mask==0 || mask&WAIT_CMP) {
     if(_in_port_queue.size()) {
       if(show) {
         cout << "Main Queue Not Empty\n";
       }   
       return false;
     }
+  //}
 
   if(mask==0 || mask&WAIT_SCR_RD) {
     if(_scr_dma_queue.size()) {
@@ -2051,7 +2035,7 @@ bool port_controller_t::done(bool show, int mask) {
 
 
 
-bool softsim_t::cgra_done(bool show,int mask) {
+bool ssim_t::cgra_done(bool show,int mask) {
   if(mask==0 || mask&WAIT_CMP) {
     for(unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
       int cur_port = _soft_config.in_ports_active[i];
@@ -2094,7 +2078,7 @@ bool softsim_t::cgra_done(bool show,int mask) {
 
 #ifdef SB_TIMING
 
-void softsim_t::load_dma_to_scratch(addr_t mem_addr, 
+void ssim_t::load_dma_to_scratch(addr_t mem_addr, 
     uint64_t stride, uint64_t access_size, uint64_t num_strides,
     addr_t scratch_addr) {
   dma_scr_stream_t* s = new dma_scr_stream_t();
@@ -2120,7 +2104,7 @@ void softsim_t::load_dma_to_scratch(addr_t mem_addr,
   add_dma_scr_stream(s);
 }
 
-void softsim_t::write_dma_from_scratch(addr_t scratch_addr, uint64_t stride, 
+void ssim_t::write_dma_from_scratch(addr_t scratch_addr, uint64_t stride, 
       uint64_t access_size, uint64_t num_strides, addr_t mem_addr) {
   scr_dma_stream_t* s = new scr_dma_stream_t();
   s->_mem_addr=scratch_addr; //don't worry this is correct
@@ -2145,7 +2129,7 @@ void softsim_t::write_dma_from_scratch(addr_t scratch_addr, uint64_t stride,
 
 
 
-void softsim_t::load_dma_to_port(addr_t mem_addr,
+void ssim_t::load_dma_to_port(addr_t mem_addr,
      uint64_t stride, uint64_t access_size, uint64_t num_strides,
      int in_port) {
   dma_port_stream_t* s = new dma_port_stream_t();
@@ -2171,7 +2155,7 @@ void softsim_t::load_dma_to_port(addr_t mem_addr,
   add_dma_port_stream(s);
 }
 
-void softsim_t::write_dma(uint64_t garb_elem, int out_port,
+void ssim_t::write_dma(uint64_t garb_elem, int out_port,
     uint64_t stride, uint64_t access_size, uint64_t num_strides,
     addr_t mem_addr, int shift_bytes, int garbage) {
   port_dma_stream_t* s = new port_dma_stream_t();
@@ -2199,7 +2183,7 @@ void softsim_t::write_dma(uint64_t garb_elem, int out_port,
   add_port_dma_stream(s);
 }
 
-void softsim_t::load_scratch_to_port(addr_t scratch_addr,
+void ssim_t::load_scratch_to_port(addr_t scratch_addr,
   uint64_t stride, uint64_t access_size, uint64_t num_strides,
   int in_port) {
   scr_port_stream_t* s = new scr_port_stream_t();
@@ -2227,7 +2211,7 @@ void softsim_t::load_scratch_to_port(addr_t scratch_addr,
   add_scr_port_stream(s);
 }
 
-void softsim_t::write_scratchpad(int out_port, 
+void ssim_t::write_scratchpad(int out_port, 
     addr_t scratch_addr, uint64_t num_bytes, uint64_t shift_bytes) {
   
   port_scr_stream_t* s = new port_scr_stream_t();
@@ -2252,7 +2236,7 @@ void softsim_t::write_scratchpad(int out_port,
   add_port_scr_stream(s);
 }
 
-void softsim_t::reroute(int out_port, int in_port, uint64_t num_elem) {
+void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem) {
   port_port_stream_t* s = new port_port_stream_t();
   s->_out_port=out_port;
   s->_in_port=in_port;
@@ -2275,7 +2259,7 @@ void softsim_t::reroute(int out_port, int in_port, uint64_t num_elem) {
 }
 
 //Configure an indirect stream with params
-void softsim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
+void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
     uint64_t num_elem) {
   indirect_stream_t* s = new indirect_stream_t();
   s->_ind_port=ind_port;
@@ -2302,7 +2286,7 @@ void softsim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_a
 }
 
 //Configure an indirect stream with params
-void softsim_t::indirect_write(int ind_port, int ind_type, int out_port, 
+void ssim_t::indirect_write(int ind_port, int ind_type, int out_port, 
     addr_t index_addr, uint64_t num_elem) {
   indirect_wr_stream_t* s = new indirect_wr_stream_t();
   s->_ind_port=ind_port;
@@ -2324,18 +2308,18 @@ void softsim_t::indirect_write(int ind_port, int ind_type, int out_port,
   add_indirect_stream(s);
 }
 
-bool softsim_t::can_receive(int out_port) {
+bool ssim_t::can_receive(int out_port) {
   port_data_t& out_vp = port_interf().out_port(out_port);
   return out_vp.mem_size() != 0;
 }
 
-uint64_t softsim_t::receive(int out_port) {
+uint64_t ssim_t::receive(int out_port) {
    port_data_t& out_vp = port_interf().out_port(out_port);
    SBDT val = out_vp.pop_data(); 
    return val;
 }
 
-void softsim_t::write_constant(int num_strides, int in_port, 
+void ssim_t::write_constant(int num_strides, int in_port, 
                     SBDT constant, uint64_t num_elem, 
                     SBDT constant2, uint64_t num_elem2, 
                     uint64_t flags) { //new
@@ -2383,7 +2367,7 @@ void softsim_t::write_constant(int num_strides, int in_port,
 #else
 // --------------------- DEPRICATED NON-TIMING VERSIONS ---------------------------
 
-void softsim_t::load_dma_to_scratch() {
+void ssim_t::load_dma_to_scratch() {
   addr_t cur_stride_addr = _mem_addr;
   addr_t cur_scratch_addr = _scratch_addr;
 
@@ -2403,7 +2387,7 @@ void softsim_t::load_dma_to_scratch() {
   _port_interf.reformat_in(_in_port);         //why do we need this here ??
 }
 
-void softsim_t::load_scratch_to_port() {
+void ssim_t::load_scratch_to_port() {
   SBDT val;
 
   for(unsigned i = 0; i < _num_strides * scratch_line_size; i+=DATA_WIDTH) {
@@ -2420,7 +2404,7 @@ void softsim_t::load_scratch_to_port() {
 }
 
 //each offset element in vector port is 8B or SBDT
-void softsim_t::load_dma_to_port() { //iterate over _stride and _access_size
+void ssim_t::load_dma_to_port() { //iterate over _stride and _access_size
   addr_t cur_stride_addr = _mem_addr;
 
   for(unsigned i = 0; i < _num_strides; ++i, cur_stride_addr+=_stride) {
@@ -2438,7 +2422,7 @@ void softsim_t::load_dma_to_port() { //iterate over _stride and _access_size
 
 //write to scratchpad
 //stride size == vector_port elements size ??
-void softsim_t::write_scratchpad() {
+void ssim_t::write_scratchpad() {
   unsigned stride_size = _port_interf.out_port(_out_port).port_vec_elem();        //total elems in vector ports
   assert( _port_interf.out_port(_out_port).mem_size() >= _num_bytes );
 
@@ -2461,7 +2445,7 @@ void softsim_t::write_scratchpad() {
 
 //Write data to DMA engine
 //TODO: write in vec_size? or something else?
-void softsim_t::write_dma() {
+void ssim_t::write_dma() {
   unsigned stride_size = _port_interf.out_port(_out_port).port_vec_elem();
   assert(_port_interf.out_port(_out_port).mem_size() >= _num_strides * stride_size &&
          "Data Words Ready >= Data Words Requested");
@@ -2477,7 +2461,7 @@ void softsim_t::write_dma() {
   }
 }
 
-void softsim_t::reroute()  {
+void ssim_t::reroute()  {
   unsigned stride_size = _port_interf.out_port(_out_port).port_vec_elem();
   assert(_port_interf.out_port(_out_port).mem_size() >= _num_strides * stride_size);
 
@@ -2495,7 +2479,7 @@ void softsim_t::reroute()  {
   do_cgra();
 }
 
-void softsim_t::write_constant() { //Write constants onto a port
+void ssim_t::write_constant() { //Write constants onto a port
   for(unsigned i = 0; i < _num_strides; ++i) {
     _port_interf.push_data(_constant, _in_port); 
   }
@@ -2507,14 +2491,14 @@ void softsim_t::write_constant() { //Write constants onto a port
 #endif
 
 
-void softsim_t::cycle_in_interf() {
+void ssim_t::cycle_in_interf() {
   for(unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
     int cur_port = _soft_config.in_ports_active[i];
     _port_interf.in_port(cur_port).reformat_in_one_vec();
   }
 }
 
-void softsim_t::cycle_out_interf() {
+void ssim_t::cycle_out_interf() {
   for(unsigned i = 0; i < _soft_config.out_ports_active.size(); ++i) {
     int cur_port = _soft_config.out_ports_active[i];
     _port_interf.out_port(cur_port).reformat_out_one_vec();
@@ -2522,7 +2506,7 @@ void softsim_t::cycle_out_interf() {
 }
 
 
-void softsim_t::cycle_cgra() {
+void ssim_t::cycle_cgra() {
   if(!_pdg) return;
   //do_cgra();
   //return; 
@@ -2563,7 +2547,7 @@ void softsim_t::cycle_cgra() {
 
 
 // DEPRICATED NON-TIMING CODE
-void softsim_t::do_cgra() {
+void ssim_t::do_cgra() {
   //1. Iterate over all active input ports, find the minimum filled
   //2. For each ready instance
   //   a. Send each fifo's data to corresponding pdg input
@@ -2607,7 +2591,7 @@ void softsim_t::do_cgra() {
 
 
 
-void softsim_t::execute_pdg(unsigned instance) {
+void ssim_t::execute_pdg(unsigned instance) {
   if(SB_DEBUG::SB_COMP) {
     std::cout << "inputs: ";
   }
@@ -2708,7 +2692,7 @@ void softsim_t::execute_pdg(unsigned instance) {
   }
 }
 
-void softsim_t::req_config(addr_t addr, int size) {
+void ssim_t::req_config(addr_t addr, int size) {
   assert(_in_config ==false);
   _in_config=true;
 
@@ -2727,7 +2711,7 @@ void softsim_t::req_config(addr_t addr, int size) {
 }
 
 // Configure once you get all the bits
-void softsim_t::configure(addr_t addr, int size, uint64_t* bits) {
+void ssim_t::configure(addr_t addr, int size, uint64_t* bits) {
   //Slice 0: In Ports Activge
   //Slice 1: Out Ports Active
   //2,3,4: Reserved for delay  (4 bits each)
@@ -2847,7 +2831,7 @@ void softsim_t::configure(addr_t addr, int size, uint64_t* bits) {
       }
       _soft_config.out_ports_lat[i]=max_lat;
       if(SB_DEBUG::SB_OVP_LAT) {
-        cout << "softbrain ovp" << i << " has latency:" << max_lat << "\n";
+        cout << "out vp" << i << " has latency:" << max_lat << "\n";
       }
       _soft_config.output_pdg_node.push_back(pdg_outputs);
     }

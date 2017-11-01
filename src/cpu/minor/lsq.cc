@@ -48,7 +48,7 @@
 #include "cpu/minor/exec_context.hh"
 #include "cpu/minor/execute.hh"
 #include "cpu/minor/pipeline.hh"
-#include "softbrain/softbrain.hh"
+#include "ssim/ssim.hh"
 #include "debug/Activity.hh"
 #include "debug/MinorMem.hh"
 
