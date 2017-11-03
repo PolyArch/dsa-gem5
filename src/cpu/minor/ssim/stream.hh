@@ -211,7 +211,7 @@ struct dma_port_stream_t : public mem_stream_base_t {
     std::cout << "dma->port" << "\tport=" << _in_port << "\tacc_size=" << _access_size 
               << " stride=" << _stride << " bytes_comp=" << _bytes_in_access 
               << " mem_addr=" << std::hex << _mem_addr << std::dec 
-              << " strides_left=" << _num_strides;
+              << " strides_left=" << _num_strides << " repeat_in=" << _repeat_in;
     base_stream_t::print_status();
   }
 

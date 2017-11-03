@@ -224,8 +224,15 @@ public:
   }
 
   bool can_take(LOC loc, int repeat=1) {
+    //This makes sure the input port is fully drained before sending the next 
+    //stream. This causes ~1-2 cycles of pipeline bubble + memory access time 
+    //as well -- NOT GOOD.   Don't switch often the repeat size, especially
+    //streams comming from memory!  (if this is required, add new h/w mechanism)
+    if(_repeat != repeat) { 
+      return !in_use() && mem_size()==0 && _cgra_data[0].size()==0;
+    }
     return (_status == STATUS::FREE) || 
-           (_status == STATUS::COMPLETE && _loc == loc && _repeat == repeat);
+           (_status == STATUS::COMPLETE && _loc == loc);
   }
   bool in_use() {
     return !(_status == STATUS::FREE);
