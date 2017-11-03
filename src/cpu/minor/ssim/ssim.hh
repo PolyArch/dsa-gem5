@@ -267,7 +267,6 @@ public:
 
   void set_repeat(int r) {
     _repeat=r;
-    _num_times_repeated=0;
   }
   
   //returns true if wrapped
