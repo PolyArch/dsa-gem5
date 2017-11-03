@@ -83,6 +83,9 @@ struct base_stream_t {
   virtual uint64_t wait_mask()   {return 0;} 
   virtual uint64_t shift_bytes() {return 0;} 
 
+  virtual int repeat_in()   {return 1;}  //intentional
+
+
   virtual uint64_t data_volume() {return 0;} 
   virtual STR_PAT stream_pattern() {return STR_PAT::OTHER;} 
 
@@ -188,6 +191,9 @@ struct mem_stream_base_t : public base_stream_t {
 //.........STREAM DEFINITION.........
 struct dma_port_stream_t : public mem_stream_base_t {
   int _in_port;           //source or destination port
+  int _repeat_in;
+
+  virtual int repeat_in() {return _repeat_in;}
 
   uint64_t mem_addr()    {return _mem_addr;}  
   uint64_t access_size() {return _access_size;}  
@@ -290,6 +296,9 @@ struct scr_dma_stream_t : public mem_stream_base_t {
 //4. Scratch->Port     
 struct scr_port_stream_t : public mem_stream_base_t {
   int _in_port;
+  int _repeat_in;
+
+  virtual int repeat_in() {return _repeat_in;}
 
   uint64_t mem_addr()    {return _mem_addr;}  
   uint64_t access_size() {return _access_size;}  
@@ -318,6 +327,9 @@ struct scr_port_base_t : public base_stream_t {
   addr_t _scratch_addr; // CURRENT address
   addr_t _num_bytes=0;  // CURRENT bytes left
   addr_t _orig_bytes=0;  // bytes left
+  int _repeat_in;
+
+  virtual int repeat_in() {return _repeat_in;}
 
   virtual uint64_t scratch_addr(){return _scratch_addr;} 
   virtual uint64_t num_bytes()   {return _num_bytes;} 
@@ -368,6 +380,7 @@ struct port_scr_stream_t : public scr_port_base_t {
 //Constant -> Port
 struct const_port_stream_t : public base_stream_t {
   int _in_port;
+
   addr_t _constant;
   addr_t _num_elements;
   addr_t _constant2;
@@ -450,10 +463,11 @@ struct const_port_stream_t : public base_stream_t {
 //Port -> Port 
 struct port_port_stream_t : public base_stream_t {
   int _in_port;
+  int _repeat_in;
+
   int _out_port;
   addr_t _num_elements;
   addr_t _orig_elements;
-
 
   virtual void set_orig() {
     _orig_elements = _num_elements;
@@ -467,6 +481,7 @@ struct port_port_stream_t : public base_stream_t {
   uint64_t num_strides() {return _num_elements;} 
 
   virtual int ivp_dest() {return _in_port;}
+  virtual int repeat_in() {return _repeat_in;}
 
   virtual LOC src() {return LOC::PORT;}
   virtual LOC dest() {return LOC::PORT;}
@@ -563,6 +578,9 @@ struct indirect_base_stream_t : public base_stream_t {
 //Indirect Read Port -> Port 
 struct indirect_stream_t : public indirect_base_stream_t {
   int _in_port;
+  int _repeat_in;
+
+  virtual int repeat_in() {return _repeat_in;}
 
   uint64_t ind_port()     {return _ind_port;} 
   uint64_t ind_type()     {return _type;} 

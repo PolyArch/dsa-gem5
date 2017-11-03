@@ -111,6 +111,7 @@ public:
   }
 
 
+
   void push_data(SBDT data, uint64_t id=0) {
     //std::cout << data << " -> vp:" << _port << "\n"; 
     if(id!=0) {
@@ -222,9 +223,9 @@ public:
 
   }
 
-  bool can_take(LOC loc) {
+  bool can_take(LOC loc, int repeat=1) {
     return (_status == STATUS::FREE) || 
-           (_status == STATUS::COMPLETE && _loc == loc);
+           (_status == STATUS::COMPLETE && _loc == loc && _repeat == repeat);
   }
   bool in_use() {
     return !(_status == STATUS::FREE);
@@ -255,9 +256,30 @@ public:
     assert(_cgra_data.size() > 0);
   }
 
+  int repeat() {return _repeat;}
+
+  void set_repeat(int r) {
+    _repeat=r;
+    _num_times_repeated=0;
+  }
+  
+  //returns true if wrapped
+  bool inc_repeated() {
+    _num_times_repeated+=1;
+    if(_repeat==_num_times_repeated) {
+      _num_times_repeated=0;
+    }
+    return _num_times_repeated==0;
+  }
+
+
   uint64_t total_pushed() { return _total_pushed; }
 
 private:
+  //Programmable Repeat:
+  uint64_t _repeat=1;
+  uint64_t _num_times_repeated=0;
+
   // cgra_port: vec_loc(offset)
   // 23: 1, 2   24: 3, 4
   bool _isInput;
@@ -416,9 +438,9 @@ class dma_controller_t : public data_controller_t {
 
   dma_controller_t(ssim_t* host) : data_controller_t(host) {
     //Setup DMA Controllers, eventually this should be configurable
-    _dma_port_streams.resize(10);
-    _indirect_streams.resize(4);
-    _indirect_wr_streams.resize(4);
+    _dma_port_streams.resize(10); 
+    _indirect_streams.resize(4); //indirect to port
+    _indirect_wr_streams.resize(4); //port to indirect mem
     _port_dma_streams.resize(4); // IS THIS ENOUGH?
     _tq_read = _dma_port_streams.size()+1/*dma->scr*/+_indirect_streams.size();
     _tq = _tq_read + _port_dma_streams.size()+1+_indirect_wr_streams.size();
@@ -481,36 +503,6 @@ class dma_controller_t : public data_controller_t {
   std::vector<indirect_stream_t> _indirect_streams; //indirect reads
   std::vector<indirect_wr_stream_t> _indirect_wr_streams; //indirect reads
  
-  struct fake_mem_req {
-    addr_t scr_addr;
-    int port=-1;
-    std::vector<SBDT> data;
-    bool last;
-    uint64_t orig_cmd_id;
-    fake_mem_req(addr_t a, int p, std::vector<SBDT>& d, bool l, int id)
-      : scr_addr(a), port(p), data(d), last(l) {
-      static uint64_t ID_SOURCE=0;
-      orig_cmd_id=((uint64_t)id)*4294967296+(ID_SOURCE++); 
-      assert(d.size());
-      assert(data.size());  
-      if(SB_DEBUG::MEM_REQ) {
-        //_ticker->timestamp();
-        if(port == -1) {
-          std::cout << "mem_req to scr, scr_addr:" << scr_addr << ", words: " << d.size() << "\n";
-        } else {
-          std::cout << "mem_req to port, port:" << port << ", words: " << d.size() << "\n";
-        }
-      }
-      
-    }
-    /*bool operator < (const struct fake_mem_req& other) const {
-      return time > other.time;
-    }
-    bool operator == (const struct fake_mem_req& other) const {
-      return false;
-    }*/
-  };
-  //structure for faking memory acces stime
   //address to stream -> [stream_index, data]
   uint64_t _mem_read_reqs=0, _mem_write_reqs=0;
   std::vector<uint64_t> _prev_port_cycle;
@@ -704,18 +696,17 @@ struct stream_stats_t {
 
 };
 
-//class accel_t
-//{
-//  friend class ssim_t;
-//  friend class ticker_t;
-//  friend class scratch_read_controller_t;
-//  friend class scratch_write_controller_t;
-//  friend class dma_controller_t;
-//  friend class port_port_controller_t;
-// 
-//
-//
-//};
+class accel_t
+{
+  friend class ssim_t;
+  friend class ticker_t;
+  friend class scratch_read_controller_t;
+  friend class scratch_write_controller_t;
+  friend class dma_controller_t;
+  friend class port_port_controller_t;
+ 
+
+};
 
 
 
@@ -754,25 +745,26 @@ public:
   // Interface from instructions to streams
   // IF SB_TIMING, these just send the commands to the respective controllers
   // ELSE, they carry out all operations that are possible at that point
+  void set_context(uint64_t context);
   void req_config(addr_t addr, int size);
-  void cfg_port(uint64_t config, uint64_t in_port) {} //new -- define
   void configure(addr_t addr, int size, uint64_t* bits);
   void load_dma_to_scratch(addr_t mem_addr, uint64_t stride, 
       uint64_t access_size, uint64_t num_strides, addr_t scratch_addr);
   void write_dma_from_scratch(addr_t scratch_addr, uint64_t stride, 
       uint64_t access_size, uint64_t num_strides, addr_t mem_addr); //new
   void load_dma_to_port(addr_t mem_addr, uint64_t stride, 
-      uint64_t access_size, uint64_t num_strides, int port);
+      uint64_t access_size, uint64_t num_strides, int port, int repeat_in);
   void load_scratch_to_port(addr_t scratch_addr, uint64_t stride, 
-      uint64_t access_size, uint64_t num_strides, int in_port);
+                            uint64_t access_size, uint64_t num_strides, 
+                            int in_port, int repeat_in); //*
   void write_scratchpad(int out_port, addr_t scratch_addr, 
                         uint64_t num_bytes, uint64_t shift_bytes); //new
   void write_dma(uint64_t garb_elem, //new
       int out_port, uint64_t stride, uint64_t access_size, 
       uint64_t num_strides, addr_t mem_addr, int shift_bytes, int garbage);
-  void reroute(int out_port, int in_port, uint64_t num_elem);
+  void reroute(int out_port, int in_port, uint64_t num_elem, int repeat);
   void indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
-    uint64_t num_elem);
+    uint64_t num_elem, int repeat);
   void indirect_write(int ind_port, int ind_type, int out_port, 
     addr_t index_addr, uint64_t num_elem);
   bool can_receive(int out_port);
@@ -864,7 +856,6 @@ private:
   void add_port_port_stream(port_port_stream_t* s)   {add_port_based_stream(s);} 
   void add_indirect_stream(indirect_base_stream_t* s){add_port_based_stream(s);} 
   void add_const_port_stream(const_port_stream_t* s) {add_port_based_stream(s);} 
-
 
   void add_dma_scr_stream(dma_scr_stream_t* s) {
     if(_sbconfig->dispatch_inorder()) {
@@ -1005,24 +996,5 @@ private:
   uint64_t _forward_progress_cycle=0;
 };
 
-#if 0
-  void add_dma_port_stream(dma_port_stream_t s)     {_dma_port_queue.push_back(s);}
-  void add_dma_scr_stream(dma_scr_stream_t s)       {_dma_scr_queue.push_back(s); }
-  void add_port_dma_stream(dma_port_stream_t s)     {_port_dma_queue.push_back(s);}
-  void add_scr_dma_stream(dma_scr_stream_t s)       {_scr_dma_queue.push_back(s); }
-  void add_scr_port_stream(scr_port_stream_t s)     {_scr_port_queue.push_back(s);}
-  void add_port_scr_stream(scr_port_stream_t s)     {_port_scr_queue.push_back(s);}
-  void add_port_port_stream(port_port_stream_t s)   {_port_port_streams.push_back(s);}
-  void add_const_port_stream(const_port_stream_t s) {_const_port_streams.push_back(s);}
-
-  void can_add_scr_port_stream()   {return _scr_port_queue.size() < _queue_size;}
-  void can_add_dma_port_stream()   {return _dma_port_queue.size() < _queue_size;}
-  void can_add_dma_scr_stream()    {return _dma_scr_queue.size() < _queue_size;}
-  void can_add_port_dma_stream()   {return _port_dma_queue.size() < _queue_size;}
-  void can_add_scr_dma_stream()    {return _scr_dma_queue.size() < _queue_size;}
-  void can_add_port_scr_stream()   {return _port_scr_queue.size() < _queue_size;}
-  void can_add_port_port_stream()  {return _port_port_queue.size() < _queue_size;}
-  void can_add_const_port_stream() {return _const_port_queue.size() < _queue_size;}
-#endif
 
 #endif

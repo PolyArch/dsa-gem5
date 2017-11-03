@@ -511,9 +511,9 @@ decode OPCODE default Unknown::unknown() {
                 xc->callSDFunc(SB_CFG);
             }}, IsSDConfig, IsNonSpeculative, No_OpClass);
             0x1: sb_cfg_port({{
-                xc->setSDReg(Rs1,SD_CONSTANT);
-                xc->setSDReg(s_imm,SD_IN_PORT);
-                xc->callSDFunc(SB_CFG_PORT);
+                xc->setSDReg(Rs1,SD_REPEAT);
+                //xc->setSDReg(s_imm,SD_IN_PORT);
+                //xc->callSDFunc(SB_CFG_PORT);
             }}, IsSDParam, IsNonSpeculative, No_OpClass);
             0x2: sb_cfg_ctx({{
                 if(s_imm == 0) {

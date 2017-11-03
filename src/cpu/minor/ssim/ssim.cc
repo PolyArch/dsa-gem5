@@ -587,11 +587,12 @@ void ssim_t::schedule_streams() {
     bool scheduled_out=false;
     bool scheduled_dma_scr=false;
     bool scheduled_scr_dma=false;
+    int repeat = ip->repeat_in();
 
     if(auto dma_port_stream = dynamic_cast<dma_port_stream_t*>(ip)) {
       int port = dma_port_stream->_in_port;
       in_vp = &_port_interf.in_port(port);
-      if(in_vp->can_take(LOC::DMA) && !blocked_ivp[port] &&
+      if(in_vp->can_take(LOC::DMA,repeat) && !blocked_ivp[port] &&
         (scheduled_in = _dma_c.schedule_dma_port(*dma_port_stream)) ) {
         in_vp->set_status(port_data_t::STATUS::BUSY, LOC::DMA);
       }
@@ -599,7 +600,7 @@ void ssim_t::schedule_streams() {
     } else if(auto scr_port_stream = dynamic_cast<scr_port_stream_t*>(ip)) {
       int port = scr_port_stream->_in_port;
       in_vp = &_port_interf.in_port(port);
-      if(in_vp->can_take(LOC::SCR) && !blocked_ivp[port] &&
+      if(in_vp->can_take(LOC::DMA,repeat) && !blocked_ivp[port] &&
           (scheduled_in = _scr_r_c.schedule_scr_port(*scr_port_stream)) ) {
         in_vp->set_status(port_data_t::STATUS::BUSY, LOC::SCR);
         _outstanding_scr_read_streams--;
@@ -610,7 +611,7 @@ void ssim_t::schedule_streams() {
       int out_port = port_port_stream->_out_port;
       in_vp = &_port_interf.in_port(in_port);
       out_vp = &_port_interf.out_port(out_port);
-      if(in_vp->can_take(LOC::PORT) && out_vp->can_take(LOC::PORT) &&
+      if(in_vp->can_take(LOC::PORT,repeat) && out_vp->can_take(LOC::PORT) &&
           !blocked_ivp[in_port] && !blocked_ovp[out_port] && 
           (scheduled_in = _port_c.schedule_port_port(*port_port_stream)) ) {
         scheduled_out = true;
@@ -650,7 +651,7 @@ void ssim_t::schedule_streams() {
       out_ind_vp = &_port_interf.out_port(out_ind_port); //this is indirect output port
       in_vp = &_port_interf.in_port(in_port);
 
-      if(in_vp->can_take(LOC::PORT) && out_ind_vp->can_take(LOC::PORT)
+      if(in_vp->can_take(LOC::PORT,repeat) && out_ind_vp->can_take(LOC::PORT)
           && !blocked_ivp[in_port] && !blocked_ovp[out_ind_port] &&
             (scheduled_in = _dma_c.schedule_indirect(*indirect_stream) )) {
         scheduled_out = true;
@@ -682,6 +683,10 @@ void ssim_t::schedule_streams() {
     if(in_vp) blocked_ivp[in_vp->port()] = true; //prevent OOO access
     if(out_vp) blocked_ovp[out_vp->port()] = true;
     if(out_ind_vp) blocked_ovp[out_ind_vp->port()] = true;
+
+    if(scheduled_in) { //inform input port about its new configuration (repeat)
+      in_vp->set_repeat(repeat);
+    }
 
     if(scheduled_in || scheduled_out || scheduled_dma_scr || scheduled_scr_dma) {
       str_issued++;
@@ -1506,7 +1511,12 @@ void dma_controller_t::req_write(port_dma_stream_t& stream, port_data_t& vp) {
 
   if(SB_DEBUG::MEM_REQ) {
     _sb->_ticker->timestamp();
-    cout << bytes_written << "-byte write request for port->dma\n";
+    cout << bytes_written << "-byte write request for port->dma, addr:"
+         << std::hex << init_addr <<", data:";
+    for(int i = 0; i < elem_written; ++i) {
+      cout << data64[i] << ", " ;
+    }
+    cout << "\n" << std::dec;
   }
 
   if(_sb->_ticker->in_roi()) {
@@ -2131,13 +2141,14 @@ void ssim_t::write_dma_from_scratch(addr_t scratch_addr, uint64_t stride,
 
 void ssim_t::load_dma_to_port(addr_t mem_addr,
      uint64_t stride, uint64_t access_size, uint64_t num_strides,
-     int in_port) {
+     int in_port, int repeat) {
   dma_port_stream_t* s = new dma_port_stream_t();
   s->_mem_addr=mem_addr;
   s->_num_strides=num_strides;
   s->_stride=stride;
   s->_access_size=access_size;
   s->_in_port=in_port;
+  s->_repeat_in=repeat;
   s->set_orig();
 
   if(debug && SB_DEBUG::SB_COMMAND) {
@@ -2185,13 +2196,14 @@ void ssim_t::write_dma(uint64_t garb_elem, int out_port,
 
 void ssim_t::load_scratch_to_port(addr_t scratch_addr,
   uint64_t stride, uint64_t access_size, uint64_t num_strides,
-  int in_port) {
+  int in_port, int repeat) {
   scr_port_stream_t* s = new scr_port_stream_t();
   s->_mem_addr=scratch_addr; //NOTE: Here _mem_addr *is* the scratchpad address
   s->_num_strides=num_strides;
   s->_stride=stride;
   s->_access_size=access_size;
   s->_in_port=in_port;
+  s->_repeat_in=repeat;
   s->set_orig();
 
   if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SCR_BARRIER)  ) {
@@ -2236,11 +2248,12 @@ void ssim_t::write_scratchpad(int out_port,
   add_port_scr_stream(s);
 }
 
-void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem) {
+void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem, int repeat) {
   port_port_stream_t* s = new port_port_stream_t();
   s->_out_port=out_port;
   s->_in_port=in_port;
   s->_num_elements=num_elem;
+  s->_repeat_in=repeat;
   s->set_orig();
 
   if(debug && SB_DEBUG::SB_COMMAND) {
@@ -2260,7 +2273,7 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem) {
 
 //Configure an indirect stream with params
 void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
-    uint64_t num_elem) {
+    uint64_t num_elem, int repeat) {
   indirect_stream_t* s = new indirect_stream_t();
   s->_ind_port=ind_port;
   s->_type=ind_type;
@@ -2268,6 +2281,7 @@ void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr
   s->_index_addr=index_addr;
   s->_index_in_word=0;
   s->_num_elements=num_elem;
+  s->_repeat_in=repeat;
   s->set_orig();
 
   if(debug && SB_DEBUG::SB_COMMAND) {
@@ -2530,7 +2544,12 @@ void ssim_t::cycle_cgra() {
     }
     //pop the elements from inport as they have been processed
     for(unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
-      _port_interf.in_port(_soft_config.in_ports_active[i]).pop(1);
+      port_data_t& in_port = _port_interf.in_port(
+                                      _soft_config.in_ports_active[i]);
+      bool should_pop = in_port.inc_repeated();
+      if(should_pop) {
+        in_port.pop(1);
+      }
     }
   }
 
@@ -2667,6 +2686,10 @@ void ssim_t::execute_pdg(unsigned instance) {
         assert(got_discarded==0 && "can't discard partial vector ports\n");
         uint64_t val = n->retrieve();
         cur_out_port.push_val(port_idx, val);       //retreive the val from last inst
+
+        if(SB_DEBUG::SB_COMP) {
+           std::cout << "output:" << std::hex << val << std::dec << "\n";
+        }
  
         if(SB_DEBUG::VERIF_PORT) {
           out_port_verif << hex << setw(16) << setfill('0') << val << " ";
