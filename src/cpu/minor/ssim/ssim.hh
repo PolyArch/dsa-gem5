@@ -70,6 +70,7 @@ public:
   void roi_entry(bool enter);
 
   void timestamp(); //print timestamp
+  void timestamp_context(); //print timestamp
 
   void step();
 

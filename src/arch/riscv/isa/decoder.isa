@@ -521,6 +521,7 @@ decode OPCODE default Unknown::unknown() {
                 } else {
                   xc->setSDReg(s_imm,SD_CONTEXT);
                 }
+                xc->callSDFunc(SB_CTX);
             }}, IsSDParam, IsNonSpeculative, No_OpClass);
         }
         0x2b: decode FUNCT3 {

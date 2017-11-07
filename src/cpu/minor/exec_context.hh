@@ -384,6 +384,8 @@ class ExecContext : public ::ExecContext
             //case SB_CFG_PORT: ssim.cfg_port(
             //    thread.getSDReg(SD_CONSTANT),      thread.getSDReg(SD_IN_PORT)); 
             //break;
+            case SB_CTX: ssim.set_context(thread.getSDReg(SD_CONTEXT)); 
+            break;
             case SB_MEM_SCR: ssim.load_dma_to_scratch(
                 thread.getSDReg(SD_MEM_ADDR),      thread.getSDReg(SD_STRIDE),
                 thread.getSDReg(SD_ACCESS_SIZE),   thread.getSDReg(SD_NUM_STRIDES),

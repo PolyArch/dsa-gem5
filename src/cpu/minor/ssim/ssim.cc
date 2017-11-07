@@ -15,6 +15,8 @@ using namespace std;
 // Vector-Stream Commands (all of these are context-dependent)
 
 ssim_t::ssim_t(Minor::LSQ* lsq) : _lsq(lsq) {
+  SB_DEBUG::check_env();
+
   for(int i = 0; i < NUM_ACCEL; ++i) {
     accel_arr[i] = new accel_t(lsq, i, this);
   }
@@ -93,11 +95,22 @@ uint64_t ssim_t::forward_progress_cycle() {
 }
 
 void ssim_t::add_bitmask_stream(base_stream_t* s) {
+  //if(debug && (SB_DEBUG::SB_COMMAND)  ) {
+  //  cout << "Sending to Cores: ";
+  //}
+
   for(uint64_t i=0,b=1; i < NUM_ACCEL; ++i, b<<=1) {
     if(_context_bitmask & b) {
+      //if(debug && (SB_DEBUG::SB_COMMAND)  ) {
+      //  cout << i;
+      //}
       accel_arr[i]->add_stream(s);
     }
   }
+
+  //if(debug && (SB_DEBUG::SB_COMMAND)  ) {
+  //  cout << "\n";
+  //}
 }
 
 
@@ -106,9 +119,18 @@ void ssim_t::timestamp() {
   cout << std::dec << now() - _stat_start_cycle << "\t";
 }
 
+void ssim_t::timestamp_context() {
+  timestamp();
+  cout << "context:" << std::hex << _context_bitmask << "\t" << std::dec;
+}
+
 
 // ----------------------- STREAM COMMANDS ------------------------------------
 void ssim_t::set_context(uint64_t context) {
+  if(debug && (SB_DEBUG::SB_CONTEXT)  ) {
+    cout << "Context: " << std::hex << context << std::dec << "\n";
+  }
+
   _context_bitmask = context;
   _ever_used_bitmask |= context;
 }
@@ -125,7 +147,7 @@ void ssim_t::load_dma_to_scratch(addr_t mem_addr,
   s->set_orig();
 
   if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SCR_BARRIER)  ) {
-    timestamp();
+    timestamp_context();
     s->print_status(); 
   }
 
@@ -150,7 +172,7 @@ void ssim_t::write_dma_from_scratch(addr_t scratch_addr, uint64_t stride,
   s->set_orig();
 
   if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SCR_BARRIER)  ) {
-    timestamp();
+    timestamp_context();
     s->print_status(); 
   }
 
@@ -159,9 +181,7 @@ void ssim_t::write_dma_from_scratch(addr_t scratch_addr, uint64_t stride,
     return;
   }
 
-  //add_scr_dma_stream(s);
   add_bitmask_stream(s);
-
 }
 
 void ssim_t::load_dma_to_port(addr_t mem_addr,
@@ -177,7 +197,7 @@ void ssim_t::load_dma_to_port(addr_t mem_addr,
   s->set_orig();
 
   if(debug && SB_DEBUG::SB_COMMAND) {
-    timestamp();
+    timestamp_context();
     s->print_status(); 
   }
 
@@ -186,8 +206,6 @@ void ssim_t::load_dma_to_port(addr_t mem_addr,
     return;
   }
 
-  //add_stream(s);
-  //add_dma_port_stream(s);
   add_bitmask_stream(s);
 }
 
@@ -205,7 +223,7 @@ void ssim_t::write_dma(uint64_t garb_elem, int out_port,
   s->set_orig();
 
   if(debug && SB_DEBUG::SB_COMMAND) {
-    timestamp();
+    timestamp_context();
     s->print_status(); 
   }
 
@@ -214,10 +232,7 @@ void ssim_t::write_dma(uint64_t garb_elem, int out_port,
     return;
   }
 
-  //WAIT_FOR(can_add_port_dma_stream,1500);
-  //add_port_dma_stream(s);
   add_bitmask_stream(s);
-
 }
 
 void ssim_t::load_scratch_to_port(addr_t scratch_addr,
@@ -233,7 +248,7 @@ void ssim_t::load_scratch_to_port(addr_t scratch_addr,
   s->set_orig();
 
   if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SCR_BARRIER)  ) {
-    timestamp();
+    timestamp_context();
     s->print_status(); 
   }
 
@@ -261,7 +276,7 @@ void ssim_t::write_scratchpad(int out_port,
   s->set_orig();
 
   if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SCR_BARRIER)  ) {
-    timestamp();
+    timestamp_context();
     s->print_status(); 
   }
 
@@ -286,7 +301,7 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem, int repeat) {
   s->set_orig();
 
   if(debug && SB_DEBUG::SB_COMMAND) {
-    timestamp();
+    timestamp_context();
     s->print_status();
   }
 
@@ -295,9 +310,6 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem, int repeat) {
     return;
   }
 
-  //WAIT_FOR(can_add_port_port_stream,1500);
-
-  //add_port_port_stream(s);
   add_bitmask_stream(s);
 }
 
@@ -315,7 +327,7 @@ void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr
   s->set_orig();
 
   if(debug && SB_DEBUG::SB_COMMAND) {
-    timestamp();
+    timestamp_context();
     s->print_status();
   }
 
@@ -324,10 +336,7 @@ void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr
     return;
   }
 
-  //WAIT_FOR(can_add_indirect_stream,1500);
-  //add_indirect_stream(s);
   add_bitmask_stream(s);
-
 }
 
 //Configure an indirect stream with params
@@ -342,16 +351,12 @@ void ssim_t::indirect_write(int ind_port, int ind_type, int out_port,
   s->_num_elements=num_elem;
   s->set_orig();
 
-
   if(debug && SB_DEBUG::SB_COMMAND) {
-    timestamp();
+    timestamp_context();
     s->print_status();
   }
 
-  //WAIT_FOR(can_add_indirect_stream,1500);
-  //add_indirect_stream(s);
   add_bitmask_stream(s);
-
 }
 
 //These two functions just return the first core from 0
@@ -397,7 +402,7 @@ void ssim_t::write_constant(int num_strides, int in_port,
   s->_num_elements2=num_elem;
 
   if(debug && SB_DEBUG::SB_COMMAND) {
-    timestamp();
+    timestamp_context();
     s->print_status();
   }
 
@@ -405,7 +410,7 @@ void ssim_t::write_constant(int num_strides, int in_port,
   s->set_orig();
 
   if(debug && SB_DEBUG::SB_COMMAND) {
-    timestamp();
+    timestamp_context();
     s->print_status();
   }
 
