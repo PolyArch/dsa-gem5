@@ -336,8 +336,12 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem, int repeat,
   if(flags == 0) {
     s = new port_port_stream_t(out_port,in_port,num_elem,repeat);
   } else {
-    s = new remote_port_stream_t(out_port,in_port,num_elem,repeat,core_d,true);
-    r = new remote_port_stream_t(out_port,in_port,num_elem,repeat,core_d,false);
+    auto s1 = new remote_port_stream_t(out_port,in_port,num_elem,repeat,core_d,true);
+    auto r1 = new remote_port_stream_t(out_port,in_port,num_elem,repeat,core_d,false);
+    s1->_remote_stream=r1; // tie together <3
+    r1->_remote_stream=s1;
+    s=s1;
+    r=r1;
   }
 
   if(debug && SB_DEBUG::SB_COMMAND) {

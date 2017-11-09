@@ -784,6 +784,8 @@ public:
     }
   }
 
+  ssim_t* get_ssim() {return _ssim;}
+  int accel_index() {return _accel_index;}
 
 private:
   ssim_t* _ssim;
@@ -983,9 +985,6 @@ private:
   uint64_t _forward_progress_cycle=0;
 
   std::map<std::pair<LOC,LOC>, std::pair<uint64_t,uint64_t>> _bw_map;
-
-  int accel_index=0;
-  uint64_t accel_mask=0;
 };
 
 #endif

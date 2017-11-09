@@ -586,7 +586,7 @@ void accel_t::print_status() {
    if(done(false,0)) {
      return;
    }
-   cout << "---- SOFTBRAIN STATUS ----\n";
+   cout << "---- ACCEL " << _accel_index << " STATUS ----\n";
    cout << "MEM REQs OUTSTANDING: " << _dma_c.mem_reqs() << "\n";
    cout << "Active SEs:\n";
    _dma_c.print_status();
@@ -2074,7 +2074,7 @@ void scratch_write_controller_t::print_status() {
 
 void port_controller_t::cycle() {
   //TODO: Currently, we are assuming separate busses for our port controller
-  //This is likely prohibitively expensive...  Fix later
+  //FIXME:This is likely prohibitively expensive...  Fix later
 
   //Port-Port
   for(unsigned i = 0; i < _port_port_streams.size(); ++i) {
@@ -2166,8 +2166,14 @@ void port_controller_t::cycle() {
     if(!stream.stream_active()) {
       continue;
     }
+    //vp out comes from a different core!
+    //port_data_t& vp_out = pi.out_port(stream._out_port);
+    accel_t* rem_acc = 
+      _accel->get_ssim()->get_acc(_accel->accel_index()-stream._which_core);
+    auto& rem_pi = rem_acc->port_interf();
+    port_data_t& vp_out = rem_pi.out_port(stream._out_port);
 
-    port_data_t& vp_out = pi.out_port(stream._out_port);
+
     port_data_t& vp_in = pi.in_port(stream._in_port);
     if(vp_out.mem_size() && vp_in.mem_size() < VP_LEN ) { // okay go for it
       
@@ -2189,14 +2195,16 @@ void port_controller_t::cycle() {
         if(SB_DEBUG::VP_SCORE2) {
           cout << "SOURCE: PORT->PORT\n";
         }
-        port_data_t& in_vp = _accel->port_interf().in_port(stream._in_port);
-        in_vp.set_status(port_data_t::STATUS::FREE);
+        vp_in.set_status(port_data_t::STATUS::FREE);
 
         if(SB_DEBUG::VP_SCORE2) {
           cout << "SOURCE: PORT->PORT\n";
         }
-        port_data_t& out_vp = _accel->port_interf().out_port(stream._out_port);
-        out_vp.set_status(port_data_t::STATUS::FREE);
+        vp_out.set_status(port_data_t::STATUS::FREE);
+
+        // reset to enable reclaiming
+        // Is this awesome? yes.
+        stream._remote_stream->_num_elements=0; 
       }
 
       break;
@@ -2213,6 +2221,7 @@ void port_controller_t::finish_cycle() {
 void port_controller_t::print_status() {
   for(auto& i : _port_port_streams) {if(!i.empty()){i.print_status();}}  
   for(auto& i : _const_port_streams) {if(!i.empty()){i.print_status();}}
+  for(auto& i : _remote_port_streams) {if(!i.empty()){i.print_status();}}
 }
 
 

@@ -514,7 +514,6 @@ struct port_port_stream_t : public base_stream_t {
               << "\tin_port:" << _in_port  << " elem_left=" << _num_elements;
     base_stream_t::print_status();
   }
-
 };
 
 struct remote_port_stream_t;
@@ -559,6 +558,19 @@ struct remote_port_stream_t : public port_port_stream_t {
     else          return LOC::PORT;
   }
 
+  virtual void print_status() {  
+    if(_is_source) {
+      std::cout << "port->remote";
+    } else {
+      std::cout << "remote->port";
+    }
+    std::cout << "\tout_port=" << _out_port
+              << "\tin_port:" << _in_port  
+              << "\tdir:" << _which_core
+              << "\telem_left=" << _num_elements;
+
+    base_stream_t::print_status();
+  }
 };
 
 

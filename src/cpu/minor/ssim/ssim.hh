@@ -106,6 +106,11 @@ public:
   uint64_t control_core_insts() {return _control_core_insts;}
   uint64_t config_waits() {return _config_waits;}
 
+  accel_t* get_acc(int i) {
+    assert(i>=0 && i<NUM_ACCEL);
+    return accel_arr[i];
+  }
+
 private:
 
   Minor::MinorDynInstPtr _cur_minst;
