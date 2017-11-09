@@ -407,7 +407,9 @@ class data_controller_t {
   data_controller_t(accel_t* host) {
     _accel=host;
   }
+protected:
   accel_t* _accel;
+  void add_bw(LOC l1, LOC l2, uint64_t times, uint64_t bytes);
 };
 
 
@@ -558,6 +560,7 @@ class scratch_write_controller_t : public data_controller_t {
   bool schedule_port_scr(port_scr_stream_t& s);
 
   private:
+
   int _which=0;
   port_scr_stream_t _port_scr_stream;
   dma_controller_t* _dma_c;
@@ -569,8 +572,10 @@ class port_controller_t : public data_controller_t {
   port_controller_t(accel_t* host) : data_controller_t(host) {
     _port_port_streams.resize(4);  //IS THIS ENOUGH?
     _const_port_streams.resize(4);  //IS THIS ENOUGH?
+    _remote_port_streams.resize(4);  //IS THIS ENOUGH?
     for(auto& i : _port_port_streams) {i.reset();}
     for(auto& i : _const_port_streams) {i.reset();}
+    for(auto& i : _remote_port_streams) {i.reset();}
   }
 
   void cycle();
@@ -579,20 +584,19 @@ class port_controller_t : public data_controller_t {
 
   bool schedule_port_port(port_port_stream_t& s);
   bool schedule_const_port(const_port_stream_t& s);
+  bool schedule_remote_port(remote_port_stream_t& s);
 
   void print_status();
   void cycle_status();
 
-
   private:
   unsigned _which_pp=0;
   unsigned _which_cp=0;
+  unsigned _which_rp=0;
 
-  std::vector<port_port_stream_t> _port_port_streams;
-  std::vector<const_port_stream_t> _const_port_streams;
-
-  //std::deque<port_port_stream_t> _port_port_queue;
-  //std::deque<const_port_stream_t> _const_port_queue;
+  std::vector<port_port_stream_t>   _port_port_streams;
+  std::vector<const_port_stream_t>  _const_port_streams;
+  std::vector<remote_port_stream_t> _remote_port_streams;
 };
 
 
@@ -640,8 +644,8 @@ struct stream_stats_histo_t {
     out << std::setprecision(2);
     out << " by orig->dest:\n";
     for(auto i : vol_by_source) {
-      out << base_stream_t::name_of((LOC)(i.first.first)) << "->"
-          << base_stream_t::name_of((LOC)(i.first.second)) << ": ";
+      out << base_stream_t::loc_name((LOC)(i.first.first)) << "->"
+          << base_stream_t::loc_name((LOC)(i.first.second)) << ": ";
       out << ((double)i.second)/total_vol << "\n";
     }
 
@@ -752,6 +756,34 @@ public:
   void tick(); //Tick one time
 
   uint64_t roi_cycles();
+
+  //New Stats
+  void add_bw(LOC l1,LOC l2,uint64_t times, uint64_t bytes) {
+    auto& p = _bw_map[std::make_pair(l1,l2)];
+    p.first += times;
+    p.second += bytes;
+
+    //inneficient (can be done at the end), but improve later : )
+    auto& ps = _bw_map[std::make_pair(l1,LOC::TOTAL)];
+    ps.first += times;
+    ps.second += bytes;
+
+    auto& pr = _bw_map[std::make_pair(LOC::TOTAL,l2)];
+    pr.first += times;
+    pr.second += bytes;
+
+    if(l2 == LOC::PORT && (l1 == LOC::CONST || l1 == LOC::PORT)) {
+      auto& pr = _bw_map[std::make_pair(l1,LOC::REC_BUS)];
+      pr.first += times;
+      pr.second += bytes;
+
+      auto& pt = _bw_map[std::make_pair(LOC::TOTAL,LOC::REC_BUS)];
+      pt.first += times;
+      pt.second += bytes;
+
+    }
+  }
+
 
 private:
   ssim_t* _ssim;
@@ -865,7 +897,6 @@ private:
     }
   }
 
-
   void do_cgra();
   void execute_pdg(unsigned instance);
 
@@ -950,6 +981,8 @@ private:
   //Stuff for tracking stats
   uint64_t _waiting_cycles=0;
   uint64_t _forward_progress_cycle=0;
+
+  std::map<std::pair<LOC,LOC>, std::pair<uint64_t,uint64_t>> _bw_map;
 
   int accel_index=0;
   uint64_t accel_mask=0;

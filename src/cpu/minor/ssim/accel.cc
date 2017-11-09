@@ -695,16 +695,11 @@ void accel_t::print_statistics(std::ostream& out) {
      return;  // If we don't want to print stats
    }
 
-   out << "\n*** SOFTBRAIN STATISTICS ***\n";
+   out << "\nACCEL " << _accel_index << " STATS ***\n";
    out.precision(4);
    out << dec;
    //out << "Start Cycle: " << _stat_start_cycle << "\n";
    //out << "Stop  Cycle: " << _stat_stop_cycle << "\n\n";
-
-   out << "Cycles in ROI: " << roi_cycles() << "\n";
-   //out << "RISCV insts in ROI: " << timing_model_t::get()->get_insts_in_roi() << "\n";
-   out << "Simulator ROI Time: " << ((double)_ssim->elpased_time_in_roi())
-                                    /1000000000 << " sec\n";
 
    out << "Comp. Instances: " << _stat_comp_instances << "\n";
    out << "Commands Issued: " << _stat_commands_issued << "\n\n";
@@ -727,29 +722,30 @@ void accel_t::print_statistics(std::ostream& out) {
    out << "\n";
 
 
-   out << "Avg. L2 Load Port Req Size:  " 
+   out << "Avg. Mem Load Port Req Size:  " 
      << ((double)_stat_tot_mem_fetched)/((double)_stat_tot_loads) << "\n";
-   out << "Avg. L2 Store Port Req Size: " 
+   out << "Avg. Mem Store Port Req Size: " 
      << ((double)_stat_tot_mem_stored)/((double)_stat_tot_stores) << "\n";
 
-   out << "L2 loads per cycle:    " << ((double)_stat_tot_loads)/((double)roi_cycles()) << "\n";
-   out << "L2 stores per cycle:   " << ((double)_stat_tot_stores)/((double)roi_cycles()) << "\n";
+   out << "Mem loads per cycle:    " << ((double)_stat_tot_loads)/((double)roi_cycles()) << "\n";
+   out << "Mem stores per cycle:   " << ((double)_stat_tot_stores)/((double)roi_cycles()) << "\n";
    out << "\n";
 
-   out << "L2 load misses per cycle:  " << ((double)_stat_tot_mem_load_acc)/((double)roi_cycles()) << "\n";
-   out << "L2 store misses per cycle: " << ((double)_stat_tot_mem_store_acc)/((double)roi_cycles()) << "\n";
+   out << "Mem load misses per cycle:  " << ((double)_stat_tot_mem_load_acc)/((double)roi_cycles()) << "\n";
+   out << "Mem store misses per cycle: " << ((double)_stat_tot_mem_store_acc)/((double)roi_cycles()) << "\n";
    out << "\n";
 
-   out << "Multicore Cycle Estimates: (1-10 cores): ";
-   for(int i = 1; i <= 10; ++i) { // estimate performance
+   /*
+   out << "Multicore Cycle Estimates: (1-16 cores): ";
+   for(int i = 1; i <= 16; ++i) { // estimate performance
      uint64_t multicore_cyc = roi_cycles() / i;
      uint64_t mem_cyc = _stat_tot_mem_load_acc+_stat_tot_mem_store_acc;
      out << std::max(multicore_cyc,mem_cyc) << " ";
    }
    out << "\n";
 
-   out << "Multicore Activity Estimates: (1-10 cores): ";
-   for(int i = 1; i <= 10; ++i) { // estimate performance
+   out << "Multicore Activity Estimates: (1-16 cores): ";
+   for(int i = 1; i <= 16; ++i) { // estimate performance
      uint64_t multicore_cyc = roi_cycles() / i;
      uint64_t mem_cyc = _stat_tot_mem_load_acc+_stat_tot_mem_store_acc;
      uint64_t cycles = std::max(multicore_cyc,mem_cyc);
@@ -757,6 +753,55 @@ void accel_t::print_statistics(std::ostream& out) {
      out << active_ratio << " ";
    }
    out << "\n\n";
+   */
+
+  out << "BW Table:\n";
+  //const std::vector<LOC> alocs {LOC::DMA, LOC::SCR};
+  static const std::vector<LOC> 
+    locs {LOC::NONE, LOC::DMA, LOC::SCR, LOC::PORT, LOC::CONST};
+   
+  auto print_bwm = [&](LOC l1,LOC l2) {
+    auto& p = _bw_map[make_pair(l1,l2)];
+    out << ((double)p.first/roi_cycles()) 
+        << "(" << ((double)p.second/roi_cycles())  << "B) ";
+  };
+  auto print_src = [&](string name, LOC l1) {
+    out << name;
+    print_bwm(l1,LOC::TOTAL); 
+    out << " -- ";
+    for(auto l2 : locs) {
+      if(l2 == LOC::TOTAL) continue;
+      auto& p = _bw_map[make_pair(l1,l2)];
+      if(p.first > 0) {
+        out << base_stream_t::loc_name(l2) << ":";
+        print_bwm(l1,l2);
+      }
+    }
+    out << "\n";
+  };
+
+  auto print_dest = [&](string name, LOC l2) {
+    out << name;
+    print_bwm(LOC::TOTAL,l2);
+    out << " -- ";
+    for(auto l1 : locs) {
+      if(l1 == LOC::TOTAL) continue;
+      auto& p = _bw_map[make_pair(l1,l2)];
+      if(p.first > 0) {
+        out << base_stream_t::loc_name(l1) << ":";
+        print_bwm(l1,l2);
+      }        
+    }
+    out << "\n";
+  };
+
+  out << "Total:                 -- Sources: \n";
+  print_src("SP_READ:\t",  LOC::SCR);
+  print_dest("SP_WRITE:\t",  LOC::SCR);
+  print_src("DMA_LOAD:\t", LOC::DMA);
+  print_dest("DMA_STORE:\t", LOC::DMA);
+  print_dest("REC_BUS_READ:\t", LOC::REC_BUS);
+
 }
 
 //wait and print stats
@@ -815,7 +860,25 @@ void accel_t::schedule_streams() {
         in_vp->set_status(port_data_t::STATUS::BUSY, LOC::SCR);
         //_outstanding_scr_read_streams--;
       }      
-
+    } else if(auto stream = dynamic_cast<remote_port_stream_t*>(ip)) {
+      if(stream->_is_source) { //do not schedule, but check out port available
+        int out_port = stream->_out_port;
+        out_vp = &_port_interf.out_port(out_port);
+    
+        if((scheduled_out = 
+          (out_vp->can_take(LOC::PORT) && !blocked_ovp[out_port]))) {
+          out_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
+          stream->_is_ready =true; //we'll check this in the destination
+        }
+      } else {  //destination, time for action!
+        int in_port = stream->_in_port;
+        in_vp = &_port_interf.in_port(in_port);
+        if(in_vp->can_take(LOC::PORT,repeat) && !blocked_ivp[in_port] &&
+            stream->_remote_stream->_is_ready /*src is ready*/ &&
+            (scheduled_in = _port_c.schedule_remote_port(*stream)) ) {
+          in_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
+        }
+      }
     } else if(auto port_port_stream = dynamic_cast<port_port_stream_t*>(ip)) {
       int in_port = port_port_stream->_in_port;
       int out_port = port_port_stream->_out_port;
@@ -957,6 +1020,10 @@ void accel_t::schedule_streams() {
   }
 }
 
+void data_controller_t::add_bw(LOC l1, LOC l2, uint64_t times, uint64_t bytes){
+  _accel->add_bw(l1,l2,times,bytes);
+}
+
 bool dma_controller_t::schedule_dma_port(dma_port_stream_t& new_s) {
   for(auto& s : _dma_port_streams) {
     if(s.empty()) {
@@ -1037,6 +1104,16 @@ bool port_controller_t::schedule_port_port(port_port_stream_t& new_s) {
   }
   return false;
 }
+bool port_controller_t::schedule_remote_port(remote_port_stream_t& new_s) {
+  for(auto& s : _remote_port_streams) {
+    if(s.empty()) {
+      s=new_s;
+      return true;
+    }
+  }
+  return false;
+}
+
 bool port_controller_t::schedule_const_port(const_port_stream_t& new_s) {
   for(auto& s : _const_port_streams) {
     if(s.empty()) {
@@ -1493,6 +1570,8 @@ int dma_controller_t::req_read(mem_stream_base_t& stream,
 
   //TODO: add l2_miss statistics -- probably somewhere else....
   if(_accel->_ssim->in_roi()) {
+    add_bw(stream.src(), stream.dest(), 1, words*DATA_WIDTH);
+
     _accel->_stat_tot_mem_fetched+=words*DATA_WIDTH;
     _accel->_stat_tot_loads+=1;
   }
@@ -1515,6 +1594,7 @@ int dma_controller_t::req_read(mem_stream_base_t& stream,
               MEM_WIDTH/*cache line*/, base_addr, 0/*flags*/, 0 /*res*/,
               sdInfo);
  
+
   if(SB_DEBUG::MEM_REQ) {
     _accel->_ssim->timestamp();
       std::cout << "request for " << std::hex << base_addr << std::dec
@@ -1587,6 +1667,8 @@ void dma_controller_t::ind_read_req(indirect_stream_t& stream,
 
 
   if(_accel->_ssim->in_roi()) {
+    add_bw(stream.src(), stream.dest(), 1, imap.size()*DATA_WIDTH);
+
     _accel->_stat_tot_mem_fetched+=imap.size()*DATA_WIDTH; //TODO: fix once the stream size is fixed
     _accel->_stat_tot_loads+=1;
   }
@@ -1654,6 +1736,8 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
               bytes_written, base_addr, 0/*flags*/, 0 /*res*/, sdInfo);
 
   if(_accel->_ssim->in_roi()) {
+    add_bw(stream.src(), stream.dest(), 1, bytes_written);
+
     _accel->_stat_mem_bytes_wr+=bytes_written;
     _accel->_stat_tot_stores++;
   }
@@ -1736,6 +1820,8 @@ void dma_controller_t::req_write(port_dma_stream_t& stream, port_data_t& vp) {
   }
 
   if(_accel->_ssim->in_roi()) {
+    add_bw(stream.src(), stream.dest(), 1, bytes_written);
+
     _accel->_stat_mem_bytes_wr+=bytes_written;
     _accel->_stat_tot_stores++;
     _accel->_stat_tot_mem_stored+=bytes_written;
@@ -1809,8 +1895,10 @@ vector<SBDT> scratch_read_controller_t::read_scratch(
   }
 
   if(_accel->_ssim->in_roi()) {
-    _accel->_stat_scr_bytes_rd+=DATA_WIDTH;
-    _accel->_stat_scratch_read_bytes+=DATA_WIDTH;
+    add_bw(stream.src(), stream.dest(), 1, data.size()*DATA_WIDTH);
+
+    _accel->_stat_scr_bytes_rd+=data.size()*DATA_WIDTH;
+    _accel->_stat_scratch_read_bytes+=data.size()*DATA_WIDTH;
     _accel->_stat_scratch_reads++;
   }
 
@@ -1882,34 +1970,39 @@ void scratch_write_controller_t::cycle() {
     if(i==_which) {
       //write from port
       if(_port_scr_stream.stream_active()) {
-        port_data_t& out_vp = _accel->port_interf().out_port(_port_scr_stream._out_port);
+
+        auto& stream = _port_scr_stream; //
+        port_data_t& out_vp = _accel->port_interf().out_port(stream._out_port);
 
         if(out_vp.mem_size() > 0) {
-          addr_t addr = _port_scr_stream._scratch_addr;
+          addr_t addr = stream._scratch_addr;
           addr_t base_addr = addr & SCR_MASK;
           addr_t max_addr = base_addr+SCR_WIDTH;
 
 
           //go while stream and port does not run out
-          while(addr < max_addr && _port_scr_stream._num_bytes>0 //enough in dest
+          uint64_t bytes_written=0;
+          while(addr < max_addr && stream._num_bytes>0 //enough in dest
                                 && out_vp.mem_size()) { //enough in source
             SBDT val = out_vp.pop_data(); 
             assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
             std::memcpy(&_accel->scratchpad[addr], &val, sizeof(SBDT));
-            addr = _port_scr_stream.pop_addr();
+            addr = stream.pop_addr();
 
             if(_accel->_ssim->in_roi()) {
+              bytes_written+=DATA_WIDTH;
               _accel->_stat_scr_bytes_wr+=DATA_WIDTH;
               _accel->_stat_scratch_write_bytes+=DATA_WIDTH;
             }
           }
           if(_accel->_ssim->in_roi()) {
+             add_bw(stream.src(), stream.dest(), 1, bytes_written);
             _accel->_stat_scratch_writes+=1;
           }
             
-          bool is_empty = _port_scr_stream.check_set_empty();
+          bool is_empty = stream.check_set_empty();
           if(is_empty) {
-            _accel->process_stream_stats(_port_scr_stream);
+            _accel->process_stream_stats(stream);
             if(SB_DEBUG::VP_SCORE2) {
               cout << "SOURCE: PORT->SCR\n";
             }
@@ -1980,6 +2073,9 @@ void scratch_write_controller_t::print_status() {
 
 
 void port_controller_t::cycle() {
+  //TODO: Currently, we are assuming separate busses for our port controller
+  //This is likely prohibitively expensive...  Fix later
+
   //Port-Port
   for(unsigned i = 0; i < _port_port_streams.size(); ++i) {
     _which_pp=(_which_pp+1)==_port_port_streams.size() ? 0:_which_pp+1; //rolling incr
@@ -1994,12 +2090,17 @@ void port_controller_t::cycle() {
     port_data_t& vp_in = pi.in_port(stream._in_port);
     if(vp_out.mem_size() && vp_in.mem_size() < VP_LEN ) { // okay go for it
       
+      uint64_t total_pushed=0;
       for(int i = 0; i < PORT_WIDTH && vp_in.mem_size() < VP_LEN && 
                          vp_out.mem_size() && stream.stream_active(); ++i) {
         SBDT val = vp_out.pop_data();
         vp_in.push_data(val);
         stream._num_elements--;
+        total_pushed++;
       }
+
+      add_bw(stream.src(), stream.dest(), 1, total_pushed*DATA_WIDTH);
+
       bool is_empty = stream.check_set_empty();
       if(is_empty) {
         _accel->process_stream_stats(stream);
@@ -2033,10 +2134,14 @@ void port_controller_t::cycle() {
     port_data_t& vp_in = pi.in_port(stream._in_port);
 
     if(vp_in.mem_size() < VP_LEN) { // enough space, so go for it
+      uint64_t total_pushed=0;
       for(int i = 0; i < PORT_WIDTH && vp_in.mem_size() < VP_LEN 
                   && stream.stream_active(); ++i) {
         vp_in.push_data(stream.pop_item());
+        total_pushed++;
       }
+      add_bw(stream.src(), stream.dest(), 1, total_pushed*DATA_WIDTH);
+
       bool is_empty = stream.check_set_empty();
       if(is_empty) {
         _accel->process_stream_stats(stream);
@@ -2052,6 +2157,52 @@ void port_controller_t::cycle() {
       break;
     }
   }
+
+  //Remote-Port
+  for(unsigned i = 0; i < _remote_port_streams.size(); ++i) {
+    _which_rp=(_which_rp+1)==_remote_port_streams.size() ? 0:_which_rp+1; 
+    auto& pi=_accel->port_interf();
+    auto& stream=_remote_port_streams[_which_cp];
+    if(!stream.stream_active()) {
+      continue;
+    }
+
+    port_data_t& vp_out = pi.out_port(stream._out_port);
+    port_data_t& vp_in = pi.in_port(stream._in_port);
+    if(vp_out.mem_size() && vp_in.mem_size() < VP_LEN ) { // okay go for it
+      
+      uint64_t total_pushed=0;
+      for(int i = 0; i < PORT_WIDTH && vp_in.mem_size() < VP_LEN && 
+                         vp_out.mem_size() && stream.stream_active(); ++i) {
+        SBDT val = vp_out.pop_data();
+        vp_in.push_data(val);
+        stream._num_elements--;
+        total_pushed++;
+      }
+
+      add_bw(stream.src(), stream.dest(), 1, total_pushed*DATA_WIDTH);
+
+      bool is_empty = stream.check_set_empty();
+      if(is_empty) {
+        _accel->process_stream_stats(stream);
+
+        if(SB_DEBUG::VP_SCORE2) {
+          cout << "SOURCE: PORT->PORT\n";
+        }
+        port_data_t& in_vp = _accel->port_interf().in_port(stream._in_port);
+        in_vp.set_status(port_data_t::STATUS::FREE);
+
+        if(SB_DEBUG::VP_SCORE2) {
+          cout << "SOURCE: PORT->PORT\n";
+        }
+        port_data_t& out_vp = _accel->port_interf().out_port(stream._out_port);
+        out_vp.set_status(port_data_t::STATUS::FREE);
+      }
+
+      break;
+    }
+  }
+
 }
 
 void port_controller_t::finish_cycle() {

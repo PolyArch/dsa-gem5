@@ -585,8 +585,9 @@ decode OPCODE default Unknown::unknown() {
             }}, IsSDStream, IsNonSpeculative, No_OpClass);
             0x5: sb_wr_rd({{
                 xc->setSDReg(Rs1,SD_NUM_ELEM);
-                xc->setSDReg(i_imm & 0x1f, SD_OUT_PORT);
-                xc->setSDReg(i_imm >> 5,   SD_IN_PORT);
+                xc->setSDReg((i_imm >> 0) & 0x1f, SD_OUT_PORT);
+                xc->setSDReg((i_imm >> 5) & 0x1f, SD_IN_PORT);
+                xc->setSDReg(i_imm >> 10, SD_FLAGS);
                 xc->callSDFunc(SB_PRT_PRT);
             }}, IsSDStream, IsNonSpeculative, No_OpClass);
         }

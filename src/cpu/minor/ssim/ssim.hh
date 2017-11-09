@@ -7,6 +7,9 @@
 #include "accel.hh"
 
 #define NUM_ACCEL 4
+#define ACCEL_MASK 0xF
+
+//Fix above so they don't get out of sync : )
 
 class ssim_t 
 {
@@ -39,7 +42,8 @@ public:
   void write_dma(uint64_t garb_elem, //new
       int out_port, uint64_t stride, uint64_t access_size, 
       uint64_t num_strides, addr_t mem_addr, int shift_bytes, int garbage);
-  void reroute(int out_port, int in_port, uint64_t num_elem, int repeat);
+  void reroute(int out_port, int in_port, uint64_t num_elem, 
+               int repeat, uint64_t flags);
   void indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
     uint64_t num_elem, int repeat);
   void indirect_write(int ind_port, int ind_type, int out_port, 
@@ -55,6 +59,7 @@ public:
   uint64_t forward_progress_cycle();
   bool can_add_stream();
   void add_bitmask_stream(base_stream_t* s);
+  void add_bitmask_stream(base_stream_t* s, uint64_t context);
   bool done(bool show, int mask);
   bool is_in_config();
 
@@ -81,7 +86,25 @@ public:
     _cur_minst=m;
   }
 
+  void issued_inst() {
+    if(in_roi()) {
+      _control_core_insts++;
+    }
+  }
+  void wait_inst(uint64_t mask) {
+    if(in_roi()) {
+      _wait_map[mask]++;
+    }
+  }
+  void wait_config() {
+    if(in_roi()) {
+      _config_waits++;
+    }
+  }
+
   uint64_t roi_cycles() {return _roi_cycles;}
+  uint64_t control_core_insts() {return _control_core_insts;}
+  uint64_t config_waits() {return _config_waits;}
 
 private:
 
@@ -100,13 +123,17 @@ private:
   bool debug=true;
 
   //Statistics Members
-  bool _in_roi = true;
+  bool _in_roi = false;
   timespec _start_ts, _stop_ts;
   uint64_t _elapsed_time_in_roi=0;
   uint64_t _times_roi_entered=0;
   uint64_t _stat_start_cycle = 0;
   uint64_t _stat_stop_cycle = 0;
   uint64_t _roi_cycles=0;
+
+  uint64_t _control_core_insts=0;
+  uint64_t _config_waits=0;
+  std::unordered_map<uint64_t,uint64_t> _wait_map;
 
 };
 

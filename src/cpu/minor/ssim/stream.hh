@@ -8,7 +8,7 @@
 #include "cpu/minor/dyn_inst.hh" //don't like this, workaround later (TODO)
 
 
-enum class LOC {NONE, DMA, SCR, PORT, CONST}; 
+enum class LOC {NONE, DMA, SCR, PORT, CONST, REMOTE_PORT, TOTAL, REC_BUS}; 
 
 //This is a hierarchical classification of access types
 enum class STR_PAT {PURE_CONTIG, SIMPLE_REPEATED, 
@@ -28,22 +28,25 @@ struct base_stream_t {
 
   void set_empty(bool b);
 
-  static std::string name_of(LOC loc) {
+  virtual LOC src() {return LOC::NONE;}
+  virtual LOC dest() {return LOC::NONE;}
+
+  static std::string loc_name(LOC loc) {
     switch(loc) {
       case LOC::NONE: return "NONE";
       case LOC::DMA: return "DMA";
       case LOC::SCR: return "SCR";
       case LOC::PORT: return "PORT";
       case LOC::CONST: return "CONST";
+      case LOC::REMOTE_PORT: return "REM_PORT";
+      case LOC::TOTAL: return "TOTAL";
+      case LOC::REC_BUS: return "REC_BUS";
     }
     return "XXXXX";
   }
 
-  virtual LOC src() {return LOC::NONE;}
-  virtual LOC dest() {return LOC::NONE;}
-
   virtual std::string short_name() {
-    return name_of(src()) + "->" + name_of(dest());
+    return loc_name(src()) + "->" + loc_name(dest());
   }
 
   bool check_set_empty() {
@@ -78,8 +81,8 @@ struct base_stream_t {
   virtual uint64_t num_strides() {return 0;} 
   virtual uint64_t num_bytes()   {return 0;} 
   virtual uint64_t constant()    {return 0;} 
-  virtual uint64_t in_port()     {return 0;} 
-  virtual uint64_t out_port()    {return 0;} 
+  virtual uint64_t in_port()     {return -1;} 
+  virtual uint64_t out_port()    {return -1;} 
   virtual uint64_t wait_mask()   {return 0;} 
   virtual uint64_t shift_bytes() {return 0;} 
 
@@ -183,7 +186,7 @@ struct mem_stream_base_t : public base_stream_t {
     return cur_addr();
   }
 
-  bool stream_active() {
+  virtual bool stream_active() {
     return _num_strides!=0;
   } 
 };
@@ -348,7 +351,7 @@ struct scr_port_base_t : public base_stream_t {
     return _scratch_addr;
   }
 
-  bool stream_active() {
+  virtual bool stream_active() {
     return _num_bytes>0;
   }  
 
@@ -438,7 +441,7 @@ struct const_port_stream_t : public base_stream_t {
     return 0;
   }
 
-  bool stream_active() {
+  virtual bool stream_active() {
     return _iters_left!=0 || _elements_left!=0 || _elements_left2!=0;
   }
 
@@ -462,11 +465,24 @@ struct const_port_stream_t : public base_stream_t {
 
 //Port -> Port 
 struct port_port_stream_t : public base_stream_t {
+  port_port_stream_t(){
+    _num_elements=0;
+  }
+
+  port_port_stream_t(int out_port, int in_port, 
+                     uint64_t num_elem, int repeat) { 
+    _out_port=out_port;
+    _in_port=in_port;
+    _num_elements=num_elem;
+    _repeat_in=repeat;
+    set_orig();
+  }
+
   int _in_port;
   int _repeat_in;
 
   int _out_port;
-  addr_t _num_elements;
+  addr_t _num_elements=0;
   addr_t _orig_elements;
 
   virtual void set_orig() {
@@ -477,16 +493,16 @@ struct port_port_stream_t : public base_stream_t {
   virtual STR_PAT stream_pattern() {return STR_PAT::REC;}
 
   uint64_t in_port()     {return _in_port;} 
-  uint64_t out_port()     {return _out_port;} 
+  uint64_t out_port()    {return _out_port;} 
   uint64_t num_strides() {return _num_elements;} 
 
-  virtual int ivp_dest() {return _in_port;}
+  virtual int ivp_dest()  {return _in_port;}
   virtual int repeat_in() {return _repeat_in;}
 
   virtual LOC src() {return LOC::PORT;}
   virtual LOC dest() {return LOC::PORT;}
 
-  bool stream_active() {
+  virtual bool stream_active() {
     return _num_elements!=0;
   }
 
@@ -497,6 +513,50 @@ struct port_port_stream_t : public base_stream_t {
     std::cout << "port->port" << "\tout_port=" << _out_port
               << "\tin_port:" << _in_port  << " elem_left=" << _num_elements;
     base_stream_t::print_status();
+  }
+
+};
+
+struct remote_port_stream_t;
+
+struct remote_port_stream_t : public port_port_stream_t {
+  remote_port_stream_t() {
+    _num_elements=0;
+  }
+
+  //core describes relative core position (-1 or left, +1 for right)
+  remote_port_stream_t(int out_port, int in_port, uint64_t num_elem, 
+                       int repeat, int core, bool is_source) : 
+                       port_port_stream_t(out_port,in_port,num_elem,repeat) {
+    _is_source = is_source;
+    _which_core = core;
+    _is_ready=false;
+  }
+
+  //this is the only pointer to source stream after source issues
+  remote_port_stream_t* _remote_stream; 
+  int _which_core = 0;
+  bool _is_source = false;
+  bool _is_ready = false;
+
+  virtual STR_PAT stream_pattern() {return STR_PAT::REC;}
+
+  uint64_t in_port()     {
+    if(_is_source) return -1;
+    else          return _in_port;
+  } 
+  uint64_t out_port()    {
+    if(_is_source) return _out_port;
+    else          return -1;
+  } 
+
+  virtual LOC src() {
+    if(_is_source) return LOC::PORT;
+    else          return LOC::REMOTE_PORT;
+  }
+  virtual LOC dest() {
+    if(_is_source) return LOC::REMOTE_PORT;
+    else          return LOC::PORT;
   }
 
 };
@@ -559,7 +619,7 @@ struct indirect_base_stream_t : public base_stream_t {
   virtual LOC src() {return LOC::PORT;}
   virtual LOC dest() {return LOC::PORT;}
 
-  bool stream_active() {
+  virtual bool stream_active() {
     return _num_elements!=0;
   }
 

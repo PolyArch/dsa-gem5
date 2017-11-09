@@ -77,6 +77,34 @@ void ssim_t::step() {
 }
 
 void ssim_t::print_stats() {
+   auto& out = cout;
+   out.precision(4);
+   out << dec;
+
+   out << "\n*** ROI STATISTICS ***\n";
+   out << "Simulator Time: " << ((double)elpased_time_in_roi())
+                                    /1000000000 << " sec\n";
+
+   out << "Cycles: " << roi_cycles() << "\n";
+   out << "Control Insts Issued: " << control_core_insts() << "\n";
+   out << "Config Stalls: " << ((double)config_waits()/roi_cycles()) << "\n";
+   out << "Wait Stalls:   ";
+   for(auto& i : _wait_map) {
+     out << ((double)i.second/roi_cycles()) << " (";
+     uint64_t mask = i.first;
+     if(mask == 0) {
+       out << "ALL";
+     }
+     if(mask & WAIT_SCR_RD) {
+       out << "SCR_RD";
+     }
+     if(mask & WAIT_SCR_WR) {
+       out << "SCR_WR";
+     }
+     out << ")  ";
+   }
+   out << "\n";
+
   for(uint64_t i=0,b=1; i < NUM_ACCEL; ++i, b<<=1) {
     if(_ever_used_bitmask & b) {
       accel_arr[i]->print_stats();     
@@ -94,13 +122,13 @@ uint64_t ssim_t::forward_progress_cycle() {
   return r;
 }
 
-void ssim_t::add_bitmask_stream(base_stream_t* s) {
+void ssim_t::add_bitmask_stream(base_stream_t* s, uint64_t ctx) {
   //if(debug && (SB_DEBUG::SB_COMMAND)  ) {
   //  cout << "Sending to Cores: ";
   //}
 
   for(uint64_t i=0,b=1; i < NUM_ACCEL; ++i, b<<=1) {
-    if(_context_bitmask & b) {
+    if(ctx & b) {
       //if(debug && (SB_DEBUG::SB_COMMAND)  ) {
       //  cout << i;
       //}
@@ -111,6 +139,10 @@ void ssim_t::add_bitmask_stream(base_stream_t* s) {
   //if(debug && (SB_DEBUG::SB_COMMAND)  ) {
   //  cout << "\n";
   //}
+}
+
+void ssim_t::add_bitmask_stream(base_stream_t* s) {
+  add_bitmask_stream(s,_context_bitmask);
 }
 
 
@@ -292,13 +324,21 @@ void ssim_t::write_scratchpad(int out_port,
 
 }
 
-void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem, int repeat) {
-  port_port_stream_t* s = new port_port_stream_t();
-  s->_out_port=out_port;
-  s->_in_port=in_port;
-  s->_num_elements=num_elem;
-  s->_repeat_in=repeat;
-  s->set_orig();
+//The reroute function handles either local recurrence, or remote data transfer
+void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem, int repeat, 
+                     uint64_t flags) {
+  base_stream_t* s=NULL, *r=NULL;
+
+
+  int core_d = (flags==1) ? -1 : 1;
+
+
+  if(flags == 0) {
+    s = new port_port_stream_t(out_port,in_port,num_elem,repeat);
+  } else {
+    s = new remote_port_stream_t(out_port,in_port,num_elem,repeat,core_d,true);
+    r = new remote_port_stream_t(out_port,in_port,num_elem,repeat,core_d,false);
+  }
 
   if(debug && SB_DEBUG::SB_COMMAND) {
     timestamp_context();
@@ -307,10 +347,24 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem, int repeat) {
 
   if(num_elem==0 || repeat==0) {
     delete s;
+    if(r) delete r;
     return;
   }
 
   add_bitmask_stream(s);
+  if(r) {
+    uint64_t new_ctx=0;
+    if(core_d==1) {
+      new_ctx = (_context_bitmask<<1) & ACCEL_MASK;
+    } else if(core_d==-1) {
+      new_ctx = (_context_bitmask>>1) & ACCEL_MASK;
+    } else {
+      assert(0 && "how do i do this?");
+    }
+    add_bitmask_stream(r, new_ctx);  
+  }
+
+
 }
 
 //Configure an indirect stream with params

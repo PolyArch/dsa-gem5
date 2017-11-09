@@ -419,7 +419,8 @@ class ExecContext : public ::ExecContext
             break;
             case SB_PRT_PRT: ssim.reroute(
                 thread.getSDReg(SD_OUT_PORT),      thread.getSDReg(SD_IN_PORT),
-                thread.getSDReg(SD_NUM_ELEM),      thread.getSDReg(SD_REPEAT));     
+                thread.getSDReg(SD_NUM_ELEM),      thread.getSDReg(SD_REPEAT),
+                thread.getSDReg(SD_FLAGS));     
             break;
             case SB_IND_PRT: ssim.indirect(
                 thread.getSDReg(SD_IND_PORT),      thread.getSDReg(SD_IND_TYPE),

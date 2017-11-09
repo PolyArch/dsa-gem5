@@ -791,6 +791,11 @@ Execute::issue(ThreadID thread_id)
                 num_insts_discarded++;
             } else if (!inst->isBubble()) {
                 num_insts_issued++;
+                ssim.issued_inst();
+                //if(ssim.in_roi()) {
+                //  DPRINTF(SD, "Issued inst: %s\n", *inst);
+                //}
+
 
                 if (num_insts_issued == issueLimit)
                     DPRINTF(MinorExecute, "Reached inst issue limit\n");
@@ -965,6 +970,8 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
        */
     } else if (inst->staticInst->isSD() &&  ssim.is_in_config()) {
       completed_inst = false;
+      ssim.wait_config();
+
       /* Don't execute any instructions if ssim is in config mode!
        */
     } else {
@@ -980,6 +987,7 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
         } else if(inst->staticInst->isSDWait()) {
           if(!ssim.done(false,inst->staticInst->imm()) ) {
             should_commit = false;
+            ssim.wait_inst(inst->staticInst->imm());
 
             //DPRINTF(SD,"Wait blocked, mask: %x\n",inst->staticInst->imm());
             //continue;
