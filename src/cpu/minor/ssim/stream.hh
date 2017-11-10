@@ -79,6 +79,7 @@ struct base_stream_t {
   virtual uint64_t stride()      {return 0;} 
   virtual uint64_t scratch_addr(){return 0;} 
   virtual uint64_t num_strides() {return 0;} 
+  virtual uint64_t stretch()     {return 0;} 
   virtual uint64_t num_bytes()   {return 0;} 
   virtual uint64_t constant()    {return 0;} 
   virtual uint64_t in_port()     {return -1;} 
@@ -120,6 +121,7 @@ struct wait_stream_t : public base_stream_t {
 struct mem_stream_base_t : public base_stream_t {
   addr_t _access_size;    // length of smallest access
   addr_t _stride;         // length of entire slide
+  addr_t _stretch;        // stretch of access size over time
   addr_t _bytes_in_access=0; // bytes in access completed
   
   addr_t _mem_addr;     // CURRENT address of stride
@@ -135,6 +137,7 @@ struct mem_stream_base_t : public base_stream_t {
   virtual uint64_t mem_addr()    {return _mem_addr;}  
   virtual uint64_t access_size() {return _access_size;}  
   virtual uint64_t stride()      {return _stride;} 
+  virtual uint64_t stretch()      {return _stretch;} 
   virtual uint64_t num_strides() {return _num_strides;} 
   virtual uint64_t shift_bytes() {return _shift_bytes;} 
 
@@ -152,7 +155,7 @@ struct mem_stream_base_t : public base_stream_t {
     }
   } 
 
-  virtual uint64_t data_volume() {
+  virtual uint64_t data_volume() { //TODO/FIXME: THIS IS NOT VALID FOR STRETCH==0
     return _orig_strides * _access_size;
   }
 
@@ -167,6 +170,7 @@ struct mem_stream_base_t : public base_stream_t {
 
   //Return next address
   addr_t pop_addr() { 
+    assert(_access_size!=0);
     if(!stream_active()) {
       assert(0 && "inactive stream popped");
     }
@@ -180,8 +184,10 @@ struct mem_stream_base_t : public base_stream_t {
       _bytes_in_access=0;
       _mem_addr+=_stride;
       _num_strides--;
+      _access_size+=_stretch; //OMG, it's happening!
     }
-    assert(_bytes_in_access<_access_size && "something went wrong");
+    assert((_bytes_in_access<_access_size 
+            || _access_size==0) && "something went wrong");
 
     return cur_addr();
   }

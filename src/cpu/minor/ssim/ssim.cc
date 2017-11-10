@@ -168,7 +168,7 @@ void ssim_t::set_context(uint64_t context) {
 }
 
 void ssim_t::load_dma_to_scratch(addr_t mem_addr, 
-    uint64_t stride, uint64_t access_size, uint64_t num_strides,
+    uint64_t stride, uint64_t access_size, int stretch, uint64_t num_strides,
     addr_t scratch_addr) {
   dma_scr_stream_t* s = new dma_scr_stream_t();
   s->_mem_addr=mem_addr;
@@ -176,6 +176,7 @@ void ssim_t::load_dma_to_scratch(addr_t mem_addr,
   s->_num_strides=num_strides;
   s->_stride=stride;
   s->_access_size=access_size;
+  s->_stretch=stretch;
   s->set_orig();
 
   if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SCR_BARRIER)  ) {
@@ -217,13 +218,14 @@ void ssim_t::write_dma_from_scratch(addr_t scratch_addr, uint64_t stride,
 }
 
 void ssim_t::load_dma_to_port(addr_t mem_addr,
-     uint64_t stride, uint64_t access_size, uint64_t num_strides,
+     uint64_t stride, uint64_t access_size, int stretch, uint64_t num_strides,
      int in_port, int repeat) {
   dma_port_stream_t* s = new dma_port_stream_t();
   s->_mem_addr=mem_addr;
   s->_num_strides=num_strides;
   s->_stride=stride;
   s->_access_size=access_size;
+  s->_stretch=stretch;
   s->_in_port=in_port;
   s->_repeat_in=repeat;
   s->set_orig();
@@ -268,13 +270,14 @@ void ssim_t::write_dma(uint64_t garb_elem, int out_port,
 }
 
 void ssim_t::load_scratch_to_port(addr_t scratch_addr,
-  uint64_t stride, uint64_t access_size, uint64_t num_strides,
+  uint64_t stride, uint64_t access_size, int stretch, uint64_t num_strides,
   int in_port, int repeat) {
   scr_port_stream_t* s = new scr_port_stream_t();
   s->_mem_addr=scratch_addr; //NOTE: Here _mem_addr *is* the scratchpad address
   s->_num_strides=num_strides;
   s->_stride=stride;
   s->_access_size=access_size;
+  s->_stretch=stretch;
   s->_in_port=in_port;
   s->_repeat_in=repeat;
   s->set_orig();

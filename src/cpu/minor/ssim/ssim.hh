@@ -29,13 +29,13 @@ public:
   void set_context(uint64_t context);
   void req_config(addr_t addr, int size);
   void load_dma_to_scratch(addr_t mem_addr, uint64_t stride, 
-      uint64_t access_size, uint64_t num_strides, addr_t scratch_addr);
+      uint64_t access_size, int stretch, uint64_t num_strides, addr_t scratch_addr);
   void write_dma_from_scratch(addr_t scratch_addr, uint64_t stride, 
       uint64_t access_size, uint64_t num_strides, addr_t mem_addr); //new
   void load_dma_to_port(addr_t mem_addr, uint64_t stride, 
-      uint64_t access_size, uint64_t num_strides, int port, int repeat_in);
+      uint64_t access_size, int stretch, uint64_t num_strides, int port, int repeat_in);
   void load_scratch_to_port(addr_t scratch_addr, uint64_t stride, 
-                            uint64_t access_size, uint64_t num_strides, 
+                            uint64_t access_size, int stretch, uint64_t num_strides, 
                             int in_port, int repeat_in); //*
   void write_scratchpad(int out_port, addr_t scratch_addr, 
                         uint64_t num_bytes, uint64_t shift_bytes); //new
