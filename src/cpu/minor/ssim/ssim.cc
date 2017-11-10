@@ -148,7 +148,7 @@ void ssim_t::add_bitmask_stream(base_stream_t* s) {
 
 // ------------------------Time Stuffs-------------------------------------
 void ssim_t::timestamp() {
-  cout << std::dec << now() - _stat_start_cycle << "\t";
+  cout << std::dec << now() - _orig_stat_start_cycle << "\t";
 }
 
 void ssim_t::timestamp_context() {
@@ -494,11 +494,24 @@ uint64_t ssim_t::now() {
 // ------------------------- TIMING ---------------------------------
 void ssim_t::roi_entry(bool enter) {
   if(enter) {
+    if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SB_ROI)  ) {
+      timestamp();
+      cout << "Entrering ROI ------------\n";
+    }
+
+    if(_orig_stat_start_cycle==0) {
+      _orig_stat_start_cycle=now();
+    }
     _stat_start_cycle=now();
     clock_gettime(CLOCK_REALTIME,&_start_ts);
     _in_roi=true;
     _times_roi_entered+=1;
   } else {
+    if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SB_ROI)  ) {
+      timestamp();
+      cout << "Exiting ROI ------------\n";
+    }
+
     _stat_stop_cycle=now();
     clock_gettime(CLOCK_REALTIME,&_stop_ts);
     _elapsed_time_in_roi += 1000000000 * (_stop_ts.tv_sec - _start_ts.tv_sec) +

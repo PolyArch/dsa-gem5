@@ -132,6 +132,7 @@ private:
   timespec _start_ts, _stop_ts;
   uint64_t _elapsed_time_in_roi=0;
   uint64_t _times_roi_entered=0;
+  uint64_t _orig_stat_start_cycle = 0;
   uint64_t _stat_start_cycle = 0;
   uint64_t _stat_stop_cycle = 0;
   uint64_t _roi_cycles=0;
