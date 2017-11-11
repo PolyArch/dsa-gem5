@@ -249,8 +249,12 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
   const char* sbconfig_file = std::getenv("SBCONFIG");
 
   if(!SB_DEBUG::SUPRESS_SB_STATS) {
-    std::cout << "Loading SB Config (env SBCONFIG): \"" 
-              << sbconfig_file <<"\"\n";
+    static bool printed_this_before=false;
+    if(!printed_this_before) {
+      std::cout << "Loading SB Config (env SBCONFIG): \"" 
+                << sbconfig_file <<"\"\n";
+      printed_this_before=true;
+    }
   }
   _sbconfig = new SbModel(sbconfig_file);
   _port_interf.initialize(_sbconfig);
@@ -701,16 +705,16 @@ void accel_t::print_statistics(std::ostream& out) {
    //out << "Start Cycle: " << _stat_start_cycle << "\n";
    //out << "Stop  Cycle: " << _stat_stop_cycle << "\n\n";
 
-   out << "Comp. Instances: " << _stat_comp_instances << "\n";
-   out << "Commands Issued: " << _stat_commands_issued << "\n\n";
-
-   out << "Activity Ratio: " 
+   out << "Commands Issued: " << _stat_commands_issued << "\n";
+   out << "CGRA Instances: " << _stat_comp_instances << " -- Activity Ratio: " 
       << ((double)_stat_comp_instances)/((double)roi_cycles()) << "\n";
-   out << "SB Insts / Computation Instance: "
+   out << "CGRA Insts / Computation Instance: "
       << ((double)_stat_sb_insts)/((double)_stat_comp_instances) << "\n";
-   out << "SB Insts / Cycle: "
+   out << "CGRA Insts / Cycle: "
       << ((double)_stat_sb_insts)/((double)roi_cycles()) << " (overall activity factor)\n";
 
+   /*
+    * Depricated
    out << "\n";
    out << "Avg. Scratch Read Port Req Size:  " 
      << ((double)_stat_scratch_read_bytes)/((double)_stat_scratch_reads) << "\n";
@@ -730,10 +734,14 @@ void accel_t::print_statistics(std::ostream& out) {
    out << "Mem loads per cycle:    " << ((double)_stat_tot_loads)/((double)roi_cycles()) << "\n";
    out << "Mem stores per cycle:   " << ((double)_stat_tot_stores)/((double)roi_cycles()) << "\n";
    out << "\n";
+*/
 
+   /*
+    // TODO: FIXME: This is useful info -- figure out how to git it
    out << "Mem load misses per cycle:  " << ((double)_stat_tot_mem_load_acc)/((double)roi_cycles()) << "\n";
    out << "Mem store misses per cycle: " << ((double)_stat_tot_mem_store_acc)/((double)roi_cycles()) << "\n";
    out << "\n";
+*/
 
    /*
    out << "Multicore Cycle Estimates: (1-16 cores): ";
@@ -755,15 +763,20 @@ void accel_t::print_statistics(std::ostream& out) {
    out << "\n\n";
    */
 
-  out << "BW Table:\n";
+
   //const std::vector<LOC> alocs {LOC::DMA, LOC::SCR};
   static const std::vector<LOC> 
     locs {LOC::NONE, LOC::DMA, LOC::SCR, LOC::PORT, LOC::CONST};
    
   auto print_bwm = [&](LOC l1,LOC l2) {
     auto& p = _bw_map[make_pair(l1,l2)];
-    out << ((double)p.first/roi_cycles()) 
-        << "(" << ((double)p.second/roi_cycles())  << "B) ";
+    if(p.second==0)  out << "(0 B/c, 0 B/r) ";
+    else {
+      out.precision(3);
+      out << ((double)p.first/(double)roi_cycles());
+      out << "(" << ((double)p.second/(double)roi_cycles())  << "B/c";
+      out << ", " << ((double)p.second/(double)p.first)  << "B/r) ";
+    }
   };
   auto print_src = [&](string name, LOC l1) {
     out << name;
@@ -795,7 +808,7 @@ void accel_t::print_statistics(std::ostream& out) {
     out << "\n";
   };
 
-  out << "Total:                 -- Sources: \n";
+  out << "Bandwidth Table: (B/c=Bytes/cycle, B/r=Bytes/request) -- Breakdown (sources/destinatinos): \n";
   print_src("SP_READ:\t",  LOC::SCR);
   print_dest("SP_WRITE:\t",  LOC::SCR);
   print_src("DMA_LOAD:\t", LOC::DMA);
@@ -828,8 +841,12 @@ void accel_t::schedule_streams() {
   int str_width=_sbconfig->dispatch_width();
   int str_issued=0;
 
-  bool blocked_ivp[64] = {0}; 
+  bool blocked_ivp[64] = {0}; // These are set by stream registers
   bool blocked_ovp[64] = {0};
+  bool prior_scratch_read = false;
+  bool prior_scratch_write = false;
+  bool bar_scratch_read = false;  // These are set by scratch
+  bool bar_scratch_write = false;
   
   //schedule for ports (these need to go in program order per-vp)
   for(auto i = _in_port_queue.begin(); i!=_in_port_queue.end() && str_issued<str_width;){
@@ -842,9 +859,32 @@ void accel_t::schedule_streams() {
     bool scheduled_out=false;
     bool scheduled_dma_scr=false;
     bool scheduled_scr_dma=false;
+    bool scheduled_barrier=false;
     int repeat = ip->repeat_in();
 
-    if(auto dma_port_stream = dynamic_cast<dma_port_stream_t*>(ip)) {
+    bool blocked_by_barrier=false;
+    if(ip->src() == LOC::SCR) { 
+      //scratch reads cannot proceed before write barriers
+      blocked_by_barrier |= bar_scratch_write;
+    } else if(ip->dest() == LOC::SCR) {
+      //scratch writes cannot proceed before read barriers or write barriers
+      blocked_by_barrier |= bar_scratch_read;
+      blocked_by_barrier |= bar_scratch_write;
+    }
+
+    if(blocked_by_barrier) {
+      //don't issue if blocked by barrier
+    } else if(auto stream = dynamic_cast<stream_barrier_t*>(ip)) { 
+      bool blocked = (stream->bar_scr_rd() && prior_scratch_read) ||
+                     (stream->bar_scr_wr() && prior_scratch_write);
+      blocked |= !done_concurrent(false,stream->_mask);
+      if(!blocked) {
+        scheduled_barrier=true;
+      } else { //blocked, so prevent younger streams
+        bar_scratch_read  |= stream->bar_scr_rd();
+        bar_scratch_write |= stream->bar_scr_wr();
+      }
+    } else if(auto dma_port_stream = dynamic_cast<dma_port_stream_t*>(ip)) {
       int port = dma_port_stream->_in_port;
       in_vp = &_port_interf.in_port(port);
       if(in_vp->can_take(LOC::DMA,repeat) && !blocked_ivp[port] &&
@@ -855,7 +895,7 @@ void accel_t::schedule_streams() {
     } else if(auto scr_port_stream = dynamic_cast<scr_port_stream_t*>(ip)) {
       int port = scr_port_stream->_in_port;
       in_vp = &_port_interf.in_port(port);
-      if(in_vp->can_take(LOC::DMA,repeat) && !blocked_ivp[port] &&
+      if(in_vp->can_take(LOC::SCR,repeat) && !blocked_ivp[port] &&
           (scheduled_in = _scr_r_c.schedule_scr_port(*scr_port_stream)) ) {
         in_vp->set_status(port_data_t::STATUS::BUSY, LOC::SCR);
         //_outstanding_scr_read_streams--;
@@ -957,11 +997,15 @@ void accel_t::schedule_streams() {
     if(out_vp) blocked_ovp[out_vp->port()] = true;
     if(out_ind_vp) blocked_ovp[out_ind_vp->port()] = true;
 
+    prior_scratch_read  |= (ip->src()  == LOC::SCR);
+    prior_scratch_write |= (ip->dest() == LOC::SCR);
+
     if(scheduled_in) { //inform input port about its new configuration (repeat)
       in_vp->set_repeat(repeat);
     }
 
-    if(scheduled_in || scheduled_out || scheduled_dma_scr || scheduled_scr_dma) {
+    if(scheduled_in || scheduled_out || scheduled_dma_scr || scheduled_scr_dma
+        || scheduled_barrier) {
       str_issued++;
       if(SB_DEBUG::SB_COMMAND_I) {
         _ssim->timestamp();
@@ -2244,14 +2288,22 @@ bool accel_t::done(bool show,int mask) {
   return d;
 }
 
-
-bool accel_t::done_internal(bool show, int mask) {
+//checks only stream engines to see if concurrent operations are done
+bool accel_t::done_concurrent(bool show, int mask) {
   if(!_dma_c.done(show,mask) || !_scr_r_c.done(show,mask) || 
      !_scr_w_c.done(show,mask) || !_port_c.done(show,mask)) {
     return false;
   }
   
   if(!cgra_done(show,mask)) {
+    return false;
+  }
+  return true;
+}
+
+//checks everything to see if it's done  (includes queues)
+bool accel_t::done_internal(bool show, int mask) {
+  if(!done_concurrent(show,mask)) {
     return false;
   }
 

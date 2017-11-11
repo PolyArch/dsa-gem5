@@ -604,7 +604,7 @@ decode OPCODE default Unknown::unknown() {
                 xc->setSDReg(Rs1, SD_NUM_STRIDES);
             }}, IsSDParam, No_OpClass);
             0x4: sb_wait({{
-                xc->setSDReg(Rs1,SD_WAIT_MASK);
+                xc->setSDReg(s_imm,SD_WAIT_MASK);
                 xc->callSDFunc(SB_WAIT);
             }}, IsSDWait, IsNonSpeculative, IsMemBarrier, IsSerializeAfter, No_OpClass);
             0x5: sb_ind({{

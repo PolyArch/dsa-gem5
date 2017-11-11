@@ -86,9 +86,10 @@ void ssim_t::print_stats() {
                                     /1000000000 << " sec\n";
 
    out << "Cycles: " << roi_cycles() << "\n";
-   out << "Control Insts Issued: " << control_core_insts() << "\n";
-   out << "Config Stalls: " << ((double)config_waits()/roi_cycles()) << "\n";
-   out << "Wait Stalls:   ";
+   out << "Control Core Insts Issued: " << control_core_insts() << "\n";
+   out << "Control Core Config Stalls: " 
+       << ((double)config_waits()/roi_cycles()) << "\n";
+   out << "Control Core Wait Stalls:   ";
    for(auto& i : _wait_map) {
      out << ((double)i.second/roi_cycles()) << " (";
      uint64_t mask = i.first;
@@ -153,7 +154,7 @@ void ssim_t::timestamp() {
 
 void ssim_t::timestamp_context() {
   timestamp();
-  cout << "context:" << std::hex << _context_bitmask << "\t" << std::dec;
+  cout << "context:0x" << std::hex << _context_bitmask << "\t" << std::dec;
 }
 
 
@@ -189,8 +190,6 @@ void ssim_t::load_dma_to_scratch(addr_t mem_addr,
     return;
   }
 
-  //WAIT_FOR(can_add_dma_scr_stream,1500);
-  //add_dma_scr_stream(s);
   add_bitmask_stream(s);
 }
 
@@ -292,11 +291,7 @@ void ssim_t::load_scratch_to_port(addr_t scratch_addr,
     return;
   }
 
-  //WAIT_FOR(can_add_scr_port_stream,1500);
-
   //_outstanding_scr_read_streams++;
-
-  //add_scr_port_stream(s);
   add_bitmask_stream(s);
 }
 
@@ -320,9 +315,6 @@ void ssim_t::write_scratchpad(int out_port,
     return;
   }
 
-  //WAIT_FOR(can_add_port_scr_stream,1500);
-
-  //add_port_scr_stream(s);
   add_bitmask_stream(s);
 
 }
@@ -441,6 +433,20 @@ uint64_t ssim_t::receive(int out_port) {
   return 0;
 }
 
+
+void ssim_t::insert_barrier(uint64_t mask) {
+   stream_barrier_t* s = new stream_barrier_t();
+   s->_mask = mask;
+   s->set_orig();
+
+   if(debug && SB_DEBUG::SB_COMMAND) {
+     timestamp_context();
+     s->print_status();
+   }
+
+  add_bitmask_stream(s);
+}
+
 void ssim_t::write_constant(int num_strides, int in_port, 
                     SBDT constant, uint64_t num_elem, 
                     SBDT constant2, uint64_t num_elem2, 
@@ -480,11 +486,7 @@ void ssim_t::write_constant(int num_strides, int in_port,
     return;
   }
 
-  //WAIT_FOR(can_add_const_port_stream,1500);
-
-  //add_const_port_stream(s);
   add_bitmask_stream(s);
-
 }
 
 uint64_t ssim_t::now() {

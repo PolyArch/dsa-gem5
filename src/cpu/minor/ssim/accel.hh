@@ -725,7 +725,8 @@ public:
   bool can_add_stream();
 
   void add_stream(base_stream_t* s) {
-    if(_sbconfig->dispatch_inorder()) {
+
+    /*if(_sbconfig->dispatch_inorder()) {
       add_port_based_stream(s);
       return;
     }
@@ -736,7 +737,7 @@ public:
     if(scr_dma_stream_t* s_d = dynamic_cast<scr_dma_stream_t*>(s)) {
       add_scr_dma_stream(s_d);
       return;
-    }
+    }*/
     add_port_based_stream(s);
   }
 
@@ -803,6 +804,7 @@ private:
 
   //***timing-related code***
   bool done_internal(bool show, int mask);
+  bool done_concurrent(bool show, int mask);
 
   void cycle_cgra();   //Tick on each cycle
 

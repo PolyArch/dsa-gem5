@@ -113,8 +113,25 @@ static inline uint64_t ilog2(const uint64_t x) {
   return y;
 }
 
-struct wait_stream_t : public base_stream_t {
-  uint64_t _mask;
+//This class represents a barrier (does not stall core) 
+struct stream_barrier_t : public base_stream_t {
+  uint64_t _mask=0;
+
+  bool bar_scr_rd() {return _mask & WAIT_SCR_RD;}
+  bool bar_scr_wr() {return _mask & WAIT_SCR_WR;}
+
+  virtual bool stream_active() {return true;}
+
+  virtual void print_status() {
+    if(bar_scr_rd()) {
+      std::cout << " read_barrier";
+    }
+    if(bar_scr_wr()) {
+      std::cout << " write_barrier";
+    }
+    std::cout << std::hex << " mask=0x" << _mask << std::dec << "\n";
+  }
+
 };
 
 

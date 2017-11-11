@@ -984,7 +984,8 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
             should_commit = false;
             //DPRINTF(SD,"Can't issue stream b/c buffer is full");
             //continue;
-        } else if(inst->staticInst->isSDWait()) {
+        } else if(inst->staticInst->isSDWait() && 
+                  ssim_t::stall_core(inst->staticInst->imm())) {
           if(!ssim.done(false,inst->staticInst->imm()) ) {
             should_commit = false;
             ssim.wait_inst(inst->staticInst->imm());
