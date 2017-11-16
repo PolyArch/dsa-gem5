@@ -2195,7 +2195,7 @@ void port_controller_t::cycle() {
   for(unsigned i = 0; i < _remote_port_streams.size(); ++i) {
     _which_rp=(_which_rp+1)==_remote_port_streams.size() ? 0:_which_rp+1; 
     auto& pi=_accel->port_interf();
-    auto& stream=_remote_port_streams[_which_cp];
+    auto& stream=_remote_port_streams[_which_rp];
     if(!stream.stream_active()) {
       continue;
     }
@@ -2234,10 +2234,6 @@ void port_controller_t::cycle() {
           cout << "SOURCE: PORT->PORT\n";
         }
         vp_out.set_status(port_data_t::STATUS::FREE);
-
-        // reset to enable reclaiming
-        // Is this awesome? yes.
-        //stream._remote_stream->_num_elements=0; 
       }
 
       break;
