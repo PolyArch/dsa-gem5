@@ -17,14 +17,16 @@ using namespace std;
 ssim_t::ssim_t(Minor::LSQ* lsq) : _lsq(lsq) {
   SB_DEBUG::check_env();
 
-  for(int i = 0; i < NUM_ACCEL; ++i) {
+  for(int i = 0; i < NUM_ACCEL_TOTAL; ++i) {
     accel_arr[i] = new accel_t(lsq, i, this);
   }
+  //accel_arr[SHARED_SP] = new accel_t(lsq, SHARED_SP, this);
+  //TODO: inform accel_arr
 }
 void ssim_t::req_config(addr_t addr, int size) {
   set_in_use();
 
-  for(uint64_t i=0,b=1; i < NUM_ACCEL; ++i, b<<=1) {
+  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
     if(_context_bitmask & b) {
       accel_arr[i]->req_config(addr,size);
     }
@@ -33,7 +35,7 @@ void ssim_t::req_config(addr_t addr, int size) {
 
 
 bool ssim_t::can_add_stream() {
-  for(uint64_t i=0,b=1; i < NUM_ACCEL; ++i,b<<=1) {
+  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i,b<<=1) {
     if(_context_bitmask & b) {
       if(!accel_arr[i]->can_add_stream()) {
         return false;
@@ -46,7 +48,7 @@ bool ssim_t::can_add_stream() {
 bool ssim_t::done(bool show, int mask) {
   bool is_done=true;
 
-  for(uint64_t i=0,b=1; i < NUM_ACCEL; ++i, b<<=1) {
+  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
     if(_context_bitmask & b) {
       is_done &= accel_arr[i]->done(show,mask);
     }
@@ -57,7 +59,7 @@ bool ssim_t::done(bool show, int mask) {
 bool ssim_t::is_in_config() {
   bool in_config=true;
 
-  for(uint64_t i=0,b=1; i < NUM_ACCEL; ++i, b<<=1) {
+  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
     if(_context_bitmask & b) {
       in_config &= accel_arr[i]->is_in_config();
     }
@@ -69,11 +71,12 @@ void ssim_t::step() {
   if(!_in_use) {
     return;
   }
-  for(uint64_t i=0,b=1; i < NUM_ACCEL; ++i, b<<=1) {
+  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
     if(_ever_used_bitmask & b) {
       accel_arr[i]->tick();     
     }
   }
+  shared_acc()->tick();
 }
 
 void ssim_t::print_stats() {
@@ -106,7 +109,7 @@ void ssim_t::print_stats() {
    }
    out << "\n";
 
-  for(uint64_t i=0,b=1; i < NUM_ACCEL; ++i, b<<=1) {
+  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
     if(_ever_used_bitmask & b) {
       accel_arr[i]->print_stats();     
     }
@@ -115,7 +118,7 @@ void ssim_t::print_stats() {
 
 uint64_t ssim_t::forward_progress_cycle() {
   uint64_t r = 0;
-  for(uint64_t i=0,b=1; i < NUM_ACCEL; ++i, b<<=1) {
+  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
     if(_ever_used_bitmask & b) {
       r = std::max(accel_arr[i]->forward_progress_cycle(),r);
     }
@@ -124,11 +127,26 @@ uint64_t ssim_t::forward_progress_cycle() {
 }
 
 void ssim_t::add_bitmask_stream(base_stream_t* s, uint64_t ctx) {
+  //Check if not active!
+  if(debug && (SB_DEBUG::SB_COMMAND)  ) {
+    timestamp_context();
+    s->print_status(); 
+  }
+
+  if(!s->stream_active()) {
+    if(debug && (SB_DEBUG::SB_COMMAND)  ) {
+      timestamp_context();
+      cout << " ---    and this stream is being deleted for being inactive!";
+    }
+    delete s;
+    return;
+  }
+
   //if(debug && (SB_DEBUG::SB_COMMAND)  ) {
   //  cout << "Sending to Cores: ";
   //}
 
-  for(uint64_t i=0,b=1; i < NUM_ACCEL; ++i, b<<=1) {
+  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
     if(ctx & b) {
       //if(debug && (SB_DEBUG::SB_COMMAND)  ) {
       //  cout << i;
@@ -168,29 +186,27 @@ void ssim_t::set_context(uint64_t context) {
   _ever_used_bitmask |= context;
 }
 
-void ssim_t::load_dma_to_scratch(addr_t mem_addr, 
-    uint64_t stride, uint64_t access_size, int stretch, uint64_t num_strides,
-    addr_t scratch_addr) {
-  dma_scr_stream_t* s = new dma_scr_stream_t();
-  s->_mem_addr=mem_addr;
-  s->_scratch_addr=scratch_addr;
-  s->_num_strides=num_strides;
-  s->_stride=stride;
-  s->_access_size=access_size;
-  s->_stretch=stretch;
-  s->set_orig();
+void ssim_t::load_dma_to_scratch(addr_t mem_addr, uint64_t stride, 
+    uint64_t access_size, int stretch, uint64_t num_strides, 
+    addr_t scratch_addr, uint64_t flags) {
 
-  if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SCR_BARRIER)  ) {
-    timestamp_context();
-    s->print_status(); 
-  }
 
-  if(num_strides==0 || access_size==0) {
-    delete s;
-    return;
-  }
+  if(flags) {
+    auto* S = new scr_scr_stream_t(mem_addr,stride, access_size, stretch,
+               num_strides, scratch_addr,true);
+    auto* R = new scr_scr_stream_t(mem_addr,stride, access_size, stretch,
+               num_strides, scratch_addr, false);
+    S->set_remote(R, _context_bitmask); // tie together <3
+    R->set_remote(S, SHARED_MASK);
 
-  add_bitmask_stream(s);
+    add_bitmask_stream(S, SHARED_MASK); // send scratch load to shared accel
+    add_bitmask_stream(R);
+
+  } else {
+    auto* s = new dma_scr_stream_t(mem_addr,stride, access_size, stretch,
+               num_strides, scratch_addr);
+    add_bitmask_stream(s);  //load dma to shared proc
+  }  
 }
 
 void ssim_t::write_dma_from_scratch(addr_t scratch_addr, uint64_t stride, 
@@ -202,16 +218,6 @@ void ssim_t::write_dma_from_scratch(addr_t scratch_addr, uint64_t stride,
   s->_stride=stride;
   s->_access_size=access_size;
   s->set_orig();
-
-  if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SCR_BARRIER)  ) {
-    timestamp_context();
-    s->print_status(); 
-  }
-
-  if(num_strides==0 || access_size==0) {
-    delete s;
-    return;
-  }
 
   add_bitmask_stream(s);
 }
@@ -229,16 +235,6 @@ void ssim_t::load_dma_to_port(addr_t mem_addr,
   s->_repeat_in=repeat;
   s->set_orig();
 
-  if(debug && SB_DEBUG::SB_COMMAND) {
-    timestamp_context();
-    s->print_status(); 
-  }
-
-  if(num_strides==0 || access_size==0 || repeat == 0) {
-    delete s;
-    return;
-  }
-
   add_bitmask_stream(s);
 }
 
@@ -254,16 +250,6 @@ void ssim_t::write_dma(uint64_t garb_elem, int out_port,
   s->_shift_bytes=shift_bytes;
   s->_garbage=garbage;
   s->set_orig();
-
-  if(debug && SB_DEBUG::SB_COMMAND) {
-    timestamp_context();
-    s->print_status(); 
-  }
-
-  if(num_strides==0 || access_size==0) {
-    delete s;
-    return;
-  }
 
   add_bitmask_stream(s);
 }
@@ -281,16 +267,6 @@ void ssim_t::load_scratch_to_port(addr_t scratch_addr,
   s->_repeat_in=repeat;
   s->set_orig();
 
-  if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SCR_BARRIER)  ) {
-    timestamp_context();
-    s->print_status(); 
-  }
-
-  if(num_strides==0 || access_size==0 || repeat == 0) {
-    delete s;
-    return;
-  }
-
   //_outstanding_scr_read_streams++;
   add_bitmask_stream(s);
 }
@@ -305,18 +281,7 @@ void ssim_t::write_scratchpad(int out_port,
   s->_shift_bytes=shift_bytes;
   s->set_orig();
 
-  if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SCR_BARRIER)  ) {
-    timestamp_context();
-    s->print_status(); 
-  }
-
-  if(num_bytes==0) {
-    delete s;
-    return;
-  }
-
   add_bitmask_stream(s);
-
 }
 
 //The reroute function handles either local recurrence, or remote data transfer
@@ -331,26 +296,16 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem, int repeat,
   if(flags == 0) {
     s = new port_port_stream_t(out_port,in_port,num_elem,repeat);
   } else {
-    auto s1 = new remote_port_stream_t(out_port,in_port,num_elem,repeat,core_d,true);
-    auto r1 = new remote_port_stream_t(out_port,in_port,num_elem,repeat,core_d,false);
-    s1->_remote_stream=r1; // tie together <3
-    r1->_remote_stream=s1;
-    s=s1;
-    r=r1;
-  }
-
-  if(debug && SB_DEBUG::SB_COMMAND) {
-    timestamp_context();
-    s->print_status();
-  }
-
-  if(num_elem==0 || repeat==0) {
-    delete s;
-    if(r) delete r;
-    return;
+    auto S = new remote_port_stream_t(out_port,in_port,num_elem,repeat,core_d,true);
+    auto R = new remote_port_stream_t(out_port,in_port,num_elem,repeat,core_d,false);
+    S->_remote_stream=R; // tie together <3
+    R->_remote_stream=S;
+    s=S;
+    r=R;
   }
 
   add_bitmask_stream(s);
+
   if(r) {
     uint64_t new_ctx=0;
     if(core_d==1) {
@@ -379,16 +334,6 @@ void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr
   s->_repeat_in=repeat;
   s->set_orig();
 
-  if(debug && SB_DEBUG::SB_COMMAND) {
-    timestamp_context();
-    s->print_status();
-  }
-
-  if(num_elem==0 || repeat == 0) {
-    delete s;
-    return;
-  }
-
   add_bitmask_stream(s);
 }
 
@@ -404,17 +349,14 @@ void ssim_t::indirect_write(int ind_port, int ind_type, int out_port,
   s->_num_elements=num_elem;
   s->set_orig();
 
-  if(debug && SB_DEBUG::SB_COMMAND) {
-    timestamp_context();
-    s->print_status();
-  }
-
   add_bitmask_stream(s);
 }
 
+// -------------------------------------------------------------------------------
+
 //These two functions just return the first core from 0
 bool ssim_t::can_receive(int out_port) {
-  for(uint64_t i=0,b=1; i < NUM_ACCEL; ++i, b<<=1) {
+  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
     if(_context_bitmask & b) {
       return accel_arr[i]->can_receive(out_port); 
     }
@@ -424,7 +366,7 @@ bool ssim_t::can_receive(int out_port) {
 }
 
 uint64_t ssim_t::receive(int out_port) {
-  for(uint64_t i=0,b=1; i < NUM_ACCEL; ++i, b<<=1) {
+  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
     if(_context_bitmask & b) {
       return accel_arr[i]->receive(out_port); 
     }
@@ -438,11 +380,6 @@ void ssim_t::insert_barrier(uint64_t mask) {
    stream_barrier_t* s = new stream_barrier_t();
    s->_mask = mask;
    s->set_orig();
-
-   if(debug && SB_DEBUG::SB_COMMAND) {
-     timestamp_context();
-     s->print_status();
-   }
 
   add_bitmask_stream(s);
 }
@@ -468,23 +405,7 @@ void ssim_t::write_constant(int num_strides, int in_port,
   s->_constant2=constant;
   s->_num_elements2=num_elem;
 
-  if(debug && SB_DEBUG::SB_COMMAND) {
-    timestamp_context();
-    s->print_status();
-  }
-
-
   s->set_orig();
-
-  if(debug && SB_DEBUG::SB_COMMAND) {
-    timestamp_context();
-    s->print_status();
-  }
-
-  if(num_elem==0) {
-    delete s;
-    return;
-  }
 
   add_bitmask_stream(s);
 }

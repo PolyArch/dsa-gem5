@@ -6,9 +6,6 @@
 #include <iostream>
 #include "accel.hh"
 
-#define NUM_ACCEL 16
-#define ACCEL_MASK 0xFFFF
-
 //Fix above so they don't get out of sync : )
 
 class ssim_t 
@@ -28,8 +25,8 @@ public:
   // ELSE, they carry out all operations that are possible at that point
   void set_context(uint64_t context);
   void req_config(addr_t addr, int size);
-  void load_dma_to_scratch(addr_t mem_addr, uint64_t stride, 
-      uint64_t access_size, int stretch, uint64_t num_strides, addr_t scratch_addr);
+  void load_dma_to_scratch(addr_t mem_addr, uint64_t stride, uint64_t acc_size,
+      int stretch, uint64_t num_strides, addr_t scratch_addr, uint64_t flags);
   void write_dma_from_scratch(addr_t scratch_addr, uint64_t stride, 
       uint64_t access_size, uint64_t num_strides, addr_t mem_addr); 
   void load_dma_to_port(addr_t mem_addr, uint64_t stride, 
@@ -105,7 +102,7 @@ public:
   }
 
   static bool stall_core(uint64_t mask) {
-    return (mask==0) || (mask&0x2);
+    return (mask==0) || (mask&WAIT_CMP);
   }
 
   uint64_t roi_cycles() {return _roi_cycles;}
@@ -113,8 +110,21 @@ public:
   uint64_t config_waits() {return _config_waits;}
 
   accel_t* get_acc(int i) {
-    assert(i>=0 && i<NUM_ACCEL);
+    assert(i>=0 && i<NUM_ACCEL_TOTAL);
     return accel_arr[i];
+  }
+
+  accel_t* shared_acc() { return accel_arr[SHARED_SP]; } 
+
+  bool can_push_shs_buf(int size, uint64_t addr, uint64_t bitmask) {  
+    for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
+      if(bitmask & b) {
+        if(!accel_arr[i]->scr_w_c()->_buf_shs_write.can_push_addr(size,addr)) {
+          return false;
+        }
+      }
+    }
+    return true;
   }
 
 private:
@@ -125,7 +135,7 @@ private:
 
   Minor::LSQ* _lsq;
 
-  accel_t* accel_arr[NUM_ACCEL];
+  accel_t* accel_arr[NUM_ACCEL+1]; //LAST ONE IS SHARED SCRATCH
 
   bool _prev_done = true;
 

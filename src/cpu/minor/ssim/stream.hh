@@ -8,7 +8,8 @@
 #include "cpu/minor/dyn_inst.hh" //don't like this, workaround later (TODO)
 
 
-enum class LOC {NONE, DMA, SCR, PORT, CONST, REMOTE_PORT, TOTAL, REC_BUS}; 
+enum class LOC {NONE, DMA, SCR, PORT, CONST, 
+                REMOTE_SCR, REMOTE_PORT, TOTAL, REC_BUS}; 
 
 //This is a hierarchical classification of access types
 enum class STR_PAT {PURE_CONTIG, SIMPLE_REPEATED, 
@@ -39,6 +40,7 @@ struct base_stream_t {
       case LOC::PORT: return "PORT";
       case LOC::CONST: return "CONST";
       case LOC::REMOTE_PORT: return "REM_PORT";
+      case LOC::REMOTE_SCR: return "REM_SCR";
       case LOC::TOTAL: return "TOTAL";
       case LOC::REC_BUS: return "REC_BUS";
     }
@@ -136,6 +138,7 @@ struct stream_barrier_t : public base_stream_t {
 
 
 struct mem_stream_base_t : public base_stream_t {
+  uint64_t _context_bitmask=0; //
   addr_t _access_size;    // length of smallest access
   addr_t _stride;         // length of entire slide
   addr_t _stretch;        // stretch of access size over time
@@ -144,6 +147,17 @@ struct mem_stream_base_t : public base_stream_t {
   addr_t _mem_addr;     // CURRENT address of stride
   addr_t _num_strides=0;  // CURRENT strides left
   addr_t _orig_strides=0;
+
+  mem_stream_base_t() {}
+
+  mem_stream_base_t(addr_t mem_addr, uint64_t stride, 
+    uint64_t access_size, int stretch, uint64_t num_strides) {
+    _mem_addr=mem_addr;
+    _stride=stride;
+    _access_size=access_size;
+    _stretch=stretch;
+    _num_strides=num_strides;
+  }
 
   virtual void set_orig() {
     _orig_strides = _num_strides;
@@ -210,7 +224,7 @@ struct mem_stream_base_t : public base_stream_t {
   }
 
   virtual bool stream_active() {
-    return _num_strides!=0;
+    return _num_strides!=0 && _access_size !=0;
   } 
 };
 
@@ -232,6 +246,10 @@ struct dma_port_stream_t : public mem_stream_base_t {
   virtual LOC dest() {return LOC::PORT;}
 
   virtual int ivp_dest() {return _in_port;}
+
+  virtual bool stream_active() {
+    return mem_stream_base_t::stream_active() && _repeat_in!=0;
+  }
 
   virtual void print_status() {  
     std::cout << "dma->port" << "\tport=" << _in_port << "\tacc_size=" << _access_size 
@@ -272,6 +290,16 @@ struct port_dma_stream_t : public mem_stream_base_t {
 struct dma_scr_stream_t : public mem_stream_base_t {
   int _scratch_addr; //CURRENT scratch addr
 
+  dma_scr_stream_t() {}
+
+  dma_scr_stream_t(addr_t mem_addr, uint64_t stride, uint64_t access_size, 
+      int stretch, uint64_t num_strides, addr_t scratch_addr) : 
+         mem_stream_base_t(mem_addr,stride,access_size,stretch,
+        num_strides) {
+    _scratch_addr=scratch_addr;
+    set_orig();
+  }
+
   uint64_t mem_addr()    {return _mem_addr;}  
   uint64_t access_size() {return _access_size;}  
   uint64_t stride()      {return _stride;} 
@@ -293,9 +321,71 @@ struct dma_scr_stream_t : public mem_stream_base_t {
 
 };
 
+//3. Scratch -> Scratch    
+struct scr_scr_stream_t;
+struct scr_scr_stream_t : public mem_stream_base_t {
+  uint64_t _scratch_addr; //CURRENT scratch addr
+  bool _is_source;
+  bool _is_ready;
+
+  scr_scr_stream_t* _remote_stream;
+  uint64_t          _remote_bitmask;
+
+  scr_scr_stream_t() {}
+
+  scr_scr_stream_t(addr_t mem_addr, uint64_t stride, uint64_t access_size, 
+      int stretch, uint64_t num_strides, addr_t scratch_addr, bool is_src) : 
+         mem_stream_base_t(mem_addr,stride,access_size,stretch,
+        num_strides) {
+    _scratch_addr=scratch_addr;
+
+    _is_source = is_src;
+    _is_ready=false;
+
+    set_orig();
+  }
+
+  uint64_t mem_addr()    {return _mem_addr;}  
+  uint64_t access_size() {return _access_size;}  
+  uint64_t stride()      {return _stride;} 
+  uint64_t num_strides() {return _num_strides;} 
+  uint64_t shift_bytes() {return _shift_bytes;} 
+  uint64_t scratch_addr(){return _scratch_addr;} 
+
+  void set_remote(scr_scr_stream_t* r, uint64_t r_bitmask) {
+    _remote_bitmask=r_bitmask;
+    _remote_stream=r;
+  }
+  virtual LOC src() {
+    if(_is_source) return LOC::SCR;
+    else          return LOC::REMOTE_SCR;
+  }
+  virtual LOC dest() {
+    if(_is_source) return LOC::REMOTE_SCR;
+    else          return LOC::SCR;
+  }
+
+  virtual void print_status() {  
+    std::cout << "scr->scr" << "\tscr=" << _scratch_addr 
+              << "\tacc_size=" << _access_size 
+              << " stride=" << _stride << " bytes_comp=" << _bytes_in_access 
+              << " mem_addr=" << std::hex << _mem_addr << std::dec 
+              << " strides_left=" << _num_strides;
+
+    if(_is_source) {
+      std::cout << "(source)";
+    } else {
+      std::cout << "(dest)";
+    }
+
+    base_stream_t::print_status();
+  }
+
+};
+
 //4.Scratch -> DMA  TODO -- NEW -- CHECK
 struct scr_dma_stream_t : public mem_stream_base_t {
-  int _dest_addr; //current dest addr
+  addr_t _dest_addr; //current dest addr
 
   //NOTE/WEIRD/DONOTCHANGE: 
   uint64_t mem_addr()    {return _mem_addr;}  //referse to memory addr
@@ -338,6 +428,10 @@ struct scr_port_stream_t : public mem_stream_base_t {
   virtual LOC dest() {return LOC::PORT;}
 
   virtual int ivp_dest() {return _in_port;}
+
+  virtual bool stream_active() {
+    return mem_stream_base_t::stream_active() && _repeat_in!=0;
+  }
 
   virtual void print_status() {  
     std::cout << "scr->port" << "\tport=" << _in_port << "\tacc_size=" << _access_size 
@@ -526,7 +620,7 @@ struct port_port_stream_t : public base_stream_t {
   virtual LOC dest() {return LOC::PORT;}
 
   virtual bool stream_active() {
-    return _num_elements!=0;
+    return _num_elements!=0 && _repeat_in!=0;
   }
 
   virtual void cycle_status() {
@@ -691,6 +785,10 @@ struct indirect_stream_t : public indirect_base_stream_t {
               << "\tnum_elem:" << _num_elements << "\tin_port" << _in_port;
     base_stream_t::print_status();
   }
+  virtual bool stream_active() {
+    return indirect_base_stream_t::stream_active() && _repeat_in!=0;
+  }
+
 };
 
 //Indirect Read Port -> Port 

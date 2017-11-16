@@ -206,12 +206,12 @@ uint64_t accel_t::now() {
 accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) : 
   _ssim(ssim),
   _lsq(lsq),
-  _dma_c(this),
+  _accel_index(i),
+  _accel_mask(1<<i),
+  _dma_c(this,&_scr_r_c,&_scr_w_c),
   _scr_r_c(this,&_dma_c),
   _scr_w_c(this,&_dma_c),
   _port_c(this) {
-  _accel_index=i;
-  _accel_mask=1<<i;
  
   int ugh = system("mkdir -p stats/");
   ugh += system("mkdir -p viz/");
@@ -288,7 +288,10 @@ void accel_t::tick() {
   schedule_streams();
 
   _waiting_cycles++;
+
   _dma_c.finish_cycle(); 
+  _scr_w_c.finish_cycle(); 
+  _scr_r_c.finish_cycle(); 
   
   if(SB_DEBUG::CYC_STAT) {
     if(in_roi()) {
@@ -517,7 +520,7 @@ void accel_t::cycle_status() {
 
 
 
-  cout << "s_buf:" << _dma_c.scr_buf_size() << " ";
+  cout << "s_buf:" << _scr_w_c.scr_buf_size() << " ";
   cout << "m_req:" << _dma_c.mem_reqs() << " ";
 
   cout << "\t|";
@@ -847,7 +850,7 @@ void accel_t::schedule_streams() {
   bool prior_scratch_write = false;
   bool bar_scratch_read = false;  // These are set by scratch
   bool bar_scratch_write = false;
-  
+
   //schedule for ports (these need to go in program order per-vp)
   for(auto i = _in_port_queue.begin(); i!=_in_port_queue.end() && str_issued<str_width;){
     base_stream_t* ip = *i;
@@ -857,9 +860,7 @@ void accel_t::schedule_streams() {
 
     bool scheduled_in=false;
     bool scheduled_out=false;
-    bool scheduled_dma_scr=false;
-    bool scheduled_scr_dma=false;
-    bool scheduled_barrier=false;
+    bool scheduled_other=false;
     int repeat = ip->repeat_in();
 
     bool blocked_by_barrier=false;
@@ -872,14 +873,23 @@ void accel_t::schedule_streams() {
       blocked_by_barrier |= bar_scratch_write;
     }
 
-    if(blocked_by_barrier) {
+    if(blocked_by_barrier) { //This handles all barrier insts
       //don't issue if blocked by barrier
+    } else if(auto stream = dynamic_cast<scr_scr_stream_t*>(ip)) { 
+      if(stream->_is_source) { //do not schedule, but check out port available
+        if(stream->_is_ready) {  //writer is ready
+          scheduled_other = _scr_r_c.schedule_scr_scr(*stream); 
+        }
+      } else {  //destination, time for action!
+        scheduled_other=true; 
+        stream->_remote_stream->_is_ready=true; //writer says its okay
+      }
     } else if(auto stream = dynamic_cast<stream_barrier_t*>(ip)) { 
       bool blocked = (stream->bar_scr_rd() && prior_scratch_read) ||
                      (stream->bar_scr_wr() && prior_scratch_write);
       blocked |= !done_concurrent(false,stream->_mask);
       if(!blocked) {
-        scheduled_barrier=true;
+        scheduled_other=true;
       } else { //blocked, so prevent younger streams
         bar_scratch_read  |= stream->bar_scr_rd();
         bar_scratch_write |= stream->bar_scr_wr();
@@ -908,13 +918,13 @@ void accel_t::schedule_streams() {
         if((scheduled_out = 
           (out_vp->can_take(LOC::PORT) && !blocked_ovp[out_port]))) {
           out_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
-          stream->_is_ready =true; //we'll check this in the destination
+          stream->_remote_stream->_is_ready =true; //we'll check this in dest.
         }
       } else {  //destination, time for action!
         int in_port = stream->_in_port;
         in_vp = &_port_interf.in_port(in_port);
         if(in_vp->can_take(LOC::PORT,repeat) && !blocked_ivp[in_port] &&
-            stream->_remote_stream->_is_ready /*src is ready*/ &&
+            stream->_is_ready /*src is ready*/ &&
             (scheduled_in = _port_c.schedule_remote_port(*stream)) ) {
           in_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
         }
@@ -987,9 +997,9 @@ void accel_t::schedule_streams() {
         out_ind_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
       }
     } else if(auto dma_scr_stream = dynamic_cast<dma_scr_stream_t*>(ip)) {
-      scheduled_dma_scr = _dma_c.schedule_dma_scr(*dma_scr_stream);
+      scheduled_other = _dma_c.schedule_dma_scr(*dma_scr_stream);
     } else if(auto scr_dma_stream = dynamic_cast<scr_dma_stream_t*>(ip)) {
-      scheduled_scr_dma = _scr_r_c.schedule_scr_dma(*scr_dma_stream);
+      scheduled_other = _scr_r_c.schedule_scr_dma(*scr_dma_stream);
     }
 
 
@@ -1004,14 +1014,14 @@ void accel_t::schedule_streams() {
       in_vp->set_repeat(repeat);
     }
 
-    if(scheduled_in || scheduled_out || scheduled_dma_scr || scheduled_scr_dma
-        || scheduled_barrier) {
+    if(scheduled_in || scheduled_out || scheduled_other) {
       str_issued++;
       if(SB_DEBUG::SB_COMMAND_I) {
         _ssim->timestamp();
         cout << " ISSUED:";
         ip->print_status();
       }
+
       delete ip;
       i=_in_port_queue.erase(i);
       if(_ssim->in_roi()) {
@@ -1068,6 +1078,15 @@ void data_controller_t::add_bw(LOC l1, LOC l2, uint64_t times, uint64_t bytes){
   _accel->add_bw(l1,l2,times,bytes);
 }
 
+ssim_t* data_controller_t::get_ssim() {
+  return _accel->get_ssim();
+}
+
+bool data_controller_t::is_shared() {
+  return _accel->is_shared();
+}
+
+
 bool dma_controller_t::schedule_dma_port(dma_port_stream_t& new_s) {
   for(auto& s : _dma_port_streams) {
     if(s.empty()) {
@@ -1108,6 +1127,16 @@ bool dma_controller_t::schedule_indirect(indirect_stream_t& new_s) {
 
 bool dma_controller_t::schedule_indirect_wr(indirect_wr_stream_t& new_s) {
   for(auto& s : _indirect_wr_streams) {
+    if(s.empty()) {
+      s=new_s;
+      return true;
+    }
+  }
+  return false;
+}
+
+bool scratch_read_controller_t::schedule_scr_scr(scr_scr_stream_t& new_s) {
+  for(auto& s : _scr_scr_streams) {
     if(s.empty()) {
       s=new_s;
       return true;
@@ -1167,97 +1196,6 @@ bool port_controller_t::schedule_const_port(const_port_stream_t& new_s) {
   }
   return false;
 }
-
-
-/*
-void accel_t::deschedule_streams() {
-  _dma_c->deschedule_streams();
-  _scr_r_c->deschedule_streams();
-  _scr_w_c->deschedule_streams();
-  _port_c->deschedule_streams();
-}
-
-void dma_controller_t::deschedule_streams() {
-
-}
-void scratch_read_controller_t::deschedule_streams() {
-
-}
-void scratch_write_controller_t::deschedule_streams() {
-
-}
-void port_controller_t::deschedule_streams() {
-
-}*/
-
-#if 0
-void dma_controller_t::schedule_streams() {
-  //must start at head of queue
-  for(int i = 0; i < _dma_port_queue.size(); ++i) {
-    auto& new_stream = _dma_port_queue[i];
-    port_data_t& in_vp = _accel->port_interf()->in_port(_dma_port_queue[i]._port);
-    if(in_vp.in_use()) {
-      continue; // don't schedule this one if the vp is in use...
-    }
-
-    if(_accel->port_interf().in_port(i)) {
-      for(auto& s : _dma_port_streams) {
-        if(s.empty()) {
-          in_vp.set_in_use(true);
-          s=_new_stream;
-          _dma_port_queue.pop();
-          break;
-        }
-      }
-      break;
-    }
-  }
-  if(_dma_scr_queue.size() > 0) {
-    if(_dma_scr_stream.empty()) {
-      _dma_scr_stream=_dma_scr_queue.top();
-      _dma_scr_queue.pop();
-    }
-  }
-
-  for(int i = 0; i < _port_dma_queue.size(); ++i) {
-    auto& new_stream = _port_dma_queue[i];
-    port_data_t& out_vp = _accel->port_interf()->out_port(_port_dma_queue[i]._port);
-    if(out_vp.in_use()) {
-      continue; // don't schedule this one if the vp is in use...
-    }
-
-    if(_accel->port_interf().in_port(i)) {
-      for(auto& s : _port_dma_streams) {
-        if(s.empty()) {
-          out_vp.set_in_use(true);
-          s=_new_stream;
-          _port_dma_queue.pop();
-          break;
-        }
-      }
-      break;
-    }
-  }
-
-  if(_scr_dma_queue.size() > 0) {
-    if(_scr_dma_stream.empty()) {
-      _scr_dma_stream=_scr_dma_queue.top();
-      _scr_dma_queue.pop();
-    }
-  }
-}
-
-void scratch_read_controller_t::schedule_streams() { 
-  if(_scr_port_queue.size() > 0) {
-    for(auto& s : _scr_port_streams) {
-      if(s.empty()) {
-        s=_scr_port_queue.top();
-        _scr_port_queue.pop();
-      }
-    } 
-  }
-}
-#endif
 
 //HACK
  static bool DOUBLE_PORT=true;
@@ -1347,6 +1285,38 @@ void dma_controller_t::port_resp(unsigned cur_port) {
   }
 }
 
+/*
+    if(get_ssim()->scratch_wr_free(response->_context_bitmask)) {
+
+      PacketPtr packet = response->packet;
+      if(packet->getSize()!=MEM_WIDTH) {
+        assert(0 && "weird memory response size");
+      }
+      vector<SBDT> data;
+      apply_mask(packet->getPtr<uint64_t>(), response->sdInfo->mask, data);
+
+      for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
+        if(_context_bitmask & b) {
+
+        if(_scr_w_c->_buf_dma_write.push_data(response->sdInfo->scr_addr, data)) {
+          if(SB_DEBUG::MEM_REQ) {
+            _accel->_ssim->timestamp();
+            std::cout << "data into scratch " << response->sdInfo->scr_addr 
+                      << ":" << data.size() << "elements, ctx=" "\n";
+          }
+          if(_accel->_ssim->in_roi()) {
+            _accel->_stat_mem_bytes_rd+=data.size();
+          }
+
+      }
+      //handled_req=true;
+      _fake_scratch_reqs--;
+      _mem_read_reqs--;
+
+      _accel->_lsq->popResponse(SCR_STREAM);
+    }
+*/
+
 
 // ---------------------STREAM CONTROLLER TIMING ------------------------------------
 // If response, can issue load
@@ -1371,7 +1341,7 @@ void dma_controller_t::cycle(){
       vector<SBDT> data;
       apply_mask(packet->getPtr<uint64_t>(), response->sdInfo->mask, data);
 
-      if(_scr_write_buffer.push_data(response->sdInfo->scr_addr, data)) {
+      if(_scr_w_c->_buf_dma_write.push_data(response->sdInfo->scr_addr, data)) {
         if(SB_DEBUG::MEM_REQ) {
           _accel->_ssim->timestamp();
           std::cout << "data into scratch " << response->sdInfo->scr_addr 
@@ -1416,8 +1386,6 @@ void dma_controller_t::finish_cycle() {
 //  for(auto& i : _dma_port_streams) {i.finish_cycle();} //TODO: maybe optimize this later?
 //  _dma_scr_stream.finish_cycle();
 //  for(auto& i : _port_dma_streams) {i.finish_cycle();}
-  _scr_write_buffer.finish_cycle();
-  _scr_read_buffer.finish_cycle();
 }
 
 
@@ -1551,15 +1519,15 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
         }
       }
     } else if (which == _tq_read + _port_dma_streams.size()) {
-      //Scratch DMA -- NEW -- TODO -- TEST
-      if(_scr_read_buffer.data_ready()) {
+      auto& buf_dma_read = _scr_r_c->_buf_dma_read;
+      if(buf_dma_read.data_ready()) {
 
         vector<SBDT> data;
-        addr_t init_addr = _scr_read_buffer.dest_addr();
+        addr_t init_addr = buf_dma_read.dest_addr();
 
         int data_items=0;
-        while(_scr_read_buffer.data_ready()>0 && data_items<8) {
-          data.push_back(_scr_read_buffer.pop_data());
+        while(buf_dma_read.data_ready()>0 && data_items<8) {
+          data.push_back(buf_dma_read.pop_data());
           data_items++;
         }
 
@@ -1949,10 +1917,31 @@ vector<SBDT> scratch_read_controller_t::read_scratch(
   return data;
 }
 
+void scratch_read_controller_t::xfer_stream_buf(mem_stream_base_t& stream, 
+                                               data_buffer& buf, addr_t& addr){
+  if(stream.stream_active() && 
+     buf.can_push_addr(8,addr)) {
+
+    vector<SBDT> data = read_scratch(stream);
+    buf.push_data(addr, data);
+    addr+=data.size()*DATA_WIDTH;
+  
+    bool is_empty = stream.check_set_empty();
+    if(is_empty) {
+      _accel->process_stream_stats(stream);
+  
+      if(SB_DEBUG::VP_SCORE2) {
+        cout << "SOURCE: SCR\n";
+      }
+    }
+  }
+}
 
 void scratch_read_controller_t::cycle() {
-  for(int i=0; i < 2; ++i) {
-    if(i==_which) {
+  for(int i=0; i < max_src; ++i) {
+     _which=(_which+1==max_src)?0:_which+1;
+
+    if(_which==0) {
       //read to port
       if(_scr_port_stream.stream_active()) {
         vector<SBDT> data = read_scratch(_scr_port_stream);
@@ -1971,35 +1960,50 @@ void scratch_read_controller_t::cycle() {
           in_vp.set_status(port_data_t::STATUS::FREE);
         }
 
+        break;
       }
+    } else if (_which==1) {
+      xfer_stream_buf(_scr_dma_stream,_buf_dma_read,_scr_dma_stream._dest_addr);
       break;
     } else {
-      if(_scr_dma_stream.stream_active() && 
-         _dma_c->_scr_read_buffer.can_push_addr(8,_scr_dma_stream._dest_addr)) {
+      int ind = _which-2;
+      auto& stream = _scr_scr_streams[ind];
+      if(stream.stream_active()) {
+        if(is_shared()) { //destination is remote write buf
+          if(get_ssim()->can_push_shs_buf(8,stream._scratch_addr,
+                                          stream._remote_bitmask)) {
+            //get data, push it to all scratchpads
+            vector<SBDT> data = read_scratch(stream);
 
-        vector<SBDT> data = read_scratch(_scr_dma_stream);
-        _dma_c->_scr_read_buffer.push_data(_scr_dma_stream._dest_addr, data);
-        _scr_dma_stream._dest_addr+=data.size()*DATA_WIDTH;
-      
-        bool is_empty = _scr_dma_stream.check_set_empty();
-        if(is_empty) {
-          _accel->process_stream_stats(_scr_dma_stream);
-      
-          if(SB_DEBUG::VP_SCORE2) {
-            cout << "SOURCE: SCR->PORT\n";
+            for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
+              if(stream._remote_bitmask & b) {
+                auto& buf = get_ssim()->get_acc(i)->scr_w_c()->_buf_shs_write;
+                buf.push_data(stream._scratch_addr, data);
+              }
+            }
+
+            bool is_empty = stream.check_set_empty();
+            if(is_empty) {
+              _accel->process_stream_stats(stream);
+            }
+            
+            stream._scratch_addr+=data.size()*DATA_WIDTH;
+            break;
           }
-        }
-      }
-
+            
+        } else { //destination is local read buf
+           xfer_stream_buf(stream,_buf_shs_read,stream._scratch_addr);
+           break;
+        }   
+      }    
     }
   }
-
-  _which=_which?0:1;
 }
 
 void scratch_read_controller_t::finish_cycle() {
   //_scr_port_stream.finish_cycle(); //TODO: maybe optimize this later?
   //_scr_dma_stream.finish_cycle();
+  _buf_dma_read.finish_cycle();
 }
 
 void scratch_read_controller_t::print_status() {
@@ -2010,8 +2014,10 @@ void scratch_read_controller_t::print_status() {
 
 
 void scratch_write_controller_t::cycle() {
-  for(int i=0; i < 2; ++i) {
-    if(i==_which) {
+  for(int i=0; i < max_src; ++i) {
+    _which=(_which+1==max_src)?0:_which+1;
+
+    if(_which==0) {
       //write from port
       if(_port_scr_stream.stream_active()) {
 
@@ -2057,9 +2063,12 @@ void scratch_write_controller_t::cycle() {
       }
     } else {
 
-      //write from dma
-      if(_dma_c->_scr_write_buffer.data_ready() > 0) {        
-        addr_t addr = _dma_c->_scr_write_buffer.dest_addr();
+      int buf_index = _which-1; // one for scr->port
+      data_buffer& buf = *_bufs[buf_index];
+
+      //write from buf
+      if(buf.data_ready() > 0) { 
+        addr_t addr = buf.dest_addr();
         addr_t base_addr = addr & SCR_MASK;
         addr_t max_addr = base_addr+SCR_WIDTH;
 
@@ -2069,44 +2078,24 @@ void scratch_write_controller_t::cycle() {
         }
 
         if(SB_DEBUG::SCR_ACC) {
-          cout << "dma->scr buffer ready to write: " << _dma_c->_scr_write_buffer.data_ready() << "to addr:" << hex << addr << dec << "\n"; 
+          cout << "scr buffer " << buf_index << " ready to write: " << buf.data_ready() << "to addr:" << hex << addr << dec << "\n"; 
         }
 
-        while(addr < max_addr && _dma_c->_scr_write_buffer.data_ready()>0) { //enough in source
-          addr = _dma_c->_scr_write_buffer.dest_addr();
-          SBDT val = _dma_c->_scr_write_buffer.pop_data();
-
-          if(SB_DEBUG::SCR_ACC) {
-            cout << hex << val << dec << "\n";
-          }
-      
+        while(addr < max_addr && buf.data_ready()>0) { //enough in source
+          addr = buf.dest_addr();
+          SBDT val = buf.pop_data();
           assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
           std::memcpy(&_accel->scratchpad[addr], &val, sizeof(SBDT));
-
-          if(_accel->_ssim->in_roi()) {
-            _accel->_stat_scr_bytes_wr+=DATA_WIDTH;
-            _accel->_stat_scratch_write_bytes+=DATA_WIDTH;
-          }
         }
-        if(_accel->_ssim->in_roi()) {
-          _accel->_stat_scratch_writes+=1;
-        }
-
-
-        if(SB_DEBUG::SCR_ACC) {
-          cout << "\n";
-        }
-
-
       }
     }
   }
-
-  _which=_which?0:1;
 }
 
 void scratch_write_controller_t::finish_cycle() {
 //  _port_scr_stream.finish_cycle(); //TODO: maybe optimize this later?
+  _buf_dma_write.finish_cycle();
+  _buf_shs_write.finish_cycle();
 }
 
 void scratch_write_controller_t::print_status() {
@@ -2248,7 +2237,7 @@ void port_controller_t::cycle() {
 
         // reset to enable reclaiming
         // Is this awesome? yes.
-        stream._remote_stream->_num_elements=0; 
+        //stream._remote_stream->_num_elements=0; 
       }
 
       break;
@@ -2258,7 +2247,7 @@ void port_controller_t::cycle() {
 }
 
 void port_controller_t::finish_cycle() {
-//  for(auto& i : _port_port_streams) {i.finish_cycle();}  //TODO: maybe optimize later?
+//  for(auto& i : _port_port_streams)  {i.finish_cycle();}  //TODO: maybe optimize later?
 //  for(auto& i : _const_port_streams) {i.finish_cycle();}
 }
 
@@ -2361,16 +2350,6 @@ bool dma_controller_t::done(bool show, int mask) {
     }
   }
 
-  if(mask==0 || mask&WAIT_CMP || mask&WAIT_SCR_WR) {
-    if(!_scr_write_buffer.empty_buffer()) {
-      if(show) {
-        _accel->_ssim->timestamp();
-        cout << "SCR Write Buffer Not Empty\n";
-      }
-      return false;
-    }
-  }
-
   if(mask==0 || mask&WAIT_CMP) {
     for(auto& i : _dma_port_streams) {
       if(!i.empty()) { 
@@ -2397,15 +2376,6 @@ bool dma_controller_t::done(bool show, int mask) {
     }
   }
 
-  if(mask==0 || mask&WAIT_CMP || mask&WAIT_SCR_RD ) {
-    if(!_scr_read_buffer.empty_buffer()) {
-      if(show) {
-        cout << "SCR Read Buffer Not Empty\n";
-      }
-      return false;
-    }
-  }
-
   if((mask & WAIT_SCR_WR) && _fake_scratch_reqs) {
     if(show) {
       cout << "Fake scratch reqs: " << _fake_scratch_reqs 
@@ -2419,6 +2389,16 @@ bool dma_controller_t::done(bool show, int mask) {
 
 bool scratch_write_controller_t::done(bool show, int mask) {
   if(mask==0 || mask&WAIT_CMP || mask&WAIT_SCR_WR) {
+    if(!_buf_dma_write.empty_buffer() || !_buf_shs_write.empty_buffer() ) {
+      if(show) {
+        _accel->_ssim->timestamp();
+        cout << "One of SCR Write Buffers Not Empty\n";
+      }
+      return false;
+    }
+  }
+
+  if(mask==0 || mask&WAIT_CMP || mask&WAIT_SCR_WR) {
     if(!_port_scr_stream.empty()) {
       if(show) {
         cout << "PORT -> SCR Stream Not Empty\n";
@@ -2430,6 +2410,15 @@ bool scratch_write_controller_t::done(bool show, int mask) {
 }
 
 bool scratch_read_controller_t::done(bool show, int mask) {
+  if(mask==0 || mask&WAIT_CMP || mask&WAIT_SCR_RD ) {
+    if(!_buf_dma_read.empty_buffer()) {
+      if(show) {
+        cout << "SCR Read Buffer Not Empty\n";
+      }
+      return false;
+    }
+  }
+
   if(mask==0 || mask&WAIT_CMP || mask&WAIT_SCR_RD) {
     if(!_scr_port_stream.empty()) {
       if(show) {

@@ -979,8 +979,10 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
         bool should_commit = true;
 
         //break down by type
-        if (inst->staticInst->isSDStream() && 
-            !ssim.can_add_stream()) {
+        if ( (inst->staticInst->isSDStream()  ||   
+              (inst->staticInst->isSDWait() && 
+                  ssim_t::stall_core(inst->staticInst->imm())) )
+              && !ssim.can_add_stream()) {
             should_commit = false;
             //DPRINTF(SD,"Can't issue stream b/c buffer is full");
             //continue;
@@ -988,7 +990,7 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
                   ssim_t::stall_core(inst->staticInst->imm())) {
           if(!ssim.done(false,inst->staticInst->imm()) ) {
             should_commit = false;
-            ssim.wait_inst(inst->staticInst->imm());
+            ssim.wait_inst(inst->staticInst->imm()); //track stats
 
             //DPRINTF(SD,"Wait blocked, mask: %x\n",inst->staticInst->imm());
             //continue;
@@ -1241,7 +1243,7 @@ Execute::commit(ThreadID thread_id, bool only_commit_microops, bool discard,
 
             /* Try and commit FU-less insts */
             if (!completed_inst && inst->isNoCostInst()) {
-                DPRINTF(MinorExecute, "Committing no cost inst: %s", *inst);
+                DPRINTF(MinorExecute, "Committing no cost inst: %s\n", *inst);
 
                 try_to_commit = true;
                 completed_inst = true;

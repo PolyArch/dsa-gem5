@@ -389,7 +389,8 @@ class ExecContext : public ::ExecContext
             case SB_MEM_SCR: ssim.load_dma_to_scratch(
                 thread.getSDReg(SD_MEM_ADDR),      thread.getSDReg(SD_STRIDE),
                 thread.getSDReg(SD_ACCESS_SIZE),   thread.getSDReg(SD_CONSTANT),   
-                thread.getSDReg(SD_NUM_STRIDES),   thread.getSDReg(SD_SCRATCH_ADDR)); 
+                thread.getSDReg(SD_NUM_STRIDES),   thread.getSDReg(SD_SCRATCH_ADDR),
+                thread.getSDReg(SD_FLAGS)); 
             break;
             case SB_SCR_MEM: ssim.write_dma_from_scratch(
                 thread.getSDReg(SD_SCRATCH_ADDR),      thread.getSDReg(SD_STRIDE),

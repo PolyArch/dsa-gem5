@@ -322,7 +322,6 @@ private:
 };
 
 
-
 //.............. Streams and Controllers .................
 
 struct data_buffer_base {
@@ -407,12 +406,21 @@ class data_controller_t {
   data_controller_t(accel_t* host) {
     _accel=host;
   }
+
 protected:
   accel_t* _accel;
+  ssim_t* get_ssim();
+  bool is_shared();
   void add_bw(LOC l1, LOC l2, uint64_t times, uint64_t bytes);
 };
 
+class scratch_write_controller_t;
+class scratch_read_controller_t;
 
+class shared_bus_controller_t {
+
+
+};
 
 //Limitations: 1 simultaneously active scratch stream
 class dma_controller_t : public data_controller_t {
@@ -420,12 +428,14 @@ class dma_controller_t : public data_controller_t {
   friend class scratch_read_controller_t;
 
   public:
-
   static const int data_width=64; //data width in bytes
   //static const int data_sbdts=data_width/SBDT; //data width in bytes
   std::vector<bool> mask;
 
-  dma_controller_t(accel_t* host) : data_controller_t(host) {
+  dma_controller_t(accel_t* host,
+      scratch_read_controller_t* scr_r_c,
+      scratch_write_controller_t* scr_w_c) : 
+    data_controller_t(host), _scr_r_c(scr_r_c), _scr_w_c(scr_w_c) {
     //Setup DMA Controllers, eventually this should be configurable
     _dma_port_streams.resize(10); 
     _indirect_streams.resize(4); //indirect to port
@@ -468,10 +478,15 @@ class dma_controller_t : public data_controller_t {
   bool schedule_indirect(indirect_stream_t&s);
   bool schedule_indirect_wr(indirect_wr_stream_t&s);
 
-  int scr_buf_size() {return _scr_write_buffer.size();}
   int mem_reqs() {return _mem_read_reqs + _mem_write_reqs;}
 
+  scratch_read_controller_t*  scr_r_c() {return _scr_r_c;}
+  scratch_write_controller_t* scr_w_c() {return _scr_w_c;}
+
   private:
+
+  scratch_read_controller_t* _scr_r_c;
+  scratch_write_controller_t* _scr_w_c;
 
   void port_resp(unsigned i);
 
@@ -484,9 +499,6 @@ class dma_controller_t : public data_controller_t {
   //This ordering defines convention of checking
   std::vector<dma_port_stream_t> _dma_port_streams;  //reads
   dma_scr_stream_t _dma_scr_stream;  
-  data_buffer _scr_write_buffer;
-  data_buffer _scr_read_buffer; 
-
   std::vector<port_dma_stream_t> _port_dma_streams; //writes
 
   std::vector<indirect_stream_t> _indirect_streams; //indirect reads
@@ -499,7 +511,6 @@ class dma_controller_t : public data_controller_t {
   int _fake_scratch_reqs=0;
 
   //std::unordered_map<uint64_t, uint64_t> port_youngest_data;
-
 };
 
 //Limitation: 1 simulteanously active scratch read stream
@@ -513,9 +524,20 @@ class scratch_read_controller_t : public data_controller_t {
     _scr_port_stream.reset();
     _scr_dma_stream.reset();
     mask.resize(SCR_WIDTH/DATA_WIDTH);
+
+    if(is_shared()) {
+      _scr_scr_streams.resize(NUM_ACCEL); //reading to me
+    } else {
+      _scr_scr_streams.resize(1); //writing from me
+    }
+
+    max_src=2+_scr_scr_streams.size();
+    for(auto& i : _scr_scr_streams) {i.reset();}
   }
 
   std::vector<SBDT> read_scratch(mem_stream_base_t& stream);
+  void xfer_stream_buf(mem_stream_base_t& stream,data_buffer& buf,
+                       addr_t& addr);
   void cycle();
 
   void finish_cycle();
@@ -524,17 +546,24 @@ class scratch_read_controller_t : public data_controller_t {
 
   bool schedule_scr_port(scr_port_stream_t& s);
   bool schedule_scr_dma(scr_dma_stream_t& s);
+  bool schedule_scr_scr(scr_scr_stream_t& s);
 
   void print_status();
   void cycle_status();
 
   scr_dma_stream_t& scr_dma_stream() {return _scr_dma_stream;}
+  data_buffer _buf_dma_read; 
+  data_buffer _buf_shs_read; 
+
 
   private:
   int _which=0;
 
+  int max_src=0;
+
   scr_dma_stream_t _scr_dma_stream;
   scr_port_stream_t _scr_port_stream;
+  std::vector<scr_scr_stream_t> _scr_scr_streams;
   dma_controller_t* _dma_c;  
 };
 
@@ -547,6 +576,8 @@ class scratch_write_controller_t : public data_controller_t {
     : data_controller_t(host) {
     _dma_c=d;
     _port_scr_stream.reset();
+    _bufs.push_back(&_buf_dma_write);
+    _bufs.push_back(&_buf_shs_write);
     mask.resize(SCR_WIDTH/DATA_WIDTH);
   }
 
@@ -558,11 +589,19 @@ class scratch_write_controller_t : public data_controller_t {
   void cycle_status();
 
   bool schedule_port_scr(port_scr_stream_t& s);
+  int scr_buf_size() {return _buf_dma_write.size();}
+
+  data_buffer _buf_dma_write;
+  data_buffer _buf_shs_write; //shs: shared scratchpad
+
+  std::vector<data_buffer*> _bufs;
 
   private:
 
+  int max_src=3;
   int _which=0;
   port_scr_stream_t _port_scr_stream;
+
   dma_controller_t* _dma_c;
 };
 
@@ -786,7 +825,11 @@ public:
   }
 
   ssim_t* get_ssim() {return _ssim;}
+  bool is_shared() {return _accel_index==SHARED_SP;}
   int accel_index() {return _accel_index;}
+
+  scratch_read_controller_t*  scr_r_c() {return &_scr_r_c;}
+  scratch_write_controller_t* scr_w_c() {return &_scr_w_c;}
 
 private:
   ssim_t* _ssim;

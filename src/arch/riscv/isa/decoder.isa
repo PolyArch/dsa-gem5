@@ -528,6 +528,7 @@ decode OPCODE default Unknown::unknown() {
             0x0: sb_dma_scr({{
                 xc->setSDReg(Rs1,SD_NUM_STRIDES);
                 xc->setSDReg(Rs2,SD_SCRATCH_ADDR);
+                xc->setSDReg(s_imm,SD_FLAGS);
                 xc->callSDFunc(SB_MEM_SCR);
             }}, IsSDStream, IsNonSpeculative, No_OpClass);
             0x1: sb_scr_rd({{
@@ -545,6 +546,7 @@ decode OPCODE default Unknown::unknown() {
             0x3: sb_scr_dma({{
                 xc->setSDReg(Rs1,SD_NUM_STRIDES);
                 xc->setSDReg(Rs2,SD_SCRATCH_ADDR);
+                xc->setSDReg(s_imm,SD_FLAGS);
                 xc->callSDFunc(SB_SCR_MEM);
             }}, IsSDStream, IsNonSpeculative, No_OpClass);
             0x4: sb_const({{
