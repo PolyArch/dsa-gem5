@@ -524,9 +524,9 @@ class scratch_read_controller_t : public data_controller_t {
     mask.resize(SCR_WIDTH/DATA_WIDTH);
 
     if(is_shared()) {
-      _scr_scr_streams.resize(NUM_ACCEL); //reading to me
+      _scr_scr_streams.resize(NUM_ACCEL);
     } else {
-      _scr_scr_streams.resize(1); //writing from me
+      _scr_scr_streams.resize(1); 
     }
 
     max_src=2+_scr_scr_streams.size();
@@ -534,7 +534,7 @@ class scratch_read_controller_t : public data_controller_t {
   }
 
   std::vector<SBDT> read_scratch(mem_stream_base_t& stream);
-  void xfer_stream_buf(mem_stream_base_t& stream,data_buffer& buf,
+  bool xfer_stream_buf(mem_stream_base_t& stream,data_buffer& buf,
                        addr_t& addr);
   void cycle();
 
@@ -552,10 +552,8 @@ class scratch_read_controller_t : public data_controller_t {
   data_buffer _buf_dma_read; 
   data_buffer _buf_shs_read; 
 
-
   private:
   int _which=0;
-
   int max_src=0;
 
   scr_dma_stream_t _scr_dma_stream;
@@ -576,17 +574,27 @@ class scratch_write_controller_t : public data_controller_t {
     _bufs.push_back(&_buf_dma_write);
     _bufs.push_back(&_buf_shs_write);
     mask.resize(SCR_WIDTH/DATA_WIDTH);
+
+    if(is_shared()) {
+      _scr_scr_streams.resize(NUM_ACCEL); 
+    } else {
+      _scr_scr_streams.resize(1); 
+    }
+    for(auto& i : _scr_scr_streams) {i.reset();}
   }
 
   void cycle();
   void finish_cycle();
   bool done(bool,int);
 
+  bool schedule_scr_scr(scr_scr_stream_t& s);
+
   void print_status();
   void cycle_status();
 
   bool schedule_port_scr(port_scr_stream_t& s);
   int scr_buf_size() {return _buf_dma_write.size();}
+  bool accept_buffer(data_buffer& buf);
 
   data_buffer _buf_dma_write;
   data_buffer _buf_shs_write; //shs: shared scratchpad
@@ -598,6 +606,9 @@ class scratch_write_controller_t : public data_controller_t {
   int max_src=3;
   int _which=0;
   port_scr_stream_t _port_scr_stream;
+
+  //these streams are inert
+  std::vector<scr_scr_stream_t> _scr_scr_streams; 
 
   dma_controller_t* _dma_c;
 };
@@ -851,7 +862,6 @@ private:
   void cycle_in_interf();
   void cycle_out_interf();
   void schedule_streams();
-  void cycle_shared_busses();
   bool cgra_done(bool, int mask);
 
   bool in_roi();
@@ -955,8 +965,6 @@ private:
   port_interf_t _port_interf;
 
   bool _in_config=false;
-
-  unsigned _which_shr=0;
 
   SbModel* _sbconfig = NULL;
   Schedule* _sched   = NULL;

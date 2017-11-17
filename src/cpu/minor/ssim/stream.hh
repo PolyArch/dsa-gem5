@@ -366,17 +366,17 @@ struct scr_scr_stream_t : public mem_stream_base_t {
   }
 
   virtual void print_status() {  
-    std::cout << "scr->scr" << "\tscr=" << _scratch_addr 
+    if(_is_source) {
+      std::cout << "scr->remote_scr";
+    } else {
+      std::cout << "remote_scr->scr";
+    }
+
+    std::cout << "\tscr_addr=" << _scratch_addr 
               << "\tacc_size=" << _access_size 
               << " stride=" << _stride << " bytes_comp=" << _bytes_in_access 
               << " mem_addr=" << std::hex << _mem_addr << std::dec 
               << " strides_left=" << _num_strides;
-
-    if(_is_source) {
-      std::cout << "(source)";
-    } else {
-      std::cout << "(dest)";
-    }
 
     base_stream_t::print_status();
   }

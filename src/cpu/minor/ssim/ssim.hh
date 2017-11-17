@@ -6,7 +6,12 @@
 #include <iostream>
 #include "accel.hh"
 
-//Fix above so they don't get out of sync : )
+//Some utilities:
+template<typename T, typename S, typename R> 
+static void rolling_inc(T& which, S max, R reset) {
+  which = ((which+1)==max) ? reset : which + 1; //rolling increment
+}
+
 
 class ssim_t 
 {
@@ -77,6 +82,7 @@ public:
   void timestamp_context(); //print timestamp
 
   void step();
+  void cycle_shared_busses();
 
 
   Minor::MinorDynInstPtr cur_minst() {return _cur_minst;}
@@ -129,6 +135,8 @@ public:
   }
 
 private:
+
+  unsigned _which_shr=0;
 
   Minor::MinorDynInstPtr _cur_minst;
   uint64_t _context_bitmask=1; //core 1 active

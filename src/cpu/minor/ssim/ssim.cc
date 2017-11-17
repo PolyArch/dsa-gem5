@@ -66,10 +66,28 @@ bool ssim_t::is_in_config() {
   return in_config;
 }
 
+void ssim_t::cycle_shared_busses() {
+  //bring data int o
+  //     auto& read_buf = accel_arr[i]->_buf_shs_read;
+  int max_reqs=2;
+
+  int reqs_made=0;
+
+  for(int i = 0; (i < NUM_ACCEL) && (reqs_made < max_reqs); ++i) {
+    rolling_inc(_which_shr,NUM_ACCEL,0);
+    auto& read_buf = accel_arr[i]->_scr_r_c._buf_shs_read;
+    bool didit = shared_acc()->_scr_w_c.accept_buffer(read_buf);
+    if(didit) {
+      reqs_made+=1;
+    }
+  }
+}
+
 void ssim_t::step() {
   if(!_in_use) {
     return;
   }
+  cycle_shared_busses();
   for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
     if(_ever_used_bitmask & b) {
       accel_arr[i]->tick();     

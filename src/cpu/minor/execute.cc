@@ -1007,7 +1007,7 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
             if(cyc > 10000 + last_event) {
               DPRINTF(SD,"Instruction: %s is stalled for too long.", *inst);
               ssim.print_stats();
-              ssim.done(true,0);
+              //ssim.done(true,0);
               assert(0 && "Max SD instruction wait");
             }
           } else {
