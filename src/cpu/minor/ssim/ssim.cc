@@ -25,7 +25,6 @@ ssim_t::ssim_t(Minor::LSQ* lsq) : _lsq(lsq) {
 }
 void ssim_t::req_config(addr_t addr, int size) {
   set_in_use();
-
   for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
     if(_context_bitmask & b) {
       accel_arr[i]->req_config(addr,size);
@@ -170,16 +169,35 @@ void ssim_t::timestamp() {
   cout << std::dec << now() - _orig_stat_start_cycle << "\t";
 }
 
+void ssim_t::timestamp_index(int i) {
+  timestamp();
+  cout << "context " << i << " ";
+}
+
 void ssim_t::timestamp_context() {
   timestamp();
-  cout << "context:0x" << std::hex << _context_bitmask << "\t" << std::dec;
+  int count = __builtin_popcount(_context_bitmask);
+
+  cout << "context ";
+
+  if(count < 8) {
+    for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
+      if(_context_bitmask & b) {
+        cout << i <<" ";
+      }
+    }
+    cout << "\t";
+
+  } else {
+    cout << "context:0x" << std::hex << _context_bitmask << "\t" << std::dec;
+  }
 }
 
 
 // ----------------------- STREAM COMMANDS ------------------------------------
 void ssim_t::set_context(uint64_t context) {
   if(debug && (SB_DEBUG::SB_CONTEXT)  ) {
-    cout << "Context: " << std::hex << context << std::dec << "\n";
+    cout << "Set Context: " << std::hex << context << std::dec << "\n";
   }
 
   _context_bitmask = context;
@@ -210,16 +228,22 @@ void ssim_t::load_dma_to_scratch(addr_t mem_addr, uint64_t stride,
 }
 
 void ssim_t::write_dma_from_scratch(addr_t scratch_addr, uint64_t stride, 
-      uint64_t access_size, uint64_t num_strides, addr_t mem_addr) {
-  scr_dma_stream_t* s = new scr_dma_stream_t();
-  s->_mem_addr=scratch_addr; //don't worry this is correct
-  s->_dest_addr=mem_addr;    //... this too
-  s->_num_strides=num_strides;
-  s->_stride=stride;
-  s->_access_size=access_size;
-  s->set_orig();
+      uint64_t access_size, uint64_t num_strides, addr_t mem_addr, uint64_t flags) {
 
-  add_bitmask_stream(s);
+  if(flags) {
+    auto* S = new scr_scr_stream_t(scratch_addr, stride, access_size, 0,
+               num_strides, mem_addr,true);
+    auto* R = new scr_scr_stream_t(scratch_addr, stride, access_size, 0,
+               num_strides, mem_addr, false);
+    S->set_remote(R, SHARED_MASK); // tie together <3
+    R->set_remote(S, _context_bitmask);
+
+    add_bitmask_stream(S); // send scratch load to shared accel
+    add_bitmask_stream(R, SHARED_MASK);
+  } else {scr_dma_stream_t* s = new scr_dma_stream_t(scratch_addr,stride,access_size,
+      num_strides,mem_addr);
+    add_bitmask_stream(s);
+  }
 }
 
 void ssim_t::load_dma_to_port(addr_t mem_addr,

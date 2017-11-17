@@ -210,7 +210,8 @@ public:
     //as well -- NOT GOOD.   Don't switch often the repeat size, especially
     //streams comming from memory!  (if this is required, add new h/w mechanism)
     if(_repeat != repeat) { 
-      return !in_use() && mem_size()==0 && _cgra_data[0].size()==0;
+      return !in_use() && mem_size()==0 && (_cgra_data.size()==0 || 
+                                            _cgra_data[0].size()==0);
     }
     return (_status == STATUS::FREE) || 
            (_status == STATUS::COMPLETE && _loc == loc);
@@ -411,16 +412,13 @@ protected:
   accel_t* _accel;
   ssim_t* get_ssim();
   bool is_shared();
+  void timestamp();
   void add_bw(LOC l1, LOC l2, uint64_t times, uint64_t bytes);
 };
 
 class scratch_write_controller_t;
 class scratch_read_controller_t;
 
-class shared_bus_controller_t {
-
-
-};
 
 //Limitations: 1 simultaneously active scratch stream
 class dma_controller_t : public data_controller_t {
@@ -542,7 +540,6 @@ class scratch_read_controller_t : public data_controller_t {
 
   void finish_cycle();
   bool done(bool,int);
-
 
   bool schedule_scr_port(scr_port_stream_t& s);
   bool schedule_scr_dma(scr_dma_stream_t& s);
@@ -854,6 +851,7 @@ private:
   void cycle_in_interf();
   void cycle_out_interf();
   void schedule_streams();
+  void cycle_shared_busses();
   bool cgra_done(bool, int mask);
 
   bool in_roi();
@@ -957,6 +955,8 @@ private:
   port_interf_t _port_interf;
 
   bool _in_config=false;
+
+  unsigned _which_shr=0;
 
   SbModel* _sbconfig = NULL;
   Schedule* _sched   = NULL;

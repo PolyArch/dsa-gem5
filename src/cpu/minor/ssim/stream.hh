@@ -387,6 +387,17 @@ struct scr_scr_stream_t : public mem_stream_base_t {
 struct scr_dma_stream_t : public mem_stream_base_t {
   addr_t _dest_addr; //current dest addr
 
+  scr_dma_stream_t() {}
+  scr_dma_stream_t(addr_t scr_addr, uint64_t stride, uint64_t access_size, 
+                  uint64_t num_strides, addr_t mem_addr) {
+    _mem_addr   =scr_addr; //don't worry this is correct
+    _dest_addr  =mem_addr;    //... this too
+    _num_strides=num_strides;
+    _stride     =stride;
+    _access_size=access_size;
+    set_orig();
+  }
+
   //NOTE/WEIRD/DONOTCHANGE: 
   uint64_t mem_addr()    {return _mem_addr;}  //referse to memory addr
   uint64_t access_size() {return _access_size;}  
@@ -628,7 +639,8 @@ struct port_port_stream_t : public base_stream_t {
 
   virtual void print_status() {  
     std::cout << "port->port" << "\tout_port=" << _out_port
-              << "\tin_port:" << _in_port  << " elem_left=" << _num_elements;
+              << "\tin_port:" << _in_port  << "\trepeat:" << _repeat_in
+              << " elem_left=" << _num_elements;
     base_stream_t::print_status();
   }
 };
@@ -680,10 +692,12 @@ struct remote_port_stream_t : public port_port_stream_t {
       std::cout << "port->remote";
     } else {
       std::cout << "remote->port";
+      if(_is_ready) { std::cout << " (source is ready)";}
+      else { std::cout << " (source NOT ready)";}
     }
     std::cout << "\tout_port=" << _out_port
               << "\tin_port:" << _in_port  
-              << "\tdir:" << _which_core
+              << "\tdir:" << _which_core << "\trepeat:" << _repeat_in
               << "\telem_left=" << _num_elements;
 
     base_stream_t::print_status();

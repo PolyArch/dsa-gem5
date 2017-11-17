@@ -28,7 +28,7 @@ public:
   void load_dma_to_scratch(addr_t mem_addr, uint64_t stride, uint64_t acc_size,
       int stretch, uint64_t num_strides, addr_t scratch_addr, uint64_t flags);
   void write_dma_from_scratch(addr_t scratch_addr, uint64_t stride, 
-      uint64_t access_size, uint64_t num_strides, addr_t mem_addr); 
+      uint64_t access_size, uint64_t num_strides, addr_t mem_addr, uint64_t flags); 
   void load_dma_to_port(addr_t mem_addr, uint64_t stride, 
       uint64_t access_size, int stretch, uint64_t num_strides, int port, int repeat_in);
   void load_scratch_to_port(addr_t scratch_addr, uint64_t stride, 
@@ -73,6 +73,7 @@ public:
   void roi_entry(bool enter);
 
   void timestamp(); //print timestamp
+  void timestamp_index(int i); //print timestamp
   void timestamp_context(); //print timestamp
 
   void step();

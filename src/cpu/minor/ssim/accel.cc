@@ -10,6 +10,13 @@
 
 using namespace std;
 
+//Some utilities:
+template<typename T, typename S, typename R> 
+static void rolling_inc(T& which, S max, R reset) {
+  which = ((which+1)==max) ? reset : which + 1; //rolling increment
+}
+
+
 Minor::MinorDynInstPtr accel_t::cur_minst() {
   return _ssim->cur_minst();
 }
@@ -261,11 +268,11 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
   scratchpad.resize(SCRATCH_SIZE);
 }
 
-
 void accel_t::timestamp() {
   _ssim->timestamp();
-  cout << "Acc" <<  _accel_index << ": ";
+  cout << "context " <<  _accel_index << " ";
 }
+
 bool accel_t::in_use() { return _ssim->in_use();}
 bool accel_t::can_add_stream() {
    _ssim->set_in_use();
@@ -279,6 +286,7 @@ bool accel_t::in_roi() {
 
 void accel_t::tick() {
   _dma_c.cycle();
+  cycle_shared_busses();
   _scr_r_c.cycle();
   _scr_w_c.cycle();
   _port_c.cycle();
@@ -299,6 +307,13 @@ void accel_t::tick() {
     }
   }
 
+}
+
+void accel_t::cycle_shared_busses() {
+  for(int i = 0; i < NUM_ACCEL; ++i) {
+     rolling_inc(_which_shr,NUM_ACCEL,0);
+
+  }
 }
 
 void accel_t::cycle_in_interf() {
@@ -480,7 +495,7 @@ void accel_t::execute_pdg(unsigned instance) {
 // Buffer Sizes                                     |      Bus Activity
 // ip 1:5 2:5 7:7; op 1:2 scr_wr:1 cq:1 mem_req:14  | ip: op: scr_rd: scr_wr:   mr: mw: 
 void accel_t::cycle_status() {
-  _ssim->timestamp();
+  timestamp();
   cout << "cq " << _in_port_queue.size() 
                 << "," <<_scr_dma_queue.size() << "," <<_dma_scr_queue.size()<<" ";
 
@@ -1017,7 +1032,7 @@ void accel_t::schedule_streams() {
     if(scheduled_in || scheduled_out || scheduled_other) {
       str_issued++;
       if(SB_DEBUG::SB_COMMAND_I) {
-        _ssim->timestamp();
+        timestamp();
         cout << " ISSUED:";
         ip->print_status();
       }
@@ -1043,7 +1058,7 @@ void accel_t::schedule_streams() {
     bool scheduled_dma_scr = _dma_c.schedule_dma_scr(*_dma_scr_queue.front());
     if(scheduled_dma_scr) {
       if(SB_DEBUG::SB_COMMAND_I) {
-        _ssim->timestamp();
+        timestamp();
         cout << " ISSUED:";
         _dma_scr_queue.front()->print_status();
       }
@@ -1060,7 +1075,7 @@ void accel_t::schedule_streams() {
     bool scheduled_scr_dma = _scr_r_c.schedule_scr_dma(*_scr_dma_queue.front());
     if(scheduled_scr_dma) {
       if(SB_DEBUG::SB_COMMAND_I) {
-        _ssim->timestamp();
+        timestamp();
         cout << " ISSUED:";
         _scr_dma_queue.front()->print_status();
       }
@@ -1084,6 +1099,10 @@ ssim_t* data_controller_t::get_ssim() {
 
 bool data_controller_t::is_shared() {
   return _accel->is_shared();
+}
+
+void data_controller_t::timestamp() {
+  _accel->timestamp();
 }
 
 
@@ -1244,7 +1263,7 @@ void dma_controller_t::port_resp(unsigned cur_port) {
         bool last = response->sdInfo->last;
 
         if(SB_DEBUG::MEM_REQ) {
-          _accel->_ssim->timestamp();
+          _accel->timestamp();
           std::cout << "response for " << std::hex << packet->getAddr() << std::dec
                     << "for port " << cur_port << ", size: " 
                     << data.size() << " elements" << (last ? "(last)" : "") << "\n";
@@ -1300,7 +1319,7 @@ void dma_controller_t::port_resp(unsigned cur_port) {
 
         if(_scr_w_c->_buf_dma_write.push_data(response->sdInfo->scr_addr, data)) {
           if(SB_DEBUG::MEM_REQ) {
-            _accel->_ssim->timestamp();
+            _accel->timestamp();
             std::cout << "data into scratch " << response->sdInfo->scr_addr 
                       << ":" << data.size() << "elements, ctx=" "\n";
           }
@@ -1343,7 +1362,7 @@ void dma_controller_t::cycle(){
 
       if(_scr_w_c->_buf_dma_write.push_data(response->sdInfo->scr_addr, data)) {
         if(SB_DEBUG::MEM_REQ) {
-          _accel->_ssim->timestamp();
+          _accel->timestamp();
           std::cout << "data into scratch " << response->sdInfo->scr_addr 
                     << ":" << data.size() << "elements" << "\n";
         }
@@ -1541,7 +1560,7 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
                     bytes_written, init_addr, 0/*flags*/, 0 /*res*/, sdInfo);
       
         if(SB_DEBUG::MEM_REQ) {
-          _accel->_ssim->timestamp();
+          _accel->timestamp();
           cout << bytes_written << "-byte write request for scr->dma\n";
         }
         return;
@@ -1608,7 +1627,7 @@ int dma_controller_t::req_read(mem_stream_base_t& stream,
  
 
   if(SB_DEBUG::MEM_REQ) {
-    _accel->_ssim->timestamp();
+    _accel->timestamp();
       std::cout << "request for " << std::hex << base_addr << std::dec
                     << " for " << words << " needed elements" << "\n";
   }
@@ -1650,7 +1669,7 @@ void dma_controller_t::ind_read_req(indirect_stream_t& stream,
     imap.push_back(index);
 
     if(SB_DEBUG::MEM_REQ) {
-      _accel->_ssim->timestamp();
+      _accel->timestamp();
       std::cout << "indirect request for " << std::hex << base_addr << std::dec
                     << " for " << imap.size() << " needed elements" << "\n";
     }
@@ -1822,7 +1841,7 @@ void dma_controller_t::req_write(port_dma_stream_t& stream, port_data_t& vp) {
 
 
   if(SB_DEBUG::MEM_REQ) {
-    _accel->_ssim->timestamp();
+    _accel->timestamp();
     cout << bytes_written << "-byte write request for port->dma, addr:"
          << std::hex << init_addr <<", data:";
     for(int i = 0; i < elem_written; ++i) {
@@ -1872,7 +1891,7 @@ vector<SBDT> scratch_read_controller_t::read_scratch(
   addr_t max_addr = base_addr+SCR_WIDTH;
 
   if(SB_DEBUG::SCR_BARRIER) {
-    _accel->_ssim->timestamp();
+    _accel->timestamp();
     cout << "scr_rd " << hex << addr << " -> " << max_addr << "\n";
   }
 
@@ -2073,7 +2092,7 @@ void scratch_write_controller_t::cycle() {
         addr_t max_addr = base_addr+SCR_WIDTH;
 
         if(SB_DEBUG::SCR_BARRIER) {
-          _accel->_ssim->timestamp();
+          _accel->timestamp();
           cout << "scr_wr " << hex << addr << " -> " << max_addr << "\n";
         }
 
@@ -2261,7 +2280,7 @@ bool accel_t::done(bool show,int mask) {
   if(show) return d;
 
   if(SB_DEBUG::SB_WAIT) {
-    _ssim->timestamp();
+    timestamp();
     if(d) {
       cout << "Done Check -- Done (" << mask << ")\n";
     } else {
@@ -2387,7 +2406,7 @@ bool scratch_write_controller_t::done(bool show, int mask) {
   if(mask==0 || mask&WAIT_CMP || mask&WAIT_SCR_WR) {
     if(!_buf_dma_write.empty_buffer() || !_buf_shs_write.empty_buffer() ) {
       if(show) {
-        _accel->_ssim->timestamp();
+        _accel->timestamp();
         cout << "One of SCR Write Buffers Not Empty\n";
       }
       return false;
@@ -2503,7 +2522,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
   //size - num of 64bit slices
 
   if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SCR_BARRIER)  ) {
-    _ssim->timestamp();
+    timestamp();
     cout << "SB_CONFIGURE(response): " << "0x" << std::hex << addr << " " 
                                        << std::dec << size << "\n";
     //for(int i = 0; i < size/8; ++i) {
