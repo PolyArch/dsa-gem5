@@ -266,7 +266,7 @@ void ssim_t::write_dma_from_scratch(addr_t scratch_addr, uint64_t stride,
 
 void ssim_t::load_dma_to_port(addr_t mem_addr,
      uint64_t stride, uint64_t access_size, int stretch, uint64_t num_strides,
-     int in_port, int repeat) {
+     int in_port, int repeat, int repeat_str) {
   dma_port_stream_t* s = new dma_port_stream_t();
   s->_mem_addr=mem_addr;
   s->_num_strides=num_strides;
@@ -275,6 +275,8 @@ void ssim_t::load_dma_to_port(addr_t mem_addr,
   s->_stretch=stretch;
   s->_in_port=in_port;
   s->_repeat_in=repeat;
+  s->_repeat_str=repeat_str;
+
   s->set_orig();
 
   add_bitmask_stream(s);
@@ -298,7 +300,7 @@ void ssim_t::write_dma(uint64_t garb_elem, int out_port,
 
 void ssim_t::load_scratch_to_port(addr_t scratch_addr,
   uint64_t stride, uint64_t access_size, int stretch, uint64_t num_strides,
-  int in_port, int repeat) {
+  int in_port, int repeat, int repeat_str) {
   scr_port_stream_t* s = new scr_port_stream_t();
   s->_mem_addr=scratch_addr; //NOTE: Here _mem_addr *is* the scratchpad address
   s->_num_strides=num_strides;
@@ -307,6 +309,7 @@ void ssim_t::load_scratch_to_port(addr_t scratch_addr,
   s->_stretch=stretch;
   s->_in_port=in_port;
   s->_repeat_in=repeat;
+  s->_repeat_str=repeat_str;
   s->set_orig();
 
   //_outstanding_scr_read_streams++;
@@ -327,19 +330,19 @@ void ssim_t::write_scratchpad(int out_port,
 }
 
 //The reroute function handles either local recurrence, or remote data transfer
-void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem, int repeat, 
-                     uint64_t flags) {
+void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem, 
+                     int repeat, int repeat_str, uint64_t flags) {
   base_stream_t* s=NULL, *r=NULL;
-
 
   int core_d = (flags==1) ? -1 : 1;
 
-
   if(flags == 0) {
-    s = new port_port_stream_t(out_port,in_port,num_elem,repeat);
+    s = new port_port_stream_t(out_port,in_port,num_elem,repeat,repeat_str);
   } else {
-    auto S = new remote_port_stream_t(out_port,in_port,num_elem,repeat,core_d,true);
-    auto R = new remote_port_stream_t(out_port,in_port,num_elem,repeat,core_d,false);
+    auto S = new remote_port_stream_t(out_port,in_port,num_elem,
+        repeat,repeat_str,core_d,true);
+    auto R = new remote_port_stream_t(out_port,in_port,num_elem,
+        repeat,repeat_str,core_d,false);
     S->_remote_stream=R; // tie together <3
     R->_remote_stream=S;
     s=S;
@@ -365,7 +368,7 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem, int repeat,
 
 //Configure an indirect stream with params
 void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
-    uint64_t num_elem, int repeat) {
+    uint64_t num_elem, int repeat, int repeat_str) {
   indirect_stream_t* s = new indirect_stream_t();
   s->_ind_port=ind_port;
   s->_type=ind_type;
@@ -374,6 +377,8 @@ void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr
   s->_index_in_word=0;
   s->_num_elements=num_elem;
   s->_repeat_in=repeat;
+  s->_repeat_str=repeat_str;
+
   s->set_orig();
 
   add_bitmask_stream(s);

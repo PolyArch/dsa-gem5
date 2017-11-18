@@ -401,13 +401,13 @@ class ExecContext : public ::ExecContext
                 thread.getSDReg(SD_MEM_ADDR),      thread.getSDReg(SD_STRIDE),
                 thread.getSDReg(SD_ACCESS_SIZE),   thread.getSDReg(SD_CONSTANT), 
                 thread.getSDReg(SD_NUM_STRIDES),   thread.getSDReg(SD_IN_PORT),       
-                thread.getSDReg(SD_REPEAT));      
+                thread.getSDReg(SD_REPEAT), thread.getSDReg(SD_REPEAT_STRETCH));      
             break;
             case SB_SCR_PRT: ssim.load_scratch_to_port(
                 thread.getSDReg(SD_SCRATCH_ADDR), thread.getSDReg(SD_STRIDE),
                 thread.getSDReg(SD_ACCESS_SIZE),  thread.getSDReg(SD_CONSTANT),   
                 thread.getSDReg(SD_NUM_STRIDES),  thread.getSDReg(SD_IN_PORT),
-                thread.getSDReg(SD_REPEAT));
+                thread.getSDReg(SD_REPEAT), thread.getSDReg(SD_REPEAT_STRETCH));
             break;
             case SB_PRT_SCR: ssim.write_scratchpad(
                 thread.getSDReg(SD_OUT_PORT), thread.getSDReg(SD_SCRATCH_ADDR),  
@@ -422,13 +422,15 @@ class ExecContext : public ::ExecContext
             break;
             case SB_PRT_PRT: ssim.reroute(
                 thread.getSDReg(SD_OUT_PORT),      thread.getSDReg(SD_IN_PORT),
-                thread.getSDReg(SD_NUM_ELEM),      thread.getSDReg(SD_REPEAT),
+                thread.getSDReg(SD_NUM_ELEM),      thread.getSDReg(SD_REPEAT), 
+                thread.getSDReg(SD_REPEAT_STRETCH),
                 thread.getSDReg(SD_FLAGS));     
             break;
             case SB_IND_PRT: ssim.indirect(
                 thread.getSDReg(SD_IND_PORT),      thread.getSDReg(SD_IND_TYPE),
                 thread.getSDReg(SD_IN_PORT),       thread.getSDReg(SD_INDEX_ADDR),
-                thread.getSDReg(SD_NUM_ELEM),      thread.getSDReg(SD_REPEAT));
+                thread.getSDReg(SD_NUM_ELEM),      thread.getSDReg(SD_REPEAT),
+                thread.getSDReg(SD_REPEAT_STRETCH));
             break;
             case SB_PRT_IND: ssim.indirect_write(
                 thread.getSDReg(SD_IN_PORT),       thread.getSDReg(SD_IND_TYPE),
@@ -457,6 +459,7 @@ class ExecContext : public ::ExecContext
         }
         //RESET REPEAT to 1 -- since this is by far the most common case
         setSDReg(1,SD_REPEAT);
+        setSDReg(0,SD_REPEAT_STRETCH);
     }
 #endif
 

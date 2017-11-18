@@ -35,19 +35,20 @@ public:
   void write_dma_from_scratch(addr_t scratch_addr, uint64_t stride, 
       uint64_t access_size, uint64_t num_strides, addr_t mem_addr, uint64_t flags); 
   void load_dma_to_port(addr_t mem_addr, uint64_t stride, 
-      uint64_t access_size, int stretch, uint64_t num_strides, int port, int repeat_in);
+      uint64_t access_size, int stretch, uint64_t num_strides, 
+      int port, int repeat_in, int repeat_str);
   void load_scratch_to_port(addr_t scratch_addr, uint64_t stride, 
                             uint64_t access_size, int stretch, uint64_t num_strides, 
-                            int in_port, int repeat_in); 
+                            int in_port, int repeat_in, int repeat_str); 
   void write_scratchpad(int out_port, addr_t scratch_addr, 
                         uint64_t num_bytes, uint64_t shift_bytes); 
   void write_dma(uint64_t garb_elem, 
       int out_port, uint64_t stride, uint64_t access_size, 
       uint64_t num_strides, addr_t mem_addr, int shift_bytes, int garbage);
   void reroute(int out_port, int in_port, uint64_t num_elem, 
-               int repeat, uint64_t flags);
+               int repeat, int repeat_str,  uint64_t flags);
   void indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
-    uint64_t num_elem, int repeat);
+    uint64_t num_elem, int repeat, int repeat_str);
   void indirect_write(int ind_port, int ind_type, int out_port, 
     addr_t index_addr, uint64_t num_elem);
   bool can_receive(int out_port);

@@ -204,12 +204,12 @@ public:
 
   }
 
-  bool can_take(LOC loc, int repeat=1) {
+  bool can_take(LOC loc, int repeat=1, int repeat_stretch=0) {
     //This makes sure the input port is fully drained before sending the next 
     //stream. This causes ~1-2 cycles of pipeline bubble + memory access time 
     //as well -- NOT GOOD.   Don't switch often the repeat size, especially
     //streams comming from memory!  (if this is required, add new h/w mechanism)
-    if(_repeat != repeat) { 
+    if(_repeat != repeat || _repeat_stretch != repeat_stretch) { 
       return !in_use() && mem_size()==0 && (_cgra_data.size()==0 || 
                                             _cgra_data[0].size()==0);
     }
@@ -247,26 +247,18 @@ public:
 
   int repeat() {return _repeat;}
 
-  void set_repeat(int r) {
-    _repeat=r;
-  }
+  void set_repeat(int r, int rs);
   
   //returns true if wrapped
-  bool inc_repeated() {
-    _num_times_repeated+=1;
-    if(_repeat==_num_times_repeated) {
-      _num_times_repeated=0;
-    }
-    return _num_times_repeated==0;
-  }
-
+  bool inc_repeated();
 
   uint64_t total_pushed() { return _total_pushed; }
 
 private:
   //Programmable Repeat:
-  uint64_t _repeat=1;
-  uint64_t _num_times_repeated=0;
+  uint64_t _repeat=1, _repeat_stretch=0;
+  int64_t _cur_repeat_lim=1;
+  int64_t _num_times_repeated=0;
 
   // cgra_port: vec_loc(offset)
   // 23: 1, 2   24: 3, 4
@@ -519,7 +511,6 @@ class scratch_read_controller_t : public data_controller_t {
   scratch_read_controller_t(accel_t* host, dma_controller_t* d) 
     : data_controller_t(host) {
     _dma_c=d; //save this for later
-    _scr_port_stream.reset();
     _scr_dma_stream.reset();
     mask.resize(SCR_WIDTH/DATA_WIDTH);
 
@@ -528,9 +519,11 @@ class scratch_read_controller_t : public data_controller_t {
     } else {
       _scr_scr_streams.resize(1); 
     }
+    _scr_port_streams.resize(4);
 
-    max_src=2+_scr_scr_streams.size();
+    max_src=1+_scr_port_streams.size() + _scr_scr_streams.size();
     for(auto& i : _scr_scr_streams) {i.reset();}
+    for(auto& i : _scr_port_streams) {i.reset();}
   }
 
   std::vector<SBDT> read_scratch(mem_stream_base_t& stream);
@@ -557,7 +550,7 @@ class scratch_read_controller_t : public data_controller_t {
   int max_src=0;
 
   scr_dma_stream_t _scr_dma_stream;
-  scr_port_stream_t _scr_port_stream;
+  std::vector<scr_port_stream_t> _scr_port_streams;
   std::vector<scr_scr_stream_t> _scr_scr_streams;
   dma_controller_t* _dma_c;  
 };

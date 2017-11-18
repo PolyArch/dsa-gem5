@@ -89,7 +89,9 @@ struct base_stream_t {
   virtual uint64_t wait_mask()   {return 0;} 
   virtual uint64_t shift_bytes() {return 0;} 
 
-  virtual int repeat_in()   {return 1;}  //intentional
+  virtual int repeat_in()   {return 1;}  
+  virtual int repeat_str()   {return 0;}  
+
 
 
   virtual uint64_t data_volume() {return 0;} 
@@ -231,9 +233,10 @@ struct mem_stream_base_t : public base_stream_t {
 //.........STREAM DEFINITION.........
 struct dma_port_stream_t : public mem_stream_base_t {
   int _in_port;           //source or destination port
-  int _repeat_in;
+  int _repeat_in=1, _repeat_str=0;
 
   virtual int repeat_in() {return _repeat_in;}
+  virtual int repeat_str() {return _repeat_str;}
 
   uint64_t mem_addr()    {return _mem_addr;}  
   uint64_t access_size() {return _access_size;}  
@@ -248,7 +251,7 @@ struct dma_port_stream_t : public mem_stream_base_t {
   virtual int ivp_dest() {return _in_port;}
 
   virtual bool stream_active() {
-    return mem_stream_base_t::stream_active() && _repeat_in!=0;
+    return mem_stream_base_t::stream_active();
   }
 
   virtual void print_status() {  
@@ -423,9 +426,10 @@ struct scr_dma_stream_t : public mem_stream_base_t {
 //4. Scratch->Port     
 struct scr_port_stream_t : public mem_stream_base_t {
   int _in_port;
-  int _repeat_in;
+  int _repeat_in=1, _repeat_str=0;
 
   virtual int repeat_in() {return _repeat_in;}
+  virtual int repeat_str() {return _repeat_str;}
 
   uint64_t mem_addr()    {return _mem_addr;}  
   uint64_t access_size() {return _access_size;}  
@@ -441,7 +445,7 @@ struct scr_port_stream_t : public mem_stream_base_t {
   virtual int ivp_dest() {return _in_port;}
 
   virtual bool stream_active() {
-    return mem_stream_base_t::stream_active() && _repeat_in!=0;
+    return mem_stream_base_t::stream_active();
   }
 
   virtual void print_status() {  
@@ -458,9 +462,11 @@ struct scr_port_base_t : public base_stream_t {
   addr_t _scratch_addr; // CURRENT address
   addr_t _num_bytes=0;  // CURRENT bytes left
   addr_t _orig_bytes=0;  // bytes left
-  int _repeat_in;
+  int _repeat_in=1, _repeat_str=0;
 
   virtual int repeat_in() {return _repeat_in;}
+  virtual int repeat_str() {return _repeat_str;}
+
 
   virtual uint64_t scratch_addr(){return _scratch_addr;} 
   virtual uint64_t num_bytes()   {return _num_bytes;} 
@@ -598,16 +604,20 @@ struct port_port_stream_t : public base_stream_t {
   }
 
   port_port_stream_t(int out_port, int in_port, 
-                     uint64_t num_elem, int repeat) { 
+                     uint64_t num_elem, int repeat, int repeat_str) { 
     _out_port=out_port;
     _in_port=in_port;
     _num_elements=num_elem;
     _repeat_in=repeat;
+    _repeat_str=repeat_str;
     set_orig();
   }
 
   int _in_port;
-  int _repeat_in;
+  int _repeat_in=1, _repeat_str=0;
+
+  virtual int repeat_in() {return _repeat_in;}
+  virtual int repeat_str() {return _repeat_str;}
 
   int _out_port;
   addr_t _num_elements=0;
@@ -625,13 +635,12 @@ struct port_port_stream_t : public base_stream_t {
   uint64_t num_strides() {return _num_elements;} 
 
   virtual int ivp_dest()  {return _in_port;}
-  virtual int repeat_in() {return _repeat_in;}
 
   virtual LOC src() {return LOC::PORT;}
   virtual LOC dest() {return LOC::PORT;}
 
   virtual bool stream_active() {
-    return _num_elements!=0 && _repeat_in!=0;
+    return _num_elements!=0;
   }
 
   virtual void cycle_status() {
@@ -654,8 +663,9 @@ struct remote_port_stream_t : public port_port_stream_t {
 
   //core describes relative core position (-1 or left, +1 for right)
   remote_port_stream_t(int out_port, int in_port, uint64_t num_elem, 
-                       int repeat, int core, bool is_source) : 
-                       port_port_stream_t(out_port,in_port,num_elem,repeat) {
+                       int repeat, int repeat_str, int core, bool is_source) : 
+                       port_port_stream_t(out_port,in_port,num_elem,
+                           repeat,repeat_str) {
     _is_source = is_source;
     _which_core = core;
     _is_ready=false;
@@ -781,9 +791,10 @@ struct indirect_base_stream_t : public base_stream_t {
 //Indirect Read Port -> Port 
 struct indirect_stream_t : public indirect_base_stream_t {
   int _in_port;
-  int _repeat_in;
+  int _repeat_in=1, _repeat_str=0;
 
   virtual int repeat_in() {return _repeat_in;}
+  virtual int repeat_str() {return _repeat_str;}
 
   uint64_t ind_port()     {return _ind_port;} 
   uint64_t ind_type()     {return _type;} 
@@ -800,7 +811,7 @@ struct indirect_stream_t : public indirect_base_stream_t {
     base_stream_t::print_status();
   }
   virtual bool stream_active() {
-    return indirect_base_stream_t::stream_active() && _repeat_in!=0;
+    return indirect_base_stream_t::stream_active();
   }
 
 };
