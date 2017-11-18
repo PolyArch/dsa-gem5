@@ -563,17 +563,19 @@ class scratch_write_controller_t : public data_controller_t {
   scratch_write_controller_t(accel_t* host, dma_controller_t* d) 
     : data_controller_t(host) {
     _dma_c=d;
-    _port_scr_stream.reset();
     _bufs.push_back(&_buf_dma_write);
     _bufs.push_back(&_buf_shs_write);
     mask.resize(SCR_WIDTH/DATA_WIDTH);
+    _port_scr_streams.resize(4); 
 
+    max_src=_port_scr_streams.size()+2;
     if(is_shared()) {
       _scr_scr_streams.resize(NUM_ACCEL); 
     } else {
       _scr_scr_streams.resize(1); 
     }
     for(auto& i : _scr_scr_streams) {i.reset();}
+    for(auto& i : _port_scr_streams) {i.reset();}
   }
 
   void cycle();
@@ -598,10 +600,10 @@ class scratch_write_controller_t : public data_controller_t {
 
   int max_src=3;
   int _which=0;
-  port_scr_stream_t _port_scr_stream;
 
   //these streams are inert
   std::vector<scr_scr_stream_t> _scr_scr_streams; 
+  std::vector<port_scr_stream_t> _port_scr_streams; 
 
   dma_controller_t* _dma_c;
 };

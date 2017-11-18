@@ -1225,9 +1225,11 @@ bool scratch_write_controller_t::schedule_scr_scr(scr_scr_stream_t& new_s) {
 }
 
 bool scratch_write_controller_t::schedule_port_scr(port_scr_stream_t& new_s) {
-  if(_port_scr_stream.empty()) {
-    _port_scr_stream=new_s;
-    return true;
+  for(auto& s : _port_scr_streams) {
+    if(s.empty()) {
+      s=new_s; //copy the values
+      return true;
+    }
   }
   return false;
 }
@@ -2098,11 +2100,13 @@ void scratch_write_controller_t::cycle() {
   for(int i=0; i < max_src; ++i) {
     _which=(_which+1==max_src)?0:_which+1;
 
-    if(_which==0) {
-      //write from port
-      if(_port_scr_stream.stream_active()) {
+    if(_which<_port_scr_streams.size()) {
+      int ind = _which;
+      auto& stream = _port_scr_streams[ind];
 
-        auto& stream = _port_scr_stream; //
+      //write from port
+      if(stream.stream_active()) {
+
         port_data_t& out_vp = _accel->port_interf().out_port(stream._out_port);
 
         if(out_vp.mem_size() > 0) {
@@ -2144,9 +2148,11 @@ void scratch_write_controller_t::cycle() {
           break;
         }
       }
+
     } else {
 
-      int buf_index = _which-1; // one for scr->port
+      int buf_index = _which-_port_scr_streams.size(); 
+
       data_buffer& buf = *_bufs[buf_index];
       addr_t addr = buf.dest_addr();
 
@@ -2193,9 +2199,7 @@ void scratch_write_controller_t::finish_cycle() {
 }
 
 void scratch_write_controller_t::print_status() {
-  if(!_port_scr_stream.empty()){ 
-    _port_scr_stream.print_status();
-  }
+  for(auto& i : _port_scr_streams) {if(!i.empty()){i.print_status();}}
 }
 
 
@@ -2502,12 +2506,14 @@ bool scratch_write_controller_t::done(bool show, int mask) {
 
 
   if(mask==0 || mask&WAIT_CMP || mask&WAIT_SCR_WR) {
-    if(!_port_scr_stream.empty()) {
-      if(show) {
-        cout << "PORT -> SCR Stream Not Empty\n";
+    for(auto& i : _port_scr_streams) {
+      if(!i.empty()) { 
+        if(show) {
+          cout << "PRT -> SCR Stream Not Empty\n";
+        }
+        return false;
       }
-      return false;
-    }
+    } 
   }
   for(auto& i : _scr_scr_streams) {
     if(!i.empty()) { 
