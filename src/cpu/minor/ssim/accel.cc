@@ -324,6 +324,8 @@ bool accel_t::can_receive(int out_port) {
 uint64_t accel_t::receive(int out_port) {
    port_data_t& out_vp = port_interf().out_port(out_port);
    SBDT val = out_vp.pop_data(); 
+   //timestamp(); cout << "POPPED b/c receive WRITE " << out_vp.port() <<" " << out_vp.mem_size() <<  "\n";
+
    return val;
 }
 
@@ -337,6 +339,9 @@ void accel_t::cycle_cgra() {
   for(unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
     int cur_port = _soft_config.in_ports_active[i];
     min_ready = std::min(_port_interf.in_port(cur_port).num_ready(), min_ready);
+    //if(min_ready==0 && _accel_index==0) {
+    //  timestamp(); cout << "Port " << cur_port << "not ready\n";
+    //}
   }
 
   //Now fire on all cgra ports
@@ -361,6 +366,7 @@ void accel_t::cycle_cgra() {
   if(!_cgra_output_ready.empty()) {
     auto iter =  _cgra_output_ready.begin();
     if(cur_cycle >= iter->first) {
+
       for(auto& out_port_num : iter->second) {
         _port_interf.out_port(out_port_num).set_out_complete();
       }
@@ -373,6 +379,8 @@ void accel_t::execute_pdg(unsigned instance) {
   if(SB_DEBUG::SB_COMP) {
     std::cout << "inputs: ";
   }
+
+  //timestamp(); cout << " EXECUTE ACCEL " << accel_index() << "\n";
 
   //send each fifo's data to corresponding pdg input
   for(unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
@@ -462,6 +470,7 @@ void accel_t::execute_pdg(unsigned instance) {
       cur_out_port.set_in_flight();
       int lat = _soft_config.out_ports_lat[pnum];
       _cgra_output_ready[cur_cycle + lat].push_back(pnum);
+      //cout << "INSERT INTO DELAY BUFFER" << _cgra_output_ready.size() << "\n"; 
     }
   }
 
@@ -1524,6 +1533,8 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
           } else { //it's garbage
             while(dma_s.stream_active() && out_port.mem_size()>0) {
               out_port.pop_data();//get rid of data
+              //timestamp(); cout << "POPPED b/c port->dma " << out_port.port() << " " << out_port.mem_size() << "\n";
+
               dma_s.pop_addr(); //get rid of addr
             }
           } 
@@ -1754,9 +1765,11 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
 
     //_accel->st_mem(addr,val,mem_cycle,stream.minst());
     out_vp.pop_data();
+    //timestamp(); cout << "POPPED b/c INDIRECT WRITE: " << out_vp.port() << "\n";
     bytes_written+=sizeof(SBDT);
 
     out_vp.pop_data();
+    //timestamp(); cout << "POPPED b/c INDIRECT WRITE: " << out_vp.port() << "\n";
     bytes_written+=sizeof(SBDT);
 
     stream.pop_elem();
@@ -1831,6 +1844,8 @@ void dma_controller_t::req_write(port_dma_stream_t& stream, port_data_t& vp) {
       data64[elem_written++]=val;
     }
     vp.pop_data(); //pop the one we peeked
+    //timestamp(); cout << "POPPED b/c Mem Write: " << vp.port() << " " << vp.mem_size() << "\n";
+
     prev_addr=addr;
     addr = stream.pop_addr();
   }
@@ -2065,6 +2080,8 @@ void scratch_write_controller_t::cycle() {
           while(addr < max_addr && stream._num_bytes>0 //enough in dest
                                 && out_vp.mem_size()) { //enough in source
             SBDT val = out_vp.pop_data(); 
+            //timestamp(); cout << "POPPED b/c port->scratch WRITE: " << out_vp.port() << " " << out_vp.mem_size() << "\n";
+
             assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
             std::memcpy(&_accel->scratchpad[addr], &val, sizeof(SBDT));
             addr = stream.pop_addr();
@@ -2124,6 +2141,7 @@ bool scratch_write_controller_t::accept_buffer(data_buffer& buf) {
     while(addr < max_addr && buf.data_ready()>0) { //enough in source
       addr = buf.dest_addr();
       SBDT val = buf.pop_data();
+
       assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
       std::memcpy(&_accel->scratchpad[addr], &val, sizeof(SBDT));
     }
@@ -2167,6 +2185,8 @@ void port_controller_t::cycle() {
       for(int i = 0; i < PORT_WIDTH && vp_in.mem_size() < VP_LEN && 
                          vp_out.mem_size() && stream.stream_active(); ++i) {
         SBDT val = vp_out.pop_data();
+        //timestamp(); cout << "POPPED b/c port->port WRITE: " << vp_out.port() << " " << vp_out.mem_size()  << "\n";
+
         vp_in.push_data(val);
         stream._num_elements--;
         total_pushed++;
@@ -2254,6 +2274,9 @@ void port_controller_t::cycle() {
       for(int i = 0; i < PORT_WIDTH && vp_in.mem_size() < VP_LEN && 
                          vp_out.mem_size() && stream.stream_active(); ++i) {
         SBDT val = vp_out.pop_data();
+        //timestamp(); cout << "POPPED b/c port -> remote_port WRITE: " << vp_out.port() << " " << vp_out.mem_size() <<  "\n";
+
+
         vp_in.push_data(val);
         stream._num_elements--;
         total_pushed++;
@@ -2550,12 +2573,14 @@ bool accel_t::cgra_done(bool show,int mask) {
     for(unsigned i = 0; i < _soft_config.out_ports_active.size(); ++i) {
       int cur_port = _soft_config.out_ports_active[i];
       auto& out_vp = _port_interf.out_port(cur_port);
-      if(out_vp.in_use() || out_vp.num_ready() || out_vp.mem_size()) { 
+      if(out_vp.in_use() || out_vp.num_ready() || 
+          out_vp.mem_size() || out_vp.num_in_flight()) { 
         if(show) {
           cout << "Out VP: " << cur_port << " Not Empty (";
           cout << "in_use: " << out_vp.in_use();
           cout << " num_rdy: " << out_vp.num_ready();
           cout << " mem_size: " << out_vp.mem_size();
+          cout << " in_flight: " << out_vp.num_in_flight();
           cout << ") \n";
         }
         return false;
