@@ -993,6 +993,11 @@ private:
   //std::deque<base_stream_t> _scratch_queue;
   //std::deque<mem_stream_base_t> _dma_queue;
 
+  //Stuff for tracking stats
+  uint64_t _waiting_cycles=0;
+  uint64_t _forward_progress_cycle=0;
+
+  public:
   //* Stats
   uint64_t _stat_comp_instances = 0;
   uint64_t _stat_scratch_read_bytes = 0;
@@ -1027,10 +1032,6 @@ private:
   std::map<int,int> _vport_histo;
 
   stream_stats_t _stream_stats;  
-
-  //Stuff for tracking stats
-  uint64_t _waiting_cycles=0;
-  uint64_t _forward_progress_cycle=0;
 
   std::map<std::pair<LOC,LOC>, std::pair<uint64_t,uint64_t>> _bw_map;
 };

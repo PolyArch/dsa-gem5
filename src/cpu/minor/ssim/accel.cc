@@ -779,27 +779,6 @@ void accel_t::print_statistics(std::ostream& out) {
    out << "\n";
 */
 
-   /*
-   out << "Multicore Cycle Estimates: (1-16 cores): ";
-   for(int i = 1; i <= 16; ++i) { // estimate performance
-     uint64_t multicore_cyc = roi_cycles() / i;
-     uint64_t mem_cyc = _stat_tot_mem_load_acc+_stat_tot_mem_store_acc;
-     out << std::max(multicore_cyc,mem_cyc) << " ";
-   }
-   out << "\n";
-
-   out << "Multicore Activity Estimates: (1-16 cores): ";
-   for(int i = 1; i <= 16; ++i) { // estimate performance
-     uint64_t multicore_cyc = roi_cycles() / i;
-     uint64_t mem_cyc = _stat_tot_mem_load_acc+_stat_tot_mem_store_acc;
-     uint64_t cycles = std::max(multicore_cyc,mem_cyc);
-     double active_ratio = ((double)(_stat_comp_instances)/i)/((double)cycles);
-     out << active_ratio << " ";
-   }
-   out << "\n\n";
-   */
-
-
   //const std::vector<LOC> alocs {LOC::DMA, LOC::SCR};
   static const std::vector<LOC> 
     locs {LOC::NONE, LOC::DMA, LOC::SCR, LOC::PORT, LOC::CONST};

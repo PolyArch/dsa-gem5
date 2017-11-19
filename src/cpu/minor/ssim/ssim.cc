@@ -126,11 +126,54 @@ void ssim_t::print_stats() {
    }
    out << "\n";
 
+  int cores_used=0;
   for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
     if(_ever_used_bitmask & b) {
-      accel_arr[i]->print_stats();     
+      accel_arr[i]->print_stats();
+      if(i!=NUM_ACCEL_TOTAL) {cores_used++;}
     }
   }
+
+  cout << "\nCores used: " << cores_used << "bitmask: " 
+       << std::hex << _ever_used_bitmask << std::dec << "\n";
+
+  uint64_t total_mem_accesses=0;
+  uint64_t max_comp_instances=0;
+  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
+    if(_ever_used_bitmask & b) {
+      total_mem_accesses+=
+        accel_arr[i]->_bw_map[make_pair(LOC::DMA,LOC::TOTAL)].first;
+      max_comp_instances=std::max(max_comp_instances,
+         accel_arr[i]->_stat_comp_instances);
+    }
+  }
+
+  cout << "Total Memory Activity: " << (double) total_mem_accesses 
+                                     / (double) roi_cycles() << "\n";
+
+  cout << "\n -- Parallelization Estimates --\n"; 
+
+  out << "Multi-Pipeline Cycles (cores:cycles): ";
+  for(int i = 1; i * cores_used <= 18; ++i) { // estimate performance
+    cout << i*cores_used << ":"; 
+    uint64_t multicore_cyc = roi_cycles() / i;
+    uint64_t mem_cyc = total_mem_accesses;
+    out << std::max(multicore_cyc,mem_cyc) << " ";
+  }
+  out << "\n";
+
+  out << "Multi-Pipeline Activity: (cores:cycles)";
+  for(int i = 1; i * cores_used <= 18; ++i) { // estimate performance
+    cout << i*cores_used << ":"; 
+    uint64_t multicore_cyc = roi_cycles() / i;
+    uint64_t mem_cyc = total_mem_accesses;
+    uint64_t cycles = std::max(multicore_cyc,mem_cyc);
+    double active_ratio = ((double)(max_comp_instances)/i)/((double)cycles);
+    out << active_ratio << " ";
+  }
+  out << "\n\n";
+
+
 }
 
 uint64_t ssim_t::forward_progress_cycle() {
