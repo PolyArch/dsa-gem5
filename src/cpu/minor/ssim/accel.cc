@@ -75,7 +75,11 @@ void port_data_t::set_repeat(int r, int rs) {
   _repeat=r;
   _cur_repeat_lim=r;
   _repeat_stretch=rs;
-  _num_times_repeated=0;
+  if(r != _repeat || rs != _repeat_stretch) {    
+    //we are safe to reset times_repeated if these have changed, since no
+    //stream can be active while these are changing 
+    _num_times_repeated=0;
+  }
 }
 
 bool port_data_t::inc_repeated() {
