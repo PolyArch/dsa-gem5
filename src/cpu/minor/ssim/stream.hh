@@ -589,8 +589,7 @@ struct const_port_stream_t : public base_stream_t {
        std::cout << "\tconst2:" << _constant2  << " left=" << _elements_left2
                  << "/"  << _num_elements2;
      }
-     std::cout << "\titers=" << _iters_left << "/" << _num_iters << "\n";
-
+     std::cout << "\titers=" << _iters_left << "/" << _num_iters << "";
 
     base_stream_t::print_status();
   }
