@@ -613,7 +613,7 @@ class port_controller_t : public data_controller_t {
   public:
   port_controller_t(accel_t* host) : data_controller_t(host) {
     _port_port_streams.resize(4);  //IS THIS ENOUGH?
-    _const_port_streams.resize(4);  //IS THIS ENOUGH?
+    _const_port_streams.resize(8);  //IS THIS ENOUGH?
     _remote_port_streams.resize(4);  //IS THIS ENOUGH?
     for(auto& i : _port_port_streams) {i.reset();}
     for(auto& i : _const_port_streams) {i.reset();}
