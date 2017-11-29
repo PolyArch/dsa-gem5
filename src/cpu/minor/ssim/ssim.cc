@@ -196,7 +196,7 @@ void ssim_t::add_bitmask_stream(base_stream_t* s, uint64_t ctx) {
   if(!s->stream_active()) {
     if(debug && (SB_DEBUG::SB_COMMAND)  ) {
       timestamp_context();
-      cout << " ---    and this stream is being deleted for being inactive!";
+      cout << " ---    and this stream is being deleted for being inactive!\n";
     }
     delete s;
     return;
