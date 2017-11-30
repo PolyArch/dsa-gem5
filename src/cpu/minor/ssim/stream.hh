@@ -828,7 +828,7 @@ struct indirect_wr_stream_t : public indirect_base_stream_t {
   virtual void print_status() {  
     std::cout << "port->ind_port" << "\tind_port=" << _ind_port
               << "\tind_type:" << _type  << "\tind_addr:" << _index_addr
-              << "\tnum_elem:" << _num_elements << "\tin_port" << _out_port;
+              << "\tnum_elem:" << _num_elements << "\tout_port" << _out_port;
     base_stream_t::print_status();
   }
 };

@@ -134,6 +134,7 @@ void port_data_t::reformat_in_work() {
 
 //pop data from port
 SBDT port_data_t::pop_data() {
+  assert(_mem_data.size());
   SBDT val = _mem_data.front();
   _mem_data.pop_front();
   return val;
@@ -141,6 +142,7 @@ SBDT port_data_t::pop_data() {
 
 //pop data from port
 SBDT port_data_t::peek_data() {
+   assert(_mem_data.size());
    SBDT val = _mem_data.front();
   return val;
 }
@@ -1012,8 +1014,8 @@ void accel_t::schedule_streams() {
 
       if(out_vp->can_take(LOC::PORT) && out_ind_vp->can_take(LOC::PORT)
           && !blocked_ovp[out_port] && !blocked_ovp[out_ind_port] &&
-            (scheduled_in = _dma_c.schedule_indirect_wr(*indirect_wr_stream) )) {
-        scheduled_out = true;
+            (scheduled_out = _dma_c.schedule_indirect_wr(*indirect_wr_stream) )) {
+        //scheduled_out = true;
         out_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
         out_ind_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
       }
@@ -1778,11 +1780,6 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
     ++index;
     data64[++index]=val;
 
-    //_accel->st_mem(addr,val,mem_cycle,stream.minst());
-    out_vp.pop_data();
-    //timestamp(); cout << "POPPED b/c INDIRECT WRITE: " << out_vp.port() << "\n";
-    bytes_written+=sizeof(SBDT);
-
     out_vp.pop_data();
     //timestamp(); cout << "POPPED b/c INDIRECT WRITE: " << out_vp.port() << "\n";
     bytes_written+=sizeof(SBDT);
@@ -1816,7 +1813,8 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
     if((stream._ind_port==26&&!DOUBLE_PORT) || stream._ind_port==27 ) {
 
     } else {
-      ind_vp.set_status(port_data_t::STATUS::FREE);
+      port_data_t& out_ind_vp = _accel->port_interf().out_port(stream._ind_port);
+      out_ind_vp.set_status(port_data_t::STATUS::FREE);
     }
   }
 
