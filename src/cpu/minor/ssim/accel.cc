@@ -1744,7 +1744,7 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
   port_data_t& ind_vp = _accel->port_interf().in_port(stream._ind_port);
 
   bool first=true;
-  addr_t base_addr=0;
+  addr_t init_addr=0;
   addr_t prev_addr=0;
 
   unsigned bytes_written = 0;
@@ -1767,9 +1767,11 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
 
     if(first) {
       first=false;
-      base_addr = addr & MEM_MASK;
+      //base_addr = addr & MEM_MASK;
+      init_addr = addr;
     } else { //not first
       if(prev_addr + stream_size != addr) { //addr > max_addr || addr < base_addr) {
+        //cout <<"prev:" << prev_addr << " new:" << addr << "\n";
         break;
       }
     }
@@ -1777,8 +1779,7 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
     SBDT val = out_vp.peek_data();
 
     prev_addr=addr;
-    ++index;
-    data64[++index]=val;
+    data64[index++]=val;
 
     out_vp.pop_data();
     //timestamp(); cout << "POPPED b/c INDIRECT WRITE: " << out_vp.port() << "\n";
@@ -1791,9 +1792,11 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
   SDMemReqInfoPtr sdInfo = new SDMemReqInfo(_accel->_accel_index, -1, MEM_WR_STREAM, 
                                             mask /*N/A*/, false /*N/A*/);
 
+  //cout << "bytes written: " << bytes_written << "addr: " << std::hex << init_addr 
+  //  << std::dec << " first elem: " << *data64 << "\n";
   //make store request
   _accel->_lsq->pushRequest(stream.minst(),false/*isLoad*/, data8,
-              bytes_written, base_addr, 0/*flags*/, 0 /*res*/, sdInfo);
+              bytes_written, init_addr, 0/*flags*/, 0 /*res*/, sdInfo);
 
   if(_accel->_ssim->in_roi()) {
     add_bw(stream.src(), stream.dest(), 1, bytes_written);
