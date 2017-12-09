@@ -35,6 +35,8 @@ void accel_t::req_config(addr_t addr, int size) {
 void soft_config_t::reset() {
   in_ports_active.clear();
   out_ports_active.clear();
+  in_ports_active_plus.clear();
+  out_ports_active_plus.clear();
   in_port_delay.clear();
   out_ports_lat.clear();
   cgra_in_ports_active.clear();
@@ -306,7 +308,131 @@ bool accel_t::in_roi() {
   return _ssim->in_roi();
 }
 
+
+pipeline_stats_t::PIPE_STATUS accel_t::whos_to_blame() {
+  if(_cgra_issued) return pipeline_stats_t::ISSUED;
+  if(_in_config) return pipeline_stats_t::CONFIG;
+
+  bool any_stream_active =
+     _dma_c.any_stream_active() || _scr_r_c.any_stream_active() ||
+     _port_c.any_stream_active() || _scr_w_c.any_stream_active();
+
+  bool any_buf_active = _scr_r_c.buf_active() || _scr_w_c.buf_active();
+
+  bool mem_rds = _dma_c.mem_reads_outstanding();
+  bool mem_wrs = _dma_c.mem_writes_outstanding();
+  bool scr_req = _dma_c.scr_reqs_outstanding();
+
+  bool cgra_input = cgra_input_active();
+  bool cgra_compute = cgra_compute_active();
+  bool cgra_output = cgra_output_active();
+  bool cgra_active = cgra_input || cgra_compute || cgra_output;
+
+  bool queue = _in_port_queue.size();
+
+  bool busy = any_stream_active || any_buf_active || cgra_active ||
+                 mem_wrs || mem_rds || scr_req || queue;
+
+  if(!busy) return pipeline_stats_t::NO_ACTIVITY;
+
+  bool any_empty_fifo=false, any_scr=false, 
+       any_dma=false, any_const=false, any_rec=false;
+
+  int num_unassigned=0;
+  int total_ivps=0;
+  for(unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
+    int cur_port = _soft_config.in_ports_active_plus[i];
+    auto& in_vp = _port_interf.in_port(cur_port);
+    bool unassigned_ivp = !(in_vp.in_use() || in_vp.completed());
+    num_unassigned+= unassigned_ivp;
+    total_ivps+=1;
+    bool empty_fifo = in_vp.num_ready()==0;
+    if(empty_fifo && !unassigned_ivp) {
+      switch(in_vp.loc()) {
+        case LOC::DMA:   any_dma=true; break;
+        case LOC::SCR:   any_scr=true; break;
+        case LOC::PORT:  any_rec=true; break;
+        case LOC::CONST: any_const=true; break;
+        default: break;
+      }
+    }
+
+    any_empty_fifo |= empty_fifo;
+  }
+
+  if(num_unassigned==0) {
+    if(!any_empty_fifo) return pipeline_stats_t::CGRA_BACK;
+    if(any_const) return pipeline_stats_t::CONST_FILL;
+    if(any_scr) return pipeline_stats_t::SCR_FILL;
+    if(any_dma) return pipeline_stats_t::DMA_FILL;
+    if(any_rec) return pipeline_stats_t::REC_WAIT;
+    return pipeline_stats_t::WEIRD;
+  }
+
+  //At this point we know some active input ports are not assigned
+  //Need to distinguish between barrier case and
+  int num_unassigned_queued=0;
+  bool scratch_waiters_found=false;
+  bool bar_scratch_read = false;  // These are set by scratch
+  bool bar_scratch_write = false;
+
+  for(auto i = _in_port_queue.begin(); i!=_in_port_queue.end(); ++i) {
+    base_stream_t* ip = *i;
+    if(auto stream = dynamic_cast<stream_barrier_t*>(ip)) {
+      bar_scratch_read  |= stream->bar_scr_rd();
+      bar_scratch_write |= stream->bar_scr_wr();
+    }
+
+    int port= ip->in_port();
+    if(port<0) continue;
+    port_data_t& in_vp=_port_interf.in_port(port);
+    if(!(in_vp.in_use() || in_vp.completed())) {
+      if(bar_scratch_write && ip->src() == LOC::SCR) {
+        scratch_waiters_found=true;
+      } 
+      num_unassigned_queued++;
+    }
+  }
+
+  if(scratch_waiters_found) { 
+    return pipeline_stats_t::SCR_WAIT;
+  }
+
+  if(num_unassigned==total_ivps) {
+    //NO PORT HAS AN ASSIGNED STREAM!
+    if(_in_port_queue.size()<=1 && (_dma_c.dma_scr_streams_active() ||
+       _scr_w_c.buf_active())) {
+      return pipeline_stats_t::SCR_WAIT;
+    }
+
+    if(mem_wrs || cgra_compute || cgra_output) {
+      return pipeline_stats_t::DRAIN;
+    }
+  }
+
+  //core isn't giving us data fast enough
+  if(_in_port_queue.size() < _queue_size &&  
+      num_unassigned_queued < num_unassigned) {
+    return pipeline_stats_t::CORE_WAIT;
+  }
+
+  if(num_unassigned_queued == num_unassigned) {
+    //core is not bottleneck cause all the commands are there, but it wasn't
+    //scratch barrier, and nobody scratch wasn't the only stream active
+    return pipeline_stats_t::CMD_QUEUE;
+  }
+
+  //cout << num_unassigned << "/" << total_ivps << "-" << num_unassigned_queued; 
+  //done(true,0);
+
+  return pipeline_stats_t::OTHER;
+}
+
+
+
 void accel_t::tick() {
+  _cgra_issued=false; // for statistics reasons
+
   _dma_c.cycle();
   _scr_r_c.cycle();
   _scr_w_c.cycle();
@@ -321,13 +447,25 @@ void accel_t::tick() {
   _dma_c.finish_cycle(); 
   _scr_w_c.finish_cycle(); 
   _scr_r_c.finish_cycle(); 
-  
-  if(SB_DEBUG::CYC_STAT) {
-    if(in_roi()) {
+
+  if(in_roi()) {
+    uint64_t new_now = now();
+
+    auto who = whos_to_blame();
+    //if(_accel_index==0) {
+    //  if(new_now!=_prev_roi_clock+1) {
+    //    cout << "\n\n";
+    //  }
+    //  timestamp();
+    //  cout << pipeline_stats_t::name_of(who) << "\n";
+    //}
+    _pipe_stats.pipe_inc(who); 
+    if(SB_DEBUG::CYC_STAT) {
       cycle_status();
     }
-  }
 
+    _prev_roi_clock=new_now;
+  }
 }
 
 void accel_t::cycle_in_interf() {
@@ -463,6 +601,7 @@ void accel_t::execute_pdg(unsigned instance) {
 
   //perform computation
   _pdg->compute(print,SB_DEBUG::VERIF_CGRA);
+  _cgra_issued=true;
 
   uint64_t cur_cycle = now();
 
@@ -695,11 +834,6 @@ void accel_t::print_status() {
 
 
 void accel_t::pedantic_statistics(std::ostream& out) {
-   out << "Scratch Read bytes: " << _stat_scratch_read_bytes << "\n";
-   out << "Scratch Write bytes:" << _stat_scratch_write_bytes << "\n";
-
-   double scratch_per_cyc = ((double)(_stat_scratch_reads+_stat_scratch_writes))/((double)roi_cycles());
-   out << "Scratch access per cycle: " << scratch_per_cyc << "\n\n";
    double l2_acc_per_cyc = ((double)(_stat_tot_loads+_stat_tot_stores))/((double)roi_cycles());
    out << "L2 accesses per cycle: " << l2_acc_per_cyc << "\n\n";
    double l2_miss_per_cyc = ((double)(_stat_tot_mem_load_acc+_stat_tot_mem_store_acc))/((double)roi_cycles());
@@ -754,6 +888,10 @@ void accel_t::print_statistics(std::ostream& out) {
       << ((double)_stat_sb_insts)/((double)_stat_comp_instances) << "\n";
    out << "CGRA Insts / Cycle: "
       << ((double)_stat_sb_insts)/((double)roi_cycles()) << " (overall activity factor)\n";
+
+   out << "Cycle Breakdown: ";
+   _pipe_stats.print_histo(out,roi_cycles());
+   out << "\n";
 
    /*
     * Depricated
@@ -967,9 +1105,9 @@ void accel_t::schedule_streams() {
     } else if(auto const_port_stream = dynamic_cast<const_port_stream_t*>(ip)) {
       int port = const_port_stream->_in_port;
       in_vp = &_port_interf.in_port(port);
-      if(in_vp->can_take(LOC::PORT) && !blocked_ivp[port] && 
+      if(in_vp->can_take(LOC::CONST) && !blocked_ivp[port] && 
             (scheduled_in = _port_c.schedule_const_port(*const_port_stream) )) {
-        in_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
+        in_vp->set_status(port_data_t::STATUS::BUSY, LOC::CONST);
       }
       
     } else if(auto port_dma_stream = dynamic_cast<port_dma_stream_t*>(ip)) {
@@ -2422,158 +2560,172 @@ bool accel_t::done_internal(bool show, int mask) {
 }
 
 
+bool dma_controller_t::dma_scr_streams_active() {
+  return !_dma_scr_stream.empty();
+}
+bool dma_controller_t::dma_port_streams_active() {
+  for(auto& i : _dma_port_streams) 
+    if(!i.empty())  return true;
+  return false;
+}
+bool dma_controller_t::port_dma_streams_active() {
+  for(auto& i : _port_dma_streams) 
+    if(!i.empty())  return true;
+  return false;
+}
+bool dma_controller_t::indirect_streams_active() {
+  for(auto& i : _indirect_streams) 
+    if(!i.empty())  return true;
+  return false;
+}
+bool dma_controller_t::indirect_wr_streams_active() {
+  for(auto& i : _indirect_wr_streams) 
+    if(!i.empty())  return true;
+  return false;
+}
+
+
 bool dma_controller_t::done(bool show, int mask) {
 
   if(mask==0 || mask&WAIT_CMP || mask&WAIT_SCR_WR) {
-    if(!_dma_scr_stream.empty()) {
-        if(show) {
-          cout << "DMA -> SCR Stream Not Empty\n";
-        }
+    if(dma_scr_streams_active()) {
+      if(show) cout << "DMA -> SCR Stream Not Empty\n";
       return false;
     }
   }
 
   if(mask==0 || mask&WAIT_CMP) {
-    for(auto& i : _dma_port_streams) {
-      if(!i.empty()) { 
-        if(show) {
-          cout << "DMA -> Port Stream Not Empty\n";
-        }
-        return false;
-      }
-    } 
-  
-    for(auto& i : _port_dma_streams) {
-      if(!i.empty()) {
-        if(show) {
-          cout << "PORT -> DMA Stream Not Empty\n";
-        }
-        return false;
-      }
+    if(dma_port_streams_active()) {
+      if(show) cout << "DMA -> PORT Streams Not Empty\n";
+      return false;
+    }
+    if(port_dma_streams_active()) {
+      if(show) cout << "PORT -> DMA Streams Not Empty\n";
+      return false;
     }
     if(mem_reqs() != 0) {
-      if(show) {
-        cout << "Memory requests are outstanding\n";
-      }
+      if(show) cout << "Memory requests are outstanding\n";
+      return false;
+    }
+    if(indirect_streams_active()) {
+      if(show) cout << "DMA -> Indirect Streams Not Empty\n";
+      return false;
+    }
+    if(indirect_wr_streams_active()) {
+      if(show) cout << "Indirect -> DMA Streams Not Empty\n";
       return false;
     }
   }
 
   if((mask & WAIT_SCR_WR) && _fake_scratch_reqs) {
-    if(show) {
-      cout << "Fake scratch reqs: " << _fake_scratch_reqs 
-           << " (is not zero) \n";
-    }
+    if(show) cout << "Scratch reqs: " << _fake_scratch_reqs << " not zero \n";
     return false;
   }
   
   return true;
 }
 
+bool scratch_write_controller_t::scr_scr_streams_active() {
+  for(auto& i : _scr_scr_streams) 
+    if(!i.empty())  return true;
+  return false;
+}
+
+bool scratch_write_controller_t::port_scr_streams_active() {
+  for(auto& i : _port_scr_streams) 
+    if(!i.empty())  return true;
+  return false;
+}
+
 bool scratch_write_controller_t::done(bool show, int mask) {
   if(mask==0 || mask&WAIT_CMP || mask&WAIT_SCR_WR) {
     if(!_buf_dma_write.empty_buffer() ) {
-      if(show) {
-        cout << "buf_dma_write Buffer Not Empty: ";
-        cout <<"\n";
-      }
+      if(show) cout << "buf_dma_write Buffer Not Empty: \n";
       return false;
     }
     if(!_buf_shs_write.empty_buffer()) {
-      if(show) {
-        cout << "buf_shs_write Buffer Not Empty: ";
-        cout <<"\n";
-      }
+      if(show) cout << "buf_shs_write Buffer Not Empty: \n";
       return false;
     }
-  }
 
-
-  if(mask==0 || mask&WAIT_CMP || mask&WAIT_SCR_WR) {
-    for(auto& i : _port_scr_streams) {
-      if(!i.empty()) { 
-        if(show) {
-          cout << "PRT -> SCR Stream Not Empty\n";
-        }
-        return false;
-      }
-    } 
-  }
-  for(auto& i : _scr_scr_streams) {
-    if(!i.empty()) { 
-      if(show) {
-        cout << "SCR -> SCR Stream Not Empty\n";
-      }
+    if(port_scr_streams_active()) {
+      if(show) cout << "PORT -> SCR Stream Not Empty\n";
       return false;
     }
-  } 
+
+  }
+  if(scr_scr_streams_active()) {
+    if(show) cout << "SCR -> SCR Stream Not Empty\n";
+    return false;
+  }
 
   return true;
+}
+
+
+
+bool scratch_read_controller_t::scr_port_streams_active() {
+  for(auto& i : _scr_port_streams) 
+    if(!i.empty())  return true;
+  return false;
+}
+bool scratch_read_controller_t::scr_dma_streams_active() {
+  return !_scr_dma_stream.empty();
+}
+bool scratch_read_controller_t::scr_scr_streams_active() {
+  for(auto& i : _scr_scr_streams) 
+    if(!i.empty())  return true;
+  return false;
 }
 
 bool scratch_read_controller_t::done(bool show, int mask) {
   if(mask==0 || mask&WAIT_CMP || mask&WAIT_SCR_RD ) {
     if(!_buf_dma_read.empty_buffer()) {
-      if(show) {
-        cout << "buf_dma_read not Empty\n";
-      }
+      if(show) cout << "buf_dma_read not Empty\n";
       return false;
     }
     if(!_buf_shs_read.empty_buffer() ) {
-      if(show) {
-        cout << "buf_shs_read Not Empty\n";
-      }
+      if(show) cout << "buf_shs_read Not Empty\n";
       return false;
     }
-  }
 
-  if(mask==0 || mask&WAIT_CMP || mask&WAIT_SCR_RD) {
-    for(auto& i : _scr_port_streams) {
-      if(!i.empty()) { 
-        if(show) {
-          cout << "SCR -> SCR Stream Not Empty\n";
-        }
-        return false;
-      }
-    } 
-    if(!_scr_dma_stream.empty()) {
-      if(show) {
-        cout << "SCR -> DMA Stream Not Empty\n";
-      }
+    if(scr_port_streams_active()) {
+      if(show) cout << "SCR -> PORT Streams Not Empty\n";
       return false;
     }
-    for(auto& i : _scr_scr_streams) {
-      if(!i.empty()) { 
-        if(show) {
-          cout << "SCR -> SCR Stream Not Empty\n";
-        }
-        return false;
-      }
-    } 
-
+    if(scr_dma_streams_active()) {
+      if(show) cout << "SCR -> DMA Stream Not Empty\n";
+      return false;
+    }
+    if(scr_scr_streams_active()) {
+      if(show) cout << "SCR -> SCR Streams Not Empty\n";
+      return false;
+    }
   }
   return true;
 }
 
+bool port_controller_t::port_port_streams_active() {
+  for(auto& i : _port_port_streams) 
+    if(!i.empty()) return true;
+  return false;
+}
+
+bool port_controller_t::const_port_streams_active() {
+  for(auto& i : _const_port_streams) 
+    if(!i.empty()) return true;
+  return false;
+}
 
 bool port_controller_t::done(bool show, int mask) {
   if(mask==0 || mask&WAIT_CMP) {
-    for(auto& i : _port_port_streams) {
-      if(!i.empty()) {
-        if(show) {
-          cout << "PORT -> PORT Stream Not Empty\n";
-        }
-        return false;
-      } 
+    if(port_port_streams_active()) {
+      if(show) cout << "PORT -> PORT Stream Not Empty\n";
+      return false;
     }
-    for(auto& i : _const_port_streams) {
-      if(!i.empty()) {
-        if(show) {
-          cout << "CONST -> PORT Stream  Not Empty\n >>>";
-          i.print_status();
-        }
-        return false;
-      } 
+    if(const_port_streams_active()) {
+      if(show) cout << "CONST -> PORT Stream  Not Empty\n >>>";
+      return false;
     }
   }
   return true;
@@ -2581,8 +2733,8 @@ bool port_controller_t::done(bool show, int mask) {
 
 bool accel_t::cgra_done(bool show,int mask) {
   if(mask==0 || mask&WAIT_CMP) {
-    for(unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
-      int cur_port = _soft_config.in_ports_active[i];
+    for(unsigned i = 0; i < _soft_config.in_ports_active_plus.size(); ++i) {
+      int cur_port = _soft_config.in_ports_active_plus[i];
       auto& in_vp = _port_interf.in_port(cur_port);
       if(in_vp.in_use() || in_vp.num_ready() || in_vp.mem_size()) { 
         if(show) {
@@ -2596,10 +2748,11 @@ bool accel_t::cgra_done(bool show,int mask) {
         return false;
       }
     }
+
   }
   if(mask==0) {
-    for(unsigned i = 0; i < _soft_config.out_ports_active.size(); ++i) {
-      int cur_port = _soft_config.out_ports_active[i];
+    for(unsigned i = 0; i < _soft_config.out_ports_active_plus.size(); ++i) {
+      int cur_port = _soft_config.out_ports_active_plus[i];
       auto& out_vp = _port_interf.out_port(cur_port);
       if(out_vp.in_use() || out_vp.num_ready() || 
           out_vp.mem_size() || out_vp.num_in_flight()) { 
@@ -2615,7 +2768,6 @@ bool accel_t::cgra_done(bool show,int mask) {
       }
     }
   }
-  // TODO: check for things passing through CGRA
   return true; 
 }
 
@@ -2744,6 +2896,15 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
       }
       _soft_config.output_pdg_node.push_back(pdg_outputs);
     }
+  }
+
+  //compute active_plus
+  _soft_config.in_ports_active_plus=_soft_config.in_ports_active;
+  _soft_config.out_ports_active_plus=_soft_config.out_ports_active;
+  //indirect
+  for(unsigned i = 25; i < 32; ++i) {
+    _soft_config.in_ports_active_plus.push_back(i);
+    _soft_config.out_ports_active_plus.push_back(i);
   }
 
   ofs.close();

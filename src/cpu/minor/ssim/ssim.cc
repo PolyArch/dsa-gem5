@@ -520,15 +520,16 @@ void ssim_t::roi_entry(bool enter) {
     _in_roi=true;
     _times_roi_entered+=1;
   } else {
-    if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SB_ROI)  ) {
-      timestamp();
-      cout << "Exiting ROI ------------\n";
-    }
-
     _stat_stop_cycle=now();
     clock_gettime(CLOCK_REALTIME,&_stop_ts);
     _elapsed_time_in_roi += 1000000000 * (_stop_ts.tv_sec - _start_ts.tv_sec) +
                                           _stop_ts.tv_nsec - _start_ts.tv_nsec;
+
+    if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SB_ROI)  ) {
+      timestamp();
+      cout << "Exiting ROI ------------";
+      cout << "(" << _stat_start_cycle << "to" << _stat_stop_cycle << ")\n";
+    }
 
     _roi_cycles += _stat_stop_cycle - _stat_start_cycle;
     _in_roi=false;

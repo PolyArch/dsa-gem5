@@ -50,6 +50,10 @@ class soft_config_t {
 public:
   std::vector<int> in_ports_active;
   std::vector<int> out_ports_active;
+
+  std::vector<int> in_ports_active_plus;
+  std::vector<int> out_ports_active_plus;
+
   std::vector<int> in_port_delay; //delay ports
 
   std::vector<int> out_ports_lat;
@@ -187,7 +191,7 @@ public:
       //We are really just freeing one stream! So...
       //only enter truely free status if no outstanding streams
       _outstanding--;
-      if(_outstanding==0) {
+      if(_outstanding==0){
         _status=STATUS::FREE;
       } 
     } else {
@@ -222,6 +226,8 @@ public:
   bool completed() {
     return _status == STATUS::COMPLETE;
   }
+  LOC loc() {return _loc;}
+  STATUS status() {return _status;}
 
   void pop(unsigned instances);  //Throw away data in CGRA input ports
 
@@ -462,6 +468,30 @@ class dma_controller_t : public data_controller_t {
 
   dma_scr_stream_t& dma_scr_stream() {return _dma_scr_stream;}
 
+  bool mem_reads_outstanding()  {return _mem_read_reqs;}
+  bool mem_writes_outstanding() {return _mem_write_reqs;}
+  bool scr_reqs_outstanding()  {return _fake_scratch_reqs;}
+
+  bool any_stream_active() {
+    return comm_streams_active() || read_streams_active() 
+      || write_streams_active();
+  }
+  bool comm_streams_active() {
+    return dma_scr_streams_active();
+  }
+  bool read_streams_active() {
+    return dma_port_streams_active() || indirect_streams_active();
+  }
+  bool write_streams_active() {
+    return port_dma_streams_active() || indirect_wr_streams_active();
+  }
+
+  bool dma_port_streams_active();
+  bool dma_scr_streams_active();
+  bool port_dma_streams_active();
+  bool indirect_streams_active();
+  bool indirect_wr_streams_active();
+
   bool schedule_dma_port(dma_port_stream_t& s);
   bool schedule_dma_scr(dma_scr_stream_t& s);
   bool schedule_port_dma(port_dma_stream_t& s);
@@ -541,6 +571,28 @@ class scratch_read_controller_t : public data_controller_t {
   void print_status();
   void cycle_status();
 
+  bool buf_active() {
+    return  !_buf_shs_read.empty_buffer() || !_buf_dma_read.empty_buffer();
+  }
+
+  bool any_stream_active() {
+    return comm_streams_active() || read_streams_active() 
+      || write_streams_active();
+  }
+  bool comm_streams_active() {
+    return scr_scr_streams_active();
+  }
+  bool write_streams_active() {
+    return scr_dma_streams_active();
+  } 
+  bool read_streams_active() {
+    return scr_port_streams_active();
+  }
+
+  bool scr_dma_streams_active();
+  bool scr_port_streams_active();
+  bool scr_scr_streams_active();
+
   scr_dma_stream_t& scr_dma_stream() {return _scr_dma_stream;}
   data_buffer _buf_dma_read; 
   data_buffer _buf_shs_read; 
@@ -587,6 +639,28 @@ class scratch_write_controller_t : public data_controller_t {
   void print_status();
   void cycle_status();
 
+
+  bool buf_active() {
+    return  !_buf_shs_write.empty_buffer() || !_buf_dma_write.empty_buffer();
+  }
+
+  bool any_stream_active() {
+    return comm_streams_active() || read_streams_active() 
+      || write_streams_active();
+  }
+  bool comm_streams_active() {
+    return scr_scr_streams_active();
+  }
+  bool read_streams_active() {
+    return false;
+  }
+  bool write_streams_active() {
+    return port_scr_streams_active();
+  } 
+
+  bool scr_scr_streams_active();
+  bool port_scr_streams_active();
+
   bool schedule_port_scr(port_scr_stream_t& s);
   int scr_buf_size() {return _buf_dma_write.size();}
   bool accept_buffer(data_buffer& buf);
@@ -597,14 +671,11 @@ class scratch_write_controller_t : public data_controller_t {
   std::vector<data_buffer*> _bufs;
 
   private:
-
   int max_src=3;
   int _which=0;
 
-  //these streams are inert
   std::vector<scr_scr_stream_t> _scr_scr_streams; 
   std::vector<port_scr_stream_t> _port_scr_streams; 
-
   dma_controller_t* _dma_c;
 };
 
@@ -622,6 +693,23 @@ class port_controller_t : public data_controller_t {
 
   void cycle();
   void finish_cycle();
+
+  bool any_stream_active() {
+    return comm_streams_active() || read_streams_active() 
+      || write_streams_active();
+  }
+  bool comm_streams_active() {
+    return false;
+  }
+  bool read_streams_active() {
+    return port_port_streams_active() || const_port_streams_active();
+  }
+  bool write_streams_active() {
+    return port_port_streams_active();
+  }
+
+  bool port_port_streams_active();
+  bool const_port_streams_active();
   bool done(bool,int);
 
   bool schedule_port_port(port_port_stream_t& s);
@@ -729,6 +817,66 @@ struct stream_stats_t {
 
 };
 
+
+struct pipeline_stats_t {
+  enum PIPE_STATUS {CONFIG, ISSUED, CONST_FILL, SCR_FILL, DMA_FILL, REC_WAIT,
+                    CORE_WAIT, SCR_WAIT, CMD_QUEUE, CGRA_BACK, OTHER, WEIRD, 
+                    DRAIN, NO_ACTIVITY, NOT_IN_USE, LAST};
+
+  static std::string name_of(PIPE_STATUS value) {
+      const char* s = 0;
+      #define PROCESS_VAL(p) case(p): s = #p; break;
+      switch(value){
+        PROCESS_VAL(CONFIG);
+        PROCESS_VAL(ISSUED);
+        PROCESS_VAL(CONST_FILL);
+        PROCESS_VAL(SCR_FILL);
+        PROCESS_VAL(DMA_FILL);
+        PROCESS_VAL(REC_WAIT);
+        PROCESS_VAL(CORE_WAIT);
+        PROCESS_VAL(SCR_WAIT);
+        PROCESS_VAL(CMD_QUEUE);
+        PROCESS_VAL(CGRA_BACK);
+        PROCESS_VAL(OTHER);
+        PROCESS_VAL(WEIRD);
+        PROCESS_VAL(DRAIN);
+        PROCESS_VAL(NO_ACTIVITY);
+        PROCESS_VAL(NOT_IN_USE);
+        case LAST: assert(0);
+      }
+      #undef PROCESS_VAL
+      return std::string(s);
+  }
+
+  int pipe_stats[PIPE_STATUS::LAST] = { 0 };
+
+  void pipe_inc(PIPE_STATUS p) {
+    pipe_stats[p]++;
+  }
+
+  void print_histo(std::ostream& out, uint64_t roi_cycles) {
+    out.precision(4);
+    out << std::fixed;
+
+    uint64_t total=0;
+    for(int i=0; i < PIPE_STATUS::LAST; ++i) {
+      total+=pipe_stats[i];
+    } 
+
+    pipe_stats[NOT_IN_USE]=roi_cycles - total;
+
+    for(int i=0; i < PIPE_STATUS::LAST; ++i) {
+      out << name_of( (PIPE_STATUS)i) << ":" << 
+        pipe_stats[i] / (double)roi_cycles << " ";
+    }
+
+    out << std::defaultfloat;
+  }
+
+};
+
+
+
 class accel_t
 {
   friend class ssim_t;
@@ -796,6 +944,7 @@ public:
 
   void configure(addr_t addr, int size, uint64_t* bits);
 
+  pipeline_stats_t::PIPE_STATUS whos_to_blame();
   void tick(); //Tick one time
 
   uint64_t roi_cycles();
@@ -857,7 +1006,40 @@ private:
   void cycle_in_interf();
   void cycle_out_interf();
   void schedule_streams();
+
   bool cgra_done(bool, int mask);
+  bool cgra_input_active() {
+    for(unsigned i = 0; i < _soft_config.in_ports_active_plus.size(); ++i) {
+      int cur_port = _soft_config.in_ports_active_plus[i];
+      auto& in_vp = _port_interf.in_port(cur_port);
+      if(in_vp.in_use() || in_vp.num_ready() || in_vp.mem_size()) { 
+        return true;
+      }
+    } 
+    return false;
+  }
+
+  bool cgra_compute_active() {
+    for(unsigned i = 0; i < _soft_config.out_ports_active.size(); ++i) {
+      int cur_port = _soft_config.out_ports_active[i];
+      auto& out_vp = _port_interf.out_port(cur_port);
+        if(out_vp.num_in_flight()) {
+          return true;
+        }
+    }
+    return false;
+  }
+
+  bool cgra_output_active() {
+    for(unsigned i = 0; i < _soft_config.out_ports_active_plus.size(); ++i) {
+      int cur_port = _soft_config.out_ports_active_plus[i];
+      auto& out_vp = _port_interf.out_port(cur_port);
+      if(out_vp.in_use() || out_vp.num_ready() || out_vp.mem_size()) { 
+        return true; 
+      }
+    }
+    return false;
+  }
 
   bool in_roi();
 
@@ -965,10 +1147,11 @@ private:
   Schedule* _sched   = NULL;
   SbPDG*    _pdg     = NULL;
 
-  std::vector<uint8_t> scratchpad;     
+  std::vector<uint8_t> scratchpad;    
+  std::bitset<SCRATCH_SIZE/SCR_WIDTH> scratch_ready; //TODO: use this
 
   unsigned scratch_line_size = 16;                //16B line 
-  unsigned fifo_depth = 32;  // probably not needed in functional model
+  unsigned fifo_depth = 32;  
   bool debug;
   unsigned _queue_size=16;
 
@@ -981,23 +1164,20 @@ private:
   scratch_write_controller_t _scr_w_c;
   port_controller_t _port_c;
 
-  //unsigned _outstanding_scr_read_streams=0;
-
-
   std::list<base_stream_t*> _in_port_queue;
   std::list<dma_scr_stream_t*> _dma_scr_queue;
   std::list<scr_dma_stream_t*> _scr_dma_queue;
 
   std::map<uint64_t,std::vector<int>> _cgra_output_ready;
 
-  //std::deque<base_stream_t> _scratch_queue;
-  //std::deque<mem_stream_base_t> _dma_queue;
-
   //Stuff for tracking stats
   uint64_t _waiting_cycles=0;
   uint64_t _forward_progress_cycle=0;
 
   public:
+  //* running variables
+  bool _cgra_issued=false;
+
   //* Stats
   uint64_t _stat_comp_instances = 0;
   uint64_t _stat_scratch_read_bytes = 0;
@@ -1032,6 +1212,8 @@ private:
   std::map<int,int> _vport_histo;
 
   stream_stats_t _stream_stats;  
+  pipeline_stats_t _pipe_stats;  
+  uint64_t _prev_roi_clock;
 
   std::map<std::pair<LOC,LOC>, std::pair<uint64_t,uint64_t>> _bw_map;
 };
