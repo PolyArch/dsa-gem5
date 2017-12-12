@@ -977,7 +977,6 @@ void accel_t::print_statistics(std::ostream& out) {
 }
 
 //wait and print stats
-//Softbrain should be complete at this point, or results will be inconsistent
 void accel_t::print_stats() {
   print_statistics(std::cout);
   print_status();

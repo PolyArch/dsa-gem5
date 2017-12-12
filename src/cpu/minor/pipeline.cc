@@ -49,8 +49,8 @@
 #include "debug/MinorCPU.hh"
 #include "debug/MinorTrace.hh"
 #include "debug/Quiesce.hh"
-#include "softbrain-config/model.h"
-#include "softbrain-scheduler/schedule.h"
+#include "ss-config/model.h"
+#include "ss-scheduler/schedule.h"
 
 
 namespace Minor
