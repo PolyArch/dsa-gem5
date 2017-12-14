@@ -513,7 +513,7 @@ void accel_t::cycle_cgra() {
   //Now fire on all cgra ports
   if(min_ready > 0) {
     forward_progress();
-    execute_pdg(0);
+    execute_pdg(0);  //Note that this will set backpressure variable
 
     if(in_roi()) {
       _stat_sb_insts+=_pdg->num_insts();
@@ -522,9 +522,16 @@ void accel_t::cycle_cgra() {
     for(unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
       port_data_t& in_port = _port_interf.in_port(
                                       _soft_config.in_ports_active[i]);
-      bool should_pop = in_port.inc_repeated();
-      if(should_pop) {
-        in_port.pop(1);
+
+      SbPDG_VecInput* vec_in = 
+        dynamic_cast<SbPDG_VecInput*>(_sched->vportOf(make_pair(true/*input*/,i)));
+      //skip popping if backpressure is on
+      if(!vec_in->backPressureOn()) {
+        //only increment repeated if no backpressure
+        bool should_pop = in_port.inc_repeated();
+        if(should_pop) {
+          in_port.pop(1);
+        }
       }
     }
   }
