@@ -31,6 +31,8 @@ typedef uint64_t addr_t;
 #define NUM_OUT_PORTS (32)
 
 #define START_IND_PORTS (25)
+#define STOP_IND_PORTS  (32)
+
 
 #define MAX_WAIT (1000) //max cycles to wait for forward progress
 

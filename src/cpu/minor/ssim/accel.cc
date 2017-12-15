@@ -669,20 +669,19 @@ void accel_t::cycle_status() {
                 << "," <<_scr_dma_queue.size() << "," <<_dma_scr_queue.size()<<" ";
 
   cout << "ip "; 
-  for(unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
+  for(unsigned i = 0; i < _soft_config.in_ports_active_plus.size(); ++i) {
     unsigned cur_p = _soft_config.in_ports_active[i];
     cout << " " << cur_p << ": "
               << _port_interf.in_port(cur_p).mem_size()  << ","
               << _port_interf.in_port(cur_p).num_ready() <<" ";
   }
 
-  //indirect
-  //for(unsigned i = 29; i < 32; ++i) {
-  //  unsigned cur_p = i;
-  //  cout << " " << cur_p << ": "
-  //            << _port_interf.in_port(cur_p).mem_size()  << ","
-  //            << _port_interf.in_port(cur_p).num_ready() <<" ";
-  //}
+  for(unsigned i = START_IND_PORTS; i < STOP_IND_PORTS; ++i ) {  //ind read ports
+    unsigned cur_p = i;
+    cout << " " << cur_p << ": "
+              << _port_interf.in_port(cur_p).mem_size()  << ","
+              << _port_interf.in_port(cur_p).num_ready() <<" ";
+  }
 
 
 
@@ -800,12 +799,12 @@ void accel_t::print_status() {
      std::cout << "  Num Ready: " << _port_interf.in_port(cur_p).num_ready() <<"\n";
    }
 
-//   for(unsigned i = 20; i < 32; ++i) {
-//     unsigned cur_p =i;
-//     std::cout << "Ind In Port " << cur_p << ": ";
-//     std::cout << "  Mem Size: "  << _port_interf.in_port(cur_p).mem_size() <<"";
-//     std::cout << "  Num Ready: " << _port_interf.in_port(cur_p).num_ready() <<"\n";
-//   }
+  for(unsigned i = START_IND_PORTS; i < STOP_IND_PORTS; ++i ) {  //ind read ports
+     unsigned cur_p =i;
+     std::cout << "Ind In Port " << cur_p << ": ";
+     std::cout << "  Mem Size: "  << _port_interf.in_port(cur_p).mem_size() <<"";
+     std::cout << "  Num Ready: " << _port_interf.in_port(cur_p).num_ready() <<"\n";
+   }
 
 
    for(unsigned i = 0; i < _soft_config.out_ports_active.size(); ++i) {
@@ -1559,7 +1558,7 @@ void dma_controller_t::cycle(){
     int cur_port = _accel->_soft_config.in_ports_active[i];
     port_resp(cur_port);
   }
-  for(unsigned i = 28; i < 32; ++i ) {  //ind read ports
+  for(unsigned i = START_IND_PORTS; i < STOP_IND_PORTS; ++i ) {  //ind read ports
     port_resp(i);
   }
 
@@ -1957,12 +1956,12 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
       cout << "SOURCE: INDIRECT PORT -> DMA\n";
     }
     out_vp.set_status(port_data_t::STATUS::FREE);
-    if((stream._ind_port==26&&!DOUBLE_PORT) || stream._ind_port==27 ) {
+    //if((stream._ind_port==26&&!DOUBLE_PORT) || stream._ind_port==27 ) {
 
-    } else {
-      port_data_t& out_ind_vp = _accel->port_interf().out_port(stream._ind_port);
-      out_ind_vp.set_status(port_data_t::STATUS::FREE);
-    }
+    //} else {
+    port_data_t& out_ind_vp = _accel->port_interf().out_port(stream._ind_port);
+    out_ind_vp.set_status(port_data_t::STATUS::FREE);
+    //}
   }
 
 }
@@ -2908,7 +2907,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
   _soft_config.in_ports_active_plus=_soft_config.in_ports_active;
   _soft_config.out_ports_active_plus=_soft_config.out_ports_active;
   //indirect
-  for(unsigned i = 25; i < 32; ++i) {
+  for(unsigned i = START_IND_PORTS; i < STOP_IND_PORTS; ++i) {
     _soft_config.in_ports_active_plus.push_back(i);
     _soft_config.out_ports_active_plus.push_back(i);
   }

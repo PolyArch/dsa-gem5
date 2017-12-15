@@ -67,8 +67,20 @@ public:
   bool done(bool show, int mask);
   bool is_in_config();
 
-  void set_in_use() {_in_use=true;}
-  void set_not_in_use() {_in_use=false;}
+  void set_in_use() {
+    if(!_in_use) {
+      if(SB_DEBUG::SB_COMMAND || SB_DEBUG::SB_ROI) {
+        std::cout << "SSIM in use\n";
+      }
+    }
+    _in_use=true;
+  }
+  void set_not_in_use() {
+    if(SB_DEBUG::SB_COMMAND || SB_DEBUG::SB_ROI) {
+      std::cout << "SSIM *NOT* in use\n";
+    }
+    _in_use=false;
+  }
   bool in_use() {return _in_use;}
 
   uint64_t now();
