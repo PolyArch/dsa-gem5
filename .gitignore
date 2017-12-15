@@ -6,6 +6,8 @@ cscope.out
 *.pyc
 *~
 .*.swp
+.*.swn
+.*.swo
 m5out
 /src/doxygen
 /ext/dramsim2/DRAMSim2
