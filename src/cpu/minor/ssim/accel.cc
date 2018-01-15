@@ -484,7 +484,8 @@ void accel_t::cycle_out_interf() {
 
 bool accel_t::can_receive(int out_port) {
   port_data_t& out_vp = port_interf().out_port(out_port);
-  return out_vp.mem_size() != 0;
+  //Make sure a stream is not using the data, and also that there exists data
+  return !out_vp.in_use() && out_vp.mem_size() != 0;
 }
 
 uint64_t accel_t::receive(int out_port) {
