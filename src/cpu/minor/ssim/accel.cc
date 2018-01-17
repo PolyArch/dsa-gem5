@@ -10,7 +10,7 @@
 
 using namespace std;
 
-
+ 
 Minor::MinorDynInstPtr accel_t::cur_minst() {
   return _ssim->cur_minst();
 }
@@ -521,11 +521,11 @@ void accel_t::cycle_cgra() {
     }
     //pop the elements from inport as they have been processed
     for(unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
-      port_data_t& in_port = _port_interf.in_port(
-                                      _soft_config.in_ports_active[i]);
+      uint64_t port_index = _soft_config.in_ports_active[i];
+      port_data_t& in_port = _port_interf.in_port(port_index);
 
       SbPDG_VecInput* vec_in = 
-        dynamic_cast<SbPDG_VecInput*>(_sched->vportOf(make_pair(true/*input*/,i)));
+        dynamic_cast<SbPDG_VecInput*>(_sched->vportOf(make_pair(true/*input*/,port_index)));
       //skip popping if backpressure is on
       if(!vec_in->backPressureOn()) {
         //only increment repeated if no backpressure
