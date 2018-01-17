@@ -265,6 +265,14 @@ void ssim_t::set_context(uint64_t context) {
   _ever_used_bitmask |= context;
 }
 
+void ssim_t::set_fill_mode(uint64_t mode) {
+  if(debug && (SB_DEBUG::SB_CONTEXT)  ) {
+    cout << "Set FILL MODE: " << std::hex << mode << std::dec << "\n";
+  }
+
+  _fill_mode = mode;
+}
+
 void ssim_t::load_dma_to_scratch(addr_t mem_addr, uint64_t stride, 
     uint64_t access_size, int stretch, uint64_t num_strides, 
     addr_t scratch_addr, uint64_t flags) {

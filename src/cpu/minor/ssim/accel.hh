@@ -95,14 +95,26 @@ public:
     }
   }
 
-
+  // Fill in remaining values in a vector port, if mode is appropriate
+  // This should only be called at the begining/end of a stream's data
+  void fill(uint32_t mode) {
+    if(mode == 0) {
+      return; //do nothing
+    } else if (mode == 1) { //zero fill to width
+      unsigned width = port_cgra_elem();
+      unsigned remainder = _mem_data.size() % width;
+      if(remainder != 0) {
+        unsigned extra = width - remainder;
+        for(int i = 0; i < extra; ++i) {
+          push_data(width);
+        }
+      }
+    }
+  }
 
   void push_data(SBDT data, uint64_t id=0) {
     //std::cout << data << " -> vp:" << _port << "\n"; 
     if(id!=0) {
-//      if(id != _highest_stream_id) {
-//        std::cout << "str id: " << std::hex << id<<" old: "<<_highest_stream_id<<"\n";
-//      }
       assert(id >= _highest_stream_id);
       _highest_stream_id=id;
     }
@@ -205,7 +217,6 @@ public:
     if(SB_DEBUG::VP_SCORE) {
       std::cout << " -> " << status_string() << "\n";
     }
-
   }
 
   bool can_take(LOC loc, int repeat=1, int repeat_stretch=0) {
@@ -935,11 +946,19 @@ public:
 
   Minor::MinorDynInstPtr cur_minst();
 
+  //Hey, a cool place for us to do stuff when a stream is done!
   void process_stream_stats(base_stream_t& s) {
+    //Some stats stuff, for which this function was originally designed
     uint64_t    vol  = s.data_volume();
     uint64_t    reqs = s.requests();
     STR_PAT     t  = s.stream_pattern();
     _stream_stats.add(t,s.src(),s.dest(),vol,reqs);
+
+    //some other cool stuff
+    if(s.dest() == LOC::PORT && s.in_port() != -1) {
+      port_data_t* in_vp = &_port_interf.in_port(s.in_port());
+      in_vp->fill(s.fill_mode());
+    }
   }
 
   void configure(addr_t addr, int size, uint64_t* bits);

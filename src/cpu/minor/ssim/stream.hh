@@ -91,6 +91,7 @@ struct base_stream_t {
 
   virtual int repeat_in()   {return 1;}  
   virtual int repeat_str()   {return 0;}  
+  virtual uint32_t fill_mode() {return _fill_mode;} 
 
 
 
@@ -102,8 +103,11 @@ struct base_stream_t {
   void set_minst(Minor::MinorDynInstPtr m) {_minst=m;}
   Minor::MinorDynInstPtr minst() {return _minst;}
 
+  void set_fill_mode(uint32_t mode) {_fill_mode = mode;}
+
 protected:
-  int _id=0;
+  int      _id=0;
+  uint32_t _fill_mode=0; //0: none, 1 post-zero fill, 2 pre-zero fill (not implemented)
   bool _empty=false; //presumably, when we create this, it won't be empty
   Minor::MinorDynInstPtr _minst;
   uint64_t _reqs=0;

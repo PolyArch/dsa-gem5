@@ -29,6 +29,7 @@ public:
   // IF SB_TIMING, these just send the commands to the respective controllers
   // ELSE, they carry out all operations that are possible at that point
   void set_context(uint64_t context);
+  void set_fill_mode(uint64_t mode);
   void req_config(addr_t addr, int size);
   void load_dma_to_scratch(addr_t mem_addr, uint64_t stride, uint64_t acc_size,
       int stretch, uint64_t num_strides, addr_t scratch_addr, uint64_t flags);
@@ -154,6 +155,8 @@ private:
   Minor::MinorDynInstPtr _cur_minst;
   uint64_t _context_bitmask=1; //core 1 active
   uint64_t _ever_used_bitmask=1; //bitmask if core ever used
+
+  uint64_t _fill_mode=0; //fill mode (default 0, no fill)
 
   Minor::LSQ* _lsq;
 
