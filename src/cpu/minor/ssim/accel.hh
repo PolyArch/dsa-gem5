@@ -106,7 +106,7 @@ public:
       if(remainder != 0) {
         unsigned extra = width - remainder;
         for(int i = 0; i < extra; ++i) {
-          push_data(width);
+          push_data(0);
         }
       }
     }
@@ -181,7 +181,7 @@ public:
     assert(0);
   }
 
-  void set_status(STATUS status, LOC loc=LOC::NONE) {
+  void set_status(STATUS status, LOC loc=LOC::NONE, uint32_t fill_mode=0) {
     if(_status == STATUS::BUSY) {
       assert(status != STATUS::BUSY && "can't set busy if already busy\n");
     }
@@ -206,6 +206,9 @@ public:
       if(_outstanding==0){
         _status=STATUS::FREE;
       } 
+
+      fill(fill_mode); //call fill 
+
     } else {
        _status=status; // no need 
       if(status == STATUS::BUSY) {
@@ -946,19 +949,11 @@ public:
 
   Minor::MinorDynInstPtr cur_minst();
 
-  //Hey, a cool place for us to do stuff when a stream is done!
   void process_stream_stats(base_stream_t& s) {
-    //Some stats stuff, for which this function was originally designed
     uint64_t    vol  = s.data_volume();
     uint64_t    reqs = s.requests();
     STR_PAT     t  = s.stream_pattern();
     _stream_stats.add(t,s.src(),s.dest(),vol,reqs);
-
-    //some other cool stuff
-    if(s.dest() == LOC::PORT && s.in_port() != -1) {
-      port_data_t* in_vp = &_port_interf.in_port(s.in_port());
-      in_vp->fill(s.fill_mode());
-    }
   }
 
   void configure(addr_t addr, int size, uint64_t* bits);

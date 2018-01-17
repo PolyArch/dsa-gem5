@@ -1469,7 +1469,8 @@ void dma_controller_t::port_resp(unsigned cur_port) {
             cout << "SOURCE: DMA->PORT2 (port:" << cur_port << ")\n";
           }
 
-          in_vp.set_status(port_data_t::STATUS::FREE);
+          in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE, 
+              response->sdInfo->fill_mode);
         }
         _accel->_lsq->popResponse(cur_port);
         _mem_read_reqs--;
@@ -1728,8 +1729,8 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
 
         uint8_t* data8 = (uint8_t*)data.data();
         unsigned bytes_written = data.size() * DATA_WIDTH;
-        SDMemReqInfoPtr sdInfo = new SDMemReqInfo(_accel->_accel_index,-1, MEM_WR_STREAM, 
-                                                  mask /*N/A*/, false /*N/A*/);
+        SDMemReqInfoPtr sdInfo = new SDMemReqInfo(_accel->_accel_index, -1, 
+            MEM_WR_STREAM, mask /*NA*/, false /*NA*/, 0 /*NA*/);
 
         //make store request
         _accel->_lsq->pushRequest(_accel->cur_minst(),false/*isLoad*/, data8,
@@ -1791,9 +1792,10 @@ int dma_controller_t::req_read(mem_stream_base_t& stream,
 
   SDMemReqInfoPtr sdInfo = NULL; 
   if(scr_addr==-1) { //READ TO PORTS
-    sdInfo = new SDMemReqInfo(_accel->_accel_index, scr_addr, stream.in_port(), mask, last);
+    sdInfo = new SDMemReqInfo(_accel->_accel_index, scr_addr, stream.in_port(), mask, last, stream.fill_mode());
   } else { //READ TO SCRATCH
-    sdInfo = new SDMemReqInfo(_accel->_accel_index, scr_addr, SCR_STREAM, mask, last);
+    sdInfo = new SDMemReqInfo(_accel->_accel_index, scr_addr, SCR_STREAM, mask, last,
+        stream.fill_mode());
   }
 
   //make request
@@ -1862,9 +1864,11 @@ void dma_controller_t::ind_read_req(indirect_stream_t& stream,
 
   SDMemReqInfoPtr sdInfo = NULL; 
   if(scr_addr==-1) { //READ TO PORTS
-    sdInfo = new SDMemReqInfo(_accel->_accel_index, scr_addr, stream.in_port(), imap, last);
+    sdInfo = new SDMemReqInfo(_accel->_accel_index, scr_addr, 
+                 stream.in_port(), imap, last, stream.fill_mode());
   } else { //READ TO SCRATCH
-    sdInfo = new SDMemReqInfo(_accel->_accel_index, scr_addr, SCR_STREAM, imap, last);
+    sdInfo = new SDMemReqInfo(_accel->_accel_index, scr_addr, SCR_STREAM, 
+                             imap, last, stream.fill_mode());
   }
 
   //make request
@@ -1934,7 +1938,7 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
   }
 
   SDMemReqInfoPtr sdInfo = new SDMemReqInfo(_accel->_accel_index, -1, MEM_WR_STREAM, 
-                                            mask /*N/A*/, false /*N/A*/);
+                                            mask /*NA*/, false /*NA*/, 0 /*NA*/);
 
   //cout << "bytes written: " << bytes_written << "addr: " << std::hex << init_addr 
   //  << std::dec << " first elem: " << *data64 << "\n";
@@ -2012,7 +2016,7 @@ void dma_controller_t::req_write(port_dma_stream_t& stream, port_data_t& vp) {
 
   unsigned bytes_written = elem_written * data_width;
   SDMemReqInfoPtr sdInfo = new SDMemReqInfo(_accel->_accel_index, -1, MEM_WR_STREAM, 
-                                            mask /*N/A*/, false /*N/A*/);
+                                            mask /*NA*/, false /*NA*/, 0 /*NA*/);
 
   //make store request
   _accel->_lsq->pushRequest(stream.minst(),false/*isLoad*/, data8,
@@ -2161,9 +2165,8 @@ void scratch_read_controller_t::cycle() {
           if(SB_DEBUG::VP_SCORE2) {
             cout << "SOURCE: SCR->PORT\n";
           }
-          in_vp.set_status(port_data_t::STATUS::FREE);
+          in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE, stream.fill_mode());
         }
-
         break;
       }
 
@@ -2196,7 +2199,6 @@ void scratch_read_controller_t::cycle() {
             stream._scratch_addr+=data.size()*DATA_WIDTH;
             break;
           }
-            
         } else { //destination is local read buf
           bool last = xfer_stream_buf(stream,_buf_shs_read,stream._scratch_addr);
           if(last) {
@@ -2370,7 +2372,7 @@ void port_controller_t::cycle() {
           cout << "SOURCE: PORT->PORT\n";
         }
         port_data_t& in_vp = _accel->port_interf().in_port(stream._in_port);
-        in_vp.set_status(port_data_t::STATUS::FREE);
+        in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE, stream.fill_mode());
 
         if(SB_DEBUG::VP_SCORE2) {
           cout << "SOURCE: PORT->PORT\n";
@@ -2412,7 +2414,7 @@ void port_controller_t::cycle() {
         if(SB_DEBUG::VP_SCORE2) {
           cout << "SOURCE: CONST->PORT\n";
         }
-        in_vp.set_status(port_data_t::STATUS::FREE);
+        in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE, stream.fill_mode());
       }
 
       break;
@@ -2459,7 +2461,7 @@ void port_controller_t::cycle() {
         if(SB_DEBUG::VP_SCORE2) {
           cout << "SOURCE: PORT->PORT\n";
         }
-        vp_in.set_status(port_data_t::STATUS::FREE);
+        vp_in.set_status(port_data_t::STATUS::FREE, LOC::NONE, stream.fill_mode());
 
         if(SB_DEBUG::VP_SCORE2) {
           cout << "SOURCE: PORT->PORT\n";

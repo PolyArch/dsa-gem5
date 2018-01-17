@@ -525,7 +525,7 @@ decode OPCODE default Unknown::unknown() {
                 xc->callSDFunc(SB_CTX);
             }}, IsSDParam, IsNonSpeculative, No_OpClass);
             0x3: sb_fill_mode({{
-                xc->setSDReg(Rs1,SD_CONSTANT);
+                xc->setSDReg(s_imm,SD_CONSTANT);
                 xc->callSDFunc(SB_FILL_MODE);
             }}, IsSDParam, IsNonSpeculative, No_OpClass);
 
