@@ -121,7 +121,7 @@ public:
   void fill(uint32_t mode) {
     if(mode == 0) {
       return; //do nothing
-    } else if (mode == 1) { //zero fill to width
+    } else { //zero fill to width
       unsigned width = port_cgra_elem();
       unsigned remainder = _mem_data.size() % width;
       if(remainder != 0) {

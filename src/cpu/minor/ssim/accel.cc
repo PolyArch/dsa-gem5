@@ -1512,6 +1512,12 @@ void dma_controller_t::port_resp(unsigned cur_port) {
         }
         //END HACK
 
+        if(response->sdInfo->stride_hit) {
+          if(response->sdInfo->fill_mode == STRIDE_ZERO_FILL) {
+            in_vp.fill(true);
+          }
+        }
+
         if(last) {
           auto& in_vp = _accel->port_interf().in_port(cur_port);
           if(SB_DEBUG::VP_SCORE2) {
@@ -1788,7 +1794,7 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
         uint8_t* data8 = (uint8_t*)data.data();
         unsigned bytes_written = data.size() * DATA_WIDTH;
         SDMemReqInfoPtr sdInfo = new SDMemReqInfo(_accel->_accel_index, -1, 
-            MEM_WR_STREAM, mask /*NA*/, false /*NA*/, 0 /*NA*/);
+            MEM_WR_STREAM, mask /*NA*/);
 
         //make store request
         _accel->_lsq->pushRequest(_accel->cur_minst(),false/*isLoad*/, data8,
@@ -1832,6 +1838,9 @@ int dma_controller_t::req_read(mem_stream_base_t& stream,
       mask[(addr-base_addr)/DATA_WIDTH]=1;
     addr = stream.pop_addr();
     words+=1;
+    if(stream.fill_mode()==STRIDE_ZERO_FILL && stream.stride_hit() && scr_addr==-1) {
+      break;
+    }
   }
 
   //TODO: add l2_miss statistics -- probably somewhere else....
@@ -1843,17 +1852,16 @@ int dma_controller_t::req_read(mem_stream_base_t& stream,
   }
 
   bool last = stream.check_set_empty(); //do this first so last is set
-
   if(last) {
     _accel->process_stream_stats(stream);
   }
 
   SDMemReqInfoPtr sdInfo = NULL; 
   if(scr_addr==-1) { //READ TO PORTS
-    sdInfo = new SDMemReqInfo(_accel->_accel_index, scr_addr, stream.in_port(), mask, last, stream.fill_mode());
+    sdInfo = new SDMemReqInfo(_accel->_accel_index, scr_addr, stream.in_port(), mask, last, stream.fill_mode(), stream.stride_hit());
   } else { //READ TO SCRATCH
     sdInfo = new SDMemReqInfo(_accel->_accel_index, scr_addr, SCR_STREAM, mask, last,
-        stream.fill_mode());
+        stream.fill_mode(), stream.stride_hit());
   }
 
   //make request
@@ -2152,6 +2160,11 @@ vector<SBDT> scratch_read_controller_t::read_scratch(
     prev_addr=addr;
     mask[(addr-base_addr)/DATA_WIDTH]=1;
     addr = stream.pop_addr();
+
+    if(stream.fill_mode()==STRIDE_ZERO_FILL && stream.stride_hit()) {
+      break;
+    }
+
   }
 
   if(SB_DEBUG::VERIF_SCR) {
@@ -2216,6 +2229,11 @@ void scratch_read_controller_t::cycle() {
         for(auto d : data) {
           in_vp.push_data(d);
         }
+
+        if(stream.fill_mode()==STRIDE_ZERO_FILL && stream.stride_hit()) {
+          in_vp.fill(true);
+        }
+
         bool is_empty = stream.check_set_empty();
         if(is_empty) {
           _accel->process_stream_stats(stream);

@@ -205,6 +205,10 @@ struct mem_stream_base_t : public base_stream_t {
     }
   }
 
+  bool stride_hit() {
+    return _bytes_in_access==0;
+  }
+
   //Return next address
   addr_t pop_addr() { 
     assert(_access_size!=0);
@@ -217,11 +221,12 @@ struct mem_stream_base_t : public base_stream_t {
     } else {
       _bytes_in_access+=DATA_WIDTH;
     }
+
     if(_bytes_in_access==_access_size) { // go to next stride
       _bytes_in_access=0;
       _mem_addr+=_stride;
       _num_strides--;
-      _access_size+=_stretch; //OMG, it's happening!
+      _access_size+=_stretch; 
     }
     assert((_bytes_in_access<_access_size 
             || _access_size==0) && "something went wrong");

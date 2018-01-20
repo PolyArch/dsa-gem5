@@ -47,4 +47,10 @@ typedef uint64_t addr_t;
 #define WAIT_SCR_RD_Q 8 //wait for all reads to be de-queued
 #define WAIT_MEM_WR   16//wait for all writes to complete
 
+//fill modes
+#define NO_FILL        0
+#define POST_ZERO_FILL 1
+#define PRE_ZERO_FILL  2
+#define STRIDE_ZERO_FILL 3
+
 #endif

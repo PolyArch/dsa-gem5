@@ -60,19 +60,22 @@ struct SDMemReqInfo {
     std::vector <bool> mask;
     std::vector <int> map;
     bool last;
+    bool stride_hit=false;
     bool isConfig = 0;
     uint64_t which_accel = 0;
     SDMemReqInfo(uint64_t which_accel_, uint64_t scr_addr_, int port_, 
-                    std::vector<bool>& mask_, bool last_, bool fill_)
+        std::vector<bool>& mask_, bool last_=false, uint32_t fill_=false, 
+        bool stride_hit_=false)
         : scr_addr(scr_addr_), port(port_), fill_mode(fill_), mask(mask_),
-        last(last_), which_accel(which_accel_) {}
+        last(last_), stride_hit(stride_hit_), which_accel(which_accel_) {}
     SDMemReqInfo(uint64_t which_accel_, uint64_t scr_addr_, int port_, 
-                    std::vector<int>& map_, bool last_, bool fill_)
+                    std::vector<int>& map_, bool last_=0, uint32_t fill_=0,
+                    bool stride_hit_=false)
         : scr_addr(scr_addr_), port(port_), fill_mode(fill_), map(map_), 
-        last(last_), which_accel(which_accel_) {}
+        last(last_), stride_hit(stride_hit_), which_accel(which_accel_) {}
     SDMemReqInfo(uint64_t which_accel_, int port_)
         : scr_addr(-1), port(port_), 
-        last(false), which_accel(which_accel_) {}
+        last(false), stride_hit(false), which_accel(which_accel_) {}
 };
 typedef SDMemReqInfo *SDMemReqInfoPtr;
 
