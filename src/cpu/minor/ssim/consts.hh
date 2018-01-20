@@ -45,5 +45,6 @@ typedef uint64_t addr_t;
 #define WAIT_CMP      2 //wait for everything to complete
 #define WAIT_SCR_RD   4 //wait for all reads to complete
 #define WAIT_SCR_RD_Q 8 //wait for all reads to be de-queued
+#define WAIT_MEM_WR   16//wait for all writes to complete
 
 #endif

@@ -17,6 +17,13 @@ Minor::MinorDynInstPtr accel_t::cur_minst() {
 
 void accel_t::req_config(addr_t addr, int size) {
   assert(_in_config ==false);
+
+  if(addr==0 && size==0) {
+    //This is the reset_data case!
+    request_reset_data();
+    return;
+  }
+
   _in_config=true;
 
   if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SCR_BARRIER)  ) {
@@ -31,9 +38,38 @@ void accel_t::req_config(addr_t addr, int size) {
               sdInfo);
 }
 
+void accel_t::request_reset_data() {
+  _cleanup_mode=true; 
+  reset_data();
+}
+
+void accel_t::reset_data() {
+    if(SB_DEBUG::SB_COMMAND) {
+      timestamp();
+      std::cout << "RESET_DATA REQUEST INITIALIZED\n";
+    }
+
+    for(unsigned i = 0; i < _soft_config.in_ports_active_plus.size(); ++i) {
+      int cur_port = _soft_config.in_ports_active_plus[i];
+      auto& in_vp = _port_interf.in_port(cur_port);
+      in_vp.reset_data();
+    } 
+
+    for(unsigned i = 0; i < _soft_config.out_ports_active_plus.size(); ++i) {
+      int cur_port = _soft_config.out_ports_active_plus[i];
+      auto& out_vp = _port_interf.out_port(cur_port);
+      out_vp.reset_data();
+    }
+
+    _dma_c.reset_data();
+    _scr_r_c.reset_data();
+    _scr_w_c.reset_data();
+}
+
 // --------------------------------- CONFIG ---------------------------------------
 void soft_config_t::reset() {
   in_ports_active.clear();
+  in_ports_active_group.clear();
   out_ports_active.clear();
   in_ports_active_plus.clear();
   out_ports_active_plus.clear();
@@ -504,7 +540,11 @@ void accel_t::cycle_cgra() {
   //Detect if we are ready to fire
   unsigned min_ready=10000000;
   for(unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
-    int cur_port = _soft_config.in_ports_active[i];
+     int cur_port = _soft_config.in_ports_active[i];
+ 
+  //std::vector<SbPDG_VecInput*>&  input_vec = _pdg->vec_in_group(0);
+  //for(unsigned i = 0; i < input_vec.size(); ++i) {
+    //int cur_port = input_vec[i]->port();
     min_ready = std::min(_port_interf.in_port(cur_port).num_ready(), min_ready);
     //if(min_ready==0 && _accel_index==0) {
     //  timestamp(); cout << "Port " << cur_port << "not ready\n";
@@ -1418,6 +1458,15 @@ void apply_map(uint64_t* raw_data, const vector<int>& imap, std::vector<SBDT>& d
 
 void dma_controller_t::port_resp(unsigned cur_port) {
   if(Minor::LSQ::LSQRequestPtr response = _accel->_lsq->findResponse(cur_port) ) {
+
+    //First check if we haven't discared the memory request
+    //this will only be the case if reqs are equal to zero
+    if(_accel->_cleanup_mode) {
+      _accel->_lsq->popResponse(cur_port);
+      _mem_read_reqs--;
+      return;
+    }
+
     if(_accel->_accel_index == response->sdInfo->which_accel)  {
 
       auto& in_vp = _accel->port_interf().in_port(cur_port);
@@ -1528,29 +1577,38 @@ void dma_controller_t::cycle(){
 
   //memory read to scratch
   if(Minor::LSQ::LSQRequestPtr response =_accel->_lsq->findResponse(SCR_STREAM)) {
-    if(_accel->_accel_index == response->sdInfo->which_accel) {
-      PacketPtr packet = response->packet;
-      if(packet->getSize()!=MEM_WIDTH) {
-        assert(0 && "weird memory response size");
-      }
-      vector<SBDT> data;
-      apply_mask(packet->getPtr<uint64_t>(), response->sdInfo->mask, data);
+    //Discard request if in cleanup mode
+    if(_accel->_cleanup_mode) {
+      _fake_scratch_reqs--;
+      _mem_read_reqs--;
+      _accel->_lsq->popResponse(SCR_STREAM);
+    } else {
 
-      if(_scr_w_c->_buf_dma_write.push_data(response->sdInfo->scr_addr, data)) {
-        if(SB_DEBUG::MEM_REQ) {
-          _accel->timestamp();
-          std::cout << "data into scratch " << response->sdInfo->scr_addr 
-                    << ":" << data.size() << "elements" << "\n";
+
+      if(_accel->_accel_index == response->sdInfo->which_accel) {
+        PacketPtr packet = response->packet;
+        if(packet->getSize()!=MEM_WIDTH) {
+          assert(0 && "weird memory response size");
         }
-        if(_accel->_ssim->in_roi()) {
-          _accel->_stat_mem_bytes_rd+=data.size();
+        vector<SBDT> data;
+        apply_mask(packet->getPtr<uint64_t>(), response->sdInfo->mask, data);
+  
+        if(_scr_w_c->_buf_dma_write.push_data(response->sdInfo->scr_addr, data)) {
+          if(SB_DEBUG::MEM_REQ) {
+            _accel->timestamp();
+            std::cout << "data into scratch " << response->sdInfo->scr_addr 
+                      << ":" << data.size() << "elements" << "\n";
+          }
+          if(_accel->_ssim->in_roi()) {
+            _accel->_stat_mem_bytes_rd+=data.size();
+          }
+  
+          //handled_req=true;
+          _fake_scratch_reqs--;
+          _mem_read_reqs--;
+  
+          _accel->_lsq->popResponse(SCR_STREAM);
         }
-
-        //handled_req=true;
-        _fake_scratch_reqs--;
-        _mem_read_reqs--;
-
-        _accel->_lsq->popResponse(SCR_STREAM);
       }
     }
   }
@@ -2493,6 +2551,11 @@ bool accel_t::done(bool show,int mask) {
   
   if(show) return d;
 
+  if(mask ==0 && d) {
+    //nothing left to clean up
+    _cleanup_mode=false;
+  }
+
   if(SB_DEBUG::SB_WAIT) {
     timestamp();
     if(d) {
@@ -2607,16 +2670,19 @@ bool dma_controller_t::done(bool show, int mask) {
       if(show) cout << "DMA -> PORT Streams Not Empty\n";
       return false;
     }
-    if(port_dma_streams_active()) {
-      if(show) cout << "PORT -> DMA Streams Not Empty\n";
-      return false;
-    }
     if(mem_reqs() != 0) {
       if(show) cout << "Memory requests are outstanding\n";
       return false;
     }
     if(indirect_streams_active()) {
       if(show) cout << "DMA -> Indirect Streams Not Empty\n";
+      return false;
+    }
+  }
+
+  if(mask==0 || mask&WAIT_CMP || mask&WAIT_MEM_WR) {
+    if(port_dma_streams_active()) {
+      if(show) cout << "PORT -> DMA Streams Not Empty\n";
       return false;
     }
     if(indirect_wr_streams_active()) {
@@ -2829,6 +2895,8 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
 
   _soft_config.cgra_in_ports_active.resize(128);
 
+  _soft_config.in_ports_active_group.resize(4);
+
   // Associating the PDG Nodes from the configuration bits, with the vector ports defined by the hardware
   for(auto& port_pair : _sbconfig->subModel()->io_interf().in_vports) {
     int i = port_pair.first; //index of port
@@ -2836,12 +2904,18 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
 
     if(_sched->slices().read_slice(0,i,i)) {
       _soft_config.in_ports_active.push_back(i); //activate input vector port
-      port_data_t& cur_in_port = _port_interf.in_port(i);
- 
+
       SbPDG_Vec* vec_in = _sched->vportOf(make_pair(true/*input*/,i));
-      assert(vec_in);
+      SbPDG_VecInput* vec_input = dynamic_cast<SbPDG_VecInput*>(vec_in);
+
+      assert(vec_in && vec_input);
+
+      int group_ind = _pdg->find_group_for_vec(vec_input);
+      _soft_config.in_ports_active_group[group_ind].push_back(i); //activate input for group
+
       vector<bool> mask = _sched->maskOf(vec_in);
 
+      port_data_t& cur_in_port = _port_interf.in_port(i);
       cur_in_port.set_port_map(_sbconfig->subModel()->io_interf().in_vports[i],mask);
 
       //cout << "added ivp" << i << "mask size: " << mask.size() << "\n";

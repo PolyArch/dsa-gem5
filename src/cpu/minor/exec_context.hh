@@ -450,7 +450,9 @@ class ExecContext : public ::ExecContext
                     ssim.set_not_in_use();
                     DPRINTF(SD, "Set SB Not in Use\n");
                 } else if(thread.getSDReg(SD_WAIT_MASK) == 2) {
-                     DPRINTF(SD, "Wait Compute\n");                  
+                     DPRINTF(SD, "Wait Compute\n");         
+                } else if(thread.getSDReg(SD_WAIT_MASK) == 16) {
+                     DPRINTF(SD, "Wait mem write\n");
                 } else {
                      ssim.insert_barrier(thread.getSDReg(SD_WAIT_MASK));
                 }

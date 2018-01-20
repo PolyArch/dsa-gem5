@@ -51,6 +51,10 @@ public:
   std::vector<int> in_ports_active;
   std::vector<int> out_ports_active;
 
+  //In ports active by group
+  std::vector<std::vector<int>> in_ports_active_group;
+  //std::vector<std::vector<int>> out_ports_active_group;
+
   std::vector<int> in_ports_active_plus;
   std::vector<int> out_ports_active_plus;
 
@@ -82,6 +86,23 @@ public:
   unsigned port_vec_elem(); //total size elements of the std::vector port 
   unsigned port_depth() { return port_vec_elem() / port_cgra_elem();} //depth of queue
   unsigned cgra_port_for_index(unsigned i) { return _port_map[i].first;}
+
+  //reset all data
+  void reset_data() {
+    _mem_data.clear();
+    _status = STATUS::FREE;
+    _repeat=1, _repeat_stretch=0;
+    _cur_repeat_lim=1;
+    _num_times_repeated=0;
+    _outstanding=0;
+    _loc=LOC::NONE;
+    for(int i = 0; i < _cgra_data.size(); ++i) {
+      _cgra_data[i].clear();
+    }
+    _num_in_flight=0; 
+    _num_ready=0;
+    _total_pushed=0;
+  }
 
   bool can_push_vp(int size) {
     return size <= num_can_push();
@@ -369,6 +390,11 @@ struct data_buffer_base {
     return _data.size();
   }
 
+  void reset_data() {
+    _data.clear();
+    _just_pushed=0;
+  }
+
 protected:
   std::deque<SBDT> _data;
   int _just_pushed=0;
@@ -408,6 +434,12 @@ struct data_buffer : public data_buffer_base {
   addr_t dest_addr() {
     return _dest_addr;
   }
+
+  void reset_data() {
+    data_buffer_base::reset_data();
+    _dest_addr=0;
+  }
+
 protected:
   uint64_t _dest_addr;
 };
@@ -454,15 +486,26 @@ class dma_controller_t : public data_controller_t {
     _tq_read = _dma_port_streams.size()+1/*dma->scr*/+_indirect_streams.size();
     _tq = _tq_read + _port_dma_streams.size()+1+_indirect_wr_streams.size();
     
-    //set everything to be empty
+    _prev_port_cycle.resize(64); //resize to maximum conceivable ports
+
+    reset_stream_engines();
+    mask.resize(MEM_WIDTH/DATA_WIDTH);
+  }
+
+
+  void reset_stream_engines() {
     for(auto& i : _dma_port_streams) {i.reset();}
     for(auto& i : _indirect_streams) {i.reset();}
     for(auto& i : _indirect_wr_streams) {i.reset();}
     for(auto& i : _port_dma_streams) {i.reset();}
     _dma_scr_stream.reset();
+  }
 
-    _prev_port_cycle.resize(64); //resize to maximum conceivable ports
-    mask.resize(MEM_WIDTH/DATA_WIDTH);
+  void reset_data() {
+    reset_stream_engines();
+    _mem_read_reqs=0;
+    _mem_write_reqs=0;
+    _fake_scratch_reqs=0;
   }
 
   void cycle();
@@ -566,8 +609,18 @@ class scratch_read_controller_t : public data_controller_t {
     _scr_port_streams.resize(4);
 
     max_src=1+_scr_port_streams.size() + _scr_scr_streams.size();
+    reset_stream_engines();
+  }
+
+  void reset_stream_engines() {
     for(auto& i : _scr_scr_streams) {i.reset();}
     for(auto& i : _scr_port_streams) {i.reset();}
+  }
+
+  void reset_data() {
+    reset_stream_engines();
+    _buf_dma_read.reset_data();
+    _buf_shs_read.reset_data();
   }
 
   std::vector<SBDT> read_scratch(mem_stream_base_t& stream);
@@ -640,9 +693,20 @@ class scratch_write_controller_t : public data_controller_t {
     } else {
       _scr_scr_streams.resize(1); 
     }
+    reset_stream_engines();
+  }
+
+  void reset_stream_engines() {
     for(auto& i : _scr_scr_streams) {i.reset();}
     for(auto& i : _port_scr_streams) {i.reset();}
   }
+
+  void reset_data() {
+    reset_stream_engines();
+    _buf_dma_write.reset_data();
+    _buf_shs_write.reset_data();
+  }
+
 
   void cycle();
   void finish_cycle();
@@ -917,6 +981,8 @@ public:
   void cycle_status();
   void clear_cycle();
 
+  void request_reset_data();
+
   port_interf_t& port_interf() {
     return _port_interf;
   }
@@ -1001,6 +1067,7 @@ private:
   ssim_t* _ssim;
   Minor::LSQ* _lsq;
   std::ofstream in_port_verif, out_port_verif, scr_wr_verif, scr_rd_verif, cmd_verif;
+  bool _cleanup_mode=false;
 
   //softsim_interf_t* _sim_interf;
   //SBDT ld_mem8(addr_t addr,uint64_t& cycle, Minor::MinorDynInstPtr m) 
@@ -1016,6 +1083,7 @@ private:
   bool done_concurrent(bool show, int mask);
 
   void cycle_cgra();   //Tick on each cycle
+  void reset_data(); //carry out the work 
 
   void cycle_in_interf();
   void cycle_out_interf();
