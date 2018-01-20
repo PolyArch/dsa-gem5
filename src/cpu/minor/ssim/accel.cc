@@ -2910,7 +2910,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
 
       assert(vec_in && vec_input);
 
-      int group_ind = _pdg->find_group_for_vec(vec_input);
+      int group_ind = 0; //_pdg->find_group_for_vec(vec_input);
       _soft_config.in_ports_active_group[group_ind].push_back(i); //activate input for group
 
       vector<bool> mask = _sched->maskOf(vec_in);
