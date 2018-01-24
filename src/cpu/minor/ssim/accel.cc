@@ -71,6 +71,7 @@ void soft_config_t::reset() {
   in_ports_active.clear();
   in_ports_active_group.clear();
   out_ports_active.clear();
+  out_ports_active_group.clear();
   in_ports_active_plus.clear();
   out_ports_active_plus.clear();
   in_port_delay.clear();
@@ -537,68 +538,77 @@ void accel_t::cycle_cgra() {
 
   uint64_t cur_cycle = now();
 
-  //Detect if we are ready to fire
-  unsigned min_ready=10000000;
-  for(unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
-     int cur_port = _soft_config.in_ports_active[i];
+  for(int group = 0; group < 4; ++group) {
+    //Detect if we are ready to fire
+    auto& active_ports=_soft_config.in_ports_active_group[group];
+    
+    if(active_ports.size()==0) continue;
+    unsigned min_ready=10000000;
+    for(int i=0; i < active_ports.size(); ++i) {
+       int cur_port = active_ports[i];
  
-  //std::vector<SbPDG_VecInput*>&  input_vec = _pdg->vec_in_group(0);
-  //for(unsigned i = 0; i < input_vec.size(); ++i) {
-    //int cur_port = input_vec[i]->port();
-    min_ready = std::min(_port_interf.in_port(cur_port).num_ready(), min_ready);
-    //if(min_ready==0 && _accel_index==0) {
-    //  timestamp(); cout << "Port " << cur_port << "not ready\n";
-    //}
-  }
-
-  //Now fire on all cgra ports
-  if(min_ready > 0) {
-    forward_progress();
-    execute_pdg(0);  //Note that this will set backpressure variable
-
-    if(in_roi()) {
-      _stat_sb_insts+=_pdg->num_insts();
+    //std::vector<SbPDG_VecInput*>&  input_vec = _pdg->vec_in_group(0);
+    //for(unsigned i = 0; i < input_vec.size(); ++i) {
+      //int cur_port = input_vec[i]->port();
+      min_ready = std::min(_port_interf.in_port(cur_port).num_ready(), min_ready);
+      //if(min_ready==0 && _accel_index==0) {
+      //  timestamp(); cout << "Port " << cur_port << "not ready\n";
+      //}
     }
-    //pop the elements from inport as they have been processed
-    for(unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
-      uint64_t port_index = _soft_config.in_ports_active[i];
-      port_data_t& in_port = _port_interf.in_port(port_index);
 
-      SbPDG_VecInput* vec_in = 
-        dynamic_cast<SbPDG_VecInput*>(_sched->vportOf(make_pair(true/*input*/,port_index)));
-      //skip popping if backpressure is on
-      if(!vec_in->backPressureOn()) {
-        //only increment repeated if no backpressure
-        bool should_pop = in_port.inc_repeated();
-        if(should_pop) {
-          in_port.pop(1);
+    //Now fire on all cgra ports
+    if(min_ready > 0) {
+      forward_progress();
+      execute_pdg(0,group);  //Note that this will set backpressure variable
+
+      if(in_roi()) {
+        _stat_sb_insts+=_pdg->num_insts();
+      }
+      //pop the elements from inport as they have been processed
+      for(unsigned i = 0; i < active_ports.size(); ++i) {
+        uint64_t port_index = active_ports[i];
+        port_data_t& in_port = _port_interf.in_port(port_index);
+
+        SbPDG_VecInput* vec_in = 
+          dynamic_cast<SbPDG_VecInput*>(_sched->vportOf(make_pair(true/*input*/,port_index)));
+        //skip popping if backpressure is on
+        if(!vec_in->backPressureOn()) {
+          //only increment repeated if no backpressure
+          bool should_pop = in_port.inc_repeated();
+          if(should_pop) {
+            in_port.pop(1);
+          }
         }
       }
     }
-  }
 
-  if(!_cgra_output_ready.empty()) {
-    auto iter =  _cgra_output_ready.begin();
-    if(cur_cycle >= iter->first) {
+    //some previously produced outputs might be ready at this point,
+    //so, lets quickly check. (could be broken out as a separate function)
+    if(!_cgra_output_ready.empty()) {
+      auto iter =  _cgra_output_ready.begin();
+      if(cur_cycle >= iter->first) {
 
-      for(auto& out_port_num : iter->second) {
-        _port_interf.out_port(out_port_num).set_out_complete();
+        for(auto& out_port_num : iter->second) {
+          _port_interf.out_port(out_port_num).set_out_complete();
+        }
+        _cgra_output_ready.erase(iter); //delete from list
       }
-      _cgra_output_ready.erase(iter); //delete from list
     }
   }
 }
 
-void accel_t::execute_pdg(unsigned instance) {
+void accel_t::execute_pdg(unsigned instance, int group) {
   if(SB_DEBUG::SB_COMP) {
-    std::cout << "inputs: ";
+    std::cout << "inputs (group" << group << "):";
   }
+
+  auto& active_ports=_soft_config.in_ports_active_group[group];
 
   //timestamp(); cout << " EXECUTE ACCEL " << accel_index() << "\n";
 
   //send each fifo's data to corresponding pdg input
-  for(unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
-    auto& cur_in_port = _port_interf.in_port(_soft_config.in_ports_active[i]);
+  for(unsigned i = 0; i < active_ports.size(); ++i) {
+    auto& cur_in_port = _port_interf.in_port(active_ports[i]);
 
     //for each active vector port
     for(unsigned port_idx = 0; port_idx < cur_in_port.port_cgra_elem(); ++port_idx) {
@@ -611,7 +621,7 @@ void accel_t::execute_pdg(unsigned instance) {
       SBDT val = cur_in_port.value_of(port_idx, instance);
 
       //for each cgra port and associated pdg input
-      _soft_config.input_pdg_node[i][port_idx]->set_value(val);  //value of the node
+      _soft_config.input_pdg_node[group][i][port_idx]->set_value(val);  
       
       if(SB_DEBUG::SB_COMP) {
         std::cout << std::hex << val << ", " << std::dec;
@@ -648,21 +658,24 @@ void accel_t::execute_pdg(unsigned instance) {
   }
 
   //perform computation
-  _pdg->compute(print,SB_DEBUG::VERIF_CGRA);
+  _pdg->compute(print,SB_DEBUG::VERIF_CGRA,group);
   _cgra_issued=true;
 
   uint64_t cur_cycle = now();
 
+  auto& active_out_ports=_soft_config.out_ports_active_group[group];
+
   //send outputs to corresponding output fifo
-  for(unsigned i = 0; i < _soft_config.out_ports_active.size(); ++i) {
-    int pnum = _soft_config.out_ports_active[i];
+  //TODO: Impelement backpressure in simulator here!
+  for(unsigned i = 0; i < active_out_ports.size(); ++i) {
+    int pnum = active_out_ports[i];
     auto& cur_out_port = _port_interf.out_port(pnum);
 
     bool got_discarded=false;
 
     for(unsigned port_idx = 0; port_idx < cur_out_port.port_cgra_elem(); ++port_idx) {
       //int cgra_port = cur_out_port.cgra_port_for_index(port_idx);
-      SbPDG_Output* n = _soft_config.output_pdg_node[i][port_idx];
+      SbPDG_Output* n = _soft_config.output_pdg_node[group][i][port_idx];
 
       if(!n->discard()) {
         assert(got_discarded==0 && "can't discard partial vector ports\n");
@@ -2914,29 +2927,29 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
   _soft_config.cgra_in_ports_active.resize(128);
 
   _soft_config.in_ports_active_group.resize(4);
+  _soft_config.out_ports_active_group.resize(4);
+  _soft_config.input_pdg_node.resize(4);
+  _soft_config.output_pdg_node.resize(4);
 
   // Associating the PDG Nodes from the configuration bits, with the vector ports defined by the hardware
   for(auto& port_pair : _sbconfig->subModel()->io_interf().in_vports) {
     int i = port_pair.first; //index of port
-    //std::vector<std::pair<int, std::vector<int> > >& port_m = port_pair.second;
 
     if(_sched->slices().read_slice(0,i,i)) {
       _soft_config.in_ports_active.push_back(i); //activate input vector port
 
       SbPDG_Vec* vec_in = _sched->vportOf(make_pair(true/*input*/,i));
       SbPDG_VecInput* vec_input = dynamic_cast<SbPDG_VecInput*>(vec_in);
+      assert(vec_input);
 
-      assert(vec_in && vec_input);
-
-      int group_ind = 0; //_pdg->find_group_for_vec(vec_input);
-      _soft_config.in_ports_active_group[group_ind].push_back(i); //activate input for group
+      int group_ind = _pdg->find_group_for_vec(vec_input);
+      _soft_config.in_ports_active_group[group_ind].push_back(i); 
 
       vector<bool> mask = _sched->maskOf(vec_in);
 
+      //port mapping of 1 vector port - cgra_port_num: vector offset elements
       port_data_t& cur_in_port = _port_interf.in_port(i);
       cur_in_port.set_port_map(_sbconfig->subModel()->io_interf().in_vports[i],mask);
-
-      //cout << "added ivp" << i << "mask size: " << mask.size() << "\n";
 
       //find corresponding pdg nodes
       std::vector<SbPDG_Input*> pdg_inputs;
@@ -2956,24 +2969,28 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
           //TODO: is there something I SHOULD DO INCASE input DOESN'T EXIST?
         }
       }
-      _soft_config.input_pdg_node.push_back(pdg_inputs);
+      _soft_config.input_pdg_node[group_ind].push_back(pdg_inputs);
     }
   }
 
 
   for(auto& port_pair : _sbconfig->subModel()->io_interf().out_vports) {
     int i = port_pair.first; //index of port
-    //std::vector<std::pair<int, std::vector<int> > >& port_m = port_pair.second;
 
     if(_sched->slices().read_slice(1,i,i)) { //activate output port
       _soft_config.out_ports_active.push_back(i);
-      auto& cur_out_port = _port_interf.out_port(i);
 
       SbPDG_Vec* vec_out = _sched->vportOf(make_pair(false/*input*/,i));
-      assert(vec_out);
+      SbPDG_VecOutput* vec_output = dynamic_cast<SbPDG_VecOutput*>(vec_out);
+      assert(vec_output);
+
+      int group_ind = _pdg->find_group_for_vec(vec_output);
+      _soft_config.out_ports_active_group[group_ind].push_back(i); 
+
       vector<bool> mask = _sched->maskOf(vec_out);
 
       //port mapping of 1 vector port - cgra_port_num: vector offset elements
+      auto& cur_out_port = _port_interf.out_port(i);
       cur_out_port.set_port_map(_sbconfig->subModel()->io_interf().out_vports[i],mask);
 
       //find corresponding pdg nodes
@@ -2982,7 +2999,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
       int max_lat=0;
       for(unsigned port_idx = 0; port_idx < cur_out_port.port_cgra_elem(); ++port_idx){
         int cgra_port_num = cur_out_port.cgra_port_for_index(port_idx);
-        //look up the dynode for the input cgra_port_num
+        //look up the dynode for the cgra_port_num
         sboutput* sbout =_sbconfig->subModel()->get_output(cgra_port_num);
         SbPDG_Node* pdg_node = _sched->pdgNodeOf(sbout);
         assert(pdg_node);
@@ -2994,7 +3011,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
       if(SB_DEBUG::SB_OVP_LAT) {
         cout << "out vp" << i << " has latency:" << max_lat << "\n";
       }
-      _soft_config.output_pdg_node.push_back(pdg_outputs);
+      _soft_config.output_pdg_node[group_ind].push_back(pdg_outputs);
     }
   }
 

@@ -53,7 +53,7 @@ public:
 
   //In ports active by group
   std::vector<std::vector<int>> in_ports_active_group;
-  //std::vector<std::vector<int>> out_ports_active_group;
+  std::vector<std::vector<int>> out_ports_active_group;
 
   std::vector<int> in_ports_active_plus;
   std::vector<int> out_ports_active_plus;
@@ -64,8 +64,9 @@ public:
 
   std::vector<bool> cgra_in_ports_active;
 
-  std::vector<std::vector<SbPDG_Input*>>  input_pdg_node; //input pdg nodes for vec. port
-  std::vector<std::vector<SbPDG_Output*>> output_pdg_node;
+  //input pdg nodes for group, vec, port
+  std::vector<std::vector<std::vector<SbPDG_Input*>>>  input_pdg_node; 
+  std::vector<std::vector<std::vector<SbPDG_Output*>>> output_pdg_node;
 
   std::map<SB_CONFIG::sb_inst_t,int> inst_histo;
 
@@ -1212,7 +1213,7 @@ private:
   }
 
   void do_cgra();
-  void execute_pdg(unsigned instance);
+  void execute_pdg(unsigned instance, int group);
 
   void forward_progress() {
     _waiting_cycles=0; 
