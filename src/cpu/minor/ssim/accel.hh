@@ -1148,7 +1148,10 @@ private:
 
   void req_config(addr_t addr, int size);
 
+  void sanity_check_stream(base_stream_t* s);
+
   void add_port_based_stream(base_stream_t* s) {
+    sanity_check_stream(s);
     s->set_id();
     assert(cur_minst());
     s->set_minst(cur_minst());

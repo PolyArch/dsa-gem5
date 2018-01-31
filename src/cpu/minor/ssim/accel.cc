@@ -15,6 +15,32 @@ Minor::MinorDynInstPtr accel_t::cur_minst() {
   return _ssim->cur_minst();
 }
 
+void accel_t::sanity_check_stream(base_stream_t* s) {
+  //sanity check -- please don't read/write a stream that's not configured!
+  if(s->in_port() != -1 && s->in_port() < 25) { 
+    vector<int>::iterator it = std::find(_soft_config.in_ports_active.begin(), 
+                 _soft_config.in_ports_active.end(),s->in_port());
+    if(it == _soft_config.in_ports_active.end()) {
+      timestamp();
+      std::cout << "In port " << s->in_port() << " is not active for " 
+                << s->short_name() << ", maybe a configure error!\n";
+
+    }
+  }
+
+  if(s->out_port() != -1 && s->out_port() < 25) { 
+    vector<int>::iterator it = std::find(_soft_config.out_ports_active.begin(), 
+                 _soft_config.out_ports_active.end(),s->out_port());
+    if(it == _soft_config.out_ports_active.end()) {
+      timestamp();
+      std::cout << "Out port " << s->out_port() << " is not active for " 
+                << s->short_name() << ", maybe a configure error!\n";
+
+    }
+  }
+}
+
+
 void accel_t::req_config(addr_t addr, int size) {
   assert(_in_config ==false);
 
