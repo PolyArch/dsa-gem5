@@ -345,6 +345,9 @@ class Execute : public Named
     void commit(ThreadID thread_id, bool only_commit_microops, bool discard,
         BranchData &branch);
 
+    /** Helper for commit stalling **/
+    void timeout_check(bool should_commit, MinorDynInstPtr inst);
+
     /** Set the drain state (with useful debugging messages) */
     void setDrainState(ThreadID thread_id, DrainState state);
 

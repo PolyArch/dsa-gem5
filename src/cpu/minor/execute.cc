@@ -767,6 +767,10 @@ Execute::issue(ThreadID thread_id)
         }
 
         if (issued) {
+            if(inst->isInst() && inst->staticInst->isSDRecv()) {
+                 ssim.forward_progress(cpu.curCycle());
+            }
+
             /* Generate MinorTrace's MinorInst lines.  Do this at commit
              *  to allow better instruction annotation? */
             if (DTRACE(MinorTrace) && !inst->isBubble())
@@ -795,7 +799,6 @@ Execute::issue(ThreadID thread_id)
                 //if(ssim.in_roi()) {
                 //  DPRINTF(SD, "Issued inst: %s\n", *inst);
                 //}
-
 
                 if (num_insts_issued == issueLimit)
                     DPRINTF(MinorExecute, "Reached inst issue limit\n");
@@ -883,6 +886,23 @@ Execute::doInstCommitAccounting(MinorDynInstPtr inst)
     cpu.probeInstCommit(inst->staticInst);
 }
 
+void Execute::timeout_check(bool should_commit, MinorDynInstPtr inst) {
+  uint64_t cyc = cpu.curCycle();
+  uint64_t last_event = std::max(last_sd_issue, 
+                        ssim.forward_progress_cycle());
+  if(!should_commit) {
+    if(cyc > 10000 + last_event) {
+      DPRINTF(SD,"Instruction: %s is stalled for too long!!! ABORTING", *inst);
+      ssim.print_stats();
+      //ssim.done(true,0);
+      assert(0 && "Max SD instruction wait");
+    }
+  } else {
+    last_sd_issue = cyc;
+  }
+}
+
+
 bool
 Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
     BranchData &branch, Fault &fault, bool &committed,
@@ -964,16 +984,14 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
         completed_inst = false;
     } else if (inst->staticInst->isSDRecv() &&
                !ssim.can_receive(inst->staticInst->alt_imm())) {
-      DPRINTF(SD, "Could Not Recv: %s\n", *inst);
-      completed_inst = false;
-      /* Don't commit if you can't receive on output port
-       */
+        /* Don't commit if you can't receive on output port*/
+        DPRINTF(SD, "Could Not Recv: %s\n", *inst);
+        completed_inst = false;
+        timeout_check(false, inst);
     } else if (inst->staticInst->isSD() &&  ssim.is_in_config()) {
-      completed_inst = false;
-      ssim.wait_config();
-
-      /* Don't execute any instructions if ssim is in config mode!
-       */
+        completed_inst = false;
+        ssim.wait_config();
+        /* Don't execute any instructions if ssim is in config mode!*/
     } else {
       
         bool should_commit = true;
@@ -1000,19 +1018,7 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
         } 
 
         if(inst->staticInst->isSD()) {
-          uint64_t cyc = cpu.curCycle();
-          uint64_t last_event = std::max(last_sd_issue, 
-                                ssim.forward_progress_cycle());
-          if(!should_commit) {
-            if(cyc > 10000 + last_event) {
-              DPRINTF(SD,"Instruction: %s is stalled for too long.", *inst);
-              ssim.print_stats();
-              //ssim.done(true,0);
-              assert(0 && "Max SD instruction wait");
-            }
-          } else {
-            last_sd_issue = cyc;
-          }
+          timeout_check(should_commit, inst);
         }
 
         if(should_commit) {

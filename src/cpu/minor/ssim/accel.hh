@@ -312,6 +312,7 @@ private:
   LOC _loc=LOC::NONE;
   std::vector<std::pair<int, std::vector<int> > > _port_map;    //loc_map
   std::deque<SBDT> _mem_data;
+  std::deque<bool> _valid_data;
   std::vector<std::deque<SBDT>> _cgra_data; //data per port
   unsigned _num_in_flight=0; 
   unsigned _num_ready=0;

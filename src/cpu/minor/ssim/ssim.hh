@@ -62,6 +62,7 @@ public:
   
   void print_stats();
   uint64_t forward_progress_cycle();
+  void forward_progress(uint64_t c) {_global_progress_cycle=c;}
   bool can_add_stream();
   void add_bitmask_stream(base_stream_t* s);
   void add_bitmask_stream(base_stream_t* s, uint64_t context);
@@ -183,6 +184,7 @@ private:
   uint64_t _config_waits=0;
   std::unordered_map<uint64_t,uint64_t> _wait_map;
 
+  uint64_t _global_progress_cycle=0;
 };
 
 

@@ -177,7 +177,7 @@ void ssim_t::print_stats() {
 }
 
 uint64_t ssim_t::forward_progress_cycle() {
-  uint64_t r = 0;
+  uint64_t r = _global_progress_cycle;
   for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
     if(_ever_used_bitmask & b) {
       r = std::max(accel_arr[i]->forward_progress_cycle(),r);
