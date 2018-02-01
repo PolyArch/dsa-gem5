@@ -52,5 +52,7 @@ typedef uint64_t addr_t;
 #define POST_ZERO_FILL 1
 #define PRE_ZERO_FILL  2
 #define STRIDE_ZERO_FILL 3
+#define STRIDE_DISCARD_FILL 4
+
 
 #endif

@@ -158,7 +158,6 @@ bool port_data_t::inc_repeated() {
 
 
 void port_data_t::reformat_in() { //rearrange data for CGRA
-  
   //resize the data queue to macth the data elements of port vector  
   /*unsigned extra_elem = _mem_data.size() % port_vec_elem();
   if(extra_elem!=0) {
@@ -171,13 +170,15 @@ void port_data_t::reformat_in() { //rearrange data for CGRA
 }
 
 void port_data_t::reformat_in_one_vec() { //rearrange data for CGRA
-  if(_mem_data.size() >= port_vec_elem() && _num_ready + port_depth() <= CGRA_FIFO_LEN) {
+  if(_mem_data.size() >= port_vec_elem() && 
+      _num_ready + port_depth() <= CGRA_FIFO_LEN) {
     reformat_in_work();
   }
 }
 
 void port_data_t::reformat_in_work() {
-  if(_repeat==0) { //bwahahahahahahahahaha
+  assert(_mem_data.size() == _valid_data.size());
+  if(_repeat==0) { //bwahahahahahahahahaha -- your data has VANISHED!
     _mem_data.erase(_mem_data.begin(),_mem_data.begin()+port_vec_elem());
     return;
   }
@@ -186,14 +187,19 @@ void port_data_t::reformat_in_work() {
     for(unsigned i = 0; i < _port_map[cgra_port].second.size(); ++i) {
        unsigned ind = _port_map[cgra_port].second[i];
        SBDT val = _mem_data[ind];
+       bool valid = _valid_data[ind];
        assert(ind < _mem_data.size());
-      _cgra_data[cgra_port].push_back(val);
+       _cgra_data[cgra_port].push_back(val);
+       _cgra_valid[cgra_port].push_back(valid);
+
       //cout << dec << ind << " " << std::hex << val << " -> " << cgra_port 
       //     << " (vp" << _port << ")\n";
     }
   }
 
   _mem_data.erase(_mem_data.begin(),_mem_data.begin()+port_vec_elem());
+  _valid_data.erase(_valid_data.begin(),_valid_data.begin()+port_vec_elem());
+
   _num_ready += port_depth();
 }
 
@@ -223,9 +229,12 @@ void port_data_t::pop(unsigned instances) {
   assert(_num_ready >= instances);
   _num_ready-=instances;
   for(unsigned cgra_port = 0; cgra_port < _port_map.size(); ++cgra_port) {
+    assert(_cgra_data[cgra_port].size() == _cgra_valid[cgra_port].size());
     assert(_cgra_data[cgra_port].size() >= instances);
     _cgra_data[cgra_port].erase(_cgra_data[cgra_port].begin(),
                                 _cgra_data[cgra_port].begin()+instances);
+    _cgra_valid[cgra_port].erase(_cgra_valid[cgra_port].begin(),
+                                 _cgra_valid[cgra_port].begin()+instances);
   }
 }
 
@@ -645,9 +654,11 @@ void accel_t::execute_pdg(unsigned instance, int group) {
      
       //get the data of the instance of CGRA FIFO
       SBDT val = cur_in_port.value_of(port_idx, instance);
+      bool valid = cur_in_port.valid_of(port_idx, instance);
+
 
       //for each cgra port and associated pdg input
-      _soft_config.input_pdg_node[group][i][port_idx]->set_value(val);  
+      _soft_config.input_pdg_node[group][i][port_idx]->set_value(val,valid);  
       
       if(SB_DEBUG::SB_COMP) {
         std::cout << std::hex << val << ", " << std::dec;
@@ -1552,8 +1563,9 @@ void dma_controller_t::port_resp(unsigned cur_port) {
         //END HACK
 
         if(response->sdInfo->stride_hit) {
-          if(response->sdInfo->fill_mode == STRIDE_ZERO_FILL) {
-            in_vp.fill(true);
+          if(response->sdInfo->fill_mode == STRIDE_ZERO_FILL ||
+             response->sdInfo->fill_mode == STRIDE_DISCARD_FILL) {
+            in_vp.fill(response->sdInfo->fill_mode);
           }
         }
 

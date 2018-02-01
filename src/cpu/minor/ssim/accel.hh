@@ -120,32 +120,29 @@ public:
   // Fill in remaining values in a vector port, if mode is appropriate
   // This should only be called at the begining/end of a stream's data
   void fill(uint32_t mode) {
-    if(mode == 0) {
+    if(mode == NO_FILL) {
       return; //do nothing
     } else { //zero fill to width
+      bool valid_flag = (mode!=STRIDE_DISCARD_FILL);
+
       unsigned width = port_cgra_elem();
       unsigned remainder = _mem_data.size() % width;
       if(remainder != 0) {
         unsigned extra = width - remainder;
         for(int i = 0; i < extra; ++i) {
-          push_data(0);
+          push_data(0,valid_flag);
         }
       }
     }
   }
 
-  void push_data(SBDT data, uint64_t id=0) {
-    //std::cout << data << " -> vp:" << _port << "\n"; 
-    if(id!=0) {
-      assert(id >= _highest_stream_id);
-      _highest_stream_id=id;
-    }
-    _mem_data.push_back(data); 
-
-    _total_pushed++;
+  void push_data(SBDT data, bool valid=true) {
+    _mem_data.push_back(data);
+    _valid_data.push_back(valid); 
+    _total_pushed+=valid;
   }
-  void push_data(std::vector<SBDT> data,uint64_t id=0) { 
-    for(auto i : data) push_data(i,id); 
+  void push_data(std::vector<SBDT> data, bool valid=true) { 
+    for(auto i : data) push_data(i,valid); 
   }
 
   void reformat_in();  //rearrange all data for CGRA
@@ -180,6 +177,10 @@ public:
   SBDT value_of(unsigned port_idx, unsigned instance) {
     return _cgra_data[port_idx][instance];
   }
+  bool valid_of(unsigned port_idx, unsigned instance) {
+    return _cgra_valid[port_idx][instance];
+  }
+
 
   SBDT pop_data(); // pop one data from mem
   SBDT peek_data(); // peek one data from mem
@@ -284,6 +285,7 @@ public:
       }
     }
     _cgra_data.resize(port_cgra_elem());
+    _cgra_valid.resize(port_cgra_elem());
     assert(_cgra_data.size() > 0);
   }
 
@@ -307,13 +309,13 @@ private:
   bool _isInput;
   int _port=-1;
   int _outstanding=0;
-  uint64_t _highest_stream_id=0;
   STATUS _status=STATUS::FREE;
   LOC _loc=LOC::NONE;
   std::vector<std::pair<int, std::vector<int> > > _port_map;    //loc_map
   std::deque<SBDT> _mem_data;
   std::deque<bool> _valid_data;
   std::vector<std::deque<SBDT>> _cgra_data; //data per port
+  std::vector<std::deque<bool>> _cgra_valid; //data per port
   unsigned _num_in_flight=0; 
   unsigned _num_ready=0;
 
