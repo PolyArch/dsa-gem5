@@ -185,10 +185,11 @@ public:
     return _cgra_valid[port_idx][instance];
   }
 
+  SBDT pop_in_data(); // pop one data from mem
 
-  SBDT pop_data(); // pop one data from mem
-  SBDT peek_data(); // peek one data from mem
-  SBDT peek_data(int i); // peek one data from mem
+  SBDT pop_out_data(); // pop one data from mem
+  SBDT peek_out_data(); // peek one data from mem
+  SBDT peek_out_data(int i); // peek one data from mem
 
 
   unsigned mem_size() {return _mem_data.size();}

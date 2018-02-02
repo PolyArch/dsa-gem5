@@ -119,6 +119,7 @@ void port_data_t::reset() {
   assert(_status==STATUS::FREE);
   //assert(_loc==LOC::NONE); TODO: should this be enforced?
   assert(_mem_data.size()==0); //FIXME: Is this still true?
+  assert(_mem_data.size() == _valid_data.size());
 
   assert(_num_in_flight==0);
   assert(_num_ready==0);
@@ -180,6 +181,7 @@ void port_data_t::reformat_in_work() {
   assert(_mem_data.size() == _valid_data.size());
   if(_repeat==0) { //bwahahahahahahahahaha -- your data has VANISHED!
     _mem_data.erase(_mem_data.begin(),_mem_data.begin()+port_vec_elem());
+    _valid_data.erase(_valid_data.begin(),_valid_data.begin()+port_vec_elem());
     return;
   }
 
@@ -203,8 +205,18 @@ void port_data_t::reformat_in_work() {
   _num_ready += port_depth();
 }
 
-//pop data from port
-SBDT port_data_t::pop_data() {
+//pop data from input port
+SBDT port_data_t::pop_in_data() {
+  assert(_mem_data.size());
+  assert(_mem_data.size() == _valid_data.size());
+  SBDT val = _mem_data.front();
+  _mem_data.pop_front();
+  _valid_data.pop_front();
+  return val;
+}
+
+//pop data from output port
+SBDT port_data_t::pop_out_data() {
   assert(_mem_data.size());
   SBDT val = _mem_data.front();
   _mem_data.pop_front();
@@ -212,14 +224,14 @@ SBDT port_data_t::pop_data() {
 }
 
 //pop data from port
-SBDT port_data_t::peek_data() {
+SBDT port_data_t::peek_out_data() {
    assert(_mem_data.size());
    SBDT val = _mem_data.front();
   return val;
 }
 
 //pop data from port
-SBDT port_data_t::peek_data(int i) {
+SBDT port_data_t::peek_out_data(int i) {
    SBDT val = _mem_data[i];
   return val;
 }
@@ -228,6 +240,8 @@ SBDT port_data_t::peek_data(int i) {
 void port_data_t::pop(unsigned instances) {
   assert(_num_ready >= instances);
   _num_ready-=instances;
+  assert(_mem_data.size() == _valid_data.size());
+
   for(unsigned cgra_port = 0; cgra_port < _port_map.size(); ++cgra_port) {
     assert(_cgra_data[cgra_port].size() == _cgra_valid[cgra_port].size());
     assert(_cgra_data[cgra_port].size() >= instances);
@@ -236,6 +250,7 @@ void port_data_t::pop(unsigned instances) {
     _cgra_valid[cgra_port].erase(_cgra_valid[cgra_port].begin(),
                                  _cgra_valid[cgra_port].begin()+instances);
   }
+  assert(_mem_data.size() == _valid_data.size());
 }
 
 //rearrange data from CGRA
@@ -581,7 +596,7 @@ bool accel_t::can_receive(int out_port) {
 
 uint64_t accel_t::receive(int out_port) {
    port_data_t& out_vp = port_interf().out_port(out_port);
-   SBDT val = out_vp.pop_data(); 
+   SBDT val = out_vp.pop_out_data(); 
    //timestamp(); cout << "POPPED b/c receive WRITE " << out_vp.port() <<" " << out_vp.mem_size() <<  "\n";
 
    return val;
@@ -1824,7 +1839,7 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
              req_write(dma_s,out_port);
           } else { //it's garbage
             while(dma_s.stream_active() && out_port.mem_size()>0) {
-              out_port.pop_data();//get rid of data
+              out_port.pop_out_data();//get rid of data
               //timestamp(); cout << "POPPED b/c port->dma " << out_port.port() << " " << out_port.mem_size() << "\n";
 
               dma_s.pop_addr(); //get rid of addr
@@ -1961,7 +1976,7 @@ void dma_controller_t::ind_read_req(indirect_stream_t& stream,
   vector<int> imap;
 
   while(ind_vp.mem_size() && stream.stream_active()) {
-    addr_t idx  = stream.calc_index(ind_vp.peek_data());
+    addr_t idx  = stream.calc_index(ind_vp.peek_out_data());
     addr_t addr = stream._index_addr + idx * stream.index_size();
 
     //cout << "idx:" << idx << "\taddr:" << hex << addr << dec << "\n";
@@ -1985,7 +2000,7 @@ void dma_controller_t::ind_read_req(indirect_stream_t& stream,
     }
 
     stream.pop_elem();
-    ind_vp.pop_data();
+    ind_vp.pop_in_data();
   }
   bool last = stream.check_set_empty();
 
@@ -2040,7 +2055,7 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
 
   int index = 0;
   while(out_vp.mem_size() && ind_vp.mem_size() && stream.stream_active()) {
-    addr_t idx  = stream.calc_index(ind_vp.peek_data());
+    addr_t idx  = stream.calc_index(ind_vp.peek_out_data());
     addr_t addr = stream._index_addr + idx * stream.index_size();
 
     //cout << "idx:" << idx << "\taddr:" << hex << addr << dec << "\n";
@@ -2056,17 +2071,17 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
       }
     }
 
-    SBDT val = out_vp.peek_data();
+    SBDT val = out_vp.peek_out_data();
 
     prev_addr=addr;
     data64[index++]=val;
 
-    out_vp.pop_data();
+    out_vp.pop_out_data();
     //timestamp(); cout << "POPPED b/c INDIRECT WRITE: " << out_vp.port() << "\n";
     bytes_written+=sizeof(SBDT);
 
     stream.pop_elem();
-    ind_vp.pop_data();
+    ind_vp.pop_in_data();
   }
 
   SDMemReqInfoPtr sdInfo = new SDMemReqInfo(_accel->_accel_index, -1, MEM_WR_STREAM, 
@@ -2104,7 +2119,7 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
 }
 
 //Creates a write request for a contiguous chunk of data smaller than one cache line
-void dma_controller_t::req_write(port_dma_stream_t& stream, port_data_t& vp) {
+void dma_controller_t::req_write(port_dma_stream_t& stream, port_data_t& ovp) {
   addr_t addr = stream.cur_addr();
   addr_t init_addr = addr;
   addr_t base_addr = addr & MEM_MASK;
@@ -2131,15 +2146,15 @@ void dma_controller_t::req_write(port_dma_stream_t& stream, port_data_t& vp) {
 
   //go while stream and port does not run out
   while(addr < max_addr && (addr == (prev_addr + data_width)) && 
-        stream.stream_active() && vp.mem_size()>0) { 
-    SBDT val = vp.peek_data();
+        stream.stream_active() && ovp.mem_size()>0) { 
+    SBDT val = ovp.peek_out_data();
 
     if(stream._shift_bytes==2) {
       data16[elem_written++]=(uint16_t)(val&0xFFFF);
     } else { //assuming data_width=64
       data64[elem_written++]=val;
     }
-    vp.pop_data(); //pop the one we peeked
+    ovp.pop_out_data(); //pop the one we peeked
     //timestamp(); cout << "POPPED b/c Mem Write: " << vp.port() << " " << vp.mem_size() << "\n";
 
     prev_addr=addr;
@@ -2391,7 +2406,7 @@ void scratch_write_controller_t::cycle() {
           uint64_t bytes_written=0;
           while(addr < max_addr && stream._num_bytes>0 //enough in dest
                                 && out_vp.mem_size()) { //enough in source
-            SBDT val = out_vp.pop_data(); 
+            SBDT val = out_vp.pop_out_data(); 
             //timestamp(); cout << "POPPED b/c port->scratch WRITE: " << out_vp.port() << " " << out_vp.mem_size() << "\n";
 
             assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
@@ -2496,7 +2511,7 @@ void port_controller_t::cycle() {
       uint64_t total_pushed=0;
       for(int i = 0; i < PORT_WIDTH && vp_in.mem_size() < VP_LEN && 
                          vp_out.mem_size() && stream.stream_active(); ++i) {
-        SBDT val = vp_out.pop_data();
+        SBDT val = vp_out.pop_out_data();
         //timestamp(); cout << "POPPED b/c port->port WRITE: " << vp_out.port() << " " << vp_out.mem_size()  << "\n";
 
         vp_in.push_data(val);
@@ -2585,7 +2600,7 @@ void port_controller_t::cycle() {
       uint64_t total_pushed=0;
       for(int i = 0; i < PORT_WIDTH && vp_in.mem_size() < VP_LEN && 
                          vp_out.mem_size() && stream.stream_active(); ++i) {
-        SBDT val = vp_out.pop_data();
+        SBDT val = vp_out.pop_out_data();
         //timestamp(); cout << "POPPED b/c port -> remote_port WRITE: " << vp_out.port() << " " << vp_out.mem_size() <<  "\n";
 
 

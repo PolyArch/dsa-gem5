@@ -395,7 +395,7 @@ struct scr_scr_stream_t : public mem_stream_base_t {
 
 };
 
-//4.Scratch -> DMA  TODO -- NEW -- CHECK
+//4.Scratch -> DMA 
 struct scr_dma_stream_t : public mem_stream_base_t {
   addr_t _dest_addr; //current dest addr
 
