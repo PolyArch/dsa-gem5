@@ -401,12 +401,11 @@ struct scr_dma_stream_t : public mem_stream_base_t {
 
   scr_dma_stream_t() {}
   scr_dma_stream_t(addr_t scr_addr, uint64_t stride, uint64_t access_size, 
-                  uint64_t num_strides, addr_t mem_addr) {
-    _mem_addr   =scr_addr; //don't worry this is correct
+                  uint64_t num_strides, addr_t mem_addr) :
+       mem_stream_base_t(scr_addr, //don't worry this is correct
+           stride,access_size,0/*stretch*/,num_strides) {
     _dest_addr  =mem_addr;    //... this too
     _num_strides=num_strides;
-    _stride     =stride;
-    _access_size=access_size;
     set_orig();
   }
 
