@@ -253,9 +253,10 @@ void port_data_t::reformat_out_one_vec() {
   }
 }
 
+/*
+// Previous code used to look at the loc_map
 void port_data_t::reformat_out_work() {
   unsigned cur_mem_data_pos = _mem_data.size(); 
-  //_mem_data.insert(_mem_data.begin(),port_vec_elem(),0);
   _mem_data.insert(_mem_data.end(), port_vec_elem(), 0);        //resizing
 
   unsigned num = 0;
@@ -272,18 +273,36 @@ void port_data_t::reformat_out_work() {
       _cgra_data[cgra_port].pop_front();
     }
   }
+
+  _num_ready-=port_depth();
+}
+*/
+
+void port_data_t::reformat_out_work() {
+  unsigned num = 0;
+  for(unsigned cgra_port = 0; cgra_port < _port_map.size(); ++cgra_port) {
+    assert(num==0 || _cgra_data[cgra_port].size() == num);
+    num=_cgra_data[cgra_port].size();
+  }
+
+  for(unsigned cgra_port = 0; cgra_port < _port_map.size(); ++cgra_port) {
+    for(unsigned i = 0; i < _port_map[cgra_port].second.size(); ++i) {
+      assert(_cgra_data[cgra_port].size() > 0);
+      assert(_cgra_data[cgra_port].size() == _cgra_valid[cgra_port].size());
+
+      SBDT val = _cgra_data[cgra_port].front();
+      bool valid = _cgra_valid[cgra_port].front();
+  
+      if(valid) _mem_data.push_back(val); // don't push back if not valid
+
+      _cgra_data[cgra_port].pop_front();
+      _cgra_valid[cgra_port].pop_front();
+    }
+  }
+
   _num_ready-=port_depth();
 }
 
-
-//Push fake data to each cgra output port
-void port_data_t::push_fake(unsigned instances) {
-  _num_ready+=instances;
-  
-  for(unsigned cgra_port = 0; cgra_port < _port_map.size(); ++cgra_port) {
-    _cgra_data[cgra_port].insert(_cgra_data[cgra_port].end(),instances,0);
-  }
-}
 
 // ----------------------------- Port Interface ------------------------------------
 void port_interf_t::initialize(SbModel* sbconfig) {
@@ -661,7 +680,8 @@ void accel_t::execute_pdg(unsigned instance, int group) {
       _soft_config.input_pdg_node[group][i][port_idx]->set_value(val,valid);  
       
       if(SB_DEBUG::SB_COMP) {
-        std::cout << std::hex << val << ", " << std::dec;
+        if(valid) std::cout << std::hex << val << ", " << std::dec;
+        else std::cout << "inv, ";
       }
       if(SB_DEBUG::VERIF_PORT) {
         in_port_verif << hex << setw(16) << setfill('0') << val << " ";
@@ -708,35 +728,30 @@ void accel_t::execute_pdg(unsigned instance, int group) {
     int pnum = active_out_ports[i];
     auto& cur_out_port = _port_interf.out_port(pnum);
 
-    bool got_discarded=false;
+    int num_discarded=0;
 
     for(unsigned port_idx = 0; port_idx < cur_out_port.port_cgra_elem(); ++port_idx) {
       //int cgra_port = cur_out_port.cgra_port_for_index(port_idx);
       SbPDG_Output* n = _soft_config.output_pdg_node[group][i][port_idx];
 
-      if(!n->discard()) {
-        assert(got_discarded==0 && "can't discard partial vector ports\n");
-        uint64_t val = n->retrieve();
-        cur_out_port.push_val(port_idx, val);       //retreive the val from last inst
+      uint64_t val = n->retrieve();
+      bool valid = !n->discard();
+      cur_out_port.push_cgra_port(port_idx, val, valid);  //retreive from last inst
 
-        if(SB_DEBUG::SB_COMP) {
-           std::cout << "output:" << std::hex << val << std::dec << "\n";
-        }
- 
-        if(SB_DEBUG::VERIF_PORT) {
-          out_port_verif << hex << setw(16) << setfill('0') << val << " ";
-        }
-      } else {
-        got_discarded=true;
+      if(SB_DEBUG::SB_COMP) {
+         std::cout << "output:" << hex << val << ", valid:" << valid << dec << "\n";
       }
+ 
+      if(SB_DEBUG::VERIF_PORT) {
+        out_port_verif << hex << setw(16) << setfill('0') << val << " ";
+      }
+      num_discarded+=!valid;
     }
-    if(!got_discarded) {
-      cur_out_port.inc_ready(1); //we just did one instance
-      cur_out_port.set_in_flight();
-      int lat = _soft_config.out_ports_lat[pnum];
-      _cgra_output_ready[cur_cycle + lat].push_back(pnum);
-      //cout << "INSERT INTO DELAY BUFFER" << _cgra_output_ready.size() << "\n"; 
-    }
+
+    cur_out_port.inc_ready(1); //we just did one instance
+    cur_out_port.set_in_flight();
+    int lat = _soft_config.out_ports_lat[pnum];
+    _cgra_output_ready[cur_cycle + lat].push_back(pnum);
   }
 
   if(SB_DEBUG::VERIF_PORT) {
@@ -1889,7 +1904,7 @@ int dma_controller_t::req_read(mem_stream_base_t& stream,
       mask[(addr-base_addr)/DATA_WIDTH]=1;
     addr = stream.pop_addr();
     words+=1;
-    if(stream.fill_mode()==STRIDE_ZERO_FILL && stream.stride_hit() && scr_addr==-1) {
+    if(stream.stride_fill() && stream.stride_hit() && scr_addr==-1) {
       break;
     }
   }
@@ -2212,7 +2227,7 @@ vector<SBDT> scratch_read_controller_t::read_scratch(
     mask[(addr-base_addr)/DATA_WIDTH]=1;
     addr = stream.pop_addr();
 
-    if(stream.fill_mode()==STRIDE_ZERO_FILL && stream.stride_hit()) {
+    if(stream.stride_fill() && stream.stride_hit()) {
       break;
     }
 
@@ -2281,7 +2296,7 @@ void scratch_read_controller_t::cycle() {
           in_vp.push_data(d);
         }
 
-        if(stream.fill_mode()==STRIDE_ZERO_FILL && stream.stride_hit()) {
+        if(stream.stride_fill() && stream.stride_hit()) {
           in_vp.fill(true);
         }
 

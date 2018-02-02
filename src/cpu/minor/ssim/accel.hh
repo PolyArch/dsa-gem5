@@ -99,6 +99,7 @@ public:
     _loc=LOC::NONE;
     for(int i = 0; i < _cgra_data.size(); ++i) {
       _cgra_data[i].clear();
+      _cgra_valid[i].clear();
     }
     _num_in_flight=0; 
     _num_ready=0;
@@ -169,7 +170,10 @@ public:
   int port() {return _port;}
 
   //Push one val into port
-  void push_val(unsigned cgra_port, SBDT val) {_cgra_data[cgra_port].push_back(val);}
+  void push_cgra_port(unsigned cgra_port, SBDT val, bool valid) {
+    _cgra_data[cgra_port].push_back(val);
+    _cgra_valid[cgra_port].push_back(valid);
+  }
 
   void inc_ready(unsigned instances) {_num_ready+=instances;}
 
@@ -190,8 +194,6 @@ public:
   unsigned mem_size() {return _mem_data.size();}
   unsigned num_ready() {return _num_ready;}         //Num of ready instances
   unsigned num_in_flight() {return _num_in_flight;}  //outputs in flight
-
-  void push_fake(unsigned instances);   //Push fake data to each cgra output port
 
   std::string status_string() {
     if(_status==STATUS::FREE) return "free";

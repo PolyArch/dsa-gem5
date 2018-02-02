@@ -92,8 +92,8 @@ struct base_stream_t {
   virtual int repeat_in()   {return 1;}  
   virtual int repeat_str()   {return 0;}  
   virtual uint32_t fill_mode() {return _fill_mode;} 
-
-
+  virtual bool stride_fill() {return _fill_mode == STRIDE_DISCARD_FILL ||
+                                     _fill_mode == STRIDE_ZERO_FILL;} 
 
   virtual uint64_t data_volume() {return 0;} 
   virtual STR_PAT stream_pattern() {return STR_PAT::OTHER;} 
