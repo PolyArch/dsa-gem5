@@ -416,7 +416,9 @@ bool accel_t::in_roi() {
 
 
 pipeline_stats_t::PIPE_STATUS accel_t::whos_to_blame() {
-  if(_cgra_issued) return pipeline_stats_t::ISSUED;
+  if(_cgra_issued==1) return pipeline_stats_t::ISSUED; //no one is, we issued!
+  if(_cgra_issued>1) return pipeline_stats_t::ISSUED_MULTI;
+
   if(_in_config) return pipeline_stats_t::CONFIG;
 
   bool any_stream_active =
@@ -537,7 +539,7 @@ pipeline_stats_t::PIPE_STATUS accel_t::whos_to_blame() {
 
 
 void accel_t::tick() {
-  _cgra_issued=false; // for statistics reasons
+  _cgra_issued=0; // for statistics reasons
 
   _dma_c.cycle();
   _scr_r_c.cycle();
@@ -630,9 +632,9 @@ void accel_t::cycle_cgra() {
       forward_progress();
       execute_pdg(0,group);  //Note that this will set backpressure variable
 
-      if(in_roi()) {
-        _stat_sb_insts+=_pdg->num_insts();
-      }
+      //if(in_roi()) {
+      //  _stat_sb_insts+=_pdg->num_insts();
+      //}
       //pop the elements from inport as they have been processed
       for(unsigned i = 0; i < active_ports.size(); ++i) {
         uint64_t port_index = active_ports[i];
@@ -730,8 +732,13 @@ void accel_t::execute_pdg(unsigned instance, int group) {
   }
 
   //perform computation
-  _pdg->compute(print,SB_DEBUG::VERIF_CGRA,group);
-  _cgra_issued=true;
+  int num_computed = _pdg->compute(print,SB_DEBUG::VERIF_CGRA,group);
+
+  if(in_roi()) {
+    _stat_sb_insts+=num_computed;
+  }
+
+  _cgra_issued+=1;
 
   uint64_t cur_cycle = now();
 

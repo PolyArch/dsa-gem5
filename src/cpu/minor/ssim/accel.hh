@@ -904,7 +904,8 @@ struct stream_stats_t {
 
 
 struct pipeline_stats_t {
-  enum PIPE_STATUS {CONFIG, ISSUED, CONST_FILL, SCR_FILL, DMA_FILL, REC_WAIT,
+  enum PIPE_STATUS {CONFIG, ISSUED, ISSUED_MULTI,
+                    CONST_FILL, SCR_FILL, DMA_FILL, REC_WAIT,
                     CORE_WAIT, SCR_WAIT, CMD_QUEUE, CGRA_BACK, OTHER, WEIRD, 
                     DRAIN, NO_ACTIVITY, NOT_IN_USE, LAST};
 
@@ -914,6 +915,7 @@ struct pipeline_stats_t {
       switch(value){
         PROCESS_VAL(CONFIG);
         PROCESS_VAL(ISSUED);
+        PROCESS_VAL(ISSUED_MULTI);
         PROCESS_VAL(CONST_FILL);
         PROCESS_VAL(SCR_FILL);
         PROCESS_VAL(DMA_FILL);
@@ -1268,7 +1270,7 @@ private:
 
   public:
   //* running variables
-  bool _cgra_issued=false;
+  int _cgra_issued=0;
 
   //* Stats
   uint64_t _stat_comp_instances = 0;
