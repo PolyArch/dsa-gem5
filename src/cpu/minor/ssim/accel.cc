@@ -179,7 +179,7 @@ void port_data_t::reformat_in_one_vec() { //rearrange data for CGRA
 
 void port_data_t::reformat_in_work() {
   assert(_mem_data.size() == _valid_data.size());
-  if(_repeat==0) { //bwahahahahahahahahaha -- your data has VANISHED!
+  if(_repeat==0) { //on repeat==0, delete data
     _mem_data.erase(_mem_data.begin(),_mem_data.begin()+port_vec_elem());
     _valid_data.erase(_valid_data.begin(),_valid_data.begin()+port_vec_elem());
     return;
@@ -414,48 +414,30 @@ bool accel_t::in_roi() {
   return _ssim->in_roi();
 }
 
-
-pipeline_stats_t::PIPE_STATUS accel_t::whos_to_blame() {
-  if(_cgra_issued==1) return pipeline_stats_t::ISSUED; //no one is, we issued!
-  if(_cgra_issued>1) return pipeline_stats_t::ISSUED_MULTI;
-
-  if(_in_config) return pipeline_stats_t::CONFIG;
-
-  bool any_stream_active =
-     _dma_c.any_stream_active() || _scr_r_c.any_stream_active() ||
-     _port_c.any_stream_active() || _scr_w_c.any_stream_active();
-
-  bool any_buf_active = _scr_r_c.buf_active() || _scr_w_c.buf_active();
-
-  bool mem_rds = _dma_c.mem_reads_outstanding();
-  bool mem_wrs = _dma_c.mem_writes_outstanding();
-  bool scr_req = _dma_c.scr_reqs_outstanding();
-
-  bool cgra_input = cgra_input_active();
-  bool cgra_compute = cgra_compute_active();
-  bool cgra_output = cgra_output_active();
-  bool cgra_active = cgra_input || cgra_compute || cgra_output;
-
-  bool queue = _in_port_queue.size();
-
-  bool busy = any_stream_active || any_buf_active || cgra_active ||
-                 mem_wrs || mem_rds || scr_req || queue;
-
-  if(!busy) return pipeline_stats_t::NO_ACTIVITY;
-
+// The job of whos_to_blame(group) is to determine the reason of whether
+// a group is able to issue or not.  
+// It's not possible to determine if 
+// there is data/stream for one port, but no data/stream for another, why
+// that is (is it scatchpad or core?), so that's not answered here. 
+pipeline_stats_t::PIPE_STATUS accel_t::whos_to_blame(int group) {
   bool any_empty_fifo=false, any_scr=false, 
        any_dma=false, any_const=false, any_rec=false;
 
-  int num_unassigned=0;
-  int total_ivps=0;
-  for(unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
-    int cur_port = _soft_config.in_ports_active_plus[i];
-    auto& in_vp = _port_interf.in_port(cur_port);
-    bool unassigned_ivp = !(in_vp.in_use() || in_vp.completed());
-    num_unassigned+= unassigned_ivp;
-    total_ivps+=1;
-    bool empty_fifo = in_vp.num_ready()==0;
-    if(empty_fifo && !unassigned_ivp) {
+  auto& active_ports=_soft_config.in_ports_active_group[group];
+  auto& active_out_ports=_soft_config.out_ports_active_group[group];
+
+  if(active_ports.size()==0) return pipeline_stats_t::NOT_IN_USE;
+
+  //Iterate over inputs
+  bool any_input_activity=false;
+  bool all_inputs_inactive=true;
+  int num_unknown_input=0;
+  for(unsigned i = 0; i < active_ports.size(); ++i) {
+    auto& in_vp = _port_interf.in_port(active_ports[i]);
+    bool assigned_ivp = in_vp.in_use() || in_vp.completed();
+    bool empty_fifo = in_vp.any_data()==0;
+    any_empty_fifo |= empty_fifo;
+    if(empty_fifo && assigned_ivp) {
       switch(in_vp.loc()) {
         case LOC::DMA:   any_dma=true; break;
         case LOC::SCR:   any_scr=true; break;
@@ -463,27 +445,24 @@ pipeline_stats_t::PIPE_STATUS accel_t::whos_to_blame() {
         case LOC::CONST: any_const=true; break;
         default: break;
       }
-    }
-
-    any_empty_fifo |= empty_fifo;
+    } 
+    num_unknown_input+=(empty_fifo&&!assigned_ivp);
+    any_input_activity|=assigned_ivp || !empty_fifo;
+    all_inputs_inactive = all_inputs_inactive && empty_fifo && !assigned_ivp;
   }
 
-  if(num_unassigned==0) {
+  if(num_unknown_input==0) {
     if(!any_empty_fifo) return pipeline_stats_t::CGRA_BACK;
     if(any_const) return pipeline_stats_t::CONST_FILL;
     if(any_scr) return pipeline_stats_t::SCR_FILL;
     if(any_dma) return pipeline_stats_t::DMA_FILL;
     if(any_rec) return pipeline_stats_t::REC_WAIT;
-    return pipeline_stats_t::WEIRD;
-  }
+  } 
 
-  //At this point we know some active input ports are not assigned
-  //Need to distinguish between barrier case and
-  int num_unassigned_queued=0;
-  bool scratch_waiters_found=false;
   bool bar_scratch_read = false;  // These are set by scratch
   bool bar_scratch_write = false;
-
+  std::set<int> scratch_waiters;
+  std::set<int> waiters;
   for(auto i = _in_port_queue.begin(); i!=_in_port_queue.end(); ++i) {
     base_stream_t* ip = *i;
     if(auto stream = dynamic_cast<stream_barrier_t*>(ip)) {
@@ -494,52 +473,142 @@ pipeline_stats_t::PIPE_STATUS accel_t::whos_to_blame() {
     int port= ip->in_port();
     if(port<0) continue;
     port_data_t& in_vp=_port_interf.in_port(port);
-    if(!(in_vp.in_use() || in_vp.completed())) {
+    auto it = std::find(active_ports.begin(),active_ports.end(),port);
+    if(it == active_ports.end()) continue;
+
+    if(!(in_vp.in_use() || in_vp.completed() || in_vp.any_data())) {
       if(bar_scratch_write && ip->src() == LOC::SCR) {
-        scratch_waiters_found=true;
-      } 
-      num_unassigned_queued++;
+        scratch_waiters.insert(port);
+      } else {
+        waiters.insert(port);
+      }
     }
   }
 
-  if(scratch_waiters_found) { 
-    return pipeline_stats_t::SCR_WAIT;
-  }
-
-  if(num_unassigned==total_ivps) {
-    //NO PORT HAS AN ASSIGNED STREAM!
-    if(_in_port_queue.size()<=1 && (_dma_c.dma_scr_streams_active() ||
-       _scr_w_c.buf_active())) {
-      return pipeline_stats_t::SCR_WAIT;
-    }
-
-    if(mem_wrs || cgra_compute || cgra_output) {
-      return pipeline_stats_t::DRAIN;
-    }
-  }
-
-  //core isn't giving us data fast enough
-  if(_in_port_queue.size() < _queue_size &&  
-      num_unassigned_queued < num_unassigned) {
-    return pipeline_stats_t::CORE_WAIT;
-  }
-
-  if(num_unassigned_queued == num_unassigned) {
-    //core is not bottleneck cause all the commands are there, but it wasn't
-    //scratch barrier, and nobody scratch wasn't the only stream active
+  //if all of our unknowns are waiting for us, then maybe its scratch or cmd queue
+  unsigned total_waiters = scratch_waiters.size() + waiters.size();
+  if(total_waiters == num_unknown_input) {
+    if(scratch_waiters.size()) { 
+      return pipeline_stats_t::SCR_BAR_WAIT;
+    } 
     return pipeline_stats_t::CMD_QUEUE;
   }
+  if(scratch_waiters.size() &&  _in_port_queue.size() >= _queue_size) {
+    return pipeline_stats_t::SCR_BAR_WAIT;
+  }
 
+  any_input_activity|=(total_waiters); //waiters counts as input activity
+    
+  bool any_out_activity=false, any_cgra_activity=false;
+  for(unsigned i = 0; i < active_out_ports.size(); ++i) {
+    auto& out_vp = _port_interf.out_port(active_out_ports[i]);
+    bool assigned_ovp = out_vp.in_use() || out_vp.completed();
+    any_cgra_activity|= out_vp.num_in_flight();
+    any_out_activity|=assigned_ovp || out_vp.any_data();
+  }
+
+  //No activity on this group, so ignore it
+  if(!any_input_activity && !any_cgra_activity && !any_out_activity) {
+    return pipeline_stats_t::NOT_IN_USE;
+  }
+
+  if(!any_input_activity) {
+    return pipeline_stats_t::DRAIN;
+  }
+ 
+  return pipeline_stats_t::CORE_WAIT;
   //cout << num_unassigned << "/" << total_ivps << "-" << num_unassigned_queued; 
   //done(true,0);
+}
 
-  return pipeline_stats_t::OTHER;
+
+// Figure out who is to blame for a given cycle's not issuing
+void accel_t::whos_to_blame() {
+#define BLAMEGAURD SB_DEBUG::SB_BLAME && _accel_index ==0
+  if(_soft_config.in_ports_active.size()==0) {
+    if(BLAMEGAURD) cout << "CORE_WAIT\n"; 
+    _pipe_stats.pipe_inc(pipeline_stats_t::CORE_WAIT,1); 
+    return;
+  }
+
+  if(_cgra_issued >1)  {
+    if(BLAMEGAURD) cout << "ISSUE_MULTI\n"; 
+    _pipe_stats.pipe_inc(pipeline_stats_t::ISSUED_MULTI,1); 
+    return;
+  }
+  if(_cgra_issued==1) {
+    if(BLAMEGAURD) cout << "ISSUE\n"; 
+    _pipe_stats.pipe_inc(pipeline_stats_t::ISSUED,1); 
+    return;
+  }
+
+  if(_in_config) {
+    if(BLAMEGAURD) cout << "ISSUE_CONFIG\n"; 
+    _pipe_stats.pipe_inc(pipeline_stats_t::CONFIG,1); 
+    return;
+  }
+
+  std::vector<pipeline_stats_t::PIPE_STATUS> blame_vec;
+  bool draining=false;
+
+  for(int g = 0; g < NUM_GROUPS; ++g) {
+    pipeline_stats_t::PIPE_STATUS blame = whos_to_blame(g);
+    switch(blame){
+      case pipeline_stats_t::DRAIN: draining=true; break;
+      case pipeline_stats_t::NOT_IN_USE: break;
+      default: blame_vec.push_back(blame); break;
+    }
+  }
+
+  if(blame_vec.size()==0) {
+    if(draining) {
+      if(BLAMEGAURD) cout << "DRAIN\n"; 
+      _pipe_stats.pipe_inc(pipeline_stats_t::DRAIN,1); 
+      return;
+    }
+    if(BLAMEGAURD) cout << "CORE_WAIT\n"; 
+    _pipe_stats.pipe_inc(pipeline_stats_t::CORE_WAIT,1); 
+    return;
+  }
+
+  for(auto i : blame_vec) {
+    if(BLAMEGAURD) cout << pipeline_stats_t::name_of(i) << " "; 
+    _pipe_stats.pipe_inc(i,1.0f/(float)blame_vec.size()); 
+  }
+  if(BLAMEGAURD) cout << "\n"; 
+
+
+  //bool any_stream_active =
+  //   _dma_c.any_stream_active() || _scr_r_c.any_stream_active() ||
+  //   _port_c.any_stream_active() || _scr_w_c.any_stream_active();
+
+  //bool any_buf_active = _scr_r_c.buf_active() || _scr_w_c.buf_active();
+
+  //bool mem_rds = _dma_c.mem_reads_outstanding();
+  //bool mem_wrs = _dma_c.mem_writes_outstanding();
+  //bool scr_req = _dma_c.scr_reqs_outstanding();
+
+  //bool cgra_input = cgra_input_active();
+  //bool cgra_compute = cgra_compute_active();
+  //bool cgra_output = cgra_output_active();
+  //bool cgra_active = cgra_input || cgra_compute || cgra_output;
+
+  //bool queue = _in_port_queue.size();
+
+  //bool busy = any_stream_active || any_buf_active || cgra_active ||
+  //               mem_wrs || mem_rds || scr_req || queue;
+
+  //if(!busy) return pipeline_stats_t::NO_ACTIVITY;
+
 }
 
 
 
 void accel_t::tick() {
   _cgra_issued=0; // for statistics reasons
+  for(int i = 0; i < NUM_GROUPS; ++i) {
+    _cgra_issued_group[i]=false;
+  }
 
   _dma_c.cycle();
   _scr_r_c.cycle();
@@ -547,6 +616,25 @@ void accel_t::tick() {
   _port_c.cycle();
   cycle_in_interf();
   cycle_cgra();
+
+  if(in_roi()) {
+    uint64_t new_now = now();
+
+    whos_to_blame();
+    //if(_accel_index==0) {
+    //  if(new_now!=_prev_roi_clock+1) {
+    //    cout << "\n\n";
+    //  }
+    //  timestamp();
+    //  cout << pipeline_stats_t::name_of(who) << "\n";
+    //}
+    if(SB_DEBUG::CYC_STAT) {
+      cycle_status();
+    }
+
+    _prev_roi_clock=new_now;
+  }
+
   cycle_out_interf();
   schedule_streams();
 
@@ -555,25 +643,6 @@ void accel_t::tick() {
   _dma_c.finish_cycle(); 
   _scr_w_c.finish_cycle(); 
   _scr_r_c.finish_cycle(); 
-
-  if(in_roi()) {
-    uint64_t new_now = now();
-
-    auto who = whos_to_blame();
-    //if(_accel_index==0) {
-    //  if(new_now!=_prev_roi_clock+1) {
-    //    cout << "\n\n";
-    //  }
-    //  timestamp();
-    //  cout << pipeline_stats_t::name_of(who) << "\n";
-    //}
-    _pipe_stats.pipe_inc(who); 
-    if(SB_DEBUG::CYC_STAT) {
-      cycle_status();
-    }
-
-    _prev_roi_clock=new_now;
-  }
 }
 
 void accel_t::cycle_in_interf() {
@@ -609,18 +678,14 @@ void accel_t::cycle_cgra() {
 
   uint64_t cur_cycle = now();
 
-  for(int group = 0; group < 4; ++group) {
+  for(int group = 0; group < NUM_GROUPS; ++group) {
     //Detect if we are ready to fire
     auto& active_ports=_soft_config.in_ports_active_group[group];
     
     if(active_ports.size()==0) continue;
     unsigned min_ready=10000000;
     for(int i=0; i < active_ports.size(); ++i) {
-       int cur_port = active_ports[i];
- 
-    //std::vector<SbPDG_VecInput*>&  input_vec = _pdg->vec_in_group(0);
-    //for(unsigned i = 0; i < input_vec.size(); ++i) {
-      //int cur_port = input_vec[i]->port();
+      int cur_port = active_ports[i];
       min_ready = std::min(_port_interf.in_port(cur_port).num_ready(), min_ready);
       //if(min_ready==0 && _accel_index==0) {
       //  timestamp(); cout << "Port " << cur_port << "not ready\n";
@@ -666,6 +731,11 @@ void accel_t::cycle_cgra() {
       }
     }
   }
+
+  if(in_roi()) {
+    _stat_cgra_busy_cycles+=(_cgra_issued>0);  
+  }
+
 }
 
 void accel_t::execute_pdg(unsigned instance, int group) {
@@ -738,7 +808,8 @@ void accel_t::execute_pdg(unsigned instance, int group) {
     _stat_sb_insts+=num_computed;
   }
 
-  _cgra_issued+=1;
+  _cgra_issued_group[group]=true;
+  _cgra_issued++;
 
   uint64_t cur_cycle = now();
 
@@ -1016,8 +1087,11 @@ void accel_t::print_statistics(std::ostream& out) {
    //out << "Stop  Cycle: " << _stat_stop_cycle << "\n\n";
 
    out << "Commands Issued: " << _stat_commands_issued << "\n";
-   out << "CGRA Instances: " << _stat_comp_instances << " -- Activity Ratio: " 
-      << ((double)_stat_comp_instances)/((double)roi_cycles()) << "\n";
+   out << "CGRA Instances: " << _stat_comp_instances 
+     << " -- Activity Ratio: " 
+     << ((double)_stat_cgra_busy_cycles)/((double)roi_cycles()) 
+     << ", DFGs / Cycle: " 
+     <<  ((double)_stat_comp_instances)/((double)roi_cycles())  <<  "\n";
    out << "CGRA Insts / Computation Instance: "
       << ((double)_stat_sb_insts)/((double)_stat_comp_instances) << "\n";
    out << "CGRA Insts / Cycle: "

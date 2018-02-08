@@ -191,7 +191,7 @@ public:
   SBDT peek_out_data(); // peek one data from mem
   SBDT peek_out_data(int i); // peek one data from mem
 
-
+  bool any_data() {return mem_size() || num_ready();}
   unsigned mem_size() {return _mem_data.size();}
   unsigned num_ready() {return _num_ready;}         //Num of ready instances
   unsigned num_in_flight() {return _num_in_flight;}  //outputs in flight
@@ -906,8 +906,8 @@ struct stream_stats_t {
 struct pipeline_stats_t {
   enum PIPE_STATUS {CONFIG, ISSUED, ISSUED_MULTI,
                     CONST_FILL, SCR_FILL, DMA_FILL, REC_WAIT,
-                    CORE_WAIT, SCR_WAIT, CMD_QUEUE, CGRA_BACK, OTHER, WEIRD, 
-                    DRAIN, NO_ACTIVITY, NOT_IN_USE, LAST};
+                    CORE_WAIT, SCR_BAR_WAIT, CMD_QUEUE, CGRA_BACK,  
+                    DRAIN, NOT_IN_USE, LAST};
 
   static std::string name_of(PIPE_STATUS value) {
       const char* s = 0;
@@ -921,13 +921,10 @@ struct pipeline_stats_t {
         PROCESS_VAL(DMA_FILL);
         PROCESS_VAL(REC_WAIT);
         PROCESS_VAL(CORE_WAIT);
-        PROCESS_VAL(SCR_WAIT);
+        PROCESS_VAL(SCR_BAR_WAIT);
         PROCESS_VAL(CMD_QUEUE);
         PROCESS_VAL(CGRA_BACK);
-        PROCESS_VAL(OTHER);
-        PROCESS_VAL(WEIRD);
         PROCESS_VAL(DRAIN);
-        PROCESS_VAL(NO_ACTIVITY);
         PROCESS_VAL(NOT_IN_USE);
         case LAST: assert(0);
       }
@@ -935,10 +932,10 @@ struct pipeline_stats_t {
       return std::string(s);
   }
 
-  int pipe_stats[PIPE_STATUS::LAST] = { 0 };
+  double pipe_stats[PIPE_STATUS::LAST] = { 0 };
 
-  void pipe_inc(PIPE_STATUS p) {
-    pipe_stats[p]++;
+  void pipe_inc(PIPE_STATUS p, double amount) {
+    pipe_stats[p]+=amount;
   }
 
   void print_histo(std::ostream& out, uint64_t roi_cycles) {
@@ -1033,7 +1030,8 @@ public:
 
   void configure(addr_t addr, int size, uint64_t* bits);
 
-  pipeline_stats_t::PIPE_STATUS whos_to_blame();
+  pipeline_stats_t::PIPE_STATUS whos_to_blame(int group);
+  void whos_to_blame();
   void tick(); //Tick one time
 
   uint64_t roi_cycles();
@@ -1270,10 +1268,12 @@ private:
 
   public:
   //* running variables
-  int _cgra_issued=0;
+  bool _cgra_issued_group[NUM_GROUPS];
+  int _cgra_issued;
 
   //* Stats
   uint64_t _stat_comp_instances = 0;
+  uint64_t _stat_cgra_busy_cycles = 0;
   uint64_t _stat_scratch_read_bytes = 0;
   uint64_t _stat_scratch_write_bytes = 0;
   uint64_t _stat_scratch_reads = 0;
