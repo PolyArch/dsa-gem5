@@ -195,7 +195,13 @@ public:
   SBDT peek_out_data(); // peek one data from mem
   SBDT peek_out_data(int i); // peek one data from mem
 
-  bool any_data() {return mem_size() || num_ready();}
+  bool any_data() {
+    if(_isInput) {
+      return num_ready();
+    } else {
+      return mem_size();
+    }
+  }
   unsigned mem_size() {return _mem_data.size();}
   unsigned num_ready() {return _num_ready;}         //Num of ready instances
   unsigned num_in_flight() {return _num_in_flight;}  //outputs in flight
