@@ -520,7 +520,7 @@ void ssim_t::roi_entry(bool enter) {
   if(enter) {
     if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SB_ROI)  ) {
       timestamp();
-      cout << "Entrering ROI ------------\n";
+      cout << "Entering ROI ------------\n";
     }
 
     if(_orig_stat_start_cycle==0) {

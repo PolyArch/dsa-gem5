@@ -94,8 +94,10 @@ void accel_t::reset_data() {
 
 // --------------------------------- CONFIG ---------------------------------------
 void soft_config_t::reset() {
+  cur_config_addr=0;
   in_ports_active.clear();
   in_ports_active_group.clear();
+  group_thr.clear();
   out_ports_active.clear();
   out_ports_active_group.clear();
   in_ports_active_plus.clear();
@@ -679,6 +681,12 @@ void accel_t::cycle_cgra() {
   uint64_t cur_cycle = now();
 
   for(int group = 0; group < NUM_GROUPS; ++group) {
+    //detect if we need to wait for throughput reasons on CGRA group -- easy peasy
+    if(cur_cycle < _delay_group_until[group]) {
+      continue;
+    }
+    _delay_group_until[group]=cur_cycle+_soft_config.group_thr[group];
+
     //Detect if we are ready to fire
     auto& active_ports=_soft_config.in_ports_active_group[group];
     
@@ -717,18 +725,17 @@ void accel_t::cycle_cgra() {
         }
       }
     }
+  }
+  //some previously produced outputs might be ready at this point,
+  //so, lets quickly check. (could be broken out as a separate function)
+  if(!_cgra_output_ready.empty()) {
+    auto iter =  _cgra_output_ready.begin();
+    if(cur_cycle >= iter->first) {
 
-    //some previously produced outputs might be ready at this point,
-    //so, lets quickly check. (could be broken out as a separate function)
-    if(!_cgra_output_ready.empty()) {
-      auto iter =  _cgra_output_ready.begin();
-      if(cur_cycle >= iter->first) {
-
-        for(auto& out_port_num : iter->second) {
-          _port_interf.out_port(out_port_num).set_out_complete();
-        }
-        _cgra_output_ready.erase(iter); //delete from list
+      for(auto& out_port_num : iter->second) {
+        _port_interf.out_port(out_port_num).set_out_complete();
       }
+      _cgra_output_ready.erase(iter); //delete from list
     }
   }
 
@@ -1256,6 +1263,11 @@ void accel_t::schedule_streams() {
       blocked |= !done_concurrent(false,stream->_mask);
       if(!blocked) {
         scheduled_other=true;
+        if(SB_DEBUG::SCR_BARRIER) {
+          timestamp();
+          std::cout << "BARRIER ISSUED, Scratch Write Complete\n";
+        }
+
       } else { //blocked, so prevent younger streams
         bar_scratch_read  |= stream->bar_scr_rd();
         bar_scratch_write |= stream->bar_scr_wr();
@@ -2316,7 +2328,8 @@ vector<SBDT> scratch_read_controller_t::read_scratch(
     assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
     std::memcpy(&val, &_accel->scratchpad[addr], DATA_WIDTH);
     if(SB_DEBUG::SCR_ACC) {
-      cout << "scr_addr:" << hex << addr << " read " << val << "\n";
+      cout << "scr_addr:" << hex << addr << " read " << val 
+           << " to port " << stream.in_port() << "\n";
     }
     data.push_back(val);
     prev_addr=addr;
@@ -3075,10 +3088,11 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
 
   _soft_config.cgra_in_ports_active.resize(128);
 
-  _soft_config.in_ports_active_group.resize(4);
-  _soft_config.out_ports_active_group.resize(4);
-  _soft_config.input_pdg_node.resize(4);
-  _soft_config.output_pdg_node.resize(4);
+  _soft_config.in_ports_active_group.resize(NUM_GROUPS);
+  _soft_config.out_ports_active_group.resize(NUM_GROUPS);
+  _soft_config.input_pdg_node.resize(NUM_GROUPS);
+  _soft_config.output_pdg_node.resize(NUM_GROUPS);
+  _soft_config.group_thr.resize(NUM_GROUPS);
 
   // Associating the PDG Nodes from the configuration bits, with the vector ports defined by the hardware
   for(auto& port_pair : _sbconfig->subModel()->io_interf().in_vports) {
@@ -3092,7 +3106,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
       assert(vec_input);
 
       int group_ind = _pdg->find_group_for_vec(vec_input);
-      _soft_config.in_ports_active_group[group_ind].push_back(i); 
+      _soft_config.in_ports_active_group[group_ind].push_back(i);
 
       vector<bool> mask = _sched->maskOf(vec_in);
 
@@ -3121,7 +3135,6 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
       _soft_config.input_pdg_node[group_ind].push_back(pdg_inputs);
     }
   }
-
 
   for(auto& port_pair : _sbconfig->subModel()->io_interf().out_vports) {
     int i = port_pair.first; //index of port
@@ -3157,12 +3170,33 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
         pdg_outputs.push_back(pdg_out);
       }
       _soft_config.out_ports_lat[i]=max_lat;
-      if(SB_DEBUG::SB_OVP_LAT) {
-        cout << "out vp" << i << " has latency:" << max_lat << "\n";
-      }
       _soft_config.output_pdg_node[group_ind].push_back(pdg_outputs);
     }
   }
+
+  for(int g = 0; g < NUM_GROUPS; ++g) {
+    auto& active_ports=_soft_config.in_ports_active_group[g];
+    auto& active_out_ports=_soft_config.out_ports_active_group[g];
+
+    if(active_ports.size() > 0) {
+
+      int thr = _pdg->maxGroupThroughput(g);
+      _soft_config.group_thr[g]=thr;
+      if(SB_DEBUG::SHOW_CONFIG) {
+        cout << "Group " << g << ", throughput: " << thr << "\n";
+        for(int i = 0; i < active_ports.size(); ++i) {
+          int p = active_ports[i];
+          cout << "in vp " << p << "\n";
+        }
+        for(int i = 0; i < active_out_ports.size(); ++i) {
+          int p = active_out_ports[i];
+          cout << "out vp" << p << " has latency:" 
+               << _soft_config.out_ports_lat[p] << "\n";
+        }
+      }
+    }
+  }
+
 
   //compute active_plus
   _soft_config.in_ports_active_plus=_soft_config.in_ports_active;

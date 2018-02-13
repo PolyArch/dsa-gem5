@@ -48,6 +48,8 @@ class accel_t;
 //configuration
 class soft_config_t {
 public:
+  uint64_t cur_config_addr;
+
   std::vector<int> in_ports_active;
   std::vector<int> out_ports_active;
 
@@ -55,10 +57,12 @@ public:
   std::vector<std::vector<int>> in_ports_active_group;
   std::vector<std::vector<int>> out_ports_active_group;
 
+  std::vector<int> group_thr;
+
   std::vector<int> in_ports_active_plus;
   std::vector<int> out_ports_active_plus;
 
-  std::vector<int> in_port_delay; //delay ports
+  std::vector<int> in_port_delay; //delay ports -- no longer used
 
   std::vector<int> out_ports_lat;
 
@@ -1271,6 +1275,8 @@ private:
   bool _cgra_issued_group[NUM_GROUPS];
   int _cgra_issued;
 
+  uint64_t _delay_group_until[NUM_GROUPS]={0,0,0,0};
+
   //* Stats
   uint64_t _stat_comp_instances = 0;
   uint64_t _stat_cgra_busy_cycles = 0;
@@ -1310,6 +1316,8 @@ private:
   uint64_t _prev_roi_clock;
 
   std::map<std::pair<LOC,LOC>, std::pair<uint64_t,uint64_t>> _bw_map;
+
+
 };
 
 #endif
