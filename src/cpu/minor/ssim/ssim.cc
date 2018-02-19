@@ -32,7 +32,6 @@ void ssim_t::req_config(addr_t addr, int size) {
   }
 }
 
-
 bool ssim_t::can_add_stream() {
   for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i,b<<=1) {
     if(_context_bitmask & b) {
@@ -70,7 +69,6 @@ void ssim_t::cycle_shared_busses() {
   //bring data int o
   //     auto& read_buf = accel_arr[i]->_buf_shs_read;
   int max_reqs=2;
-
   int reqs_made=0;
 
   for(int i = 0; (i < NUM_ACCEL) && (reqs_made < max_reqs); ++i) {

@@ -1084,6 +1084,7 @@ private:
   ssim_t* _ssim;
   Minor::LSQ* _lsq;
   std::ofstream in_port_verif, out_port_verif, scr_wr_verif, scr_rd_verif, cmd_verif;
+  std::ofstream cgra_multi_verif[NUM_ACCEL+1];
   bool _cleanup_mode=false;
 
   //softsim_interf_t* _sim_interf;

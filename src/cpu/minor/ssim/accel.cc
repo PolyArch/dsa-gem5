@@ -356,7 +356,7 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
   ugh += system("mkdir -p viz/");
 
 
-  if(SB_DEBUG::VERIF_MEM || SB_DEBUG::VERIF_PORT || SB_DEBUG::VERIF_CGRA || SB_DEBUG::VERIF_SCR ||
+  if(SB_DEBUG::VERIF_MEM || SB_DEBUG::VERIF_PORT || SB_DEBUG::VERIF_CGRA || SB_DEBUG::VERIF_CGRA_MULTI || SB_DEBUG::VERIF_SCR ||
      SB_DEBUG::VERIF_CMD) {
     ugh += system("mkdir -p verif/");
     cout << "DUMPING VERIFICATION OUTPUTS (dir: verif/) ... SIMULATION WILL BE SLOWER\n";
@@ -384,6 +384,16 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
                         ofstream::trunc | ofstream::out);
     assert(cmd_verif.is_open());
   }
+  if(SB_DEBUG::VERIF_CGRA_MULTI) {
+    SB_DEBUG::SB_COMP=1;
+    for(int i = 0; i < NUM_ACCEL; ++i) { 
+      cgra_multi_verif[i].open(("verif/" + SB_DEBUG::verif_name + "cgra_comp" 
+                               + std::to_string(i) + ".txt").c_str(),
+                                 ofstream::trunc | ofstream::out);
+      assert(cgra_multi_verif[i].is_open());
+    }
+  }
+
 
   const char* sbconfig_file = std::getenv("SBCONFIG");
 
@@ -746,9 +756,15 @@ void accel_t::cycle_cgra() {
 }
 
 void accel_t::execute_pdg(unsigned instance, int group) {
-  if(SB_DEBUG::SB_COMP) {
-    std::cout << "inputs (group" << group << "):";
+  ostream* cgra_dbg_stream = &std::cout;
+  if(SB_DEBUG::VERIF_CGRA_MULTI) {
+    cgra_dbg_stream = &cgra_multi_verif[_accel_index];
   }
+  if(SB_DEBUG::SB_COMP) {
+    *cgra_dbg_stream << "inputs (group" << group << "):";
+  }
+  _pdg->set_dbg_stream(cgra_dbg_stream);
+
 
   auto& active_ports=_soft_config.in_ports_active_group[group];
 
@@ -762,7 +778,7 @@ void accel_t::execute_pdg(unsigned instance, int group) {
     for(unsigned port_idx = 0; port_idx < cur_in_port.port_cgra_elem(); ++port_idx) {
       int cgra_port = cur_in_port.cgra_port_for_index(port_idx);
       if(_soft_config.cgra_in_ports_active[cgra_port]==false) {
-        continue;
+       continue;
       }
      
       //get the data of the instance of CGRA FIFO
@@ -774,9 +790,10 @@ void accel_t::execute_pdg(unsigned instance, int group) {
       _soft_config.input_pdg_node[group][i][port_idx]->set_value(val,valid);  
       
       if(SB_DEBUG::SB_COMP) {
-        if(valid) std::cout << std::hex << val << ", " << std::dec;
-        else std::cout << "inv, ";
+        if(valid) *cgra_dbg_stream << std::hex << val << ", " << std::dec;
+        else      *cgra_dbg_stream << "inv, ";
       }
+
       if(SB_DEBUG::VERIF_PORT) {
         in_port_verif << hex << setw(16) << setfill('0') << val << " ";
       }
@@ -801,7 +818,7 @@ void accel_t::execute_pdg(unsigned instance, int group) {
   bool print = false;
   if(SB_DEBUG::SB_COMP) {
     print = true;
-    std::cout <<"\n";
+    *cgra_dbg_stream  <<"\n";
   }
 
   if(SB_DEBUG::VERIF_PORT) {
@@ -839,7 +856,8 @@ void accel_t::execute_pdg(unsigned instance, int group) {
       cur_out_port.push_cgra_port(port_idx, val, valid);  //retreive from last inst
 
       if(SB_DEBUG::SB_COMP) {
-         std::cout << "output:" << hex << val << ", valid:" << valid << dec << "\n";
+        *cgra_dbg_stream << "output:" << hex << val << ", valid:" << valid 
+                         << dec << "\n";
       }
  
       if(SB_DEBUG::VERIF_PORT) {
@@ -1082,6 +1100,12 @@ void accel_t::print_statistics(std::ostream& out) {
    if(SB_DEBUG::VERIF_CMD) {
      cmd_verif.flush();
    }
+   if(SB_DEBUG::VERIF_CGRA_MULTI) {
+     for(int i = 0; i < NUM_ACCEL; ++i) {
+       cgra_multi_verif[i].flush();
+     }
+   }
+
 
    if(SB_DEBUG::SUPRESS_SB_STATS) {
      return;  // If we don't want to print stats
