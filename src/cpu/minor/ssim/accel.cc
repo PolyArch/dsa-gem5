@@ -16,6 +16,8 @@ Minor::MinorDynInstPtr accel_t::cur_minst() {
 }
 
 void accel_t::sanity_check_stream(base_stream_t* s) {
+  assert(s->repeat_in() > -2);
+
   //sanity check -- please don't read/write a stream that's not configured!
   if(s->in_port() != -1 && s->in_port() < 25) { 
     vector<int>::iterator it = std::find(_soft_config.in_ports_active.begin(), 
@@ -752,7 +754,6 @@ void accel_t::cycle_cgra() {
   if(in_roi()) {
     _stat_cgra_busy_cycles+=(_cgra_issued>0);  
   }
-
 }
 
 void accel_t::execute_pdg(unsigned instance, int group) {
@@ -764,7 +765,6 @@ void accel_t::execute_pdg(unsigned instance, int group) {
     *cgra_dbg_stream << "inputs (group" << group << "):";
   }
   _pdg->set_dbg_stream(cgra_dbg_stream);
-
 
   auto& active_ports=_soft_config.in_ports_active_group[group];
 
@@ -784,7 +784,6 @@ void accel_t::execute_pdg(unsigned instance, int group) {
       //get the data of the instance of CGRA FIFO
       SBDT val = cur_in_port.value_of(port_idx, instance);
       bool valid = cur_in_port.valid_of(port_idx, instance);
-
 
       //for each cgra port and associated pdg input
       _soft_config.input_pdg_node[group][i][port_idx]->set_value(val,valid);  
@@ -906,8 +905,6 @@ void accel_t::cycle_status() {
               << _port_interf.in_port(cur_p).mem_size()  << ","
               << _port_interf.in_port(cur_p).num_ready() <<" ";
   }
-
-
 
   cout << "op "; 
   for(unsigned i = 0; i < _soft_config.out_ports_active.size(); ++i) {
