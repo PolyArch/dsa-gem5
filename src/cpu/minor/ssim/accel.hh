@@ -1163,7 +1163,7 @@ private:
     }
   }
 
-  void req_config(addr_t addr, int size);
+  void req_config(addr_t addr, int size, uint64_t context);
 
   void sanity_check_stream(base_stream_t* s);
 

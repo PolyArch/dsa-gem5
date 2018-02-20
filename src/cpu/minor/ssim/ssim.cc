@@ -24,10 +24,26 @@ ssim_t::ssim_t(Minor::LSQ* lsq) : _lsq(lsq) {
   //TODO: inform accel_arr
 }
 void ssim_t::req_config(addr_t addr, int size) {
-  set_in_use();
+  if(addr==0 && size==0) { 
+    //This is the reset_data case!
+    for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
+      if(_context_bitmask & b) {
+        accel_arr[i]->request_reset_data();
+      }
+    }
+    return;
+  }
+  
+   set_in_use();  //lets get going then..
+
+
+  //Send req_config to master accel -- TODO: is this the right decision? 
+  shared_acc()->req_config(addr,size,_context_bitmask); 
+
+  //We're also going to want to let these cores know they're in_config
   for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
     if(_context_bitmask & b) {
-      accel_arr[i]->req_config(addr,size);
+      accel_arr[i]->set_in_config();
     }
   }
 }
@@ -86,7 +102,7 @@ void ssim_t::step() {
     return;
   }
   cycle_shared_busses();
-  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
+  for(uint64_t i=0,b=1; i < NUM_ACCEL; ++i, b<<=1) {
     if(_ever_used_bitmask & b) {
       accel_arr[i]->tick();     
     }

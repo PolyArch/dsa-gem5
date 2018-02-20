@@ -992,6 +992,9 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
         completed_inst = false;
         ssim.wait_config();
         /* Don't execute any instructions if ssim is in config mode!*/
+    } else if (inst->staticInst->isSDConfig() && !lsq.canRequest()) {
+        completed_inst = false;
+        ssim.wait_config();
     } else {
       
         bool should_commit = true;

@@ -16,8 +16,6 @@ Minor::MinorDynInstPtr accel_t::cur_minst() {
 }
 
 void accel_t::sanity_check_stream(base_stream_t* s) {
-  assert(s->repeat_in() > -2);
-
   //sanity check -- please don't read/write a stream that's not configured!
   if(s->in_port() != -1 && s->in_port() < 25) { 
     vector<int>::iterator it = std::find(_soft_config.in_ports_active.begin(), 
@@ -43,23 +41,15 @@ void accel_t::sanity_check_stream(base_stream_t* s) {
 }
 
 
-void accel_t::req_config(addr_t addr, int size) {
+void accel_t::req_config(addr_t addr, int size, uint64_t context) {
   assert(_in_config ==false);
-
-  if(addr==0 && size==0) {
-    //This is the reset_data case!
-    request_reset_data();
-    return;
-  }
-
-  _in_config=true;
 
   if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SCR_BARRIER)  ) {
     timestamp();
     cout << "SB_CONFIGURE(request): " << "0x" << std::hex << addr  << " " 
                                       << std::dec << size << "\n";
   }
-  SDMemReqInfoPtr sdInfo = new SDMemReqInfo(_accel_index,CONFIG_STREAM);
+  SDMemReqInfoPtr sdInfo = new SDMemReqInfo(context,CONFIG_STREAM);
 
   _lsq->pushRequest(cur_minst(),true/*isLoad*/,NULL/*data*/,
               size*8/*cache line*/, addr, 0/*flags*/, 0 /*res*/,
@@ -1769,11 +1759,14 @@ void dma_controller_t::port_resp(unsigned cur_port) {
 void dma_controller_t::cycle(){
   //Memory read to config
   if(Minor::LSQ::LSQRequestPtr response =_accel->_lsq->findResponse(CONFIG_STREAM)) {
-    if(_accel->_accel_index == response->sdInfo->which_accel) {
-      PacketPtr packet = response->packet;
-      _accel->configure(packet->getAddr(),packet->getSize()/8,packet->getPtr<uint64_t>());
-      _accel->_lsq->popResponse(CONFIG_STREAM);
+    PacketPtr packet = response->packet;
+    uint64_t context = response->sdInfo->which_accel;
+    for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i,b<<=1) {
+      if(context & b) {
+        _accel->_ssim->accel_arr[i]->configure(packet->getAddr(),packet->getSize()/8,packet->getPtr<uint64_t>());
+      }
     }
+    _accel->_lsq->popResponse(CONFIG_STREAM);
   }
 
   //memory read to scratch
