@@ -21,6 +21,7 @@
 #include <sstream>
 #include <utility>
 #include <iomanip>
+#include <memory>
 
 #include "sim-debug.hh"
 #include "cpu/minor/dyn_inst.hh"
@@ -1010,7 +1011,7 @@ public:
   bool is_in_config() {return _in_config;}
   bool can_add_stream();
 
-  void add_stream(base_stream_t* s) {
+  void add_stream(std::shared_ptr<base_stream_t> s) {
 
     /*if(_sbconfig->dispatch_inorder()) {
       add_port_based_stream(s);
@@ -1167,45 +1168,45 @@ private:
 
   void sanity_check_stream(base_stream_t* s);
 
-  void add_port_based_stream(base_stream_t* s) {
-    sanity_check_stream(s);
+  void add_port_based_stream(std::shared_ptr<base_stream_t> s) {
+    sanity_check_stream(s.get());
     s->set_id();
     assert(cur_minst());
     s->set_minst(cur_minst());
     _in_port_queue.push_back(s);
     forward_progress();
-    verif_cmd(s);
+    verif_cmd(s.get());
   }
 
-  void add_dma_port_stream(dma_port_stream_t* s)     {add_port_based_stream(s);} 
-  void add_port_dma_stream(port_dma_stream_t* s)     {add_port_based_stream(s);} 
-  void add_scr_port_stream(scr_port_stream_t* s)     {add_port_based_stream(s);} 
-  void add_port_scr_stream(port_scr_stream_t* s)     {add_port_based_stream(s);} 
-  void add_port_port_stream(port_port_stream_t* s)   {add_port_based_stream(s);} 
-  void add_indirect_stream(indirect_base_stream_t* s){add_port_based_stream(s);} 
-  void add_const_port_stream(const_port_stream_t* s) {add_port_based_stream(s);} 
+  //void add_dma_port_stream(dma_port_stream_t* s)     {add_port_based_stream(s);} 
+  //void add_port_dma_stream(port_dma_stream_t* s)     {add_port_based_stream(s);} 
+  //void add_scr_port_stream(scr_port_stream_t* s)     {add_port_based_stream(s);} 
+  //void add_port_scr_stream(port_scr_stream_t* s)     {add_port_based_stream(s);} 
+  //void add_port_port_stream(port_port_stream_t* s)   {add_port_based_stream(s);} 
+  //void add_indirect_stream(indirect_base_stream_t* s){add_port_based_stream(s);} 
+  //void add_const_port_stream(const_port_stream_t* s) {add_port_based_stream(s);} 
 
-  void add_dma_scr_stream(dma_scr_stream_t* s) {
-    if(_sbconfig->dispatch_inorder()) {
-      add_port_based_stream(s);
-    } else {
-      _dma_scr_queue.push_back(s);
-      s->set_minst(cur_minst());
-      forward_progress();
-      verif_cmd(s);
-    }
-  }
-
-  void add_scr_dma_stream(scr_dma_stream_t* s) {
-    if(_sbconfig->dispatch_inorder()) {
-      add_port_based_stream(s);
-    } else {
-      _scr_dma_queue.push_back(s);
-      s->set_minst(cur_minst());
-      forward_progress();
-      verif_cmd(s);
-    }
-  }
+//  void add_dma_scr_stream(dma_scr_stream_t* s) {
+//    if(_sbconfig->dispatch_inorder()) {
+//      add_port_based_stream(s);
+//    } else {
+//      _dma_scr_queue.push_back(s);
+//      s->set_minst(cur_minst());
+//      forward_progress();
+//      verif_cmd(s);
+//    }
+//  }
+//
+//  void add_scr_dma_stream(scr_dma_stream_t* s) {
+//    if(_sbconfig->dispatch_inorder()) {
+//      add_port_based_stream(s);
+//    } else {
+//      _scr_dma_queue.push_back(s);
+//      s->set_minst(cur_minst());
+//      forward_progress();
+//      verif_cmd(s);
+//    }
+//  }
 
 
   bool can_add_dma_port_stream()   {return _in_port_queue.size()  < _queue_size;} 
@@ -1267,7 +1268,7 @@ private:
   scratch_write_controller_t _scr_w_c;
   port_controller_t _port_c;
 
-  std::list<base_stream_t*> _in_port_queue;
+  std::list<std::shared_ptr<base_stream_t>> _in_port_queue;
   std::list<dma_scr_stream_t*> _dma_scr_queue;
   std::list<scr_dma_stream_t*> _scr_dma_queue;
 

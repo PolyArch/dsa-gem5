@@ -4,7 +4,8 @@
 #include <iostream>
 #include <fstream>
 #include <iomanip>
- 
+#include <memory> 
+
 #include "ssim.hh"
 #include "cpu/minor/cpu.hh"
 
@@ -223,12 +224,14 @@ void ssim_t::add_bitmask_stream(base_stream_t* s, uint64_t ctx) {
   //  cout << "Sending to Cores: ";
   //}
 
+  shared_ptr<base_stream_t> s_shr(s); 
+
   for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
     if(ctx & b) {
       //if(debug && (SB_DEBUG::SB_COMMAND)  ) {
       //  cout << i;
       //}
-      accel_arr[i]->add_stream(s);
+      accel_arr[i]->add_stream(s_shr);
     }
   }
 

@@ -468,7 +468,7 @@ pipeline_stats_t::PIPE_STATUS accel_t::whos_to_blame(int group) {
   std::set<int> scratch_waiters;
   std::set<int> waiters;
   for(auto i = _in_port_queue.begin(); i!=_in_port_queue.end(); ++i) {
-    base_stream_t* ip = *i;
+    base_stream_t* ip = i->get();
     if(auto stream = dynamic_cast<stream_barrier_t*>(ip)) {
       bar_scratch_read  |= stream->bar_scr_rd();
       bar_scratch_write |= stream->bar_scr_wr();
@@ -1234,7 +1234,7 @@ void accel_t::schedule_streams() {
 
   //schedule for ports (these need to go in program order per-vp)
   for(auto i = _in_port_queue.begin(); i!=_in_port_queue.end() && str_issued<str_width;){
-    base_stream_t* ip = *i;
+    base_stream_t* ip = i->get();
     port_data_t* in_vp=NULL;
     port_data_t* out_vp=NULL;
     port_data_t* out_ind_vp=NULL;
@@ -1416,7 +1416,7 @@ void accel_t::schedule_streams() {
         ip->print_status();
       }
 
-      delete ip;
+      //delete ip; this is a std::shared_ptr now
       i=_in_port_queue.erase(i);
       if(_ssim->in_roi()) {
         _stat_commands_issued++;
