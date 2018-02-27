@@ -917,7 +917,7 @@ struct stream_stats_t {
 struct pipeline_stats_t {
   enum PIPE_STATUS {CONFIG, ISSUED, ISSUED_MULTI,
                     CONST_FILL, SCR_FILL, DMA_FILL, REC_WAIT,
-                    CORE_WAIT, SCR_BAR_WAIT, CMD_QUEUE, CGRA_BACK,  
+                    CORE_WAIT, SCR_BAR_WAIT, DMA_WRITE, CMD_QUEUE, CGRA_BACK,  
                     DRAIN, NOT_IN_USE, LAST};
 
   static std::string name_of(PIPE_STATUS value) {
@@ -933,6 +933,7 @@ struct pipeline_stats_t {
         PROCESS_VAL(REC_WAIT);
         PROCESS_VAL(CORE_WAIT);
         PROCESS_VAL(SCR_BAR_WAIT);
+        PROCESS_VAL(DMA_WRITE);
         PROCESS_VAL(CMD_QUEUE);
         PROCESS_VAL(CGRA_BACK);
         PROCESS_VAL(DRAIN);
@@ -1042,7 +1043,7 @@ public:
   void configure(addr_t addr, int size, uint64_t* bits);
 
   pipeline_stats_t::PIPE_STATUS whos_to_blame(int group);
-  void whos_to_blame();
+  void whos_to_blame(std::vector<pipeline_stats_t::PIPE_STATUS>& blame_vec);
   void tick(); //Tick one time
 
   uint64_t roi_cycles();

@@ -463,6 +463,18 @@ pipeline_stats_t::PIPE_STATUS accel_t::whos_to_blame(int group) {
     if(any_rec) return pipeline_stats_t::REC_WAIT;
   } 
 
+  for(unsigned i = 0; i < active_out_ports.size(); ++i) {
+    //This is just a guess really, but things really are bad
+    //if memory write is the bottleneck...
+    auto& out_vp = _port_interf.out_port(active_out_ports[i]);
+    if(out_vp.any_data()) {
+      if(!_lsq->sd_transfers[MEM_WR_STREAM].canReserve()) {
+        return pipeline_stats_t::DMA_WRITE;
+      }
+    }
+  }
+
+
   bool bar_scratch_read = false;  // These are set by scratch
   bool bar_scratch_write = false;
   std::set<int> scratch_waiters;
@@ -527,60 +539,51 @@ pipeline_stats_t::PIPE_STATUS accel_t::whos_to_blame(int group) {
 
 
 // Figure out who is to blame for a given cycle's not issuing
-void accel_t::whos_to_blame() {
-#define BLAMEGAURD SB_DEBUG::SB_BLAME && _accel_index ==0
+void accel_t::whos_to_blame(std::vector<pipeline_stats_t::PIPE_STATUS>& blame_vec) {
   if(_soft_config.in_ports_active.size()==0) {
-    if(BLAMEGAURD) cout << "CORE_WAIT\n"; 
-    _pipe_stats.pipe_inc(pipeline_stats_t::CORE_WAIT,1); 
+    blame_vec.push_back(pipeline_stats_t::CORE_WAIT); 
     return;
   }
 
   if(_cgra_issued >1)  {
-    if(BLAMEGAURD) cout << "ISSUE_MULTI\n"; 
-    _pipe_stats.pipe_inc(pipeline_stats_t::ISSUED_MULTI,1); 
+    blame_vec.push_back(pipeline_stats_t::ISSUED_MULTI); 
     return;
   }
   if(_cgra_issued==1) {
-    if(BLAMEGAURD) cout << "ISSUE\n"; 
-    _pipe_stats.pipe_inc(pipeline_stats_t::ISSUED,1); 
+    blame_vec.push_back(pipeline_stats_t::ISSUED); 
     return;
   }
 
   if(_in_config) {
-    if(BLAMEGAURD) cout << "ISSUE_CONFIG\n"; 
-    _pipe_stats.pipe_inc(pipeline_stats_t::CONFIG,1); 
+    blame_vec.push_back(pipeline_stats_t::CONFIG); 
     return;
   }
 
-  std::vector<pipeline_stats_t::PIPE_STATUS> blame_vec;
   bool draining=false;
+
+  std::vector<pipeline_stats_t::PIPE_STATUS> group_vec;
 
   for(int g = 0; g < NUM_GROUPS; ++g) {
     pipeline_stats_t::PIPE_STATUS blame = whos_to_blame(g);
     switch(blame){
       case pipeline_stats_t::DRAIN: draining=true; break;
       case pipeline_stats_t::NOT_IN_USE: break;
-      default: blame_vec.push_back(blame); break;
+      default: group_vec.push_back(blame); break;
     }
   }
 
-  if(blame_vec.size()==0) {
+  if(group_vec.size()==0) {
     if(draining) {
-      if(BLAMEGAURD) cout << "DRAIN\n"; 
-      _pipe_stats.pipe_inc(pipeline_stats_t::DRAIN,1); 
+      blame_vec.push_back(pipeline_stats_t::DRAIN); 
       return;
     }
-    if(BLAMEGAURD) cout << "CORE_WAIT\n"; 
-    _pipe_stats.pipe_inc(pipeline_stats_t::CORE_WAIT,1); 
+    blame_vec.push_back(pipeline_stats_t::CORE_WAIT); 
     return;
   }
 
-  for(auto i : blame_vec) {
-    if(BLAMEGAURD) cout << pipeline_stats_t::name_of(i) << " "; 
-    _pipe_stats.pipe_inc(i,1.0f/(float)blame_vec.size()); 
+  for(auto i : group_vec) {
+    blame_vec.push_back(i);
   }
-  if(BLAMEGAURD) cout << "\n"; 
-
 
   //bool any_stream_active =
   //   _dma_c.any_stream_active() || _scr_r_c.any_stream_active() ||
@@ -624,7 +627,26 @@ void accel_t::tick() {
   if(in_roi()) {
     uint64_t new_now = now();
 
-    whos_to_blame();
+    if(SB_DEBUG::CYC_STAT && _accel_index==SB_DEBUG::ACC_INDEX) {
+      cycle_status();
+    }
+
+    std::vector<pipeline_stats_t::PIPE_STATUS> blame_vec;
+
+    whos_to_blame(blame_vec);
+    for(auto i : blame_vec) {
+      if(SB_DEBUG::SB_BLAME && _accel_index==SB_DEBUG::ACC_INDEX) {
+        cout << " " << pipeline_stats_t::name_of(i); 
+      }
+
+      _pipe_stats.pipe_inc(i,1.0f/(float)blame_vec.size()); 
+    }
+
+    if((SB_DEBUG::CYC_STAT || SB_DEBUG::SB_BLAME) 
+        && _accel_index==SB_DEBUG::ACC_INDEX) {
+      cout << "\n";
+    }
+
     //if(_accel_index==0) {
     //  if(new_now!=_prev_roi_clock+1) {
     //    cout << "\n\n";
@@ -632,9 +654,6 @@ void accel_t::tick() {
     //  timestamp();
     //  cout << pipeline_stats_t::name_of(who) << "\n";
     //}
-    if(SB_DEBUG::CYC_STAT) {
-      cycle_status();
-    }
 
     _prev_roi_clock=new_now;
   }
@@ -882,19 +901,19 @@ void accel_t::cycle_status() {
                 << "," <<_scr_dma_queue.size() << "," <<_dma_scr_queue.size()<<" ";
 
   cout << "ip "; 
-  for(unsigned i = 0; i < _soft_config.in_ports_active_plus.size(); ++i) {
+  for(unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
     unsigned cur_p = _soft_config.in_ports_active[i];
     cout << " " << cur_p << ": "
               << _port_interf.in_port(cur_p).mem_size()  << ","
               << _port_interf.in_port(cur_p).num_ready() <<" ";
   }
 
-  for(unsigned i = START_IND_PORTS; i < STOP_IND_PORTS; ++i ) {  //ind read ports
-    unsigned cur_p = i;
-    cout << " " << cur_p << ": "
-              << _port_interf.in_port(cur_p).mem_size()  << ","
-              << _port_interf.in_port(cur_p).num_ready() <<" ";
-  }
+  //for(unsigned i = START_IND_PORTS; i < STOP_IND_PORTS; ++i ) {  //ind read ports
+  //  unsigned cur_p = i;
+  //  cout << " " << cur_p << ": "
+  //            << _port_interf.in_port(cur_p).mem_size()  << ","
+  //            << _port_interf.in_port(cur_p).num_ready() <<" ";
+  //}
 
   cout << "op "; 
   for(unsigned i = 0; i < _soft_config.out_ports_active.size(); ++i) {
@@ -903,16 +922,6 @@ void accel_t::cycle_status() {
               << _port_interf.out_port(cur_p).mem_size()  << ","
               << _port_interf.out_port(cur_p).num_ready() <<" ";  
   }
-
-  //indirect
-  //for(unsigned i = 29; i < 32; ++i) {
-  //  unsigned cur_p = i;
-  //  cout << " " << cur_p << ": "
-  //            << _port_interf.out_port(cur_p).mem_size()  << ","
-  //            << _port_interf.out_port(cur_p).num_ready() <<" ";  
-  //}
-
-
 
   cout << "s_buf:" << _scr_w_c.scr_buf_size() << " ";
   cout << "m_req:" << _dma_c.mem_reqs() << " ";
@@ -932,12 +941,12 @@ void accel_t::cycle_status() {
   }
   
   //Just the indirect ports
-  for(unsigned i = 24; i < 32; ++i) {
-    int cur_p=i;
-    if(_port_interf.in_port(cur_p).in_use()) {
-      cout << cur_p << " "  << (_port_interf.in_port(cur_p).completed()?"(completed)":"");
-    }
-  }
+//  for(unsigned i = 24; i < 32; ++i) {
+//    int cur_p=i;
+//    if(_port_interf.in_port(cur_p).in_use()) {
+//      cout << cur_p << " "  << (_port_interf.in_port(cur_p).completed()?"(completed)":"");
+//    }
+//  }
 
   cout << "op "; 
   for(unsigned i = 0; i < _soft_config.out_ports_active.size(); ++i) {
@@ -948,17 +957,16 @@ void accel_t::cycle_status() {
   }
 
   //Just the indirect ports
-  for(unsigned i = 24; i < 32; ++i) {
-    int cur_p=i;
-    if(_port_interf.out_port(cur_p).in_use()) {
-      cout << cur_p << " " << (_port_interf.out_port(cur_p).completed()?"(completed)":"");
-    }
-  }
+//  for(unsigned i = 24; i < 32; ++i) {
+//    int cur_p=i;
+//    if(_port_interf.out_port(cur_p).in_use()) {
+//      cout << cur_p << " " << (_port_interf.out_port(cur_p).completed()?"(completed)":"");
+//    }
+//  }
 
 
   clear_cycle();
 
-  cout << "\n";
    //_dma_c.cycle_status();
    //_scr_r_c.cycle_status();
    //_scr_w_c.cycle_status();
