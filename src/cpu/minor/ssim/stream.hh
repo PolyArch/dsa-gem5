@@ -44,8 +44,25 @@ struct base_stream_t {
       case LOC::TOTAL: return "TOTAL";
       case LOC::REC_BUS: return "REC_BUS";
     }
-    return "XXXXX";
+    return "???";
   }
+
+  static std::string loc_short_name(LOC loc) {
+    switch(loc) {
+      case LOC::NONE: return "N";
+      case LOC::DMA: return "D";
+      case LOC::SCR: return "S";
+      case LOC::PORT: return "P";
+      case LOC::CONST: return "C";
+      case LOC::REMOTE_PORT: return "R";
+      case LOC::REMOTE_SCR: return "Q";
+      case LOC::TOTAL: return "T";
+      case LOC::REC_BUS: return "B";
+    }
+    return "?";
+  }
+
+
 
   virtual std::string short_name() {
     return loc_name(src()) + "->" + loc_name(dest());

@@ -1043,7 +1043,8 @@ public:
   void configure(addr_t addr, int size, uint64_t* bits);
 
   pipeline_stats_t::PIPE_STATUS whos_to_blame(int group);
-  void whos_to_blame(std::vector<pipeline_stats_t::PIPE_STATUS>& blame_vec);
+  void whos_to_blame(std::vector<pipeline_stats_t::PIPE_STATUS>& blame_vec,
+                     std::vector<pipeline_stats_t::PIPE_STATUS>& group_vec);
   void tick(); //Tick one time
 
   uint64_t roi_cycles();

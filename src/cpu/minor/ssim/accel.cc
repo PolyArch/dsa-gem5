@@ -404,7 +404,7 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
 
 void accel_t::timestamp() {
   _ssim->timestamp();
-  cout << "context " <<  _accel_index << " ";
+  cout << "acc" <<  _accel_index << " ";
 }
 
 bool accel_t::in_use() { return _ssim->in_use();}
@@ -528,10 +528,12 @@ pipeline_stats_t::PIPE_STATUS accel_t::whos_to_blame(int group) {
     return pipeline_stats_t::NOT_IN_USE;
   }
 
-  if(!any_input_activity) {
+  if(!any_input_activity) {  // no input, but at least some cgra/out
     return pipeline_stats_t::DRAIN;
   }
- 
+
+  // some input activity
+
   return pipeline_stats_t::CORE_WAIT;
   //cout << num_unassigned << "/" << total_ivps << "-" << num_unassigned_queued; 
   //done(true,0);
@@ -539,9 +541,10 @@ pipeline_stats_t::PIPE_STATUS accel_t::whos_to_blame(int group) {
 
 
 // Figure out who is to blame for a given cycle's not issuing
-void accel_t::whos_to_blame(std::vector<pipeline_stats_t::PIPE_STATUS>& blame_vec) {
+void accel_t::whos_to_blame(std::vector<pipeline_stats_t::PIPE_STATUS>& blame_vec,
+                            std::vector<pipeline_stats_t::PIPE_STATUS>& group_vec) {
   if(_soft_config.in_ports_active.size()==0) {
-    blame_vec.push_back(pipeline_stats_t::CORE_WAIT); 
+    blame_vec.push_back(pipeline_stats_t::NOT_IN_USE); 
     return;
   }
 
@@ -559,29 +562,35 @@ void accel_t::whos_to_blame(std::vector<pipeline_stats_t::PIPE_STATUS>& blame_ve
     return;
   }
 
-  bool draining=false;
+  bool draining=false, cgra_back=false;
 
-  std::vector<pipeline_stats_t::PIPE_STATUS> group_vec;
+  std::vector<pipeline_stats_t::PIPE_STATUS> temp_vec;
 
   for(int g = 0; g < NUM_GROUPS; ++g) {
     pipeline_stats_t::PIPE_STATUS blame = whos_to_blame(g);
+    group_vec.push_back(blame);
     switch(blame){
       case pipeline_stats_t::DRAIN: draining=true; break;
+      case pipeline_stats_t::CGRA_BACK: cgra_back=true; break;
       case pipeline_stats_t::NOT_IN_USE: break;
-      default: group_vec.push_back(blame); break;
+      default: temp_vec.push_back(blame); break;
     }
   }
 
-  if(group_vec.size()==0) {
+  if(temp_vec.size()==0) {
     if(draining) {
       blame_vec.push_back(pipeline_stats_t::DRAIN); 
+      return;
+    }
+    if(cgra_back) {
+      blame_vec.push_back(pipeline_stats_t::CGRA_BACK); 
       return;
     }
     blame_vec.push_back(pipeline_stats_t::CORE_WAIT); 
     return;
   }
 
-  for(auto i : group_vec) {
+  for(auto i : temp_vec) {
     blame_vec.push_back(i);
   }
 
@@ -632,8 +641,20 @@ void accel_t::tick() {
     }
 
     std::vector<pipeline_stats_t::PIPE_STATUS> blame_vec;
+    std::vector<pipeline_stats_t::PIPE_STATUS> group_vec;
 
-    whos_to_blame(blame_vec);
+    whos_to_blame(blame_vec,group_vec);
+    if(SB_DEBUG::SB_BLAME && _accel_index==SB_DEBUG::ACC_INDEX && group_vec.size()
+        && (blame_vec.size() != group_vec.size())) {
+      for(int g = 0; g < group_vec.size(); ++g) {
+        if(_soft_config.in_ports_active_group[g].size()) {
+          cout << " " << pipeline_stats_t::name_of(group_vec[g]); 
+        }
+      }
+      cout << " >";
+    }
+
+
     for(auto i : blame_vec) {
       if(SB_DEBUG::SB_BLAME && _accel_index==SB_DEBUG::ACC_INDEX) {
         cout << " " << pipeline_stats_t::name_of(i); 
@@ -706,7 +727,6 @@ void accel_t::cycle_cgra() {
     if(cur_cycle < _delay_group_until[group]) {
       continue;
     }
-    _delay_group_until[group]=cur_cycle+_soft_config.group_thr[group];
 
     //Detect if we are ready to fire
     auto& active_ports=_soft_config.in_ports_active_group[group];
@@ -724,6 +744,7 @@ void accel_t::cycle_cgra() {
     //Now fire on all cgra ports
     if(min_ready > 0) {
       forward_progress();
+      _delay_group_until[group]=cur_cycle+_soft_config.group_thr[group];
       execute_pdg(0,group);  //Note that this will set backpressure variable
 
       //if(in_roi()) {
@@ -897,15 +918,27 @@ void accel_t::execute_pdg(unsigned instance, int group) {
 // ip 1:5 2:5 7:7; op 1:2 scr_wr:1 cq:1 mem_req:14  | ip: op: scr_rd: scr_wr:   mr: mw: 
 void accel_t::cycle_status() {
   timestamp();
-  cout << "cq " << _in_port_queue.size() 
-                << "," <<_scr_dma_queue.size() << "," <<_dma_scr_queue.size()<<" ";
+  cout << "cq" << _in_port_queue.size();
 
-  cout << "ip "; 
-  for(unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
-    unsigned cur_p = _soft_config.in_ports_active[i];
-    cout << " " << cur_p << ": "
-              << _port_interf.in_port(cur_p).mem_size()  << ","
-              << _port_interf.in_port(cur_p).num_ready() <<" ";
+  for(int group = 0; group < NUM_GROUPS; ++group) {
+    auto& active_ports=_soft_config.in_ports_active_group[group];
+    if(active_ports.size()) {
+      cout << "|";
+      for(unsigned i = 0; i < active_ports.size(); ++i) {
+        unsigned cur_p = active_ports[i];
+        cout << "i" << cur_p << ":"
+                  << _port_interf.in_port(cur_p).mem_size()  << ","
+                  << _port_interf.in_port(cur_p).num_ready();
+        auto& in_port = _port_interf.in_port(active_ports[i]);
+        if(in_port.in_use()) {
+          cout << base_stream_t::loc_short_name(in_port.loc());
+          if(in_port.completed()) {
+            cout << "#"; 
+          }
+        }
+        cout << " ";
+      }
+    }
   }
 
   //for(unsigned i = START_IND_PORTS; i < STOP_IND_PORTS; ++i ) {  //ind read ports
@@ -914,13 +947,23 @@ void accel_t::cycle_status() {
   //            << _port_interf.in_port(cur_p).mem_size()  << ","
   //            << _port_interf.in_port(cur_p).num_ready() <<" ";
   //}
-
-  cout << "op "; 
-  for(unsigned i = 0; i < _soft_config.out_ports_active.size(); ++i) {
-    unsigned cur_p = _soft_config.out_ports_active[i];
-    cout << " " << cur_p << ": "
-              << _port_interf.out_port(cur_p).mem_size()  << ","
-              << _port_interf.out_port(cur_p).num_ready() <<" ";  
+  cout << "\t";
+  for(int group = 0; group < NUM_GROUPS; ++group) {
+    auto& active_ports=_soft_config.out_ports_active_group[group];
+    if(active_ports.size()) {
+      cout << "|";
+      for(unsigned i = 0; i < active_ports.size(); ++i) {
+        unsigned cur_p = active_ports[i];
+        auto& out_port = _port_interf.out_port(cur_p);
+        cout << "o" << cur_p << ":" << out_port.num_in_flight() << "-"
+                                    << out_port.num_ready() << ","
+                                    << out_port.mem_size(); 
+        if(out_port.in_use()) {
+          cout << base_stream_t::loc_short_name(out_port.loc());
+        }
+        cout << " ";
+      }
+    }
   }
 
   cout << "s_buf:" << _scr_w_c.scr_buf_size() << " ";
@@ -932,14 +975,6 @@ void accel_t::cycle_status() {
   cout << " s_rd:" << _stat_scr_bytes_rd;
   cout << " s_wr:" << _stat_scr_bytes_wr;
 
-  cout << "\t| ip ";
-  for(unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
-    unsigned cur_p = _soft_config.in_ports_active[i];
-    if(_port_interf.in_port(cur_p).in_use()) {
-      cout << cur_p << " "  << (_port_interf.in_port(cur_p).completed()?"(completed)":"");
-    }
-  }
-  
   //Just the indirect ports
 //  for(unsigned i = 24; i < 32; ++i) {
 //    int cur_p=i;
@@ -947,14 +982,6 @@ void accel_t::cycle_status() {
 //      cout << cur_p << " "  << (_port_interf.in_port(cur_p).completed()?"(completed)":"");
 //    }
 //  }
-
-  cout << "op "; 
-  for(unsigned i = 0; i < _soft_config.out_ports_active.size(); ++i) {
-    unsigned cur_p = _soft_config.out_ports_active[i];
-    if(_port_interf.out_port(cur_p).in_use()) {
-      cout << cur_p << " "  << (_port_interf.out_port(cur_p).completed()?"(completed)":"");
-    }  
-  }
 
   //Just the indirect ports
 //  for(unsigned i = 24; i < 32; ++i) {
