@@ -1314,6 +1314,8 @@ private:
   int _stat_mem_bytes_rd=0;
   int _stat_scr_bytes_wr=0;
   int _stat_scr_bytes_rd=0;
+  int _stat_mem_bytes_wr_sat=0;
+  int _stat_mem_bytes_rd_sat=0;
   int _stat_cmds_issued=0;
   int _stat_cmds_complete=0;
   int _stat_sb_insts=0;

@@ -432,6 +432,8 @@ pipeline_stats_t::PIPE_STATUS accel_t::whos_to_blame(int group) {
 
   if(active_ports.size()==0) return pipeline_stats_t::NOT_IN_USE;
 
+  if(_cgra_issued_group[group]) return pipeline_stats_t::ISSUED;
+
   //Iterate over inputs
   bool any_input_activity=false;
   bool all_inputs_inactive=true;
@@ -548,15 +550,6 @@ void accel_t::whos_to_blame(std::vector<pipeline_stats_t::PIPE_STATUS>& blame_ve
     return;
   }
 
-  if(_cgra_issued >1)  {
-    blame_vec.push_back(pipeline_stats_t::ISSUED_MULTI); 
-    return;
-  }
-  if(_cgra_issued==1) {
-    blame_vec.push_back(pipeline_stats_t::ISSUED); 
-    return;
-  }
-
   if(_in_config) {
     blame_vec.push_back(pipeline_stats_t::CONFIG); 
     return;
@@ -576,6 +569,16 @@ void accel_t::whos_to_blame(std::vector<pipeline_stats_t::PIPE_STATUS>& blame_ve
       default: temp_vec.push_back(blame); break;
     }
   }
+
+  if(_cgra_issued >1)  {
+    blame_vec.push_back(pipeline_stats_t::ISSUED_MULTI); 
+    return;
+  }
+  if(_cgra_issued==1) {
+    blame_vec.push_back(pipeline_stats_t::ISSUED); 
+    return;
+  }
+
 
   if(temp_vec.size()==0) {
     if(draining) {
@@ -970,10 +973,14 @@ void accel_t::cycle_status() {
   cout << "m_req:" << _dma_c.mem_reqs() << " ";
 
   cout << "\t|";
-  cout << " m_rd:" << _stat_mem_bytes_rd;
-  cout << " m_wr:" << _stat_mem_bytes_wr;
-  cout << " s_rd:" << _stat_scr_bytes_rd;
-  cout << " s_wr:" << _stat_scr_bytes_wr;
+
+//  cout << "req:"  
+  cout << "s_rd" << _stat_scr_bytes_rd 
+       << " s_wr:" << _stat_scr_bytes_wr 
+       << " m_rd:" << _stat_mem_bytes_rd 
+       << " m_wr:" << _stat_mem_bytes_wr << " ";
+//  cout << "sat:" << " m_rd:" << _stat_mem_bytes_rd_sat << " ";
+//                 << " m_wr:" << _stat_mem_bytes_wr_sat;
 
   //Just the indirect ports
 //  for(unsigned i = 24; i < 32; ++i) {
@@ -993,11 +1000,6 @@ void accel_t::cycle_status() {
 
 
   clear_cycle();
-
-   //_dma_c.cycle_status();
-   //_scr_r_c.cycle_status();
-   //_scr_w_c.cycle_status();
-   //_port_c.cycle_status();
 }
 
 void accel_t::clear_cycle() {
@@ -1014,6 +1016,9 @@ void accel_t::clear_cycle() {
   _stat_mem_bytes_rd=0;
   _stat_scr_bytes_wr=0;
   _stat_scr_bytes_rd=0;
+  _stat_mem_bytes_wr_sat=0;
+  _stat_mem_bytes_rd_sat=0;
+
   //_stat_cmds_issued=0;
   //_stat_cmds_complete=0;
 }
@@ -1712,9 +1717,7 @@ void dma_controller_t::port_resp(unsigned cur_port) {
                     << data.size() << " elements" << (last ? "(last)" : "") << "\n";
         }
 
-        if(_accel->_ssim->in_roi()) {
-          _accel->_stat_mem_bytes_rd+=data.size()*DATA_WIDTH;
-        }
+        _accel->_stat_mem_bytes_rd+=data.size()*DATA_WIDTH;
         in_vp.push_data(data);
 
         //BEGIN HACK
@@ -1828,9 +1831,9 @@ void dma_controller_t::cycle(){
             std::cout << "data into scratch " << response->sdInfo->scr_addr 
                       << ":" << data.size() << "elements" << "\n";
           }
-          if(_accel->_ssim->in_roi()) {
-            _accel->_stat_mem_bytes_rd+=data.size();
-          }
+            
+          _accel->_stat_mem_bytes_rd+=data.size();
+          _accel->_stat_mem_bytes_rd_sat+=data.size();
   
           //handled_req=true;
           _fake_scratch_reqs--;
@@ -2322,13 +2325,12 @@ void dma_controller_t::req_write(port_dma_stream_t& stream, port_data_t& ovp) {
     cout << "\n" << std::dec;
   }
 
+  _accel->_stat_mem_bytes_wr+=bytes_written;
+
   if(_accel->_ssim->in_roi()) {
     add_bw(stream.src(), stream.dest(), 1, bytes_written);
-
-    _accel->_stat_mem_bytes_wr+=bytes_written;
     _accel->_stat_tot_stores++;
     _accel->_stat_tot_mem_stored+=bytes_written;
-
     //bool l2_miss=(cycle_mem_complete-start_cycle)>5; 
     //if(l2_miss) {
     //  _accel->_stat_tot_mem_load_acc++;
@@ -2403,11 +2405,11 @@ vector<SBDT> scratch_read_controller_t::read_scratch(
     _accel->scr_rd_verif << "\n";
   }
 
+  _accel->_stat_scr_bytes_rd+=data.size()*DATA_WIDTH;
+  _accel->_stat_scratch_read_bytes+=data.size()*DATA_WIDTH;
+
   if(_accel->_ssim->in_roi()) {
     add_bw(stream.src(), stream.dest(), 1, data.size()*DATA_WIDTH);
-
-    _accel->_stat_scr_bytes_rd+=data.size()*DATA_WIDTH;
-    _accel->_stat_scratch_read_bytes+=data.size()*DATA_WIDTH;
     _accel->_stat_scratch_reads++;
   }
 
@@ -2556,11 +2558,10 @@ void scratch_write_controller_t::cycle() {
             std::memcpy(&_accel->scratchpad[addr], &val, sizeof(SBDT));
             addr = stream.pop_addr();
 
-            if(_accel->_ssim->in_roi()) {
-              bytes_written+=DATA_WIDTH;
-              _accel->_stat_scr_bytes_wr+=DATA_WIDTH;
-              _accel->_stat_scratch_write_bytes+=DATA_WIDTH;
-            }
+            bytes_written+=DATA_WIDTH;
+            _accel->_stat_scr_bytes_wr+=DATA_WIDTH;
+            _accel->_stat_scratch_write_bytes+=DATA_WIDTH;
+
           }
           if(_accel->_ssim->in_roi()) {
              add_bw(stream.src(), stream.dest(), 1, bytes_written);
