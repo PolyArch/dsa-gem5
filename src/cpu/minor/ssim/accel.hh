@@ -111,6 +111,10 @@ public:
     _total_pushed=0;
   }
 
+  float instances_ready() {
+    return _num_ready + _mem_data.size() / (float) port_cgra_elem();
+  }
+
   bool can_push_vp(int size) {
     return size <= num_can_push();
   }
@@ -498,9 +502,9 @@ class dma_controller_t : public data_controller_t {
     data_controller_t(host), _scr_r_c(scr_r_c), _scr_w_c(scr_w_c) {
     //Setup DMA Controllers, eventually this should be configurable
     _dma_port_streams.resize(10); 
-    _indirect_streams.resize(4); //indirect to port
-    _indirect_wr_streams.resize(4); //port to indirect mem
-    _port_dma_streams.resize(4); // IS THIS ENOUGH?
+    _indirect_streams.resize(8); //indirect to port
+    _indirect_wr_streams.resize(8); //port to indirect mem
+    _port_dma_streams.resize(8); // IS THIS ENOUGH?
     _tq_read = _dma_port_streams.size()+1/*dma->scr*/+_indirect_streams.size();
     _tq = _tq_read + _port_dma_streams.size()+1+_indirect_wr_streams.size();
     
@@ -624,7 +628,7 @@ class scratch_read_controller_t : public data_controller_t {
     } else {
       _scr_scr_streams.resize(1); 
     }
-    _scr_port_streams.resize(4);
+    _scr_port_streams.resize(8);
 
     max_src=1+_scr_port_streams.size() + _scr_scr_streams.size();
     reset_stream_engines();
@@ -644,6 +648,9 @@ class scratch_read_controller_t : public data_controller_t {
   std::vector<SBDT> read_scratch(mem_stream_base_t& stream);
   bool xfer_stream_buf(mem_stream_base_t& stream,data_buffer& buf,
                        addr_t& addr);
+
+
+  float calc_min_port_ready();
   void cycle();
 
   void finish_cycle();
@@ -703,7 +710,7 @@ class scratch_write_controller_t : public data_controller_t {
     _bufs.push_back(&_buf_dma_write);
     _bufs.push_back(&_buf_shs_write);
     mask.resize(SCR_WIDTH/DATA_WIDTH);
-    _port_scr_streams.resize(4); 
+    _port_scr_streams.resize(8); 
 
     max_src=_port_scr_streams.size()+2;
     if(is_shared()) {
@@ -779,9 +786,9 @@ class scratch_write_controller_t : public data_controller_t {
 class port_controller_t : public data_controller_t {
   public:
   port_controller_t(accel_t* host) : data_controller_t(host) {
-    _port_port_streams.resize(4);  //IS THIS ENOUGH?
+    _port_port_streams.resize(8);  //IS THIS ENOUGH?
     _const_port_streams.resize(8);  //IS THIS ENOUGH?
-    _remote_port_streams.resize(4);  //IS THIS ENOUGH?
+    _remote_port_streams.resize(8);  //IS THIS ENOUGH?
     for(auto& i : _port_port_streams) {i.reset();}
     for(auto& i : _const_port_streams) {i.reset();}
     for(auto& i : _remote_port_streams) {i.reset();}
@@ -1243,6 +1250,23 @@ private:
     _forward_progress_cycle=now();
   }
 
+  void read_scratchpad(void* dest, uint64_t scr_addr, 
+      std::size_t count, base_stream_t* stream) {
+    std::memcpy(dest, &scratchpad[scr_addr], count);
+    for(int i = 0; i < count; i+=sizeof(SBDT)) {
+      
+    }
+  }
+
+  void write_scratchpad(uint64_t scr_addr, const void* src, 
+      std::size_t count, base_stream_t* stream) {
+    std::memcpy(&scratchpad[scr_addr], src, count);
+    for(int i = 0; i < count; i+=sizeof(SBDT)) {
+
+    }
+  }
+
+
   //members------------------------
   soft_config_t _soft_config;
   port_interf_t _port_interf;
@@ -1327,7 +1351,13 @@ private:
   pipeline_stats_t _pipe_stats;  
   uint64_t _prev_roi_clock;
 
+  
+
   std::map<std::pair<LOC,LOC>, std::pair<uint64_t,uint64_t>> _bw_map;
+
+  //Checking data structures
+  std::vector<mem_stream_base_t> scratchpad_writers;
+  std::vector<mem_stream_base_t> scratchpad_readers;
 
 
 };

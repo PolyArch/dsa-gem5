@@ -400,6 +400,11 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
   _sbconfig = new SbModel(sbconfig_file);
   _port_interf.initialize(_sbconfig);
   scratchpad.resize(SCRATCH_SIZE);
+
+  //optionally used -- this is expensive
+  scratchpad_readers.resize(SCRATCH_SIZE);
+  scratchpad_writers.resize(SCRATCH_SIZE);
+
 }
 
 void accel_t::timestamp() {
@@ -2377,7 +2382,9 @@ vector<SBDT> scratch_read_controller_t::read_scratch(
     // keep going while stream does not run out
     SBDT val=0;
     assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
-    std::memcpy(&val, &_accel->scratchpad[addr], DATA_WIDTH);
+    //std::memcpy(&val, &_accel->scratchpad[addr], DATA_WIDTH);
+    _accel->read_scratchpad(&val, addr, DATA_WIDTH,&stream);
+
     if(SB_DEBUG::SCR_ACC) {
       cout << "scr_addr:" << hex << addr << " read " << val 
            << " to port " << stream.in_port() << "\n";
@@ -2396,7 +2403,8 @@ vector<SBDT> scratch_read_controller_t::read_scratch(
   if(SB_DEBUG::VERIF_SCR) {
     _accel->scr_rd_verif << hex << setw(8) << setfill('0') << base_addr << " ";
     for(uint64_t i = base_addr; i < max_addr; ++i) {
-      _accel->scr_rd_verif << setw(2) << setfill('0') << (unsigned)_accel->scratchpad[i];
+      _accel->scr_rd_verif << setw(2) << setfill('0') << 
+        (unsigned)_accel->scratchpad[i];
     }
     _accel->scr_rd_verif << " ";
     for(unsigned i = 0; i < SCR_WIDTH/DATA_WIDTH; ++i) {
@@ -2439,7 +2447,26 @@ bool scratch_read_controller_t::xfer_stream_buf(mem_stream_base_t& stream,
   return false;
 }
 
+float scratch_read_controller_t::calc_min_port_ready() {
+  int min_port_ready=-1;
+  for(int i = 0; i < _scr_port_streams.size();++i) {
+    auto& stream = _scr_port_streams[i];
+    if(stream.stream_active()) {
+      auto& in_vp = _accel->port_interf().in_port(stream._in_port);
+      if(in_vp.can_push_vp(SCR_WIDTH/DATA_WIDTH)) {
+        float num_ready = in_vp.instances_ready();
+        if(min_port_ready==-1 || num_ready < min_port_ready) {
+          min_port_ready=num_ready;
+        }
+      }
+    }
+  }
+  return min_port_ready;
+}
+
 void scratch_read_controller_t::cycle() {
+  float min_port_ready=-2;
+
   for(int i=0; i < max_src; ++i) {
      _which=(_which+1==max_src)?0:_which+1;
 
@@ -2449,27 +2476,36 @@ void scratch_read_controller_t::cycle() {
       auto& stream = _scr_port_streams[ind];
 
       if(stream.stream_active()) {
-        vector<SBDT> data = read_scratch(stream);
+        if(min_port_ready==-2) {
+          min_port_ready=calc_min_port_ready();
+        }
+        if(min_port_ready<0) continue;
 
         auto& in_vp = _accel->port_interf().in_port(stream._in_port);
-        for(auto d : data) {
-          in_vp.push_data(d);
-        }
+        float num_ready = in_vp.instances_ready();
 
-        if(stream.stride_fill() && stream.stride_hit()) {
-          in_vp.fill(true);
-        }
+        if(in_vp.can_push_vp(SCR_WIDTH/DATA_WIDTH) && num_ready==min_port_ready) {
+          vector<SBDT> data = read_scratch(stream);
 
-        bool is_empty = stream.check_set_empty();
-        if(is_empty) {
-          _accel->process_stream_stats(stream);
-      
-          if(SB_DEBUG::VP_SCORE2) {
-            cout << "SOURCE: SCR->PORT\n";
+          for(auto d : data) {
+            in_vp.push_data(d);
           }
-          in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE, stream.fill_mode());
+
+          if(stream.stride_fill() && stream.stride_hit()) {
+            in_vp.fill(true);
+          }
+
+          bool is_empty = stream.check_set_empty();
+          if(is_empty) {
+            _accel->process_stream_stats(stream);
+      
+            if(SB_DEBUG::VP_SCORE2) {
+              cout << "SOURCE: SCR->PORT\n";
+            }
+            in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE, stream.fill_mode());
+          }
+          break;
         }
-        break;
       }
 
     } else if (_which==_scr_port_streams.size()) {
@@ -2555,7 +2591,9 @@ void scratch_write_controller_t::cycle() {
             //timestamp(); cout << "POPPED b/c port->scratch WRITE: " << out_vp.port() << " " << out_vp.mem_size() << "\n";
 
             assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
-            std::memcpy(&_accel->scratchpad[addr], &val, sizeof(SBDT));
+            //std::memcpy(&_accel->scratchpad[addr], &val, sizeof(SBDT));
+            _accel->write_scratchpad(addr, &val, sizeof(SBDT),&stream);
+
             addr = stream.pop_addr();
 
             bytes_written+=DATA_WIDTH;
@@ -2616,7 +2654,8 @@ bool scratch_write_controller_t::accept_buffer(data_buffer& buf) {
       SBDT val = buf.pop_data();
 
       assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
-      std::memcpy(&_accel->scratchpad[addr], &val, sizeof(SBDT));
+      //std::memcpy(&_accel->scratchpad[addr], &val, sizeof(SBDT));
+      _accel->write_scratchpad(addr, &val, sizeof(SBDT), NULL);
     }
     return true;
   }
