@@ -462,8 +462,12 @@ struct data_buffer : public data_buffer_base {
     _dest_addr=0;
   }
 
+  void set_last_stream_id(int id) {_last_stream_id=id;}
+  int last_stream_id() {return _last_stream_id;}
+
 protected:
   uint64_t _dest_addr;
+  int _last_stream_id=-2;
 };
 
 
@@ -1179,7 +1183,6 @@ private:
 
   void add_port_based_stream(std::shared_ptr<base_stream_t> s) {
     sanity_check_stream(s.get());
-    s->set_id();
     assert(cur_minst());
     s->set_minst(cur_minst());
     _in_port_queue.push_back(s);
@@ -1251,18 +1254,42 @@ private:
   }
 
   void read_scratchpad(void* dest, uint64_t scr_addr, 
-      std::size_t count, base_stream_t* stream) {
+      std::size_t count, int id) {
     std::memcpy(dest, &scratchpad[scr_addr], count);
-    for(int i = 0; i < count; i+=sizeof(SBDT)) {
-      
+    if(SB_DEBUG::CHECK_SCR_ALIAS) {
+      for(int i = 0; i < count; i+=sizeof(SBDT)) {
+        uint64_t running_addr=  scr_addr+i;
+        if(scratchpad_writers[running_addr]) {
+          std::cout << "WARNING: scr_addr: " << running_addr
+                    << " constistency is potentially violated; "
+                    << " writer_id: " << scratchpad_writers[running_addr]
+                    << " reader_id: " << id << "\n";
+        }
+        scratchpad_readers[running_addr]=id;
+      }
     }
   }
 
   void write_scratchpad(uint64_t scr_addr, const void* src, 
-      std::size_t count, base_stream_t* stream) {
+      std::size_t count, int id) {
     std::memcpy(&scratchpad[scr_addr], src, count);
-    for(int i = 0; i < count; i+=sizeof(SBDT)) {
-
+    if(SB_DEBUG::CHECK_SCR_ALIAS) {
+      for(int i = 0; i < count; i+=sizeof(SBDT)) {
+        uint64_t running_addr = scr_addr+i;
+        if(scratchpad_writers[running_addr]) {
+          std::cout << "WARNING: scr_addr: " << running_addr
+                    << " constistency is potentially violated; "
+                    << " writer_id: " << scratchpad_writers[running_addr] 
+                    << " writer_id: " << id << "\n";
+        }
+        if(scratchpad_readers[running_addr]) {
+          std::cout << "WARNING: scr_addr: " << running_addr
+                    << " constistency is potentially violated; "
+                    << " reader_id: " << scratchpad_readers[running_addr]
+                    << " writer_id: " << id << "\n";
+        }
+        scratchpad_writers[running_addr]=id;
+      }
     }
   }
 
@@ -1351,14 +1378,11 @@ private:
   pipeline_stats_t _pipe_stats;  
   uint64_t _prev_roi_clock;
 
-  
-
   std::map<std::pair<LOC,LOC>, std::pair<uint64_t,uint64_t>> _bw_map;
 
   //Checking data structures
-  std::vector<mem_stream_base_t> scratchpad_writers;
-  std::vector<mem_stream_base_t> scratchpad_readers;
-
+  std::vector<int> scratchpad_writers;
+  std::vector<int> scratchpad_readers;
 
 };
 

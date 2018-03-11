@@ -204,10 +204,12 @@ uint64_t ssim_t::forward_progress_cycle() {
 void ssim_t::add_bitmask_stream(base_stream_t* s, uint64_t ctx) {
   //patch with implicit stuff
   s->set_fill_mode(_fill_mode);
+  s->set_id();
 
   //Check if not active!
   if(debug && (SB_DEBUG::SB_COMMAND)  ) {
     timestamp_context();
+    cout << "id:" << s->id() << " ";
     s->print_status(); 
   }
 

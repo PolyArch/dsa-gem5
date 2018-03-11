@@ -87,7 +87,7 @@ struct base_stream_t {
 
   virtual int ivp_dest() {return -1;}
 
-  void set_id() {_id=ID_SOURCE++;}
+  void set_id() {_id=++ID_SOURCE;}
   int id() {return _id;}
 
   void inc_requests() {_reqs++;}
