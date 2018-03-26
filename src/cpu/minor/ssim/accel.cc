@@ -2383,9 +2383,16 @@ vector<SBDT> scratch_read_controller_t::read_scratch(
 
   std::fill(mask.begin(), mask.end(), 0); 
 
+  int addr_valid_direction=true;
+  if(stream.access_size() >= 0) {
+    addr_valid_direction = (addr < max_addr) && 
+                           (addr > prev_addr || prev_addr == SCRATCH_SIZE);
+  } else { //reverse access enabled
+    addr_valid_direction = (addr >= base_addr) && (addr < prev_addr);
+  }
+
   //go while stream and port does not run out
-  while(addr < max_addr && (addr > prev_addr || prev_addr == SCRATCH_SIZE)
-         && stream.stream_active()) { 
+  while(addr_valid_direction && stream.stream_active()) { 
     // keep going while stream does not run out
     SBDT val=0;
     assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
