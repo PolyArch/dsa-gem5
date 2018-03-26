@@ -159,11 +159,10 @@ struct stream_barrier_t : public base_stream_t {
 
 };
 
-
 struct mem_stream_base_t : public base_stream_t {
   uint64_t _context_bitmask=0; //
-  addr_t _access_size;    // length of smallest access
-  addr_t _stride;         // length of entire slide
+  int64_t _access_size;    // length of smallest access
+  int64_t _stride;         // length of entire slide
   addr_t _stretch;        // stretch of access size over time
   addr_t _bytes_in_access=0; // bytes in access completed
   
@@ -191,7 +190,7 @@ struct mem_stream_base_t : public base_stream_t {
   virtual uint64_t mem_addr()    {return _mem_addr;}  
   virtual int64_t  access_size() {return _access_size;}  
   virtual int64_t  stride()      {return _stride;} 
-  virtual int64_t stretch()      {return _stretch;} 
+  virtual int64_t  stretch()     {return _stretch;} 
   virtual uint64_t num_strides() {return _num_strides;} 
   virtual uint64_t shift_bytes() {return _shift_bytes;} 
 
@@ -210,7 +209,7 @@ struct mem_stream_base_t : public base_stream_t {
   } 
 
   virtual uint64_t data_volume() { //TODO/FIXME: THIS IS NOT VALID FOR STRETCH==0
-    return _orig_strides * _access_size;
+    return _orig_strides * abs_access_size();
   }
 
   addr_t cur_addr() { 
@@ -218,12 +217,20 @@ struct mem_stream_base_t : public base_stream_t {
     if(_num_strides==0) {
       return 0;
     } else {
-      return _mem_addr + _bytes_in_access;
+      if(_access_size>=0) {
+        return _mem_addr + _bytes_in_access;
+      } else {
+        return _mem_addr - _bytes_in_access - DATA_WIDTH;
+      }
     }
   }
 
   bool stride_hit() {
     return _bytes_in_access==0;
+  }
+
+  int64_t abs_access_size() {
+    return _access_size>0?_access_size:-_access_size;
   }
 
   //Return next address
@@ -239,13 +246,13 @@ struct mem_stream_base_t : public base_stream_t {
       _bytes_in_access+=DATA_WIDTH;
     }
 
-    if(_bytes_in_access==_access_size) { // go to next stride
+    if(_bytes_in_access==abs_access_size()) { // go to next stride
       _bytes_in_access=0;
       _mem_addr+=_stride;
       _num_strides--;
       _access_size+=_stretch; 
     }
-    assert((_bytes_in_access<_access_size 
+    assert((_bytes_in_access<abs_access_size()
             || _access_size==0) && "something went wrong");
 
     return cur_addr();

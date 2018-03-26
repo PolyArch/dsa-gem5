@@ -2368,6 +2368,15 @@ void dma_controller_t::write_data(scr_dma_stream_t& stream) {
 }
 */
 
+static bool addr_valid_dir(int64_t acc_size, uint64_t addr, 
+    uint64_t prev_addr, uint64_t base_addr, uint64_t max_addr) {
+  if(acc_size >= 0) {
+    return (addr < max_addr) && (addr > prev_addr || prev_addr == SCRATCH_SIZE);
+  } else { //reverse access enabled
+    return (addr >= base_addr) && (addr < prev_addr);
+  }
+}
+
 vector<SBDT> scratch_read_controller_t::read_scratch(
                mem_stream_base_t& stream) {
   vector<SBDT> data;
@@ -2383,16 +2392,9 @@ vector<SBDT> scratch_read_controller_t::read_scratch(
 
   std::fill(mask.begin(), mask.end(), 0); 
 
-  int addr_valid_direction=true;
-  if(stream.access_size() >= 0) {
-    addr_valid_direction = (addr < max_addr) && 
-                           (addr > prev_addr || prev_addr == SCRATCH_SIZE);
-  } else { //reverse access enabled
-    addr_valid_direction = (addr >= base_addr) && (addr < prev_addr);
-  }
-
   //go while stream and port does not run out
-  while(addr_valid_direction && stream.stream_active()) { 
+  while(stream.stream_active() &&
+      addr_valid_dir(stream.access_size(),addr,prev_addr,base_addr,max_addr)){ 
     // keep going while stream does not run out
     SBDT val=0;
     assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
@@ -2411,7 +2413,6 @@ vector<SBDT> scratch_read_controller_t::read_scratch(
     if(stream.stride_fill() && stream.stride_hit()) {
       break;
     }
-
   }
 
   if(SB_DEBUG::VERIF_SCR) {
