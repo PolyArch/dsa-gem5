@@ -1336,7 +1336,7 @@ private:
   bool _cgra_issued_group[NUM_GROUPS];
   int _cgra_issued;
 
-  uint64_t _delay_group_until[NUM_GROUPS]={0,0,0,0};
+  uint64_t _delay_group_until[NUM_GROUPS]={0,0,0,0,0,0};
 
   //* Stats
   uint64_t _stat_comp_instances = 0;

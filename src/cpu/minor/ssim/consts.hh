@@ -40,7 +40,7 @@ typedef uint64_t addr_t;
 #define MEM_WR_STREAM (33)
 #define CONFIG_STREAM (34)
 
-#define NUM_GROUPS (4)
+#define NUM_GROUPS (6)
 
 //bit std::vectors for sb_wait
 #define WAIT_SCR_WR   1 //wait for just scratch
