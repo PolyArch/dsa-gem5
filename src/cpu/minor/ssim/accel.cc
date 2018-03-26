@@ -2486,15 +2486,17 @@ void scratch_read_controller_t::cycle() {
       auto& stream = _scr_port_streams[ind];
 
       if(stream.stream_active()) {
+        bool skip_check = SB_DEBUG::UNREAL_INPUTS;
+
         if(min_port_ready==-2) {
           min_port_ready=calc_min_port_ready();
         }
-        if(min_port_ready>=MAX_PORT_READY) continue;
+        if(!skip_check && min_port_ready>=MAX_PORT_READY) continue;
 
         auto& in_vp = _accel->port_interf().in_port(stream._in_port);
         float num_ready = in_vp.instances_ready();
 
-        if(in_vp.can_push_vp(SCR_WIDTH/DATA_WIDTH) && num_ready == min_port_ready) {
+        if(skip_check || (in_vp.can_push_vp(SCR_WIDTH/DATA_WIDTH) && num_ready == min_port_ready)) {
           vector<SBDT> data = read_scratch(stream);
 
           for(auto d : data) {
