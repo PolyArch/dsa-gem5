@@ -5,9 +5,11 @@ cscope.files
 cscope.out
 *.pyc
 *~
-.*.swp
-.*.swn
-.*.swo
+*.swp
+*.swn
+*.swo
+*.swl
+*.swm
 m5out
 /src/doxygen
 /ext/dramsim2/DRAMSim2
@@ -16,4 +18,4 @@ m5out
 /util/m5/*.a
 /util/m5/m5
 /system/arm/dt/*.dtb
-compile_commands.json
+*compile_commands.json
