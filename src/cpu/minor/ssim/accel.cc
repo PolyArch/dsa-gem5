@@ -1301,7 +1301,12 @@ void accel_t::schedule_streams() {
     }
 
     if(blocked_by_barrier) { //This handles all barrier insts
-      //don't issue if blocked by barrier
+      if(ip->in_port()!=-1) {
+        blocked_ivp[ip->in_port()]=true;
+      }
+      if(ip->out_port()!=-1) {
+        blocked_ovp[ip->out_port()]=true;
+      }
     } else if(auto stream = dynamic_cast<scr_scr_stream_t*>(ip)) { 
       if(stream->_is_source) { //do not schedule, but check out port available
         if(stream->_is_ready) {  //writer is ready
@@ -1457,7 +1462,7 @@ void accel_t::schedule_streams() {
       str_issued++;
       if(SB_DEBUG::SB_COMMAND_I) {
         timestamp();
-        cout << " ISSUED:";
+        cout << " ISSUED \tid:" << ip->id() << " ";
         ip->print_status();
       }
 
