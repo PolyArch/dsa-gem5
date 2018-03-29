@@ -2447,25 +2447,20 @@ vector<SBDT> scratch_read_controller_t::read_scratch(
 //returns whether it was the last one 
 bool scratch_read_controller_t::xfer_stream_buf(mem_stream_base_t& stream, 
                                                data_buffer& buf, addr_t& addr){
-  if(stream.stream_active() && 
-     buf.can_push_addr(8,addr)) {
-
-    vector<SBDT> data = read_scratch(stream);
-    buf.push_data(addr, data);
-    buf.set_last_stream_id(stream.id());
-    addr+=data.size()*DATA_WIDTH;
+  vector<SBDT> data = read_scratch(stream);
+  buf.push_data(addr, data);
+  buf.set_last_stream_id(stream.id());
+  addr+=data.size()*DATA_WIDTH;
   
-    bool is_empty = stream.check_set_empty();
-    if(is_empty) {
-      _accel->process_stream_stats(stream);
+  bool is_empty = stream.check_set_empty();
+  if(is_empty) {
+    _accel->process_stream_stats(stream);
   
-      if(SB_DEBUG::VP_SCORE2) {
-        cout << "SOURCE: SCR\n";
-      }
+    if(SB_DEBUG::VP_SCORE2) {
+      cout << "SOURCE: SCR\n";
     }
-    return is_empty;
   }
-  return false;
+  return is_empty;
 }
 
 #define MAX_PORT_READY 100000
@@ -2534,8 +2529,12 @@ void scratch_read_controller_t::cycle() {
       }
 
     } else if (_which==_scr_port_streams.size()) {
-      xfer_stream_buf(_scr_dma_stream,_buf_dma_read,_scr_dma_stream._dest_addr);
-      break;
+      auto& stream = _scr_dma_stream;
+      if(stream.stream_active() && _buf_dma_read.can_push_addr(8,
+                                                  stream._dest_addr)) {
+        xfer_stream_buf(stream,_buf_dma_read,stream._dest_addr);
+        break;
+      }
     } else {
       int ind = _which-1-_scr_port_streams.size();
       auto& stream = _scr_scr_streams[ind];
@@ -2564,9 +2563,13 @@ void scratch_read_controller_t::cycle() {
             break;
           }
         } else { //destination is local read buf
-          bool last = xfer_stream_buf(stream,_buf_shs_read,stream._scratch_addr);
-          if(last) {
-            stream._remote_stream->reset(); //free for later
+          if(stream.stream_active() && _buf_shs_read.can_push_addr(8,
+                                                    stream._scratch_addr)) {
+            bool last = xfer_stream_buf(stream,_buf_shs_read,stream._scratch_addr);
+            if(last) {
+              stream._remote_stream->reset(); //free for later
+            }
+            break;
           }
         }   
       }    
