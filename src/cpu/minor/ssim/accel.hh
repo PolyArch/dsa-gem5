@@ -1255,6 +1255,8 @@ private:
 
   void read_scratchpad(void* dest, uint64_t scr_addr, 
       std::size_t count, int id) {
+    assert(scr_addr < SCRATCH_SIZE);
+
     std::memcpy(dest, &scratchpad[scr_addr], count);
     if(SB_DEBUG::CHECK_SCR_ALIAS) {
       for(int i = 0; i < count; i+=sizeof(SBDT)) {

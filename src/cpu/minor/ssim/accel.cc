@@ -2800,8 +2800,15 @@ void port_controller_t::cycle() {
     }
     //vp out comes from a different core!
     //port_data_t& vp_out = pi.out_port(stream._out_port);
-    accel_t* rem_acc = 
-      _accel->get_ssim()->get_acc(_accel->accel_index()-stream._which_core);
+    
+    int acc_index = _accel->accel_index()-stream._which_core;
+    if(acc_index==-1) {
+      acc_index=(NUM_ACCEL-1);
+    }
+    if(acc_index==(NUM_ACCEL)) {
+      acc_index=0;
+    }
+    accel_t* rem_acc = _accel->get_ssim()->get_acc(acc_index);
     auto& rem_pi = rem_acc->port_interf();
     port_data_t& vp_out = rem_pi.out_port(stream._out_port);
 

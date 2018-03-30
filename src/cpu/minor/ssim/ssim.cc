@@ -427,9 +427,11 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
   if(r) {
     uint64_t new_ctx=0;
     if(core_d==1) {
-      new_ctx = (_context_bitmask<<1) & ACCEL_MASK;
+      new_ctx = ((_context_bitmask<<1) & ACCEL_MASK) | 
+                (_context_bitmask>>(NUM_ACCEL-1) & 1);
     } else if(core_d==-1) {
-      new_ctx = (_context_bitmask>>1) & ACCEL_MASK;
+      new_ctx = ((_context_bitmask>>1) & ACCEL_MASK) |
+                ((_context_bitmask&1)<<(NUM_ACCEL-1));
     } else {
       assert(0 && "how do i do this?");
     }

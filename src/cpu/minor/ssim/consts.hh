@@ -9,10 +9,10 @@ typedef uint64_t addr_t;
 
 #define SB_TIMING
 
-#define NUM_ACCEL 16
+#define NUM_ACCEL 8
 #define NUM_ACCEL_TOTAL (NUM_ACCEL+1)
 #define SHARED_SP (NUM_ACCEL)
-#define ACCEL_MASK 0xFFFF
+#define ACCEL_MASK 0xFF
 #define SHARED_MASK (ACCEL_MASK+1)
 
 #define MEM_WIDTH (64)
