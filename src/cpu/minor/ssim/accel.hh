@@ -1373,6 +1373,9 @@ private:
   int _stat_cmds_complete=0;
   int _stat_sb_insts=0;
 
+  bool _back_cgra=false;
+
+
   std::map<SB_CONFIG::sb_inst_t,int> _total_histo;
   std::map<int,int> _vport_histo;
 

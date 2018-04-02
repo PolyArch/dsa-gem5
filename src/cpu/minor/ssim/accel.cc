@@ -397,6 +397,13 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
       printed_this_before=true;
     }
   }
+
+  const char* back_cgra_str = std::getenv("BACKCGRA");
+  if(back_cgra_str!=NULL) {
+    _back_cgra=true;
+  }
+ 
+
   _sbconfig = new SbModel(sbconfig_file);
   _port_interf.initialize(_sbconfig);
   scratchpad.resize(SCRATCH_SIZE);
@@ -730,62 +737,85 @@ void accel_t::cycle_cgra() {
 
   uint64_t cur_cycle = now();
 
-  for(int group = 0; group < NUM_GROUPS; ++group) {
-    //detect if we need to wait for throughput reasons on CGRA group -- easy peasy
-    if(cur_cycle < _delay_group_until[group]) {
-      continue;
-    }
 
-    //Detect if we are ready to fire
-    auto& active_ports=_soft_config.in_ports_active_group[group];
-    
-    if(active_ports.size()==0) continue;
-    unsigned min_ready=10000000;
+  if(_back_cgra) {
+    auto& active_ports=_soft_config.in_ports_active;
+
     for(int i=0; i < active_ports.size(); ++i) {
       int cur_port = active_ports[i];
-      min_ready = std::min(_port_interf.in_port(cur_port).num_ready(), min_ready);
-      //if(min_ready==0 && _accel_index==0) {
-      //  timestamp(); cout << "Port " << cur_port << "not ready\n";
-      //}
-    }
+      if(_port_interf.in_port(cur_port).num_ready()) { //data is available
+        if(_pdg->can_push_input(cur_port)) {
+          _pdg->push_input(cur_port);
 
-    //Now fire on all cgra ports
-    if(min_ready > 0) {
-      forward_progress();
-      _delay_group_until[group]=cur_cycle+_soft_config.group_thr[group];
-      execute_pdg(0,group);  //Note that this will set backpressure variable
-
-      //if(in_roi()) {
-      //  _stat_sb_insts+=_pdg->num_insts();
-      //}
-      //pop the elements from inport as they have been processed
-      for(unsigned i = 0; i < active_ports.size(); ++i) {
-        uint64_t port_index = active_ports[i];
-        port_data_t& in_port = _port_interf.in_port(port_index);
-
-        SbPDG_VecInput* vec_in = 
-          dynamic_cast<SbPDG_VecInput*>(_sched->vportOf(make_pair(true/*input*/,port_index)));
-        //skip popping if backpressure is on
-        if(!vec_in->backPressureOn()) {
-          //only increment repeated if no backpressure
           bool should_pop = in_port.inc_repeated();
           if(should_pop) {
             in_port.pop(1);
           }
+
+        } 
+      }
+    }
+
+
+  } else {
+
+    for(int group = 0; group < NUM_GROUPS; ++group) {
+      //detect if we need to wait for throughput reasons on CGRA group -- easy peasy
+      if(cur_cycle < _delay_group_until[group]) {
+        continue;
+      }
+  
+      //Detect if we are ready to fire
+      auto& active_ports=_soft_config.in_ports_active_group[group];
+      
+      if(active_ports.size()==0) continue;
+      unsigned min_ready=10000000;
+      for(int i=0; i < active_ports.size(); ++i) {
+        int cur_port = active_ports[i];
+        min_ready = std::min(_port_interf.in_port(cur_port).num_ready(), min_ready);
+        //if(min_ready==0 && _accel_index==0) {
+        //  timestamp(); cout << "Port " << cur_port << "not ready\n";
+        //}
+      }
+  
+      //Now fire on all cgra ports
+      if(min_ready > 0) {
+        forward_progress();
+        _delay_group_until[group]=cur_cycle+_soft_config.group_thr[group];
+        execute_pdg(0,group);  //Note that this will set backpressure variable
+  
+        //if(in_roi()) {
+        //  _stat_sb_insts+=_pdg->num_insts();
+        //}
+        //pop the elements from inport as they have been processed
+        for(unsigned i = 0; i < active_ports.size(); ++i) {
+          uint64_t port_index = active_ports[i];
+          port_data_t& in_port = _port_interf.in_port(port_index);
+  
+          SbPDG_VecInput* vec_in = 
+            dynamic_cast<SbPDG_VecInput*>(_sched->vportOf(make_pair(true/*input*/,port_index)));
+          //skip popping if backpressure is on
+          if(!vec_in->backPressureOn()) {
+            //only increment repeated if no backpressure
+            bool should_pop = in_port.inc_repeated();
+            if(should_pop) {
+              in_port.pop(1);
+            }
+          }
         }
       }
     }
-  }
-  //some previously produced outputs might be ready at this point,
-  //so, lets quickly check. (could be broken out as a separate function)
-  if(!_cgra_output_ready.empty()) {
-    auto iter =  _cgra_output_ready.begin();
-    if(cur_cycle >= iter->first) {
-
-      for(auto& out_port_num : iter->second) {
-        _port_interf.out_port(out_port_num).set_out_complete();
+    //some previously produced outputs might be ready at this point,
+    //so, lets quickly check. (could be broken out as a separate function)
+    if(!_cgra_output_ready.empty()) {
+      auto iter =  _cgra_output_ready.begin();
+      if(cur_cycle >= iter->first) {
+  
+        for(auto& out_port_num : iter->second) {
+          _port_interf.out_port(out_port_num).set_out_complete();
+        }
+        _cgra_output_ready.erase(iter); //delete from list
       }
-      _cgra_output_ready.erase(iter); //delete from list
     }
   }
 
