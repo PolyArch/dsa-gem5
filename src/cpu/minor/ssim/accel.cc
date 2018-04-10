@@ -739,60 +739,9 @@ void accel_t::cycle_cgra() {
 
 
   if(_back_cgra) {
-    // cout << "BACK CGRA ACTIVE at cycle: " << cur_cycle << endl;
-
-    // cout << "CHECK IF OUTPUTS AVAILABLE" << endl;
-    // checking outputs
-    auto& active_out_ports=_soft_config.out_ports_active;
-    vector<SBDT> data;
-    for (int i=0; i < active_out_ports.size(); ++i) {
 
 
-        int port_index = active_out_ports[i];
-        auto& cur_out_port = _port_interf.out_port(port_index);
-        int len = cur_out_port.port_vec_elem();
-        SbPDG_Vec* vec_out = _sched->vportOf(make_pair(false/*output*/,port_index));
-        SbPDG_VecOutput* vec_output = dynamic_cast<SbPDG_VecOutput*>(vec_out);
-        assert(vec_output!=NULL && "output port pointer is null\n");
-
-
-        if (_pdg->can_pop_output(vec_output, len)) {
-          _pdg->print_discard(vec_output);
-          cout << "Came here to pop output: printing data" <<  endl;
-          _pdg->pop_vector_output(vec_output, data, len);
-          // push the data to the CGRA output port
-          for (int port_index=0; port_index < len; ++port_index) {
-            cur_out_port.push_cgra_port(port_index, data[port_index], true);
-            cout << data[port_index] << "\n";
-          }
-          cur_out_port.inc_ready(1);
-          cur_out_port.set_in_flight(); // just sets some stats
-          int lat = _soft_config.out_ports_lat[port_index];
-          _cgra_output_ready[cur_cycle + lat].push_back(port_index); // it set all the outputs ready
-        }
-    }
-
-
-
-
-    //some previously produced outputs might be ready at this point,
-    //so, lets quickly check. (could be broken out as a separate function)
-    if (!_cgra_output_ready.empty()) {
-      auto iter =  _cgra_output_ready.begin();
-      if (cur_cycle >= iter->first) {
-
-        cout << "comes here to erase the previously ready outputs\n";
-        for (auto& out_port_num : iter->second) {
-          _port_interf.out_port(out_port_num).set_out_complete();
-        }
-        _cgra_output_ready.erase(iter); //delete from list
-      }
-    }
-
-
-    // pop the ready outputs
-
-    bool ifCompute = false; // initializing
+    bool ifCompute = false;
     auto& active_in_ports=_soft_config.in_ports_active;
 
     // checking if any input is ready
@@ -810,16 +759,16 @@ void accel_t::cycle_cgra() {
          int port_index = active_in_ports[i];
          auto& cur_in_port = _port_interf.in_port(port_index);
          // int len = cur_in_port.port_vec_elem();
-         if (cur_in_port.num_ready()) { // always true
+         if (cur_in_port.num_ready()) { 
            SbPDG_VecInput* vec_in = dynamic_cast<SbPDG_VecInput*>(_sched->vportOf(make_pair(true/*input*/,port_index)));
            assert(vec_in!=NULL && "input port pointer is null\n");
 
            if (_pdg->can_push_input(vec_in)) {
-               cout << "Allowed to push" << endl;
+               // cout << "Allowed to push" << endl;
 
                // execute_pdg
                vector<SBDT> data;
-               SBDT val = 0; bool valid = false; // initializing them
+               SBDT val = 0; bool valid = false;
                for (unsigned port_idx = 0; port_idx < cur_in_port.port_cgra_elem(); ++port_idx) { // port_idx are the scalar cgra nodes
                   int cgra_port = cur_in_port.cgra_port_for_index(port_idx);
                   if (_soft_config.cgra_in_ports_active[cgra_port]==false) {
@@ -840,21 +789,19 @@ void accel_t::cycle_cgra() {
 
                data.clear(); // clear the input data pushed to pdg
                // _pdg->cycle(); // maybe send input vector into it
-               ifCompute = _pdg->backcgra_cycle(vec_in, cur_cycle); // maybe send input vector into it
+               ifCompute = _pdg->backcgra_cycle(vec_in);
 
                // _soft_config.cgra_in_ports_active[port_index] = false; // set this port to inactive or erase?
                if (ifCompute) {
                    _cgra_issued++;
                   cur_in_port.pop_in_data(); // does it do anything?
                }
-               // cout << "Track it here in gdb how it goes" << endl;
 
                // pop input from CGRA port after it is pushed into the pdg node
                if (!vec_in->backPressureOn()) { // modify this function?: Yes!
                   bool should_pop = cur_in_port.inc_repeated(); // if no backpressure, shouldn't we decrement this?
-                  // cout << "came here to pop inputs and value of should_pop: " << should_pop << endl;
                   if (should_pop) {
-                     cur_in_port.pop(1); // it should have popped
+                     cur_in_port.pop(1);
                   }
                }
            }
@@ -862,7 +809,53 @@ void accel_t::cycle_cgra() {
        }
     }
 
+
     _pdg->cycle_store(false, true); // calling with the default parameters for now
+
+    // pop the ready outputs
+    auto& active_out_ports=_soft_config.out_ports_active;
+    vector<SBDT> data;
+    for (int i=0; i < active_out_ports.size(); ++i) {
+
+
+        int port_index = active_out_ports[i];
+        auto& cur_out_port = _port_interf.out_port(port_index);
+        int len = cur_out_port.port_vec_elem();
+        SbPDG_Vec* vec_out = _sched->vportOf(make_pair(false/*output*/,port_index));
+        SbPDG_VecOutput* vec_output = dynamic_cast<SbPDG_VecOutput*>(vec_out);
+        assert(vec_output!=NULL && "output port pointer is null\n");
+
+
+        if (_pdg->can_pop_output(vec_output, len)) {
+          // _pdg->print_discard(vec_output);
+          // cout << "Came here to pop output: printing data" <<  endl;
+          _pdg->pop_vector_output(vec_output, data, len);
+          // push the data to the CGRA output port
+          for (int port_index=0; port_index < len; ++port_index) {
+            cur_out_port.push_cgra_port(port_index, data[port_index], true);
+            // cout << data[port_index] << "\n";
+          }
+          cur_out_port.inc_ready(1);
+          cur_out_port.set_in_flight(); // just sets some stats
+          int lat = _soft_config.out_ports_lat[port_index];
+          _cgra_output_ready[cur_cycle + lat].push_back(port_index); // it set all the outputs ready
+        }
+    }
+
+
+    //some previously produced outputs might be ready at this point
+    if (!_cgra_output_ready.empty()) {
+      auto iter =  _cgra_output_ready.begin();
+      if (cur_cycle >= iter->first) {
+
+        // cout << "comes here to erase the previously ready outputs\n";
+        for (auto& out_port_num : iter->second) {
+          _port_interf.out_port(out_port_num).set_out_complete();
+        }
+        _cgra_output_ready.erase(iter); //delete from list
+      }
+    }
+
 
   }
 
@@ -922,7 +915,6 @@ void accel_t::cycle_cgra() {
         for(auto& out_port_num : iter->second) {
           _port_interf.out_port(out_port_num).set_out_complete();
         }
-        cout << "comes here to erase the outputs from the output port\n";
         _cgra_output_ready.erase(iter); //delete from list
       }
     }
@@ -961,7 +953,6 @@ void accel_t::execute_pdg(unsigned instance, int group) {
      
       //get the data of the instance of CGRA FIFO
       SBDT val = cur_in_port.value_of(port_idx, instance);
-      cout << "data I am reading this time is: " << val << endl;
       bool valid = cur_in_port.valid_of(port_idx, instance);
 
       //for each cgra port and associated pdg input
@@ -1031,7 +1022,6 @@ void accel_t::execute_pdg(unsigned instance, int group) {
 
       uint64_t val = n->retrieve();
       bool valid = !n->discard();
-      cout << "value computed at the output port: " << val << endl;
       cur_out_port.push_cgra_port(port_idx, val, valid);  //retreive from last inst
 
       if(SB_DEBUG::SB_COMP) {
@@ -3048,6 +3038,7 @@ bool accel_t::done_concurrent(bool show, int mask) {
     done=false;
   }
   
+  // cout << "Line:3052 let's print 2 done: " << done << " and the other one: " << cgra_done(show, mask) << endl;
   if(done && !cgra_done(show,mask)) {
     done = false;
   }
@@ -3292,11 +3283,13 @@ bool port_controller_t::done(bool show, int mask) {
 }
 
 bool accel_t::cgra_done(bool show,int mask) {
+  
   if(mask==0 || mask&WAIT_CMP) {
     for(unsigned i = 0; i < _soft_config.in_ports_active_plus.size(); ++i) {
       int cur_port = _soft_config.in_ports_active_plus[i];
       auto& in_vp = _port_interf.in_port(cur_port);
       if(in_vp.in_use() || in_vp.num_ready() || in_vp.mem_size()) { 
+      // if(in_vp.in_use() || in_vp.num_ready() || in_vp.mem_size() || _pdg->is_busy()) { 
         if(show) {
           cout << "In VP: " << cur_port << " Not Empty (";
           cout << "in_use: " << in_vp.in_use() << (in_vp.completed()?"(completed)":"");
@@ -3315,7 +3308,7 @@ bool accel_t::cgra_done(bool show,int mask) {
       int cur_port = _soft_config.out_ports_active_plus[i];
       auto& out_vp = _port_interf.out_port(cur_port);
       if(out_vp.in_use() || out_vp.num_ready() || 
-          out_vp.mem_size() || out_vp.num_in_flight()) { 
+          out_vp.mem_size() || out_vp.num_in_flight()) { //  || _pdg->is_busy()) { 
         if(show) {
           cout << "Out VP: " << cur_port << " Not Empty (";
           cout << "in_use: " << out_vp.in_use();
