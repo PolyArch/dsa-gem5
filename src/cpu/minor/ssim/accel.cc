@@ -388,7 +388,7 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
 
   const char* fifo_len_str = std::getenv("FU_FIFO_LEN");
 
-  if(_fu_fifo_len==0) {
+  if (fifo_len_str != nullptr) {
     _fu_fifo_len = atoi(fifo_len_str);
   }
 
