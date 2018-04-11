@@ -386,10 +386,21 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
     }
   }
 
+  const char* fifo_len_str = std::getenv("FU_FIFO_LEN");
+
+  if(_fu_fifo_len==0) {
+    _fu_fifo_len = atoi(fifo_len_str);
+  }
 
   const char* sbconfig_file = std::getenv("SBCONFIG");
 
   if(!SB_DEBUG::SUPRESS_SB_STATS) {
+    static bool printed_fifo_before=false;
+    if(!printed_fifo_before) {
+      std::cout << "FIFO_LEN:" << _fu_fifo_len << "\n";
+      printed_fifo_before=true;
+    }
+
     static bool printed_this_before=false;
     if(!printed_this_before) {
       std::cout << "Loading SB Config (env SBCONFIG): \"" 
@@ -641,9 +652,17 @@ void accel_t::tick() {
   cycle_in_interf();
   cycle_cgra();
 
-  if(in_roi()) {
-    uint64_t new_now = now();
+  uint64_t cur_cycle = now();
 
+  for(int i = 0; i < NUM_GROUPS; ++i) {
+    std::vector<bool>& prev_issued_group = _cgra_prev_issued_group[i];
+    if(prev_issued_group.size() > 0) {
+      int mod_index = cur_cycle%prev_issued_group.size();
+      prev_issued_group[mod_index]=_cgra_issued_group[i];
+    }
+  }
+
+  if(in_roi()) {
     if(SB_DEBUG::CYC_STAT && _accel_index==SB_DEBUG::ACC_INDEX) {
       cycle_status();
     }
@@ -684,7 +703,7 @@ void accel_t::tick() {
     //  cout << pipeline_stats_t::name_of(who) << "\n";
     //}
 
-    _prev_roi_clock=new_now;
+    //_prev_roi_clock=new_now;
   }
 
   cycle_out_interf();
@@ -730,9 +749,20 @@ void accel_t::cycle_cgra() {
 
   uint64_t cur_cycle = now();
 
+
   for(int group = 0; group < NUM_GROUPS; ++group) {
+    std::vector<bool>& prev_issued_group = _cgra_prev_issued_group[group];
+    //int mod_index = cur_cycle%prev_issued_group.size();
+
     //detect if we need to wait for throughput reasons on CGRA group -- easy peasy
-    if(cur_cycle < _delay_group_until[group]) {
+    //if(cur_cycle < _delay_group_until[group]) {
+    //  continue;
+    //}
+    int num_issue = 0;
+    for(int i = 0; i < prev_issued_group.size(); ++i) {
+      num_issue += prev_issued_group[i];
+    }
+    if(num_issue >= _soft_config.group_thr[group].first) {
       continue;
     }
 
@@ -752,7 +782,7 @@ void accel_t::cycle_cgra() {
     //Now fire on all cgra ports
     if(min_ready > 0) {
       forward_progress();
-      _delay_group_until[group]=cur_cycle+_soft_config.group_thr[group];
+      //_delay_group_until[group]=cur_cycle+_soft_config.group_thr[group];
       execute_pdg(0,group);  //Note that this will set backpressure variable
 
       //if(in_roi()) {
@@ -775,6 +805,7 @@ void accel_t::cycle_cgra() {
         }
       }
     }
+
   }
   //some previously produced outputs might be ready at this point,
   //so, lets quickly check. (could be broken out as a separate function)
@@ -869,10 +900,10 @@ void accel_t::execute_pdg(unsigned instance, int group) {
     _stat_sb_insts+=num_computed;
   }
 
+  uint64_t cur_cycle = now();
+
   _cgra_issued_group[group]=true;
   _cgra_issued++;
-
-  uint64_t cur_cycle = now();
 
   auto& active_out_ports=_soft_config.out_ports_active_group[group];
 
@@ -3332,7 +3363,23 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
     if(active_ports.size() > 0) {
 
       int thr = _pdg->maxGroupThroughput(g);
-      _soft_config.group_thr[g]=thr;
+      int max_lat_mis = _sched->max_lat_mis();
+      
+      float thr_ratio = 1/(float)thr;
+      float mis_ratio = _fu_fifo_len/(_fu_fifo_len+max_lat_mis);
+
+      //setup the rate limiting structures
+      if(thr_ratio < mis_ratio) { //group throughput is worse
+        _soft_config.group_thr[g]=make_pair(1,thr);
+        _cgra_prev_issued_group[g].resize(max(thr-1,0),false);
+      } else {  //group latency is worse
+        _soft_config.group_thr[g]=make_pair(_fu_fifo_len,_fu_fifo_len+max_lat_mis);
+        _cgra_prev_issued_group[g].resize(max(_fu_fifo_len+max_lat_mis-1,0),false);
+        if(max_lat_mis==0) {
+          _cgra_prev_issued_group[g].resize(0,false);
+        }
+      }
+
       if(SB_DEBUG::SHOW_CONFIG) {
         cout << "Group " << g << ", throughput: " << thr << "\n";
         for(int i = 0; i < active_ports.size(); ++i) {
