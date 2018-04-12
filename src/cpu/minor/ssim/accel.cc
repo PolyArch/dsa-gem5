@@ -409,6 +409,7 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
     }
   }
   _sbconfig = new SbModel(sbconfig_file);
+  _sbconfig->setMaxEdgeDelay(_fu_fifo_len);
   _port_interf.initialize(_sbconfig);
   scratchpad.resize(SCRATCH_SIZE);
 
@@ -3364,9 +3365,15 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
 
       int thr = _pdg->maxGroupThroughput(g);
       int max_lat_mis = _sched->max_lat_mis();
-      
+
+      int max_lat;
+      _sched->calcLatency(max_lat, max_lat_mis, false);
+
       float thr_ratio = 1/(float)thr;
-      float mis_ratio = _fu_fifo_len/(_fu_fifo_len+max_lat_mis);
+      float mis_ratio = ((float)_fu_fifo_len)/(_fu_fifo_len+max_lat_mis);
+
+      //std::cout << g << ": " << thr_ratio << " " << mis_ratio << "\n";
+      //std::cout << _fu_fifo_len << " " << max_lat_mis << "\n";
 
       //setup the rate limiting structures
       if(thr_ratio < mis_ratio) { //group throughput is worse
