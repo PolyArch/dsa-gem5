@@ -1987,9 +1987,14 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
       auto& in_ind_vp = _accel->port_interf().in_port(ind_s._ind_port);
 
       if(ind_s.stream_active()) {
-        if(in_ind_vp.mem_size()>0 ) {
+        if(in_ind_vp.mem_size()>0 &&
+          _accel->_lsq->sd_transfers[ind_s.in_port()].unreservedRemainingSpace()>0
+                    && _accel->_lsq->canRequest()) {
+
+
           auto& in_vp = _accel->port_interf().in_port(ind_s._in_port);
           if(in_vp.num_can_push() > 8) { //make sure vp isn't full
+            _accel->_lsq->sd_transfers[ind_s.in_port()].reserve();
 
             //pull_data_indirect(ind_s,data,mem_complete_cyc);
             ind_read_req(ind_s,-1/*for scratch*/);
@@ -2078,7 +2083,10 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
     } else {
       int which_wr=which-_tq_read-1-_port_dma_streams.size(); 
       indirect_wr_stream_t& ind_s = _indirect_wr_streams[which_wr];
-      if(ind_s.stream_active()) {
+      if(ind_s.stream_active() && _accel->_lsq->canRequest() &&
+          _accel->_lsq->sd_transfers[MEM_WR_STREAM].canReserve()) {
+        _accel->_lsq->sd_transfers[MEM_WR_STREAM].reserve();
+
         port_data_t& out_port = _accel->port_interf().out_port(ind_s._out_port);
         port_data_t& ind_port = _accel->port_interf().in_port(ind_s._ind_port);
 

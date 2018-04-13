@@ -390,7 +390,7 @@ class ExecContext : public ::ExecContext
             break;
             case SB_MEM_SCR: ssim.load_dma_to_scratch(
                 thread.getSDReg(SD_MEM_ADDR),      thread.getSDReg(SD_STRIDE),
-                thread.getSDReg(SD_ACCESS_SIZE),   thread.getSDReg(SD_CONSTANT),   
+                thread.getSDReg(SD_ACCESS_SIZE),   thread.getSDReg(SD_STRETCH),   
                 thread.getSDReg(SD_NUM_STRIDES),   thread.getSDReg(SD_SCRATCH_ADDR),
                 thread.getSDReg(SD_FLAGS)); 
             break;
@@ -401,13 +401,13 @@ class ExecContext : public ::ExecContext
             break;
             case SB_MEM_PRT: ssim.load_dma_to_port(
                 thread.getSDReg(SD_MEM_ADDR),      thread.getSDReg(SD_STRIDE),
-                thread.getSDReg(SD_ACCESS_SIZE),   thread.getSDReg(SD_CONSTANT), 
+                thread.getSDReg(SD_ACCESS_SIZE),   thread.getSDReg(SD_STRETCH), 
                 thread.getSDReg(SD_NUM_STRIDES),   thread.getSDReg(SD_IN_PORT),       
                 thread.getSDReg(SD_REPEAT), thread.getSDReg(SD_REPEAT_STRETCH));      
             break;
             case SB_SCR_PRT: ssim.load_scratch_to_port(
                 thread.getSDReg(SD_SCRATCH_ADDR), thread.getSDReg(SD_STRIDE),
-                thread.getSDReg(SD_ACCESS_SIZE),  thread.getSDReg(SD_CONSTANT),   
+                thread.getSDReg(SD_ACCESS_SIZE),  thread.getSDReg(SD_STRETCH),   
                 thread.getSDReg(SD_NUM_STRIDES),  thread.getSDReg(SD_IN_PORT),
                 thread.getSDReg(SD_REPEAT), thread.getSDReg(SD_REPEAT_STRETCH));
             break;

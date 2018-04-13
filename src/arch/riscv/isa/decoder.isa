@@ -603,7 +603,7 @@ decode OPCODE default Unknown::unknown() {
             0x0: sb_stride({{
                 xc->setSDReg(Rs1,SD_STRIDE);
                 xc->setSDReg(Rs2,SD_ACCESS_SIZE);
-                xc->setSDReg(s_imm,SD_CONSTANT);
+                xc->setSDReg(s_imm,SD_STRETCH);
             }}, IsSDParam, No_OpClass);
             0x1: sb_dma_addr({{
                 xc->setSDReg(Rs1,SD_MEM_ADDR);

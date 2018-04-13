@@ -94,15 +94,15 @@ struct base_stream_t {
   uint64_t requests()     {return _reqs;}
 
   virtual uint64_t mem_addr()    {return 0;}  
-  virtual int64_t access_size()  {return 0;}  
-  virtual int64_t stride()       {return 0;} 
+  virtual int64_t  access_size() {return 0;}  
+  virtual int64_t  stride()      {return 0;} 
   virtual uint64_t scratch_addr(){return 0;} 
   virtual uint64_t num_strides() {return 0;} 
-  virtual int64_t stretch()      {return 0;} 
+  virtual int64_t  stretch()     {return 0;} 
   virtual uint64_t num_bytes()   {return 0;} 
   virtual uint64_t constant()    {return 0;} 
-  virtual int64_t in_port()      {return -1;} 
-  virtual int64_t out_port()     {return -1;} 
+  virtual int64_t  in_port()     {return -1;} 
+  virtual int64_t  out_port()    {return -1;} 
   virtual uint64_t wait_mask()   {return 0;} 
   virtual uint64_t shift_bytes() {return 0;} 
 
@@ -291,7 +291,8 @@ struct dma_port_stream_t : public mem_stream_base_t {
     std::cout << "dma->port" << "\tport=" << _in_port << "\tacc_size=" << _access_size 
               << " stride=" << _stride << " bytes_comp=" << _bytes_in_access 
               << " mem_addr=" << std::hex << _mem_addr << std::dec 
-              << " strides_left=" << _num_strides << " repeat_in=" << _repeat_in;
+              << " strides_left=" << _num_strides 
+              << " repeat_in=" << _repeat_in << " stretch=" << _stretch;
     base_stream_t::print_status();
   }
 
