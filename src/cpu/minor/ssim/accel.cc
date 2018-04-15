@@ -756,19 +756,36 @@ void accel_t::cycle_cgra() {
         assert(vec_output!=NULL && "output port pointer is null\n");
 
 
+        bool discard=false; 
         if (_pdg->can_pop_output(vec_output, len)) {
           // _pdg->print_discard(vec_output);
-          // cout << "Came here to pop output: printing data" <<  endl;
-          _pdg->pop_vector_output(vec_output, data, len);
-          // push the data to the CGRA output port
+          cout << "Came here to pop output: printing data" <<  endl;
+          _pdg->pop_vector_output(vec_output, data, len, discard); // it just set hard-coded validity--should read there
+          // push the data to the CGRA output port only if discard is not 0
+          // check discard here
           for (int port_index=0; port_index < len; ++port_index) {
-            cur_out_port.push_cgra_port(port_index, data[port_index], true);
-            // cout << data[port_index] << "\n";
+            // SbPDG_Output* n = _soft_config.output_pdg_node[0][i][port_index];//only 1 group?????don't know
+            // discard = n->discard();
+            // SbPDG_Node* n = _pdg->get_scalar_output(vec_output, port_index); 
+            // bool valid = !n->discard();
+            // bool valid = true;
+            cout << "Let's print valid for different instructions in backcgra: " << !discard << endl;
+            if(!discard){
+               cur_out_port.push_cgra_port(port_index, data[port_index], true);
+               cur_out_port.inc_ready(1);
+               int lat = _soft_config.out_ports_lat[port_index];
+               _cgra_output_ready[cur_cycle + lat].push_back(port_index); // it set all the outputs ready
+
+               cout << "data sent to memory: " << data[port_index] << "\n";
+            }
+            else{
+               cout << "data not sent to memory: " << data[port_index] << "\n";
+            }
           }
-          cur_out_port.inc_ready(1);
-          cur_out_port.set_in_flight(); // just sets some stats
-          int lat = _soft_config.out_ports_lat[port_index];
-          _cgra_output_ready[cur_cycle + lat].push_back(port_index); // it set all the outputs ready
+          // cur_out_port.set_in_flight(); // just sets some stats
+        }
+        else{
+            // cout << "could not pop output??" << endl;
         }
     }
 
@@ -779,9 +796,9 @@ void accel_t::cycle_cgra() {
       if (cur_cycle >= iter->first) {
 
         // cout << "comes here to erase the previously ready outputs\n";
-        for (auto& out_port_num : iter->second) {
+        /*for (auto& out_port_num : iter->second) {
           _port_interf.out_port(out_port_num).set_out_complete();
-        }
+        }*/
         _cgra_output_ready.erase(iter); //delete from list
       }
     }
@@ -857,7 +874,8 @@ void accel_t::cycle_cgra() {
                // _soft_config.cgra_in_ports_active[port_index] = false; // set this port to inactive or erase?
                if (ifCompute) {
                    _cgra_issued++;
-                  // cur_in_port.pop_in_data(); // does it do anything?
+                   // uncommenting gives error
+                   // cur_in_port.pop_in_data(); // does it do anything?
                }
 
                // pop input from CGRA port after it is pushed into the pdg node
