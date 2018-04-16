@@ -2,6 +2,7 @@
 
 # Readout of output when error occurs:
 
+```
 ACCEL 0 STATS ***        // current accelerator
 Commands Issued: 1        // number of stream commands issued 
 CGRA Instances: 0 -- Activity Ratio: -nan, DFGs / Cycle: -nan  // number of computation instances
@@ -30,7 +31,7 @@ Ind In Port 30:   Mem Size: 0  Num Ready: 0
 Ind In Port 31:   Mem Size: 0  Num Ready: 0
 Out Port 2:   In Flight: 0  Num Ready: 0  Mem Size: 0
 PORT -> DMA Streams Not Empty
-
+```
 
 
 # The following flags are useful for debugging:
