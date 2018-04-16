@@ -736,6 +736,8 @@ void accel_t::cycle_cgra() {
   if(!_pdg) return;
 
   uint64_t cur_cycle = now();
+  if(cur_cycle<1000)
+  cout << "CYCLE: " << cur_cycle << endl;
 
 
   if(_back_cgra) {
@@ -758,28 +760,22 @@ void accel_t::cycle_cgra() {
 
         bool discard=false; 
         if (_pdg->can_pop_output(vec_output, len)) {
-          // _pdg->print_discard(vec_output);
-          cout << "Came here to pop output: printing data" <<  endl;
+          // cout << "Came here to pop output: printing data" <<  endl;
           _pdg->pop_vector_output(vec_output, data, len, discard); // it just set hard-coded validity--should read there
           // push the data to the CGRA output port only if discard is not 0
           // check discard here
           for (int port_index=0; port_index < len; ++port_index) {
-            // SbPDG_Output* n = _soft_config.output_pdg_node[0][i][port_index];//only 1 group?????don't know
-            // discard = n->discard();
-            // SbPDG_Node* n = _pdg->get_scalar_output(vec_output, port_index); 
-            // bool valid = !n->discard();
-            // bool valid = true;
-            cout << "Let's print valid for different instructions in backcgra: " << !discard << endl;
+            // cout << "Let's print valid for different instructions in backcgra: " << !discard << endl;
             if(!discard){
                cur_out_port.push_cgra_port(port_index, data[port_index], true);
                cur_out_port.inc_ready(1);
                int lat = _soft_config.out_ports_lat[port_index];
                _cgra_output_ready[cur_cycle + lat].push_back(port_index); // it set all the outputs ready
 
-               cout << "data sent to memory: " << data[port_index] << "\n";
+               // cout << "data sent to memory: " << data[port_index] << "\n";
             }
             else{
-               cout << "data not sent to memory: " << data[port_index] << "\n";
+               // cout << "data not sent to memory: " << data[port_index] << "\n";
             }
           }
           // cur_out_port.set_in_flight(); // just sets some stats
@@ -802,21 +798,6 @@ void accel_t::cycle_cgra() {
         _cgra_output_ready.erase(iter); //delete from list
       }
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -886,11 +867,6 @@ void accel_t::cycle_cgra() {
                      cur_in_port.pop(1);
                   }
                }
-
-               // i is out vector id
-               // cout << "check backpressure on vector id: " << i << " as: " << _pdg->get_back(i);
-
-
 
 
 
