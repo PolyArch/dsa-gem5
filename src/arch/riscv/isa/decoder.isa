@@ -620,7 +620,7 @@ decode OPCODE default Unknown::unknown() {
                 xc->setSDReg(Rs2,SD_NUM_ELEM);
                 xc->setSDReg(s_imm & 0x1F, SD_IND_PORT); //only 5 bits
                 xc->setSDReg((s_imm >> 5) & 0x1F, SD_IN_PORT);
-                xc->setSDReg(s_imm >> 10, SD_IND_TYPE);
+                //xc->setSDReg(s_imm >> 10, SD_IND_TYPE);
                 xc->callSDFunc(SB_IND_PRT);
             }}, IsSDStream, IsNonSpeculative, No_OpClass);
             0x6: sb_ind_wr({{
@@ -628,9 +628,15 @@ decode OPCODE default Unknown::unknown() {
                 xc->setSDReg(Rs2,SD_NUM_ELEM);
                 xc->setSDReg(s_imm & 0x1F, SD_IND_PORT); //only 5 bits
                 xc->setSDReg((s_imm >> 5) & 0x1F, SD_OUT_PORT);
-                xc->setSDReg(s_imm >> 10, SD_IND_TYPE);
+                //xc->setSDReg(s_imm >> 10, SD_IND_TYPE);
                 xc->callSDFunc(SB_PRT_IND);
             }}, IsSDStream, IsNonSpeculative, No_OpClass);
+            0x7: sb_cfg_ind({{
+                xc->setSDReg(Rs1,SD_OFFSET_LIST);
+                xc->setSDReg(s_imm>>10, SD_IND_TYPE); 
+                xc->setSDReg((s_imm>>8)&0x3, SD_DTYPE); 
+                xc->setSDReg(s_imm&0xFF, SD_IND_MULT); 
+            }}, No_OpClass);
         }
     }
 
@@ -1547,4 +1553,4 @@ decode OPCODE default Unknown::unknown() {
             }}, IsNonSpeculative, No_OpClass);
         }
     }
-}
+ }

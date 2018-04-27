@@ -432,12 +432,14 @@ class ExecContext : public ::ExecContext
                 thread.getSDReg(SD_IND_PORT),      thread.getSDReg(SD_IND_TYPE),
                 thread.getSDReg(SD_IN_PORT),       thread.getSDReg(SD_INDEX_ADDR),
                 thread.getSDReg(SD_NUM_ELEM),      thread.getSDReg(SD_REPEAT),
-                thread.getSDReg(SD_REPEAT_STRETCH));
+                thread.getSDReg(SD_REPEAT_STRETCH),thread.getSDReg(SD_OFFSET_LIST),
+                thread.getSDReg(SD_DTYPE),         thread.getSDReg(SD_IND_MULT));
             break;
             case SB_PRT_IND: ssim.indirect_write(
                 thread.getSDReg(SD_IND_PORT),       thread.getSDReg(SD_IND_TYPE),
-                thread.getSDReg(SD_OUT_PORT),      thread.getSDReg(SD_INDEX_ADDR),
-                thread.getSDReg(SD_NUM_ELEM));
+                thread.getSDReg(SD_OUT_PORT),       thread.getSDReg(SD_INDEX_ADDR),
+                thread.getSDReg(SD_NUM_ELEM),       thread.getSDReg(SD_OFFSET_LIST),
+                thread.getSDReg(SD_DTYPE),         thread.getSDReg(SD_IND_MULT));
             break;
             case SB_CNS_PRT: ssim.write_constant(
                 thread.getSDReg(SD_NUM_STRIDES),   thread.getSDReg(SD_IN_PORT),
@@ -464,6 +466,11 @@ class ExecContext : public ::ExecContext
         //RESET REPEAT to 1 -- since this is by far the most common case
         setSDReg(1,SD_REPEAT);
         setSDReg(0,SD_REPEAT_STRETCH);
+        setSDReg(0,SD_OFFSET_LIST);
+        setSDReg(0,SD_IND_TYPE);
+        setSDReg(0,SD_DTYPE);
+        setSDReg(1,SD_IND_MULT);
+
     }
 #endif
 

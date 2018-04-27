@@ -58,5 +58,11 @@ typedef uint64_t addr_t;
 #define STRIDE_ZERO_FILL 3
 #define STRIDE_DISCARD_FILL 4
 
+//datatype encodings
+#define T64 0
+#define T32 1
+#define T16 2
+#define T08 3
+
 
 #endif

@@ -2174,8 +2174,9 @@ void dma_controller_t::ind_read_req(indirect_stream_t& stream,
   vector<int> imap;
 
   while(ind_vp.mem_size() && stream.stream_active()) {
-    addr_t idx  = stream.calc_index(ind_vp.peek_out_data());
-    addr_t addr = stream._index_addr + idx * stream.index_size();
+    //addr_t idx  = stream.calc_index(ind_vp.peek_out_data());
+    //addr_t addr = stream._index_addr + idx * stream.index_size();
+    addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
 
     //cout << "idx:" << idx << "\taddr:" << hex << addr << dec << "\n";
     if(first) {
@@ -2188,17 +2189,21 @@ void dma_controller_t::ind_read_req(indirect_stream_t& stream,
       }
     }
 
-    int index = (addr - base_addr)/8; //TODO: configurable data size please!
+    assert( ((addr & 0x7)==0) && "bottom 3 bits must be zero for word-loads");
+
+    int index = (addr - base_addr)     /8; //TODO: configurable data size please!
     imap.push_back(index);
 
     if(SB_DEBUG::MEM_REQ) {
       _accel->timestamp();
-      std::cout << "indirect request for " << std::hex << base_addr << std::dec
-                    << " for " << imap.size() << " needed elements" << "\n";
+      cout << "indirect request for " << std::hex << base_addr << std::dec
+           << " for " << imap.size() << " needed elements" << "\n";
     }
 
-    stream.pop_elem();
-    ind_vp.pop_in_data();
+    bool pop_ind_vp = stream.pop_elem();
+    if(pop_ind_vp) {
+      ind_vp.pop_in_data();
+    }
   }
   bool last = stream.check_set_empty();
 
@@ -2255,8 +2260,10 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
 
   int index = 0;
   while(out_vp.mem_size() && ind_vp.mem_size() && stream.stream_active()) {
-    addr_t idx  = stream.calc_index(ind_vp.peek_out_data());
-    addr_t addr = stream._index_addr + idx * stream.index_size();
+    //addr_t idx  = stream.calc_index(ind_vp.peek_out_data());
+    //addr_t addr = stream._index_addr + idx * stream.index_size();
+    
+    addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
 
     //cout << "idx:" << idx << "\taddr:" << hex << addr << dec << "\n";
 
@@ -2280,8 +2287,10 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
     //timestamp(); cout << "POPPED b/c INDIRECT WRITE: " << out_vp.port() << "\n";
     bytes_written+=sizeof(SBDT);
 
-    stream.pop_elem();
-    ind_vp.pop_in_data();
+    bool pop_ind_vp = stream.pop_elem();
+    if(pop_ind_vp) {
+      ind_vp.pop_in_data();
+    }
   }
 
   SDMemReqInfoPtr sdInfo = new SDMemReqInfo(stream.id(),
