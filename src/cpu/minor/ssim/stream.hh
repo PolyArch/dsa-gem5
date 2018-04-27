@@ -103,6 +103,8 @@ struct base_stream_t {
   virtual uint64_t constant()    {return 0;} 
   virtual int64_t in_port()      {return -1;} 
   virtual int64_t out_port()     {return -1;} 
+  // new added
+  virtual int64_t val_port()     {return -1;} 
   virtual uint64_t wait_mask()   {return 0;} 
   virtual uint64_t shift_bytes() {return 0;} 
 
@@ -165,6 +167,10 @@ struct mem_stream_base_t : public base_stream_t {
   int64_t _stride;         // length of entire slide
   addr_t _stretch;        // stretch of access size over time
   addr_t _bytes_in_access=0; // bytes in access completed
+
+  // vidushi:
+  // int access_ind_stream_port=-1; 
+  // int mem_ind_stream_port=-1; 
   
   addr_t _mem_addr;     // CURRENT address of stride
   addr_t _num_strides=0;  // CURRENT strides left
@@ -864,5 +870,44 @@ struct indirect_wr_stream_t : public indirect_base_stream_t {
     base_stream_t::print_status();
   }
 };
+
+
+//Indirect Read Port -> SCR
+struct atomic_scr_stream_t;
+struct atomic_scr_stream_t : public mem_stream_base_t {
+  int _val_port;
+  int _out_port;
+  int _op_code;
+
+  atomic_scr_stream_t() {}
+
+  // it's datatypes?
+  // uint64_t ind_port()     {return _ind_port;} // this is out addr port
+  // uint64_t ind_type()     {return _type;} 
+  // uint64_t num_strides() {return _num_elements;} // iters
+  uint64_t num_strides() {return _num_strides;} // iters
+  // uint64_t index_addr() {return _index_addr;} // this is offset
+  int64_t out_port()     {return _out_port;} 
+  int64_t val_port()     {return _val_port;} // this is the inc
+  int op_code()     {return _op_code;} // opcode
+  uint64_t mem_addr()    {return _mem_addr;}  
+  int64_t  access_size() {return _access_size;}  
+  int64_t  stride()      {return _stride;} 
+
+
+  // set both src and dest
+
+  virtual LOC src() {return LOC::PORT;}
+  virtual LOC dest() {return LOC::SCR;}
+
+  virtual void print_status() {  
+    // std::cout << "port->ind_port" << "\tind_port=" << _ind_port
+    //          << "\tind_type:" << _type  << "\tind_addr:" << std::hex <<_index_addr
+    //    << std::dec << "\tnum_elem:" << _num_elements << "\tval_port:" << _out_port << "\top_code:" << _op_code;
+    base_stream_t::print_status();
+  }
+};
+
+
 
 #endif

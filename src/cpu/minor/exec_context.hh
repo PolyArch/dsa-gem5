@@ -445,6 +445,11 @@ class ExecContext : public ::ExecContext
                 thread.getSDReg(SD_CONSTANT2),     thread.getSDReg(SD_NUM_ELEM2),      
                 thread.getSDReg(SD_FLAGS) );
             break;
+            case SB_ATOMIC_SCR_OP: ssim.atomic_update_scratchpad(
+                thread.getSDReg(SD_OFFSET),        thread.getSDReg(SD_NUM_ELEM),
+                thread.getSDReg(SD_OUT_PORT),      thread.getSDReg(SD_VAL_PORT),
+                thread.getSDReg(SD_OPCODE));
+            break;
             case SB_WAIT:
                 if(thread.getSDReg(SD_WAIT_MASK) == 0) {
                     ssim.set_not_in_use();

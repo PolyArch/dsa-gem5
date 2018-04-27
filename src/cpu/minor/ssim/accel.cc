@@ -172,7 +172,8 @@ void port_data_t::reformat_in_one_vec() { //rearrange data for CGRA
 }
 
 void port_data_t::reformat_in_work() {
-  assert(_mem_data.size() == _valid_data.size());
+  // vidushi: I removed this!
+  // assert(_mem_data.size() == _valid_data.size());
   if(_repeat==0) { //on repeat==0, delete data
     _mem_data.erase(_mem_data.begin(),_mem_data.begin()+port_vec_elem());
     _valid_data.erase(_valid_data.begin(),_valid_data.begin()+port_vec_elem());
@@ -256,6 +257,8 @@ void port_data_t::reformat_out() {
 
 void port_data_t::reformat_out_one_vec() { 
   if(can_output() && _mem_data.size() + port_vec_elem() <= VP_LEN) {
+      // this size should be 2, right????
+      // cout << "first: " << _cgra_data[0].size() << " and num_ready: " << _num_ready << "\n";
     assert(_cgra_data[0].size() >= _num_ready);
     assert(_cgra_data[0].size() >= 1);
     reformat_out_work();
@@ -736,9 +739,6 @@ void accel_t::cycle_cgra() {
   if(!_pdg) return;
 
   uint64_t cur_cycle = now();
-  if(cur_cycle<1000)
-  cout << "CYCLE: " << cur_cycle << endl;
-
 
   if(_back_cgra) {
 
@@ -763,26 +763,33 @@ void accel_t::cycle_cgra() {
           // cout << "Came here to pop output: printing data" <<  endl;
           _pdg->pop_vector_output(vec_output, data, len, discard); // it just set hard-coded validity--should read there
           // push the data to the CGRA output port only if discard is not 0
-          // check discard here
-          for (int port_index=0; port_index < len; ++port_index) {
+          
+          int j = 0;
+          for (j=0; j < len; ++j) {
             // cout << "Let's print valid for different instructions in backcgra: " << !discard << endl;
             if(!discard){
-               cur_out_port.push_cgra_port(port_index, data[port_index], true);
-               cur_out_port.inc_ready(1);
+               cur_out_port.push_cgra_port(j, data[j], true);
+               // std::cout << data[j] << "\n";
+               // not sure if this condition is needed: check if this works?
+               // if(cur_out_port.num_ready()!=1)
+               // cur_out_port.inc_ready(1);
+
+
+               // JUST CHECKING!: these 2 lines are not required
+
                int lat = _soft_config.out_ports_lat[port_index];
                _cgra_output_ready[cur_cycle + lat].push_back(port_index); // it set all the outputs ready
-
-               // cout << "data sent to memory: " << data[port_index] << "\n";
             }
             else{
-               // cout << "data not sent to memory: " << data[port_index] << "\n";
+                break; // whole vector discard or not
             }
           }
-          // cur_out_port.set_in_flight(); // just sets some stats
+
+          if(j == len)
+            cur_out_port.inc_ready(1); // 1 instance is ready
+
         }
-        else{
-            // cout << "could not pop output??" << endl;
-        }
+        
     }
 
 
@@ -805,6 +812,7 @@ void accel_t::cycle_cgra() {
     bool ifCompute = false;
     auto& active_in_ports=_soft_config.in_ports_active;
 
+
     // checking if any input is ready
     unsigned min_ready=10000000;
     for (int i=0; i < active_in_ports.size(); ++i) {
@@ -814,11 +822,15 @@ void accel_t::cycle_cgra() {
 
     //Now fire on all cgra ports: if there are more than 0 ready on all active ports? (I don't know!)
     if (min_ready > 0) {
+        // cout << "min_ready greater than 0\n";
        forward_progress();
 
+        // cout << "line 820 size is: " << active_in_ports.size() << endl;
        for (int i=0; i < active_in_ports.size(); ++i) {
          int port_index = active_in_ports[i];
+         // cout << "port index is: " << port_index << endl;
          auto& cur_in_port = _port_interf.in_port(port_index);
+         // cout << "after cur_in_port\n";
          // int len = cur_in_port.port_vec_elem();
          if (cur_in_port.num_ready()) { 
            SbPDG_VecInput* vec_in = dynamic_cast<SbPDG_VecInput*>(_sched->vportOf(make_pair(true/*input*/,port_index)));
@@ -881,6 +893,9 @@ void accel_t::cycle_cgra() {
            }
          }
        }
+    }
+    else {
+        // cout << "minimum ready was 0\n";
     }
 
 
@@ -1429,6 +1444,10 @@ void accel_t::print_stats() {
 // --------------------------SCHEDULE STREAMS ONTO CONTROLLERS-----------------------
 // This is essentially the stream dispatcher
 void accel_t::schedule_streams() {
+
+
+  // std::cout << "came here to schedule streams\n";
+
   int str_width=_sbconfig->dispatch_width();
   int str_issued=0;
 
@@ -1444,7 +1463,8 @@ void accel_t::schedule_streams() {
     base_stream_t* ip = i->get();
     port_data_t* in_vp=NULL;
     port_data_t* out_vp=NULL;
-    port_data_t* out_ind_vp=NULL;
+    port_data_t* out_vp2=NULL; // for atomic stream
+    port_data_t* out_ind_vp=NULL; 
 
     bool scheduled_in=false;
     bool scheduled_out=false;
@@ -1584,7 +1604,33 @@ void accel_t::schedule_streams() {
         in_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
         out_ind_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
       }
-    } else if(auto indirect_wr_stream = dynamic_cast<indirect_wr_stream_t*>(ip)) {
+    } 
+    
+    
+    else if(auto atomic_scr_stream = dynamic_cast<atomic_scr_stream_t*>(ip)) {
+        // std::cout << "recognised my stream\n";
+        // any port allowed, so no assert statement here
+        // int addr_port = atomic_scr_stream->_ind_port;
+        int addr_port = atomic_scr_stream->_out_port;
+        int val_port = atomic_scr_stream->_val_port;
+
+        // int val_port = atomic_scr_stream->_out_port;
+        
+        out_vp = &_port_interf.out_port(addr_port); //this is addr output port
+        out_vp2 = &_port_interf.out_port(val_port); // this is increment value port
+
+      if(out_vp->can_take(LOC::PORT) && out_vp2->can_take(LOC::PORT)
+          && !blocked_ovp[addr_port] && !blocked_ovp[val_port] &&
+            (scheduled_out = _scr_w_c.schedule_atomic_scr_op(*atomic_scr_stream) )) {
+          // Any other thing to be set busy: scr, both o/p ports?
+          // std::cout << "finally holding resources\n";
+        out_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
+        out_vp2->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
+      }
+    }
+    
+    
+    else if(auto indirect_wr_stream = dynamic_cast<indirect_wr_stream_t*>(ip)) {
       int out_ind_port = indirect_wr_stream->_ind_port; //grab output res
       assert(out_ind_port >= 16); //only allowed to be in this range
       int out_port = indirect_wr_stream->_out_port;
@@ -1606,8 +1652,12 @@ void accel_t::schedule_streams() {
     }
 
 
+
+
+
     if(in_vp) blocked_ivp[in_vp->port()] = true; //prevent OOO access
     if(out_vp) blocked_ovp[out_vp->port()] = true;
+    if(out_vp2) blocked_ovp[out_vp2->port()] = true;
     if(out_ind_vp) blocked_ovp[out_ind_vp->port()] = true;
 
     prior_scratch_read  |= (ip->src()  == LOC::SCR);
@@ -1775,6 +1825,30 @@ bool scratch_read_controller_t::schedule_scr_dma(scr_dma_stream_t& new_s) {
   }
   return false;
 }
+
+// Atomic stream update: only 1 stream is allowed to be doing this at a time!
+bool scratch_write_controller_t::schedule_atomic_scr_op(atomic_scr_stream_t& new_s) {
+    // std::cout << "came here to push my stream\n";
+    for(auto& s : _atomic_scr_streams) {
+        if(s.empty()) {
+           s=new_s; //copy the values
+           return true;
+        }
+    }
+    return false;
+
+
+
+/*
+  if(_atomic_scr_stream.empty()) {
+      _atomic_scr_stream=new_s;
+      return true;
+  }
+  return false;
+  */
+}
+
+
 
 bool scratch_write_controller_t::schedule_scr_scr(scr_scr_stream_t& new_s) {
   for(auto& s : _scr_scr_streams) {
@@ -2697,7 +2771,8 @@ void scratch_read_controller_t::cycle() {
         xfer_stream_buf(stream,_buf_dma_read,stream._dest_addr);
         break;
       }
-    } else {
+    }
+    else {
       int ind = _which-1-_scr_port_streams.size();
       auto& stream = _scr_scr_streams[ind];
       if(stream.stream_active()) {
@@ -2756,8 +2831,12 @@ void scratch_read_controller_t::print_status() {
 
 
 void scratch_write_controller_t::cycle() {
+  
+// std::cout << " and s1: " << _port_scr_streams.size() << " and s2: " << _scr_scr_streams.size() << "max_scr: " << max_src << "\n";
+  // maybe it is like it will always be 1
   for(int i=0; i < max_src; ++i) {
-    _which=(_which+1==max_src)?0:_which+1;
+      // shouldn't this be a last?
+      _which=(_which+1==max_src)?0:_which+1;
 
     if(_which<_port_scr_streams.size()) {
       int ind = _which;
@@ -2809,7 +2888,8 @@ void scratch_write_controller_t::cycle() {
         }
       }
 
-    } else {
+    } 
+    else if(_which<(_port_scr_streams.size()+_bufs.size())) {
 
       int buf_index = _which-_port_scr_streams.size(); 
 
@@ -2825,6 +2905,129 @@ void scratch_write_controller_t::cycle() {
         break;
       }
     }
+
+    // code for operation of atomic stream update
+    else {
+
+        // std::cout << "came in write controller to issue my stream\n";
+        int index = _which-_port_scr_streams.size()-_bufs.size();
+        assert(index==0 && "only 1 atomic scr update stream can be active at a time\n");
+        auto& stream = _atomic_scr_streams[index];
+        // auto& stream = _atomic_scr_stream;
+
+        if(stream.stream_active()) {
+
+            // std::cout << "Yes, my stream is active!\n";
+            // collecting the values from output ports(val means inc)
+            // port_data_t& out_addr = _accel->port_interf().out_port(stream._ind_port);
+            port_data_t& out_addr = _accel->port_interf().out_port(stream._out_port);
+            port_data_t& out_val = _accel->port_interf().out_port(stream._val_port);
+            // port_data_t& out_val = _accel->port_interf().out_port(stream._out_port);
+
+            // std::cout << "Let's print the mem_size at both ports: out_addr: " << out_addr.mem_size() << " and out_val: " << out_val.mem_size() << "\n";
+
+                addr_t base_addr = stream._mem_addr; // this is like offset
+            // need to compare this to length
+            if(out_addr.mem_size() > 0 && out_val.mem_size() > 0) {
+                // std::cout << "Both the required ports have some values\n";
+                // issue the streams
+                //collect all the values: do we need this as a vector?
+                // addr_t base_addr = stream._index_addr; // this is like offset
+                // std::cout << "BEFORE: out_addr size: " << out_addr.mem_size() << " and out_val size: " << out_val.mem_size() << "\n";
+                // std::cout << "BEFORE: number of strides left are: " << stream._num_strides << "\n";
+                SBDT loc = out_addr.pop_out_data();
+                addr_t scr_addr = base_addr + loc*sizeof(SBDT); // this is like offset
+
+                // base_addr = scr_addr & SCR_MASK;
+                // addr_t max_addr = base_addr+SCR_WIDTH;
+                addr_t max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
+
+                //go while stream and port does not run out
+                uint64_t elem_updated=0;
+                while(scr_addr < max_addr && stream._num_strides>0 //enough in dest
+                                && out_val.mem_size()) { //enough in source
+                                // && out_addr.mem_size() && out_val.mem_size()) { //enough in source
+                    // std::cout << "reading and processing input elements one by one\n";
+
+                     SBDT inc = out_val.pop_out_data(); 
+                     SBDT val = 0; // this should be read from scratchpad
+
+                     // std::cout << "inc: " << inc << " and loc: " << loc << "\n";
+                    
+                     assert(scr_addr + DATA_WIDTH <= SCRATCH_SIZE);
+                     _accel->read_scratchpad(&val, scr_addr, DATA_WIDTH, stream.id());
+                     // std::cout << "default value in scr: " << val << "\n";
+
+                     // HACK, remember!
+                     if(val > 100000)
+                         val=0;
+                     
+
+                     int opcode = stream._op_code;
+
+                     switch(opcode){
+                         case 0: val += inc;
+                                 break;
+                         case 1: val -= inc;
+                                 break;
+                         case 2: val = std::min(val, inc);
+                                 break;
+                         case 3: val = std::max(val, inc);
+                                 break;
+                         default: cout << "Invalid opcode\n";
+                                  break;
+                    }
+                     // std::cout << "output value we are writing: " << val << "\n";
+
+
+                     _accel->write_scratchpad(scr_addr, &val, sizeof(SBDT),stream.id());
+
+                     if(out_addr.mem_size() > 0 && out_val.mem_size() > 0) {
+                        loc = out_addr.pop_out_data();
+                        scr_addr = base_addr + loc*sizeof(SBDT);
+                        // cout << "scr_addr is: " << scr_addr << "\n";
+
+                        max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
+
+                     }
+
+
+
+                     // What is this?: I don't know
+                     // scr_addr = stream.pop_addr();
+
+                     // bytes_written+=DATA_WIDTH;
+                     elem_updated++;
+                     _accel->_stat_scr_bytes_wr+=DATA_WIDTH;
+                     _accel->_stat_scratch_write_bytes+=DATA_WIDTH;
+
+          }
+                    // newly added
+                     stream._num_strides--;
+
+
+          if(_accel->_ssim->in_roi()) {
+             add_bw(stream.src(), stream.dest(), 1, elem_updated*8);// assuming 8 byte
+            _accel->_stat_scratch_writes+=1;
+          }
+            
+          bool is_empty = stream.check_set_empty();
+          if(is_empty) {
+            _accel->process_stream_stats(stream);
+            if(SB_DEBUG::VP_SCORE2) {
+              cout << "SOURCE: PORT->SCR\n";
+            }
+            out_addr.set_status(port_data_t::STATUS::FREE);
+            out_val.set_status(port_data_t::STATUS::FREE);
+          }
+          break;
+
+
+
+            }
+        }
+    }
+
   }
 }
 
@@ -3216,6 +3419,19 @@ bool scratch_write_controller_t::port_scr_streams_active() {
   for(auto& i : _port_scr_streams) 
     if(!i.empty())  return true;
   return false;
+}
+
+bool scratch_write_controller_t::atomic_scr_streams_active() {
+  for(auto& i : _atomic_scr_streams) 
+    if(!i.empty())  return true;
+  return false;
+
+  /*
+  if(!_atomic_scr_stream.empty())
+      return true;
+  else
+      return false;
+      */
 }
 
 bool scratch_write_controller_t::done(bool show, int mask) {

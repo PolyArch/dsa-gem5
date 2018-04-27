@@ -402,6 +402,26 @@ void ssim_t::write_scratchpad(int out_port,
   add_bitmask_stream(s);
 }
 
+
+// command decode for atomic stream update
+void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int opcode) {
+    std::cout << "came in atomic update function\n";
+    atomic_scr_stream_t* s = new atomic_scr_stream_t();
+    // s->_index_addr = offset;
+    s->_mem_addr = offset;
+    // s->_num_elements = iters;
+    s->_num_strides = iters;
+    // s->_ind_port = addr_port;
+    s->_out_port = addr_port;
+    s->_val_port = inc_port;
+    // s->_out_port = inc_port;
+    s->_op_code = opcode;
+    s->set_orig(); // Why?: I set everything, let's remove this
+
+    std::cout << "now go the add bitmask stream\n";
+    add_bitmask_stream(s);
+}
+
 //The reroute function handles either local recurrence, or remote data transfer
 void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem, 
                      int repeat, int repeat_str, uint64_t flags) {

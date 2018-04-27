@@ -207,7 +207,10 @@ public:
       return mem_size();
     }
   }
-  unsigned mem_size() {return _mem_data.size();}
+  unsigned mem_size() {
+      // std::cout << "came to calculate mem_size\n";
+      return _mem_data.size();
+  }
   unsigned num_ready() {return _num_ready;}         //Num of ready instances
   unsigned num_in_flight() {return _num_in_flight;}  //outputs in flight
 
@@ -716,18 +719,32 @@ class scratch_write_controller_t : public data_controller_t {
     mask.resize(SCR_WIDTH/DATA_WIDTH);
     _port_scr_streams.resize(8); 
 
-    max_src=_port_scr_streams.size()+2;
+    // Just playing with this!
+    // max_src = _port_scr_streams.size() + _scr_scr_streams.size();
+    max_src = 1 + _port_scr_streams.size() + _scr_scr_streams.size();
+    // it will be checked there only
+    // if(!_atomic_scr_stream.empty())
+    //     max_src++;
     if(is_shared()) {
       _scr_scr_streams.resize(NUM_ACCEL); 
     } else {
       _scr_scr_streams.resize(1); 
     }
+    _atomic_scr_streams.resize(1);
+  // first check with direct 1, then other cases
+    // max_src = 1 + _port_scr_streams.size() + _scr_scr_streams.size();
+    // if(_atomic_scr_stream.empty())
+       //  max_src-=1;
+
     reset_stream_engines();
   }
+  
 
   void reset_stream_engines() {
     for(auto& i : _scr_scr_streams) {i.reset();}
     for(auto& i : _port_scr_streams) {i.reset();}
+    for(auto& i : _atomic_scr_streams) {i.reset();}
+    // _atomic_scr_stream.reset();
   }
 
   void reset_data() {
@@ -742,6 +759,8 @@ class scratch_write_controller_t : public data_controller_t {
   bool done(bool,int);
 
   bool schedule_scr_scr(scr_scr_stream_t& s);
+  // new
+  bool schedule_atomic_scr_op(atomic_scr_stream_t& s);
 
   void print_status();
   void cycle_status();
@@ -753,7 +772,7 @@ class scratch_write_controller_t : public data_controller_t {
 
   bool any_stream_active() {
     return comm_streams_active() || read_streams_active() 
-      || write_streams_active();
+      || write_streams_active()  || atomic_scr_streams_active();
   }
   bool comm_streams_active() {
     return scr_scr_streams_active();
@@ -762,8 +781,11 @@ class scratch_write_controller_t : public data_controller_t {
     return false;
   }
   bool write_streams_active() {
-    return port_scr_streams_active();
+    return port_scr_streams_active(); // + atomic_scr_streams_active();
   } 
+  
+  // for atomic_stream
+  bool atomic_scr_streams_active();
 
   bool scr_scr_streams_active();
   bool port_scr_streams_active();
@@ -778,11 +800,13 @@ class scratch_write_controller_t : public data_controller_t {
   std::vector<data_buffer*> _bufs;
 
   private:
-  int max_src=3;
+  int max_src=0;
   int _which=0;
 
   std::vector<scr_scr_stream_t> _scr_scr_streams; 
   std::vector<port_scr_stream_t> _port_scr_streams; 
+  // atomic_scr_stream_t _atomic_scr_stream; 
+  std::vector<atomic_scr_stream_t> _atomic_scr_streams; 
   dma_controller_t* _dma_c;
 };
 

@@ -571,6 +571,15 @@ decode OPCODE default Unknown::unknown() {
                 xc->setSDReg(0x3f & i_imm, SD_OUT_PORT);
                 Rd = xc->receiveSD();
             }}, IsSDRecv, IsNonSpeculative, No_OpClass);
+            0x6: sb_atom_op({{
+                xc->setSDReg(Rs1,SD_OFFSET);
+                xc->setSDReg(Rs2,SD_NUM_ELEM);
+                xc->setSDReg(s_imm >> 7,SD_OUT_PORT);
+                xc->setSDReg((s_imm >> 2) & 0x1f,SD_VAL_PORT);
+                xc->setSDReg((s_imm & 0x3),SD_OPCODE);
+                xc->callSDFunc(SB_ATOMIC_SCR_OP);
+            }}, IsSDStream, IsNonSpeculative, No_OpClass);
+
         }
         0x5b: decode FUNCT3 {
             0x1: sb_wr_scr({{
