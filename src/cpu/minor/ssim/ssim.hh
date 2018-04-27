@@ -49,9 +49,11 @@ public:
   void reroute(int out_port, int in_port, uint64_t num_elem, 
                int repeat, int repeat_str,  uint64_t flags);
   void indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
-    uint64_t num_elem, int repeat, int repeat_str);
+    uint64_t num_elem, int repeat, int repeat_str, uint64_t offset_list, 
+    int dtype, uint64_t ind_mult);
   void indirect_write(int ind_port, int ind_type, int out_port, 
-    addr_t index_addr, uint64_t num_elem);
+    addr_t index_addr, uint64_t num_elem, uint64_t offset_list, 
+    int dtype, uint64_t ind_mult);
   bool can_receive(int out_port);
   uint64_t receive(int out_port);
   void write_constant(int num_strides, int in_port, 

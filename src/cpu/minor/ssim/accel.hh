@@ -58,7 +58,7 @@ public:
   std::vector<std::vector<int>> in_ports_active_group;
   std::vector<std::vector<int>> out_ports_active_group;
 
-  std::vector<int> group_thr;
+  std::vector<std::pair<int,int>> group_thr;
 
   std::vector<int> in_ports_active_plus;
   std::vector<int> out_ports_active_plus;
@@ -1139,6 +1139,9 @@ private:
   bool done_concurrent(bool show, int mask);
 
   void cycle_cgra();   //Tick on each cycle
+  void cycle_cgra_backpressure();  
+  void cycle_cgra_fixedtiming();   
+
   void reset_data(); //carry out the work 
 
   void cycle_in_interf();
@@ -1330,6 +1333,8 @@ private:
   Schedule* _sched   = NULL;
   SbPDG*    _pdg     = NULL;
 
+  int _fu_fifo_len=DEFAULT_FIFO_LEN;
+
   std::vector<uint8_t> scratchpad;    
   std::bitset<SCRATCH_SIZE/SCR_WIDTH> scratch_ready; //TODO: use this
 
@@ -1361,8 +1366,9 @@ private:
   //* running variables
   bool _cgra_issued_group[NUM_GROUPS];
   int _cgra_issued;
+  std::vector<bool> _cgra_prev_issued_group[NUM_GROUPS];
+  //uint64_t _delay_group_until[NUM_GROUPS]={0,0,0,0,0,0};
 
-  uint64_t _delay_group_until[NUM_GROUPS]={0,0,0,0,0,0};
 
   //* Stats
   uint64_t _stat_comp_instances = 0;

@@ -389,10 +389,21 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
     }
   }
 
+  const char* fifo_len_str = std::getenv("FU_FIFO_LEN");
+
+  if (fifo_len_str != nullptr) {
+    _fu_fifo_len = atoi(fifo_len_str);
+  }
 
   const char* sbconfig_file = std::getenv("SBCONFIG");
 
   if(!SB_DEBUG::SUPRESS_SB_STATS) {
+    static bool printed_fifo_before=false;
+    if(!printed_fifo_before) {
+      std::cout << "FIFO_LEN:" << _fu_fifo_len << "\n";
+      printed_fifo_before=true;
+    }
+
     static bool printed_this_before=false;
     if(!printed_this_before) {
       std::cout << "Loading SB Config (env SBCONFIG): \"" 
@@ -408,6 +419,7 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
  
 
   _sbconfig = new SbModel(sbconfig_file);
+  _sbconfig->setMaxEdgeDelay(_fu_fifo_len);
   _port_interf.initialize(_sbconfig);
   scratchpad.resize(SCRATCH_SIZE);
 
@@ -651,9 +663,17 @@ void accel_t::tick() {
   cycle_in_interf();
   cycle_cgra();
 
-  if(in_roi()) {
-    uint64_t new_now = now();
+  uint64_t cur_cycle = now();
 
+  for(int i = 0; i < NUM_GROUPS; ++i) {
+    std::vector<bool>& prev_issued_group = _cgra_prev_issued_group[i];
+    if(prev_issued_group.size() > 0) {
+      int mod_index = cur_cycle%prev_issued_group.size();
+      prev_issued_group[mod_index]=_cgra_issued_group[i];
+    }
+  }
+
+  if(in_roi()) {
     if(SB_DEBUG::CYC_STAT && _accel_index==SB_DEBUG::ACC_INDEX) {
       cycle_status();
     }
@@ -694,7 +714,7 @@ void accel_t::tick() {
     //  cout << pipeline_stats_t::name_of(who) << "\n";
     //}
 
-    _prev_roi_clock=new_now;
+    //_prev_roi_clock=new_now;
   }
 
   cycle_out_interf();
@@ -735,236 +755,252 @@ uint64_t accel_t::receive(int out_port) {
    return val;
 }
 
+void accel_t::cycle_cgra_backpressure() {
+  uint64_t cur_cycle = now();
+
+  // pop the ready outputs
+  auto& active_out_ports=_soft_config.out_ports_active;
+  vector<SBDT> data;
+  for (int i=0; i < active_out_ports.size(); ++i) {
+
+    int port_index = active_out_ports[i];
+    auto& cur_out_port = _port_interf.out_port(port_index);
+    int len = cur_out_port.port_vec_elem();
+    SbPDG_Vec* vec_out = _sched->vportOf(make_pair(false/*output*/,port_index));
+    SbPDG_VecOutput* vec_output = dynamic_cast<SbPDG_VecOutput*>(vec_out);
+    assert(vec_output!=NULL && "output port pointer is null\n");
+
+
+    bool discard=false; 
+    if (_pdg->can_pop_output(vec_output, len)) {
+      _pdg->pop_vector_output(vec_output, data, len, discard); // it just set hard-coded validity--should read there
+      // push the data to the CGRA output port only if discard is not 0
+      
+      int j = 0;
+      for (j=0; j < len; ++j) {
+        if(!discard){
+           cur_out_port.push_cgra_port(j, data[j], true);
+           // std::cout << data[j] << "\n";
+           // not sure if this condition is needed: check if this works?
+           // if(cur_out_port.num_ready()!=1)
+           // cur_out_port.inc_ready(1);
+
+           // JUST CHECKING!: these 2 lines are not required
+
+           int lat = _soft_config.out_ports_lat[port_index];
+           _cgra_output_ready[cur_cycle + lat].push_back(port_index); // it set all the outputs ready
+        }
+        else{
+            break; // whole vector discard or not
+        }
+      }
+
+      if(j == len) {
+        cur_out_port.inc_ready(1); // 1 instance is ready
+      }
+    }
+  }
+
+
+  //some previously produced outputs might be ready at this point
+  if (!_cgra_output_ready.empty()) {
+    auto iter =  _cgra_output_ready.begin();
+    if (cur_cycle >= iter->first) {
+
+      // cout << "comes here to erase the previously ready outputs\n";
+      /*for (auto& out_port_num : iter->second) {
+        _port_interf.out_port(out_port_num).set_out_complete();
+      }*/
+      _cgra_output_ready.erase(iter); //delete from list
+    }
+  }
+
+  bool ifCompute = false;
+  auto& active_in_ports=_soft_config.in_ports_active;
+
+  // checking if any input is ready
+  unsigned min_ready=10000000;
+  for (int i=0; i < active_in_ports.size(); ++i) {
+    int cur_port = active_in_ports[i];
+    min_ready = std::min(_port_interf.in_port(cur_port).num_ready(), min_ready);
+  }
+
+  //Now fire on all cgra ports: if there are more than 0 ready on all active ports? (I don't know!)
+  if (min_ready > 0) {
+     // cout << "min_ready greater than 0\n";
+    forward_progress();
+
+     // cout << "line 820 size is: " << active_in_ports.size() << endl;
+    for (int i=0; i < active_in_ports.size(); ++i) {
+      int port_index = active_in_ports[i];
+      // cout << "port index is: " << port_index << endl;
+      auto& cur_in_port = _port_interf.in_port(port_index);
+      // cout << "after cur_in_port\n";
+      // int len = cur_in_port.port_vec_elem();
+      if (cur_in_port.num_ready()) { 
+        SbPDG_VecInput* vec_in = dynamic_cast<SbPDG_VecInput*>(_sched->vportOf(make_pair(true/*input*/,port_index)));
+        assert(vec_in!=NULL && "input port pointer is null\n");
+
+        if (_pdg->can_push_input(vec_in)) {
+          // execute_pdg
+          vector<SBDT> data;
+          SBDT val = 0; bool valid = false;
+          for (unsigned port_idx = 0; port_idx < cur_in_port.port_cgra_elem(); ++port_idx) { // port_idx are the scalar cgra nodes
+             int cgra_port = cur_in_port.cgra_port_for_index(port_idx);
+             if (_soft_config.cgra_in_ports_active[cgra_port]==false) {
+                break;
+             }
+
+             // get the data of the instance of CGRA FIFO
+             val = cur_in_port.value_of(port_idx, 0); // Why 0?: check this out!
+             valid = cur_in_port.valid_of(port_idx, 0);
+             // validity.push_back(valid); and pass it to push_vector
+             if (valid) {
+                 data.push_back(val);
+             }
+          }
+
+          _pdg->push_vector(vec_in, data); // SBDT is uint64_t
+
+          data.clear(); // clear the input data pushed to pdg
+          // _pdg->cycle(); // maybe send input vector into it
+          ifCompute = _pdg->backcgra_cycle(vec_in);
+
+          // _soft_config.cgra_in_ports_active[port_index] = false; // set this port to inactive or erase?
+          if (ifCompute) {
+              _cgra_issued++;
+              // uncommenting gives error
+              // cur_in_port.pop_in_data(); // does it do anything?
+          }
+
+          // pop input from CGRA port after it is pushed into the pdg node
+          // if it was able to push the value, then it's fine
+          if (!vec_in->backPressureOn()) { // modify this function?: Yes!
+            bool should_pop = cur_in_port.inc_repeated(); // if no backpressure, shouldn't we decrement this?
+            if (should_pop) {
+              cur_in_port.pop(1);
+            }
+          }
+        }
+        // need to check this also if required or not!
+        else{
+          // cout << "didn't push new data but need to compute\n";
+          ifCompute = _pdg->backcgra_cycle(vec_in); // should be called for every vec_in
+          if (ifCompute) {
+            _cgra_issued++;
+          }
+        }
+      }
+    }
+  }
+  else {
+    // cout << "minimum ready was 0\n";
+  }
+
+  ostream* cgra_dbg_stream = &std::cout;
+  if(SB_DEBUG::VERIF_CGRA_MULTI) {
+    cgra_dbg_stream = &cgra_multi_verif[_accel_index];
+  }
+  _pdg->set_dbg_stream(cgra_dbg_stream);
+
+  bool print = false;
+  if(SB_DEBUG::SB_COMP) {
+    print = true;
+    *cgra_dbg_stream  <<"\n";
+  }
+
+  int num_computed = _pdg->cycle_store(print, true); // calling with the default parameters for now
+
+  if(in_roi()) {
+    _stat_sb_insts+=num_computed;
+  }
+
+}
+
+void accel_t::cycle_cgra_fixedtiming() {
+  uint64_t cur_cycle = now();
+  for(int group = 0; group < NUM_GROUPS; ++group) {
+    std::vector<bool>& prev_issued_group = _cgra_prev_issued_group[group];
+    //int mod_index = cur_cycle%prev_issued_group.size();
+
+    //detect if we need to wait for throughput reasons on CGRA group -- easy peasy
+    //if(cur_cycle < _delay_group_until[group]) {
+    //  continue;
+    //}
+    int num_issue = 0;
+    for(int i = 0; i < prev_issued_group.size(); ++i) {
+      num_issue += prev_issued_group[i];
+    }
+    if(num_issue >= _soft_config.group_thr[group].first) {
+      continue;
+    }
+
+    //Detect if we are ready to fire
+    auto& active_ports=_soft_config.in_ports_active_group[group];
+    
+    if(active_ports.size()==0) continue;
+    unsigned min_ready=10000000;
+    for(int i=0; i < active_ports.size(); ++i) {
+      int cur_port = active_ports[i];
+      min_ready = std::min(_port_interf.in_port(cur_port).num_ready(), min_ready);
+      //if(min_ready==0 && _accel_index==0) {
+      //  timestamp(); cout << "Port " << cur_port << "not ready\n";
+      //}
+    }
+
+    //Now fire on all cgra ports
+    if(min_ready > 0) {
+      forward_progress();
+      //_delay_group_until[group]=cur_cycle+_soft_config.group_thr[group];
+      execute_pdg(0,group);  //Note that this will set backpressure variable
+
+      //if(in_roi()) {
+      //  _stat_sb_insts+=_pdg->num_insts();
+      //}
+      //pop the elements from inport as they have been processed
+      for(unsigned i = 0; i < active_ports.size(); ++i) {
+        uint64_t port_index = active_ports[i];
+        port_data_t& in_port = _port_interf.in_port(port_index);
+
+        SbPDG_VecInput* vec_in = 
+          dynamic_cast<SbPDG_VecInput*>(_sched->vportOf(make_pair(true/*input*/,port_index)));
+        //skip popping if backpressure is on
+        if(!vec_in->backPressureOn()) {
+          //only increment repeated if no backpressure
+          bool should_pop = in_port.inc_repeated();
+          if(should_pop) {
+            in_port.pop(1);
+          }
+        }
+      }
+    }
+
+  }
+  //some previously produced outputs might be ready at this point,
+  //so, lets quickly check. (could be broken out as a separate function)
+  if(!_cgra_output_ready.empty()) {
+    auto iter =  _cgra_output_ready.begin();
+    if(cur_cycle >= iter->first) {
+
+      for(auto& out_port_num : iter->second) {
+        _port_interf.out_port(out_port_num).set_out_complete();
+      }
+      _cgra_output_ready.erase(iter); //delete from list
+    }
+  }
+
+}
+
+
+
 void accel_t::cycle_cgra() {
   if(!_pdg) return;
 
-  uint64_t cur_cycle = now();
-
   if(_back_cgra) {
-
-
-
-    // pop the ready outputs
-    auto& active_out_ports=_soft_config.out_ports_active;
-    vector<SBDT> data;
-    for (int i=0; i < active_out_ports.size(); ++i) {
-
-
-        int port_index = active_out_ports[i];
-        auto& cur_out_port = _port_interf.out_port(port_index);
-        int len = cur_out_port.port_vec_elem();
-        SbPDG_Vec* vec_out = _sched->vportOf(make_pair(false/*output*/,port_index));
-        SbPDG_VecOutput* vec_output = dynamic_cast<SbPDG_VecOutput*>(vec_out);
-        assert(vec_output!=NULL && "output port pointer is null\n");
-
-
-        bool discard=false; 
-        if (_pdg->can_pop_output(vec_output, len)) {
-          // cout << "Came here to pop output: printing data" <<  endl;
-          _pdg->pop_vector_output(vec_output, data, len, discard); // it just set hard-coded validity--should read there
-          // push the data to the CGRA output port only if discard is not 0
-          
-          int j = 0;
-          for (j=0; j < len; ++j) {
-            // cout << "Let's print valid for different instructions in backcgra: " << !discard << endl;
-            if(!discard){
-               cur_out_port.push_cgra_port(j, data[j], true);
-               // std::cout << data[j] << "\n";
-               // not sure if this condition is needed: check if this works?
-               // if(cur_out_port.num_ready()!=1)
-               // cur_out_port.inc_ready(1);
-
-
-               // JUST CHECKING!: these 2 lines are not required
-
-               int lat = _soft_config.out_ports_lat[port_index];
-               _cgra_output_ready[cur_cycle + lat].push_back(port_index); // it set all the outputs ready
-            }
-            else{
-                break; // whole vector discard or not
-            }
-          }
-
-          if(j == len)
-            cur_out_port.inc_ready(1); // 1 instance is ready
-
-        }
-        
-    }
-
-
-    //some previously produced outputs might be ready at this point
-    if (!_cgra_output_ready.empty()) {
-      auto iter =  _cgra_output_ready.begin();
-      if (cur_cycle >= iter->first) {
-
-        // cout << "comes here to erase the previously ready outputs\n";
-        /*for (auto& out_port_num : iter->second) {
-          _port_interf.out_port(out_port_num).set_out_complete();
-        }*/
-        _cgra_output_ready.erase(iter); //delete from list
-      }
-    }
-
-
-
-
-    bool ifCompute = false;
-    auto& active_in_ports=_soft_config.in_ports_active;
-
-
-    // checking if any input is ready
-    unsigned min_ready=10000000;
-    for (int i=0; i < active_in_ports.size(); ++i) {
-        int cur_port = active_in_ports[i];
-        min_ready = std::min(_port_interf.in_port(cur_port).num_ready(), min_ready);
-    }
-
-    //Now fire on all cgra ports: if there are more than 0 ready on all active ports? (I don't know!)
-    if (min_ready > 0) {
-        // cout << "min_ready greater than 0\n";
-       forward_progress();
-
-        // cout << "line 820 size is: " << active_in_ports.size() << endl;
-       for (int i=0; i < active_in_ports.size(); ++i) {
-         int port_index = active_in_ports[i];
-         // cout << "port index is: " << port_index << endl;
-         auto& cur_in_port = _port_interf.in_port(port_index);
-         // cout << "after cur_in_port\n";
-         // int len = cur_in_port.port_vec_elem();
-         if (cur_in_port.num_ready()) { 
-           SbPDG_VecInput* vec_in = dynamic_cast<SbPDG_VecInput*>(_sched->vportOf(make_pair(true/*input*/,port_index)));
-           assert(vec_in!=NULL && "input port pointer is null\n");
-
-           if (_pdg->can_push_input(vec_in)) {
-               // cout << "Allowed to push at port: " << i << " at cycle: " << cur_cycle << endl;
-
-               // execute_pdg
-               vector<SBDT> data;
-               SBDT val = 0; bool valid = false;
-               for (unsigned port_idx = 0; port_idx < cur_in_port.port_cgra_elem(); ++port_idx) { // port_idx are the scalar cgra nodes
-                  int cgra_port = cur_in_port.cgra_port_for_index(port_idx);
-                  if (_soft_config.cgra_in_ports_active[cgra_port]==false) {
-                     break;
-                  }
-
-                  // get the data of the instance of CGRA FIFO
-                  val = cur_in_port.value_of(port_idx, 0); // Why 0?: check this out!
-                  valid = cur_in_port.valid_of(port_idx, 0);
-                  // validity.push_back(valid); and pass it to push_vector
-                  if (valid) {
-                      data.push_back(val);
-                  }
-
-               }
-
-               _pdg->push_vector(vec_in, data); // SBDT is uint64_t
-
-               data.clear(); // clear the input data pushed to pdg
-               // _pdg->cycle(); // maybe send input vector into it
-               ifCompute = _pdg->backcgra_cycle(vec_in);
-
-               // _soft_config.cgra_in_ports_active[port_index] = false; // set this port to inactive or erase?
-               if (ifCompute) {
-                   _cgra_issued++;
-                   // uncommenting gives error
-                   // cur_in_port.pop_in_data(); // does it do anything?
-               }
-
-               // pop input from CGRA port after it is pushed into the pdg node
-               // if it was able to push the value, then it's fine
-               if (!vec_in->backPressureOn()) { // modify this function?: Yes!
-                  bool should_pop = cur_in_port.inc_repeated(); // if no backpressure, shouldn't we decrement this?
-                  if (should_pop) {
-                     cur_in_port.pop(1);
-                  }
-               }
-
-
-
-           }
-           // need to check this also if required or not!
-           else{
-               // cout << "didn't push new data but need to compute\n";
-               ifCompute = _pdg->backcgra_cycle(vec_in); // should be called for every vec_in
-               if (ifCompute) {
-                   _cgra_issued++;
-               }
-           }
-         }
-       }
-    }
-    else {
-        // cout << "minimum ready was 0\n";
-    }
-
-
-    _pdg->cycle_store(false, true); // calling with the default parameters for now
-
-    
+    cycle_cgra_backpressure();
+  } else {
+    cycle_cgra_fixedtiming();
   }
-
-  else {
-    for (int group = 0; group < NUM_GROUPS; ++group) {
-      //detect if we need to wait for throughput reasons on CGRA group -- easy peasy
-      if(cur_cycle < _delay_group_until[group]) {
-        continue;
-      }
-  
-      //Detect if we are ready to fire
-      auto& active_ports=_soft_config.in_ports_active_group[group];
-      
-      if(active_ports.size()==0) continue;
-      unsigned min_ready=10000000;
-      for(int i=0; i < active_ports.size(); ++i) {
-        int cur_port = active_ports[i];
-        min_ready = std::min(_port_interf.in_port(cur_port).num_ready(), min_ready);
-        //if(min_ready==0 && _accel_index==0) {
-        //  timestamp(); cout << "Port " << cur_port << "not ready\n";
-        //}
-      }
-  
-      //Now fire on all cgra ports
-      if(min_ready > 0) {
-        forward_progress();
-        _delay_group_until[group]=cur_cycle+_soft_config.group_thr[group];
-        execute_pdg(0,group);  //Note that this will set backpressure variable
-  
-        //if(in_roi()) {
-        //  _stat_sb_insts+=_pdg->num_insts();
-        //}
-        //pop the elements from inport as they have been processed
-        for(unsigned i = 0; i < active_ports.size(); ++i) {
-          uint64_t port_index = active_ports[i];
-          port_data_t& in_port = _port_interf.in_port(port_index);
-  
-          SbPDG_VecInput* vec_in = 
-            dynamic_cast<SbPDG_VecInput*>(_sched->vportOf(make_pair(true/*input*/,port_index)));
-          //skip popping if backpressure is on
-          if(!vec_in->backPressureOn()) {
-            //only increment repeated if no backpressure
-            bool should_pop = in_port.inc_repeated();
-            if(should_pop) {
-              in_port.pop(1);
-            }
-          }
-        }
-      }
-    }
-    //some previously produced outputs might be ready at this point,
-    //so, lets quickly check. (could be broken out as a separate function)
-    if(!_cgra_output_ready.empty()) {
-      auto iter =  _cgra_output_ready.begin();
-      if(cur_cycle >= iter->first) {
-  
-        for(auto& out_port_num : iter->second) {
-          _port_interf.out_port(out_port_num).set_out_complete();
-        }
-        _cgra_output_ready.erase(iter); //delete from list
-      }
-    }
-  }
-
   if(in_roi()) {
     _stat_cgra_busy_cycles+=(_cgra_issued>0);  
   }
@@ -1046,10 +1082,10 @@ void accel_t::execute_pdg(unsigned instance, int group) {
     _stat_sb_insts+=num_computed;
   }
 
+  uint64_t cur_cycle = now();
+
   _cgra_issued_group[group]=true;
   _cgra_issued++;
-
-  uint64_t cur_cycle = now();
 
   auto& active_out_ports=_soft_config.out_ports_active_group[group];
 
@@ -2191,9 +2227,14 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
       auto& in_ind_vp = _accel->port_interf().in_port(ind_s._ind_port);
 
       if(ind_s.stream_active()) {
-        if(in_ind_vp.mem_size()>0 ) {
+        if(in_ind_vp.mem_size()>0 &&
+          _accel->_lsq->sd_transfers[ind_s.in_port()].unreservedRemainingSpace()>0
+                    && _accel->_lsq->canRequest()) {
+
+
           auto& in_vp = _accel->port_interf().in_port(ind_s._in_port);
           if(in_vp.num_can_push() > 8) { //make sure vp isn't full
+            _accel->_lsq->sd_transfers[ind_s.in_port()].reserve();
 
             //pull_data_indirect(ind_s,data,mem_complete_cyc);
             ind_read_req(ind_s,-1/*for scratch*/);
@@ -2282,7 +2323,10 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
     } else {
       int which_wr=which-_tq_read-1-_port_dma_streams.size(); 
       indirect_wr_stream_t& ind_s = _indirect_wr_streams[which_wr];
-      if(ind_s.stream_active()) {
+      if(ind_s.stream_active() && _accel->_lsq->canRequest() &&
+          _accel->_lsq->sd_transfers[MEM_WR_STREAM].canReserve()) {
+        _accel->_lsq->sd_transfers[MEM_WR_STREAM].reserve();
+
         port_data_t& out_port = _accel->port_interf().out_port(ind_s._out_port);
         port_data_t& ind_port = _accel->port_interf().in_port(ind_s._ind_port);
 
@@ -2370,8 +2414,9 @@ void dma_controller_t::ind_read_req(indirect_stream_t& stream,
   vector<int> imap;
 
   while(ind_vp.mem_size() && stream.stream_active()) {
-    addr_t idx  = stream.calc_index(ind_vp.peek_out_data());
-    addr_t addr = stream._index_addr + idx * stream.index_size();
+    //addr_t idx  = stream.calc_index(ind_vp.peek_out_data());
+    //addr_t addr = stream._index_addr + idx * stream.index_size();
+    addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
 
     //cout << "idx:" << idx << "\taddr:" << hex << addr << dec << "\n";
     if(first) {
@@ -2384,17 +2429,21 @@ void dma_controller_t::ind_read_req(indirect_stream_t& stream,
       }
     }
 
-    int index = (addr - base_addr)/8; //TODO: configurable data size please!
+    assert( ((addr & 0x7)==0) && "bottom 3 bits must be zero for word-loads");
+
+    int index = (addr - base_addr)     /8; //TODO: configurable data size please!
     imap.push_back(index);
 
     if(SB_DEBUG::MEM_REQ) {
       _accel->timestamp();
-      std::cout << "indirect request for " << std::hex << base_addr << std::dec
-                    << " for " << imap.size() << " needed elements" << "\n";
+      cout << "indirect request for " << std::hex << base_addr << std::dec
+           << " for " << imap.size() << " needed elements" << "\n";
     }
 
-    stream.pop_elem();
-    ind_vp.pop_in_data();
+    bool pop_ind_vp = stream.pop_elem();
+    if(pop_ind_vp) {
+      ind_vp.pop_in_data();
+    }
   }
   bool last = stream.check_set_empty();
 
@@ -2451,8 +2500,10 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
 
   int index = 0;
   while(out_vp.mem_size() && ind_vp.mem_size() && stream.stream_active()) {
-    addr_t idx  = stream.calc_index(ind_vp.peek_out_data());
-    addr_t addr = stream._index_addr + idx * stream.index_size();
+    //addr_t idx  = stream.calc_index(ind_vp.peek_out_data());
+    //addr_t addr = stream._index_addr + idx * stream.index_size();
+    
+    addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
 
     //cout << "idx:" << idx << "\taddr:" << hex << addr << dec << "\n";
 
@@ -2476,8 +2527,10 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
     //timestamp(); cout << "POPPED b/c INDIRECT WRITE: " << out_vp.port() << "\n";
     bytes_written+=sizeof(SBDT);
 
-    stream.pop_elem();
-    ind_vp.pop_in_data();
+    bool pop_ind_vp = stream.pop_elem();
+    if(pop_ind_vp) {
+      ind_vp.pop_in_data();
+    }
   }
 
   SDMemReqInfoPtr sdInfo = new SDMemReqInfo(stream.id(),
@@ -3713,7 +3766,29 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
     if(active_ports.size() > 0) {
 
       int thr = _pdg->maxGroupThroughput(g);
-      _soft_config.group_thr[g]=thr;
+      int max_lat_mis = _sched->max_lat_mis();
+
+      int max_lat;
+      _sched->calcLatency(max_lat, max_lat_mis, false);
+
+      float thr_ratio = 1/(float)thr;
+      float mis_ratio = ((float)_fu_fifo_len)/(_fu_fifo_len+max_lat_mis);
+
+      //std::cout << g << ": " << thr_ratio << " " << mis_ratio << "\n";
+      //std::cout << _fu_fifo_len << " " << max_lat_mis << "\n";
+
+      //setup the rate limiting structures
+      if(thr_ratio < mis_ratio) { //group throughput is worse
+        _soft_config.group_thr[g]=make_pair(1,thr);
+        _cgra_prev_issued_group[g].resize(max(thr-1,0),false);
+      } else {  //group latency is worse
+        _soft_config.group_thr[g]=make_pair(_fu_fifo_len,_fu_fifo_len+max_lat_mis);
+        _cgra_prev_issued_group[g].resize(max(_fu_fifo_len+max_lat_mis-1,0),false);
+        if(max_lat_mis==0) {
+          _cgra_prev_issued_group[g].resize(0,false);
+        }
+      }
+
       if(SB_DEBUG::SHOW_CONFIG) {
         cout << "Group " << g << ", throughput: " << thr << "\n";
         for(int i = 0; i < active_ports.size(); ++i) {

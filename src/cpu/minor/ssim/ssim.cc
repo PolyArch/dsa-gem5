@@ -463,16 +463,19 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
 
 //Configure an indirect stream with params
 void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
-    uint64_t num_elem, int repeat, int repeat_str) {
+    uint64_t num_elem, int repeat, int repeat_str,uint64_t offset_list, 
+    int dtype, uint64_t ind_mult) {
   indirect_stream_t* s = new indirect_stream_t();
   s->_ind_port=ind_port;
-  s->_type=ind_type;
+  s->_ind_type=ind_type;
   s->_in_port=in_port;
   s->_index_addr=index_addr;
-  s->_index_in_word=0;
   s->_num_elements=num_elem;
   s->_repeat_in=repeat;
   s->_repeat_str=repeat_str;
+  s->_offset_list=offset_list;
+  s->_dtype=dtype;
+  s->_ind_mult=ind_mult;
 
   s->set_orig();
 
@@ -481,14 +484,17 @@ void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr
 
 //Configure an indirect stream with params
 void ssim_t::indirect_write(int ind_port, int ind_type, int out_port, 
-    addr_t index_addr, uint64_t num_elem) {
+    addr_t index_addr, uint64_t num_elem, uint64_t offset_list, 
+    int dtype, uint64_t ind_mult) {
   indirect_wr_stream_t* s = new indirect_wr_stream_t();
   s->_ind_port=ind_port;
-  s->_type=ind_type;
+  s->_ind_type=ind_type;
   s->_out_port=out_port; //comes from sb_dma_addr
   s->_index_addr=index_addr;
-  s->_index_in_word=0;
   s->_num_elements=num_elem;
+  s->_dtype=dtype;
+  s->_ind_mult=ind_mult;
+
   s->set_orig();
 
   add_bitmask_stream(s);

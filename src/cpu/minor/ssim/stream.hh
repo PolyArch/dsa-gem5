@@ -94,19 +94,21 @@ struct base_stream_t {
   uint64_t requests()     {return _reqs;}
 
   virtual uint64_t mem_addr()    {return 0;}  
-  virtual int64_t access_size()  {return 0;}  
-  virtual int64_t stride()       {return 0;} 
+  virtual int64_t  access_size() {return 0;}  
+  virtual int64_t  stride()      {return 0;} 
   virtual uint64_t scratch_addr(){return 0;} 
   virtual uint64_t num_strides() {return 0;} 
-  virtual int64_t stretch()      {return 0;} 
+  virtual int64_t  stretch()     {return 0;} 
   virtual uint64_t num_bytes()   {return 0;} 
   virtual uint64_t constant()    {return 0;} 
   virtual int64_t in_port()      {return -1;} 
   virtual int64_t out_port()     {return -1;} 
-  // new added
   virtual int64_t val_port()     {return -1;} 
   virtual uint64_t wait_mask()   {return 0;} 
   virtual uint64_t shift_bytes() {return 0;} 
+  virtual uint64_t offset_list() {return 0;} 
+  virtual uint64_t ind_mult()    {return 1;} 
+
 
   virtual int repeat_in()   {return 1;}  
   virtual int repeat_str()   {return 0;}  
@@ -297,7 +299,8 @@ struct dma_port_stream_t : public mem_stream_base_t {
     std::cout << "dma->port" << "\tport=" << _in_port << "\tacc_size=" << _access_size 
               << " stride=" << _stride << " bytes_comp=" << _bytes_in_access 
               << " mem_addr=" << std::hex << _mem_addr << std::dec 
-              << " strides_left=" << _num_strides << " repeat_in=" << _repeat_in;
+              << " strides_left=" << _num_strides 
+              << " repeat_in=" << _repeat_in << " stretch=" << _stretch;
     base_stream_t::print_status();
   }
 
@@ -755,55 +758,59 @@ struct remote_port_stream_t : public port_port_stream_t {
 //Indirect Read Port -> Port 
 struct indirect_base_stream_t : public base_stream_t {
   int _ind_port;
-  int _type;
+  int _ind_type, _dtype; //index and data types, TODO: data type must be T64
   addr_t _num_elements;
   addr_t _index_addr;
+  uint64_t _offset_list;
+  uint64_t _ind_mult;
+  std::vector<char> _offsets;
 
   addr_t _orig_elements;
-
-  virtual void set_orig() {
+  //These get set based on _type
+  unsigned _index_bytes, _indices_in_word;
+  uint64_t _index_mask; 
+  virtual void set_orig() { //like constructor but lazier
     _orig_elements = _num_elements;
+    _index_in_word=0;
+    _index_in_offsets=0;
+
+    switch(_ind_type) {
+      case T64: _index_bytes= 8; _index_mask = 0xFFFFFFFFFFFFFFFF;  break;
+      case T32: _index_bytes= 4; _index_mask = 0xFFFFFFFF;          break;
+      case T16: _index_bytes= 2; _index_mask = 0xFFFF;              break;
+      case T08: _index_bytes= 1; _index_mask = 0xFF;                break;
+      default: assert(0);
+    }
+    _indices_in_word = DATA_WIDTH / _index_bytes;
+
+    //set up offset list 
+    _offsets.push_back(0);
+    for(int i = 0; i < DATA_WIDTH; i++) {
+      char offset = (_offset_list >> i*8) & 0xFF;
+      if(offset != 0) {
+        _offsets.push_back(offset);
+      }
+    }
   }
 
   virtual uint64_t ind_port()     {return _ind_port;} 
-  virtual uint64_t ind_type()     {return _type;} 
-  virtual uint64_t num_strides() {return _num_elements;} 
-  virtual uint64_t index_addr() {return _index_addr;} 
+  virtual uint64_t ind_type()     {return _ind_type;} 
+  virtual uint64_t num_strides()  {return _num_elements;} 
+  virtual uint64_t index_addr()   {return _index_addr;} 
+  virtual uint64_t offset_list()  {return _offset_list;} 
+  virtual uint64_t ind_mult()     {return _ind_mult;} 
+
 
   virtual uint64_t data_volume() {return _num_elements * sizeof(SBDT);} //TODO: config
   virtual STR_PAT stream_pattern() {return STR_PAT::IND;}
 
   //if index < 64 bit, the index into the word from the port
-  unsigned _index_in_word; 
+  unsigned _index_in_word=0; 
+  unsigned _index_in_offsets=0; 
 
-  uint64_t index_mask() {
-    switch(_type) {
-      case 0: return 0xFFFFFFFFFFFFFFFF;
-      case 1: return 0xFFFFFFFF;
-      case 2: return 0xFFFF;
-      case 3: return 0xFF; 
-    }
-    assert(0);
-    return -1;
-  }
-
-  unsigned index_size() {
-    switch(_type) {
-      case 0: return 8; //bytes
-      case 1: return 4;
-      case 2: return 2;
-      case 3: return 1;
-    }
-    assert(0);
-    return -1;
-  }
-
-  addr_t calc_index(SBDT val) {    
-    if(_type==0) {
-      return val;
-    }
-    //TODO: index in word is always 0 for now, and index mask is always full mask 
-    return (val >> (_index_in_word * index_size())) & index_mask();
+  addr_t cur_addr(SBDT val) {    
+    uint64_t index =  (val >> (_index_in_word * _index_bytes * 8)) & _index_mask;
+    return   index * _ind_mult + _index_addr + _offsets[_index_in_offsets];
   }  
 
   virtual LOC src() {return LOC::PORT;}
@@ -813,12 +820,28 @@ struct indirect_base_stream_t : public base_stream_t {
     return _num_elements!=0;
   }
 
-  void pop_elem() {
-    _index_in_word++;
-    if(_index_in_word >= index_size()) {
-      _index_in_word=0;
+  //return value: should pop vector port
+  bool pop_elem() {
+    _index_in_offsets++;
+    //std::cout << "pop ";
+
+    if(_index_in_offsets >= _offsets.size()) {
+      _index_in_offsets=0;
+
+      _num_elements--;
+      //std::cout << _num_elements << " ";
+
+      _index_in_word++;
+      if(_index_in_word >= _indices_in_word) {
+        _index_in_word=0;
+        //std::cout << "\n";
+
+        return true;
+      }
     }
-    _num_elements--;
+    //std::cout << "\n";
+
+    return false;
   }
 
   virtual void cycle_status() {
@@ -834,7 +857,6 @@ struct indirect_stream_t : public indirect_base_stream_t {
   virtual int repeat_str() {return _repeat_str;}
 
   uint64_t ind_port()     {return _ind_port;} 
-  uint64_t ind_type()     {return _type;} 
   uint64_t num_strides()  {return _num_elements;} 
   uint64_t index_addr()   {return _index_addr;} 
   int64_t  in_port()      {return _in_port;} 
@@ -843,7 +865,7 @@ struct indirect_stream_t : public indirect_base_stream_t {
 
   virtual void print_status() {  
     std::cout << "ind_port->port" << "\tind_port=" << _ind_port
-              << "\tind_type:" << _type  << "\tind_addr:" << _index_addr
+              << "\tind_type:" << _ind_type  << "\tind_addr:" << _index_addr
               << "\tnum_elem:" << _num_elements << "\tin_port" << _in_port;
     base_stream_t::print_status();
   }
@@ -858,14 +880,13 @@ struct indirect_wr_stream_t : public indirect_base_stream_t {
   int _out_port;
 
   uint64_t ind_port()     {return _ind_port;} 
-  uint64_t ind_type()     {return _type;} 
   uint64_t num_strides() {return _num_elements;} 
   uint64_t index_addr() {return _index_addr;} 
   int64_t out_port()     {return _out_port;} 
 
   virtual void print_status() {  
     std::cout << "port->ind_port" << "\tind_port=" << _ind_port
-              << "\tind_type:" << _type  << "\tind_addr:" << std::hex <<_index_addr
+              << "\tind_type:" << _ind_type  << "\tind_addr:" << std::hex <<_index_addr
         << std::dec << "\tnum_elem:" << _num_elements << "\tout_port" << _out_port;
     base_stream_t::print_status();
   }

@@ -9,6 +9,8 @@ typedef uint64_t addr_t;
 
 #define SB_TIMING
 
+#define DEFAULT_FIFO_LEN 15
+
 #define NUM_ACCEL 8
 #define NUM_ACCEL_TOTAL (NUM_ACCEL+1)
 #define SHARED_SP (NUM_ACCEL)
@@ -55,6 +57,12 @@ typedef uint64_t addr_t;
 #define PRE_ZERO_FILL  2
 #define STRIDE_ZERO_FILL 3
 #define STRIDE_DISCARD_FILL 4
+
+//datatype encodings
+#define T64 0
+#define T32 1
+#define T16 2
+#define T08 3
 
 
 #endif
