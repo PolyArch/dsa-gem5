@@ -762,7 +762,7 @@ struct indirect_base_stream_t : public base_stream_t {
 
   addr_t _orig_elements;
   //These get set based on _type
-  unsigned _index_bytes, _indices_in_word;
+  unsigned _index_bytes, _data_bytes, _indices_in_word;
   uint64_t _index_mask; 
   virtual void set_orig() { //like constructor but lazier
     _orig_elements = _num_elements;
@@ -776,6 +776,14 @@ struct indirect_base_stream_t : public base_stream_t {
       case T08: _index_bytes= 1; _index_mask = 0xFF;                break;
       default: assert(0);
     }
+    switch(_ind_type) {
+      case T64:  _data_bytes= 8; break;
+      case T32:  _data_bytes= 4; break;
+      case T16:  _data_bytes= 2; break;
+      case T08:  _data_bytes= 1; break;
+      default: assert(0);
+    }
+
     _indices_in_word = DATA_WIDTH / _index_bytes;
 
     //set up offset list 
@@ -805,7 +813,7 @@ struct indirect_base_stream_t : public base_stream_t {
 
   addr_t cur_addr(SBDT val) {    
     uint64_t index =  (val >> (_index_in_word * _index_bytes * 8)) & _index_mask;
-    return   index * _ind_mult + _index_addr + _offsets[_index_in_offsets];
+    return   _index_addr + (index * _ind_mult +  _offsets[_index_in_offsets])*_data_bytes;
   }  
 
   virtual LOC src() {return LOC::PORT;}
