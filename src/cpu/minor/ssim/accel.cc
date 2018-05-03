@@ -757,6 +757,7 @@ uint64_t accel_t::receive(int out_port) {
 
 void accel_t::cycle_cgra_backpressure() {
   uint64_t cur_cycle = now();
+  // cout << "NEXT CYCLE\n";
 
   // pop the ready outputs
   auto& active_out_ports=_soft_config.out_ports_active;
@@ -773,14 +774,16 @@ void accel_t::cycle_cgra_backpressure() {
 
     bool discard=false; 
     if (_pdg->can_pop_output(vec_output, len)) {
+        cout << "Allowed to pop output\n";
+        data.clear(); // make sure it is empty here
       _pdg->pop_vector_output(vec_output, data, len, discard); // it just set hard-coded validity--should read there
       // push the data to the CGRA output port only if discard is not 0
       
       int j = 0;
       for (j=0; j < len; ++j) {
-        if(!discard){
+        // if(!discard){
            cur_out_port.push_cgra_port(j, data[j], true);
-           // std::cout << data[j] << "\n";
+           std::cout << data[j] << "\n";
            // not sure if this condition is needed: check if this works?
            // if(cur_out_port.num_ready()!=1)
            // cur_out_port.inc_ready(1);
@@ -789,15 +792,15 @@ void accel_t::cycle_cgra_backpressure() {
 
            int lat = _soft_config.out_ports_lat[port_index];
            _cgra_output_ready[cur_cycle + lat].push_back(port_index); // it set all the outputs ready
-        }
-        else{
-            break; // whole vector discard or not
-        }
+       // }
+       // else{
+         //   break; // whole vector discard or not
+       //  }
       }
 
-      if(j == len) {
+      // if(j == len) {
         cur_out_port.inc_ready(1); // 1 instance is ready
-      }
+      // }
     }
   }
 
@@ -815,33 +818,37 @@ void accel_t::cycle_cgra_backpressure() {
     }
   }
 
-  bool ifCompute = false;
+  // bool ifCompute = false;
+  int num_computed = 0;
   auto& active_in_ports=_soft_config.in_ports_active;
 
+  
   // checking if any input is ready
   unsigned min_ready=10000000;
   for (int i=0; i < active_in_ports.size(); ++i) {
     int cur_port = active_in_ports[i];
-    min_ready = std::min(_port_interf.in_port(cur_port).num_ready(), min_ready);
+    // it was checking if all ports have some data:TODO
+    if(_port_interf.in_port(cur_port).num_ready() < min_ready && _port_interf.in_port(cur_port).num_ready()>0){
+        min_ready = 1;
+        // min_ready = std::min(_port_interf.in_port(cur_port).num_ready(), min_ready);
+    }
   }
 
   //Now fire on all cgra ports: if there are more than 0 ready on all active ports? (I don't know!)
   if (min_ready > 0) {
-     // cout << "min_ready greater than 0\n";
+     
+  // if (_port_interf.in_port(cur_port).num_ready() > 0) {
     forward_progress();
 
-     // cout << "line 820 size is: " << active_in_ports.size() << endl;
     for (int i=0; i < active_in_ports.size(); ++i) {
       int port_index = active_in_ports[i];
-      // cout << "port index is: " << port_index << endl;
       auto& cur_in_port = _port_interf.in_port(port_index);
-      // cout << "after cur_in_port\n";
-      // int len = cur_in_port.port_vec_elem();
       if (cur_in_port.num_ready()) { 
         SbPDG_VecInput* vec_in = dynamic_cast<SbPDG_VecInput*>(_sched->vportOf(make_pair(true/*input*/,port_index)));
         assert(vec_in!=NULL && "input port pointer is null\n");
 
         if (_pdg->can_push_input(vec_in)) {
+        
           // execute_pdg
           vector<SBDT> data;
           SBDT val = 0; bool valid = false;
@@ -859,36 +866,44 @@ void accel_t::cycle_cgra_backpressure() {
                  data.push_back(val);
              }
           }
+          cout << "Allowed to push input: " << data[0] << " and next input: " << data[1] << "\n";
 
-          _pdg->push_vector(vec_in, data); // SBDT is uint64_t
+          // this is supposed to be a flag, correct it later!
+          num_computed = _pdg->push_vector(vec_in, data); // SBDT is uint64_t
+          // cout << "Let's check num_computed this time: " << num_computed << endl;
 
           data.clear(); // clear the input data pushed to pdg
           // _pdg->cycle(); // maybe send input vector into it
-          ifCompute = _pdg->backcgra_cycle(vec_in);
+          // ifCompute = _pdg->backcgra_cycle(vec_in);
 
           // _soft_config.cgra_in_ports_active[port_index] = false; // set this port to inactive or erase?
-          if (ifCompute) {
-              _cgra_issued++;
+          _cgra_issued += num_computed;
               // uncommenting gives error
               // cur_in_port.pop_in_data(); // does it do anything?
-          }
 
           // pop input from CGRA port after it is pushed into the pdg node
           // if it was able to push the value, then it's fine
-          if (!vec_in->backPressureOn()) { // modify this function?: Yes!
+          if (!vec_in->backPressureOn()) 
+          { // modify this function?: Yes!
             bool should_pop = cur_in_port.inc_repeated(); // if no backpressure, shouldn't we decrement this?
             if (should_pop) {
               cur_in_port.pop(1);
             }
+            else{
+                cout << "Should pop should always be 1 in my case.\n";
+            }
+            // if it is used once, reset it?
+            // vec_in->setBackBit(0);
           }
         }
         // need to check this also if required or not!
         else{
-          // cout << "didn't push new data but need to compute\n";
-          ifCompute = _pdg->backcgra_cycle(vec_in); // should be called for every vec_in
+          // cout << "Didn't push new data!\n";
+          /*ifCompute = _pdg->backcgra_cycle(vec_in); // should be called for every vec_in
           if (ifCompute) {
             _cgra_issued++;
           }
+          */
         }
       }
     }
@@ -909,7 +924,8 @@ void accel_t::cycle_cgra_backpressure() {
     *cgra_dbg_stream  <<"\n";
   }
 
-  int num_computed = _pdg->cycle_store(print, true); // calling with the default parameters for now
+  // int num_computed = _pdg->cycle_store(print, true); // calling with the default parameters for now
+  num_computed += _pdg->cycle(print, true); // calling with the default parameters for now
 
   if(in_roi()) {
     _stat_sb_insts+=num_computed;
