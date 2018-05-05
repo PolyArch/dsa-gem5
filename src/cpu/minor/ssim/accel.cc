@@ -824,12 +824,15 @@ void accel_t::cycle_cgra_backpressure() {
 
   
   // checking if any input is ready
-  unsigned min_ready=10000000;
+  // unsigned min_ready=10000000;
+  unsigned min_ready=0;
   for (int i=0; i < active_in_ports.size(); ++i) {
     int cur_port = active_in_ports[i];
-    // it was checking if all ports have some data:TODO
-    if(_port_interf.in_port(cur_port).num_ready() < min_ready && _port_interf.in_port(cur_port).num_ready()>0){
-        min_ready = 1;
+    // it was checking if all ports have some data:TODO: earlier we wanted at
+    // least 1 data to be ready on all ports--now any port works
+    // if(_port_interf.in_port(cur_port).num_ready() < min_ready && _port_interf.in_port(cur_port).num_ready()>0){
+    if(_port_interf.in_port(cur_port).num_ready()>0){
+       min_ready += 1;
         // min_ready = std::min(_port_interf.in_port(cur_port).num_ready(), min_ready);
     }
   }
