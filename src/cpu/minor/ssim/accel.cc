@@ -744,20 +744,122 @@ void accel_t::cycle_out_interf() {
 bool accel_t::can_receive(int out_port) {
   port_data_t& out_vp = port_interf().out_port(out_port);
   //Make sure a stream is not using the data, and also that there exists data
+
   return !out_vp.in_use() && out_vp.mem_size() != 0;
 }
 
 uint64_t accel_t::receive(int out_port) {
    port_data_t& out_vp = port_interf().out_port(out_port);
    SBDT val = out_vp.pop_out_data(); 
-   //timestamp(); cout << "POPPED b/c receive WRITE " << out_vp.port() <<" " << out_vp.mem_size() <<  "\n";
-
+   if(SB_DEBUG::SB_COMMAND || SB_DEBUG::SB_COMMAND_I || SB_DEBUG::SB_COMMAND_O) {
+     timestamp(); cout << "SB_RECV  on port" << out_vp.port() <<" " << out_vp.mem_size() <<  "\n";
+   }
    return val;
 }
 
 void accel_t::cycle_cgra_backpressure() {
   uint64_t cur_cycle = now();
   // cout << "NEXT CYCLE\n";
+
+  // bool ifCompute = false;
+  int num_computed = 0;
+  auto& active_in_ports=_soft_config.in_ports_active;
+
+  
+  // checking if any input is ready
+  // unsigned min_ready=10000000;
+  unsigned min_ready=0;
+  for (int i=0; i < active_in_ports.size(); ++i) {
+    int cur_port = active_in_ports[i];
+    // it was checking if all ports have some data:TODO: earlier we wanted at
+    // least 1 data to be ready on all ports--now any port works
+    // if(_port_interf.in_port(cur_port).num_ready() < min_ready && _port_interf.in_port(cur_port).num_ready()>0){
+    if(_port_interf.in_port(cur_port).num_ready()>0){
+       min_ready += 1;
+        // min_ready = std::min(_port_interf.in_port(cur_port).num_ready(), min_ready);
+    }
+  }
+
+  //Now fire on all cgra ports: if there are more than 0 ready on all active ports? (I don't know!)
+  if (min_ready > 0) {
+     
+  // if (_port_interf.in_port(cur_port).num_ready() > 0) {
+    forward_progress();
+
+    for (int i=0; i < active_in_ports.size(); ++i) {
+      int port_index = active_in_ports[i];
+      auto& cur_in_port = _port_interf.in_port(port_index);
+      if (cur_in_port.num_ready()) { 
+        SbPDG_VecInput* vec_in = dynamic_cast<SbPDG_VecInput*>(_sched->vportOf(make_pair(true/*input*/,port_index)));
+        assert(vec_in!=NULL && "input port pointer is null\n");
+
+        if (_pdg->can_push_input(vec_in)) {
+        
+          // execute_pdg
+          vector<SBDT> data;
+          SBDT val = 0; bool valid = false;
+          for (unsigned port_idx = 0; port_idx < cur_in_port.port_cgra_elem(); ++port_idx) { // port_idx are the scalar cgra nodes
+             int cgra_port = cur_in_port.cgra_port_for_index(port_idx);
+             if (_soft_config.cgra_in_ports_active[cgra_port]==false) {
+                break;
+             }
+
+             // get the data of the instance of CGRA FIFO
+             val = cur_in_port.value_of(port_idx, 0); // Why 0?: check this out!
+             valid = cur_in_port.valid_of(port_idx, 0);
+             // validity.push_back(valid); and pass it to push_vector
+             if (valid) {
+                 data.push_back(val);
+             }
+          }
+          // cout << "Allowed to push input: " << data[0] << " and next input: " << data[1] << "\n";
+
+          // this is supposed to be a flag, correct it later!
+          num_computed = _pdg->push_vector(vec_in, data); // SBDT is uint64_t
+          // cout << "Let's check num_computed this time: " << num_computed << endl;
+
+          data.clear(); // clear the input data pushed to pdg
+
+          _cgra_issued ++;
+
+          // pop input from CGRA port after it is pushed into the pdg node
+          if (!vec_in->backPressureOn()) 
+          { // modify this function?: Yes!
+            bool should_pop = cur_in_port.inc_repeated(); // if no backpressure, shouldn't we decrement this?
+            if (should_pop) {
+              cur_in_port.pop(1);
+            }
+            /*else{
+                cout << "Should pop should always be 1 in my case.\n";
+            }*/
+          }
+        }
+      }
+    }
+  }
+  else {
+    // cout << "minimum ready was 0\n";
+  }
+
+  ostream* cgra_dbg_stream = &std::cout;
+  if(SB_DEBUG::VERIF_CGRA_MULTI) {
+    cgra_dbg_stream = &cgra_multi_verif[_accel_index];
+  }
+  _pdg->set_dbg_stream(cgra_dbg_stream);
+
+  bool print = false;
+  if(SB_DEBUG::SB_COMP) {
+    print = true;
+    *cgra_dbg_stream  <<"\n";
+  }
+
+  // int num_computed = _pdg->cycle_store(print, true); // calling with the default parameters for now
+  num_computed = _pdg->cycle(print, true); // calling with the default parameters for now
+  cout << "Let's check num_computed final: " << num_computed << endl;
+
+  if(in_roi()) {
+    _stat_sb_insts+=num_computed;
+  }
 
   // pop the ready outputs
   auto& active_out_ports=_soft_config.out_ports_active;
@@ -818,121 +920,6 @@ void accel_t::cycle_cgra_backpressure() {
     }
   }
 
-  // bool ifCompute = false;
-  int num_computed = 0;
-  auto& active_in_ports=_soft_config.in_ports_active;
-
-  
-  // checking if any input is ready
-  // unsigned min_ready=10000000;
-  unsigned min_ready=0;
-  for (int i=0; i < active_in_ports.size(); ++i) {
-    int cur_port = active_in_ports[i];
-    // it was checking if all ports have some data:TODO: earlier we wanted at
-    // least 1 data to be ready on all ports--now any port works
-    // if(_port_interf.in_port(cur_port).num_ready() < min_ready && _port_interf.in_port(cur_port).num_ready()>0){
-    if(_port_interf.in_port(cur_port).num_ready()>0){
-       min_ready += 1;
-        // min_ready = std::min(_port_interf.in_port(cur_port).num_ready(), min_ready);
-    }
-  }
-
-  //Now fire on all cgra ports: if there are more than 0 ready on all active ports? (I don't know!)
-  if (min_ready > 0) {
-     
-  // if (_port_interf.in_port(cur_port).num_ready() > 0) {
-    forward_progress();
-
-    for (int i=0; i < active_in_ports.size(); ++i) {
-      int port_index = active_in_ports[i];
-      auto& cur_in_port = _port_interf.in_port(port_index);
-      if (cur_in_port.num_ready()) { 
-        SbPDG_VecInput* vec_in = dynamic_cast<SbPDG_VecInput*>(_sched->vportOf(make_pair(true/*input*/,port_index)));
-        assert(vec_in!=NULL && "input port pointer is null\n");
-
-        if (_pdg->can_push_input(vec_in)) {
-        
-          // execute_pdg
-          vector<SBDT> data;
-          SBDT val = 0; bool valid = false;
-          for (unsigned port_idx = 0; port_idx < cur_in_port.port_cgra_elem(); ++port_idx) { // port_idx are the scalar cgra nodes
-             int cgra_port = cur_in_port.cgra_port_for_index(port_idx);
-             if (_soft_config.cgra_in_ports_active[cgra_port]==false) {
-                break;
-             }
-
-             // get the data of the instance of CGRA FIFO
-             val = cur_in_port.value_of(port_idx, 0); // Why 0?: check this out!
-             valid = cur_in_port.valid_of(port_idx, 0);
-             // validity.push_back(valid); and pass it to push_vector
-             if (valid) {
-                 data.push_back(val);
-             }
-          }
-          cout << "Allowed to push input: " << data[0] << " and next input: " << data[1] << "\n";
-
-          // this is supposed to be a flag, correct it later!
-          num_computed = _pdg->push_vector(vec_in, data); // SBDT is uint64_t
-          // cout << "Let's check num_computed this time: " << num_computed << endl;
-
-          data.clear(); // clear the input data pushed to pdg
-          // _pdg->cycle(); // maybe send input vector into it
-          // ifCompute = _pdg->backcgra_cycle(vec_in);
-
-          // _soft_config.cgra_in_ports_active[port_index] = false; // set this port to inactive or erase?
-          _cgra_issued += num_computed;
-              // uncommenting gives error
-              // cur_in_port.pop_in_data(); // does it do anything?
-
-          // pop input from CGRA port after it is pushed into the pdg node
-          // if it was able to push the value, then it's fine
-          if (!vec_in->backPressureOn()) 
-          { // modify this function?: Yes!
-            bool should_pop = cur_in_port.inc_repeated(); // if no backpressure, shouldn't we decrement this?
-            if (should_pop) {
-              cur_in_port.pop(1);
-            }
-            else{
-                cout << "Should pop should always be 1 in my case.\n";
-            }
-            // if it is used once, reset it?
-            // vec_in->setBackBit(0);
-          }
-        }
-        // need to check this also if required or not!
-        else{
-          // cout << "Didn't push new data!\n";
-          /*ifCompute = _pdg->backcgra_cycle(vec_in); // should be called for every vec_in
-          if (ifCompute) {
-            _cgra_issued++;
-          }
-          */
-        }
-      }
-    }
-  }
-  else {
-    // cout << "minimum ready was 0\n";
-  }
-
-  ostream* cgra_dbg_stream = &std::cout;
-  if(SB_DEBUG::VERIF_CGRA_MULTI) {
-    cgra_dbg_stream = &cgra_multi_verif[_accel_index];
-  }
-  _pdg->set_dbg_stream(cgra_dbg_stream);
-
-  bool print = false;
-  if(SB_DEBUG::SB_COMP) {
-    print = true;
-    *cgra_dbg_stream  <<"\n";
-  }
-
-  // int num_computed = _pdg->cycle_store(print, true); // calling with the default parameters for now
-  num_computed += _pdg->cycle(print, true); // calling with the default parameters for now
-
-  if(in_roi()) {
-    _stat_sb_insts+=num_computed;
-  }
 
 }
 
@@ -1157,6 +1144,10 @@ void accel_t::execute_pdg(unsigned instance, int group) {
 // Buffer Sizes                                     |      Bus Activity
 // ip 1:5 2:5 7:7; op 1:2 scr_wr:1 cq:1 mem_req:14  | ip: op: scr_rd: scr_wr:   mr: mw: 
 void accel_t::cycle_status() {
+  if(_soft_config.in_ports_active.size()==0) {
+    return;
+  }
+
   timestamp();
   cout << "cq" << _in_port_queue.size();
 

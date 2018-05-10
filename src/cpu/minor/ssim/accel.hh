@@ -230,8 +230,10 @@ public:
       assert(status != STATUS::BUSY && "can't set busy if already busy\n");
     }
     if(_status == STATUS::FREE) {
-      assert(status != STATUS::FREE && "can't free if already free\n");
-      assert(status != STATUS::COMPLETE && "can't complete a free\n");
+      if(status == STATUS::FREE  || status == STATUS::COMPLETE) {
+        // print_status();
+        assert(0 && "can't free if free or complete\n");
+      }
     }
     if(status == STATUS::BUSY) {
       assert((_loc==loc || _status==STATUS::FREE) && 
