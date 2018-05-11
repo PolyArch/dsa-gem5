@@ -237,6 +237,13 @@ LSQ::SingleDataRequest::finish(const Fault &fault_, RequestPtr request_,
 {
     fault = fault_;
 
+    if(sdInfo != NULL &&  fault != NoFault) {
+      ThreadContext *thread = port.cpu.getContext(port.cpu.contextToThread(
+                                inst->id.threadId));
+      fault->invoke(thread, StaticInst::nullStaticInstPtr);
+    }
+
+
     port.numAccessesInDTLB--;
 
     DPRINTFS(MinorMem, (&port), "Received translation response for"
