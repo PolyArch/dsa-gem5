@@ -146,6 +146,10 @@ public:
     }
   }
 
+  void push_mem_data(SBDT data) {
+    _mem_data.push_back(data);
+  }
+
   void push_data(SBDT data, bool valid=true) {
     _mem_data.push_back(data);
     _valid_data.push_back(valid); 
@@ -721,22 +725,14 @@ class scratch_write_controller_t : public data_controller_t {
     mask.resize(SCR_WIDTH/DATA_WIDTH);
     _port_scr_streams.resize(8); 
 
-    // Just playing with this!
-    // max_src = _port_scr_streams.size() + _scr_scr_streams.size();
-    max_src = 1 + _port_scr_streams.size() + _scr_scr_streams.size();
-    // it will be checked there only
-    // if(!_atomic_scr_stream.empty())
-    //     max_src++;
     if(is_shared()) {
       _scr_scr_streams.resize(NUM_ACCEL); 
     } else {
       _scr_scr_streams.resize(1); 
     }
     _atomic_scr_streams.resize(1);
-  // first check with direct 1, then other cases
-    // max_src = 1 + _port_scr_streams.size() + _scr_scr_streams.size();
-    // if(_atomic_scr_stream.empty())
-       //  max_src-=1;
+
+    max_src = _port_scr_streams.size() + _bufs.size() + _atomic_scr_streams.size();
 
     reset_stream_engines();
   }
