@@ -57,6 +57,7 @@ void accel_t::req_config(addr_t addr, int size, uint64_t context) {
 }
 
 void accel_t::request_reset_data() {
+   // cout << "CYCLE WHEN CLEAN UP MODE IS SET TO TRUE: " << now();
   _cleanup_mode=true; 
   reset_data();
 }
@@ -719,7 +720,7 @@ void accel_t::tick() {
 
   cycle_out_interf();
   schedule_streams();
-
+  // cout << "CYCLE INCREMENTED HERE.........................!!!\n";
   _waiting_cycles++;
 
   _dma_c.finish_cycle(); 
@@ -757,9 +758,13 @@ uint64_t accel_t::receive(int out_port) {
    return val;
 }
 
+// int test_n_zeros=0;
+// int test_n_one=0;
+// int test_n_two=0;
+// int test_n_three=0;
 void accel_t::cycle_cgra_backpressure() {
   uint64_t cur_cycle = now();
-  // cout << "NEXT CYCLE\n";
+  // cout << "CURRENT CYCLE COUNT: " << cur_cycle << "\n";
 
   // bool ifCompute = false;
   int num_computed = 0;
@@ -784,7 +789,7 @@ void accel_t::cycle_cgra_backpressure() {
   if (min_ready > 0) {
      
   // if (_port_interf.in_port(cur_port).num_ready() > 0) {
-    forward_progress();
+    // forward_progress();
 
     for (int i=0; i < active_in_ports.size(); ++i) {
       int port_index = active_in_ports[i];
@@ -855,8 +860,27 @@ void accel_t::cycle_cgra_backpressure() {
 
   // int num_computed = _pdg->cycle_store(print, true); // calling with the default parameters for now
   num_computed = _pdg->cycle(print, true); // calling with the default parameters for now
+  /*
   cout << "Let's check num_computed final: " << num_computed << endl;
+  if(num_computed==0){
+    test_n_zeros += 1;
+    cout << "Let's check n zeros: " << test_n_zeros << endl;
+  }
+  if(num_computed==1){
+    test_n_one += 1;
+    cout << "Let's check n ones: " << test_n_one << endl;
+  }
 
+  if(num_computed==2){
+    test_n_two += 1;
+    cout << "Let's check n twos: " << test_n_two << endl;
+  }
+
+  if(num_computed==3){
+    test_n_three += 1;
+    cout << "Let's check n threess: " << test_n_three << endl;
+  }
+  */
   if(in_roi()) {
     _stat_sb_insts+=num_computed;
   }
@@ -876,7 +900,7 @@ void accel_t::cycle_cgra_backpressure() {
 
     bool discard=false; 
     if (_pdg->can_pop_output(vec_output, len)) {
-        cout << "Allowed to pop output\n";
+        // cout << "Allowed to pop output\n";
         data.clear(); // make sure it is empty here
       _pdg->pop_vector_output(vec_output, data, len, discard); // it just set hard-coded validity--should read there
       // push the data to the CGRA output port only if discard is not 0
@@ -885,7 +909,7 @@ void accel_t::cycle_cgra_backpressure() {
       for (j=0; j < len; ++j) {
         // if(!discard){
            cur_out_port.push_cgra_port(j, data[j], true);
-           std::cout << data[j] << "\n";
+           // std::cout << data[j] << "\n";
            // not sure if this condition is needed: check if this works?
            // if(cur_out_port.num_ready()!=1)
            // cur_out_port.inc_ready(1);
@@ -3299,6 +3323,7 @@ bool accel_t::done(bool show,int mask) {
 
   if(mask ==0 && d) {
     //nothing left to clean up
+    // cout << "CYCLE WHEN CLEAN UP MODE IS SET TO FALSE: " << now();
     _cleanup_mode=false;
   }
 
