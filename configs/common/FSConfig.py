@@ -1,4 +1,4 @@
-# Copyright (c) 2010-2012, 2015-2016 ARM Limited
+# Copyright (c) 2010-2012, 2015-2018 ARM Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -39,6 +39,8 @@
 #
 # Authors: Kevin Lim
 
+from __future__ import print_function
+
 from m5.objects import *
 from Benchmarks import *
 from m5.util import *
@@ -53,7 +55,8 @@ os_types = { 'alpha' : [ 'linux' ],
                          'android-gingerbread',
                          'android-ics',
                          'android-jellybean',
-                         'android-kitkat' ],
+                         'android-kitkat',
+                         'android-nougat', ],
            }
 
 class CowIdeDisk(IdeDisk):
@@ -203,7 +206,8 @@ def makeSparcSystem(mem_mode, mdesc=None, cmdline=None):
 
 def makeArmSystem(mem_mode, machine_type, num_cpus=1, mdesc=None,
                   dtb_filename=None, bare_metal=False, cmdline=None,
-                  external_memory="", ruby=False):
+                  external_memory="", ruby=False, security=False,
+                  ignore_dtb=False):
     assert machine_type
 
     default_dtbs = {
@@ -248,7 +252,7 @@ def makeArmSystem(mem_mode, machine_type, num_cpus=1, mdesc=None,
     machine_type = platform_class.__name__
     self.realview = platform_class()
 
-    if not dtb_filename and not bare_metal:
+    if not dtb_filename and not (bare_metal or ignore_dtb):
         try:
             dtb_filename = default_dtbs[machine_type]
         except KeyError:
@@ -257,7 +261,8 @@ def makeArmSystem(mem_mode, machine_type, num_cpus=1, mdesc=None,
 
     if isinstance(self.realview, VExpress_EMM64):
         if os.path.split(mdesc.disk())[-1] == 'linux-aarch32-ael.img':
-            print "Selected 64-bit ARM architecture, updating default disk image..."
+            print("Selected 64-bit ARM architecture, updating default "
+                  "disk image...")
             mdesc.diskname = 'linaro-minimal-aarch64.img'
 
 
@@ -295,6 +300,8 @@ def makeArmSystem(mem_mode, machine_type, num_cpus=1, mdesc=None,
               " the amount of DRAM you've selected. Please try" \
               " another platform")
 
+    self.have_security = security
+
     if bare_metal:
         # EOT character on UART will end the simulation
         self.realview.uart.end_on_eot = True
@@ -302,7 +309,7 @@ def makeArmSystem(mem_mode, machine_type, num_cpus=1, mdesc=None,
         if machine_type in default_kernels:
             self.kernel = binary(default_kernels[machine_type])
 
-        if dtb_filename:
+        if dtb_filename and not ignore_dtb:
             self.dtb_filename = binary(dtb_filename)
 
         self.machine_type = machine_type if machine_type in ArmMachineType.map \
@@ -319,8 +326,10 @@ def makeArmSystem(mem_mode, machine_type, num_cpus=1, mdesc=None,
         # iobus, as gem5's membus is only used for initialization and
         # SST doesn't use it.  Attaching nvmem to iobus solves this issue.
         # During initialization, system_port -> membus -> iobus -> nvmem.
-        if external_memory or ruby:
+        if external_memory:
             self.realview.setupBootLoader(self.iobus,  self, binary)
+        elif ruby:
+            self.realview.setupBootLoader(None, self, binary)
         else:
             self.realview.setupBootLoader(self.membus, self, binary)
         self.gic_cpu_addr = self.realview.gic.cpu_addr
@@ -347,7 +356,14 @@ def makeArmSystem(mem_mode, machine_type, num_cpus=1, mdesc=None,
             # release-specific tweaks
             if 'kitkat' in mdesc.os_type():
                 cmdline += " androidboot.hardware=gem5 qemu=1 qemu.gles=0 " + \
-                           "android.bootanim=0"
+                           "android.bootanim=0 "
+            elif 'nougat' in mdesc.os_type():
+                cmdline += " androidboot.hardware=gem5 qemu=1 qemu.gles=0 " + \
+                           "android.bootanim=0 " + \
+                           "vmalloc=640MB " + \
+                           "android.early.fstab=/fstab.gem5 " + \
+                           "androidboot.selinux=permissive " + \
+                           "video=Virtual-1:1920x1080-16"
 
         self.boot_osflags = fillInCmdline(mdesc, cmdline)
 
@@ -372,8 +388,6 @@ def makeArmSystem(mem_mode, machine_type, num_cpus=1, mdesc=None,
     elif ruby:
         self._dma_ports = [ ]
         self.realview.attachOnChipIO(self.iobus, dma_ports=self._dma_ports)
-        # Force Ruby to treat the boot ROM as an IO device.
-        self.realview.nvmem.in_addr_map = False
         self.realview.attachIO(self.iobus, dma_ports=self._dma_ports)
     else:
         self.realview.attachOnChipIO(self.membus, self.bridge)
@@ -394,9 +408,12 @@ def makeArmSystem(mem_mode, machine_type, num_cpus=1, mdesc=None,
         self.system_port = self.membus.slave
 
     if ruby:
-        fatal("You're trying to use Ruby on ARM, which is not working " \
-              "properly yet. If you want to test it anyway, you " \
-              "need to remove this fatal error from FSConfig.py.")
+        if buildEnv['PROTOCOL'] == 'MI_example' and num_cpus > 1:
+            fatal("The MI_example protocol cannot implement Load/Store "
+                  "Exclusive operations. Multicore ARM systems configured "
+                  "with the MI_example protocol will not work properly.")
+        warn("You are trying to use Ruby on ARM, which is not working "
+             "properly yet.")
 
     return self
 

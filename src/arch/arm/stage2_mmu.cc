@@ -51,7 +51,7 @@ using namespace ArmISA;
 Stage2MMU::Stage2MMU(const Params *p)
     : SimObject(p), _stage1Tlb(p->tlb), _stage2Tlb(p->stage2_tlb),
       port(_stage1Tlb->getTableWalker(), p->sys),
-      masterId(p->sys->getMasterId(_stage1Tlb->getTableWalker()->name()))
+      masterId(p->sys->getMasterId(_stage1Tlb->getTableWalker()))
 {
     // we use the stage-one table walker as the parent of the port,
     // and to get our master id, this is done to keep things
@@ -97,16 +97,15 @@ Stage2MMU::readDataUntimed(ThreadContext *tc, Addr oVAddr, Addr descAddr,
     return fault;
 }
 
-Fault
+void
 Stage2MMU::readDataTimed(ThreadContext *tc, Addr descAddr,
                          Stage2Translation *translation, int numBytes,
                          Request::Flags flags)
 {
-    Fault fault;
     // translate to physical address using the second stage MMU
-    translation->setVirt(descAddr, numBytes, flags | Request::PT_WALK, masterId);
-    fault = translation->translateTiming(tc);
-    return fault;
+    translation->setVirt(
+            descAddr, numBytes, flags | Request::PT_WALK, masterId);
+    translation->translateTiming(tc);
 }
 
 Stage2MMU::Stage2Translation::Stage2Translation(Stage2MMU &_parent,

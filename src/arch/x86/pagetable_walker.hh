@@ -178,7 +178,7 @@ namespace X86ISA
         /**
          * Event used to call startWalkWrapper.
          **/
-        EventWrapper<Walker, &Walker::startWalkWrapper> startWalkWrapperEvent;
+        EventFunctionWrapper startWalkWrapperEvent;
 
         // Functions for dealing with packets.
         bool recvTimingResp(PacketPtr pkt);
@@ -203,9 +203,9 @@ namespace X86ISA
         Walker(const Params *params) :
             MemObject(params), port(name() + ".port", this),
             funcState(this, NULL, NULL, true), tlb(NULL), sys(params->system),
-            masterId(sys->getMasterId(name())),
+            masterId(sys->getMasterId(this)),
             numSquashable(params->num_squash_per_cycle),
-            startWalkWrapperEvent(this)
+            startWalkWrapperEvent([this]{ startWalkWrapper(); }, name())
         {
         }
     };

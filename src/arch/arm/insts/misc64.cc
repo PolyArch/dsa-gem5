@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2013 ARM Limited
+ * Copyright (c) 2011-2013,2017-2018 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -40,28 +40,37 @@
 #include "arch/arm/insts/misc64.hh"
 
 std::string
+ImmOp64::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    printMnemonic(ss, "", false);
+    ccprintf(ss, "#0x%x", imm);
+    return ss.str();
+}
+
+std::string
 RegRegImmImmOp64::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss, "", false);
-    printReg(ss, dest);
+    printIntReg(ss, dest);
     ss << ", ";
-    printReg(ss, op1);
+    printIntReg(ss, op1);
     ccprintf(ss, ", #%d, #%d", imm1, imm2);
     return ss.str();
 }
 
 std::string
 RegRegRegImmOp64::generateDisassembly(
-        Addr pc, const SymbolTable *symtab) const
+    Addr pc, const SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss, "", false);
-    printReg(ss, dest);
+    printIntReg(ss, dest);
     ss << ", ";
-    printReg(ss, op1);
+    printIntReg(ss, op1);
     ss << ", ";
-    printReg(ss, op2);
+    printIntReg(ss, op2);
     ccprintf(ss, ", #%d", imm);
     return ss.str();
 }
@@ -69,5 +78,29 @@ RegRegRegImmOp64::generateDisassembly(
 std::string
 UnknownOp64::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 {
-    return csprintf("%-10s (inst %#08x)", "unknown", machInst);
+    return csprintf("%-10s (inst %#08x)", "unknown", machInst & mask(32));
+}
+
+std::string
+MiscRegRegImmOp64::generateDisassembly(
+    Addr pc, const SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    printMnemonic(ss);
+    printMiscReg(ss, dest);
+    ss << ", ";
+    printIntReg(ss, op1);
+    return ss.str();
+}
+
+std::string
+RegMiscRegImmOp64::generateDisassembly(
+    Addr pc, const SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    printMnemonic(ss);
+    printIntReg(ss, dest);
+    ss << ", ";
+    printMiscReg(ss, op1);
+    return ss.str();
 }

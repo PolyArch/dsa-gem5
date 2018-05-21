@@ -1,37 +1,35 @@
+# Copyright (c) 2011-2015 Advanced Micro Devices, Inc.
+# All rights reserved.
 #
-#  Copyright (c) 2011-2015 Advanced Micro Devices, Inc.
-#  All rights reserved.
+# For use for simulation and test purposes only
 #
-#  For use for simulation and test purposes only
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
 #
-#  Redistribution and use in source and binary forms, with or without
-#  modification, are permitted provided that the following conditions are met:
+# 1. Redistributions of source code must retain the above copyright notice,
+# this list of conditions and the following disclaimer.
 #
-#  1. Redistributions of source code must retain the above copyright notice,
-#  this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
 #
-#  2. Redistributions in binary form must reproduce the above copyright notice,
-#  this list of conditions and the following disclaimer in the documentation
-#  and/or other materials provided with the distribution.
+# 3. Neither the name of the copyright holder nor the names of its
+# contributors may be used to endorse or promote products derived from this
+# software without specific prior written permission.
 #
-#  3. Neither the name of the copyright holder nor the names of its contributors
-#  may be used to endorse or promote products derived from this software
-#  without specific prior written permission.
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
 #
-#  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-#  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-#  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-#  ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-#  LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-#  CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-#  SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-#  INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-#  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-#  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-#  POSSIBILITY OF SUCH DAMAGE.
-#
-#  Author: Lisa Hsu
-#
+# Authors: Lisa Hsu
 
 import math
 import m5
@@ -371,24 +369,14 @@ class L3Cntrl(L3Cache_Controller, CntrlBase):
         self.probeToL3 = probe_to_l3
         self.respToL3 = resp_to_l3
 
-class DirMem(RubyDirectoryMemory, CntrlBase):
-    def create(self, options, ruby_system, system):
-        self.version = self.versionCount()
-
-        phys_mem_size = AddrRange(options.mem_size).size()
-        mem_module_size = phys_mem_size / options.num_dirs
-        dir_size = MemorySize('0B')
-        dir_size.value = mem_module_size
-        self.size = dir_size
-
 class DirCntrl(Directory_Controller, CntrlBase):
-    def create(self, options, ruby_system, system):
+    def create(self, options, dir_ranges, ruby_system, system):
         self.version = self.versionCount()
 
         self.response_latency = 30
 
-        self.directory = DirMem()
-        self.directory.create(options, ruby_system, system)
+        self.addr_ranges = dir_ranges
+        self.directory = RubyDirectoryMemory()
 
         self.L3CacheMemory = L3Cache()
         self.L3CacheMemory.create(options, ruby_system, system)
@@ -437,7 +425,8 @@ def define_options(parser):
     parser.add_option("--tcc-dir-factor", type='int', default=4,
                       help="TCCdir size = factor *(TCPs + TCC)")
 
-def create_system(options, full_system, system, dma_devices, ruby_system):
+def create_system(options, full_system, system, dma_devices, bootmem,
+                  ruby_system):
     if buildEnv['PROTOCOL'] != 'GPU_RfO':
         panic("This script requires the GPU_RfO protocol to be built.")
 
@@ -467,10 +456,28 @@ def create_system(options, full_system, system, dma_devices, ruby_system):
     # This is the base crossbar that connects the L3s, Dirs, and cpu/gpu
     # Clusters
     mainCluster = Cluster(extBW = 512, intBW = 512) # 1 TB/s
+
+    if options.numa_high_bit:
+        numa_bit = options.numa_high_bit
+    else:
+        # if the numa_bit is not specified, set the directory bits as the
+        # lowest bits above the block offset bits, and the numa_bit as the
+        # highest of those directory bits
+        dir_bits = int(math.log(options.num_dirs, 2))
+        block_size_bits = int(math.log(options.cacheline_size, 2))
+        numa_bit = block_size_bits + dir_bits - 1
+
     for i in xrange(options.num_dirs):
+        dir_ranges = []
+        for r in system.mem_ranges:
+            addr_range = m5.objects.AddrRange(r.start, size = r.size(),
+                                              intlvHighBit = numa_bit,
+                                              intlvBits = dir_bits,
+                                              intlvMatch = i)
+            dir_ranges.append(addr_range)
 
         dir_cntrl = DirCntrl(TCC_select_num_bits = TCC_bits)
-        dir_cntrl.create(options, ruby_system, system)
+        dir_cntrl.create(options, dir_ranges, ruby_system, system)
         dir_cntrl.number_of_TBEs = 2560 * options.num_compute_units
         #Enough TBEs for all TCP TBEs
 

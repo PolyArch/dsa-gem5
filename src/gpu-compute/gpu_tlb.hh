@@ -14,9 +14,9 @@
  * this list of conditions and the following disclaimer in the documentation
  * and/or other materials provided with the distribution.
  *
- * 3. Neither the name of the copyright holder nor the names of its contributors
- * may be used to endorse or promote products derived from this software
- * without specific prior written permission.
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from this
+ * software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -30,7 +30,7 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  *
- * Author: Lisa Hsu
+ * Authors: Lisa Hsu
  */
 
 #ifndef __GPU_TLB_HH__
@@ -47,7 +47,7 @@
 #include "arch/x86/pagetable_walker.hh"
 #include "arch/x86/regs/segment.hh"
 #include "base/callback.hh"
-#include "base/misc.hh"
+#include "base/logging.hh"
 #include "base/statistics.hh"
 #include "gpu-compute/compute_unit.hh"
 #include "mem/mem_object.hh"
@@ -425,7 +425,7 @@ namespace X86ISA
         // free memory and do the required clean-up
         void cleanup();
 
-        EventWrapper<GpuTLB, &GpuTLB::cleanup> cleanupEvent;
+        EventFunctionWrapper cleanupEvent;
 
         /**
          * This hash map will use the virtual page address as a key
@@ -458,7 +458,7 @@ namespace X86ISA
         // Called at the end of simulation to dump page access stats.
         void exitCallback();
 
-        EventWrapper<GpuTLB, &GpuTLB::exitCallback> exitEvent;
+        EventFunctionWrapper exitEvent;
     };
 }
 

@@ -82,9 +82,10 @@ class RemoteGDB : public BaseRemoteGDB
         }
     };
 
+    RiscvGdbRegCache regCache;
 
   public:
-    RemoteGDB(System *_system, ThreadContext *tc);
+    RemoteGDB(System *_system, ThreadContext *tc, int _port);
     BaseGdbRegCache *gdbRegs();
 };
 

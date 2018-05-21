@@ -139,6 +139,8 @@ class ThermalReference : public SimObject, public ThermalEntity
 
 
 /**
+ * @sa \ref gem5PowerModel "gem5 Thermal Model"
+ *
  * A ThermalModel is the element which ties all thermal objects
  * together and provides the thermal solver to the system.
  * It is reponsible for updating temperature for all Thermal
@@ -179,7 +181,7 @@ class ThermalModel : public ClockedObject
     std::vector <ThermalNode*> eq_nodes;
 
     /** Stepping event to update the model values */
-    EventWrapper<ThermalModel, &ThermalModel::doStep> stepEvent;
+    EventFunctionWrapper stepEvent;
 
     /** Step in seconds for thermal updates */
     double _step;

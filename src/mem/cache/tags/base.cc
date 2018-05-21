@@ -48,11 +48,8 @@
 
 #include "mem/cache/tags/base.hh"
 
-#include "cpu/smt.hh" //maxThreadsPerCPU
 #include "mem/cache/base.hh"
 #include "sim/sim_exit.hh"
-
-using namespace std;
 
 BaseTags::BaseTags(const Params *p)
     : ClockedObject(p), blkSize(p->block_size), blkMask(blkSize - 1),
@@ -61,8 +58,10 @@ BaseTags::BaseTags(const Params *p)
       accessLatency(p->sequential_access ?
                     p->tag_latency + p->data_latency :
                     std::max(p->tag_latency, p->data_latency)),
-      cache(nullptr), warmupBound(0),
-      warmedUp(false), numBlocks(0)
+      cache(nullptr),
+      warmupBound((p->warmup_percentage/100.0) * (p->size / p->block_size)),
+      warmedUp(false), numBlocks(p->size / p->block_size),
+      dataBlks(new uint8_t[p->size]) // Allocate data storage in one big chunk
 {
 }
 
@@ -74,18 +73,44 @@ BaseTags::setCache(BaseCache *_cache)
 }
 
 void
+BaseTags::insertBlock(PacketPtr pkt, CacheBlk *blk)
+{
+    // Get address
+    Addr addr = pkt->getAddr();
+
+    if (blk->isValid()) {
+        invalidate(blk);
+    }
+
+    // Previous block, if existed, has been removed, and now we have
+    // to insert the new one
+
+    // Deal with what we are bringing in
+    MasterID master_id = pkt->req->masterId();
+    assert(master_id < cache->system->maxMasters());
+    occupancies[master_id]++;
+
+    // Insert block with tag, src master id and task id
+    blk->insert(extractTag(addr), pkt->isSecure(), master_id,
+                pkt->req->taskId());
+
+    tagsInUse++;
+    if (!warmedUp && tagsInUse.value() >= warmupBound) {
+        warmedUp = true;
+        warmupCycle = curTick();
+    }
+
+    // We only need to write into one tag and one data block.
+    tagAccesses += 1;
+    dataAccesses += 1;
+}
+
+void
 BaseTags::regStats()
 {
     ClockedObject::regStats();
 
     using namespace Stats;
-
-    replacements
-        .init(maxThreadsPerCPU)
-        .name(name() + ".replacements")
-        .desc("number of replacements")
-        .flags(total)
-        ;
 
     tagsInUse
         .name(name() + ".tagsinuse")

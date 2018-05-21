@@ -50,20 +50,20 @@
 #include <string>
 
 #include "base/intmath.hh"
-#include "sim/core.hh"
-
-using namespace std;
 
 BaseSetAssoc::BaseSetAssoc(const Params *p)
     :BaseTags(p), assoc(p->assoc), allocAssoc(p->assoc),
+     blks(p->size / p->block_size),
      numSets(p->size / (p->block_size * p->assoc)),
-     sequentialAccess(p->sequential_access)
+     sequentialAccess(p->sequential_access),
+     sets(p->size / (p->block_size * p->assoc)),
+     replacementPolicy(p->replacement_policy)
 {
     // Check parameters
     if (blkSize < 4 || !isPowerOf2(blkSize)) {
         fatal("Block size must be at least 4 and a power of 2");
     }
-    if (numSets <= 0 || !isPowerOf2(numSets)) {
+    if (!isPowerOf2(numSets)) {
         fatal("# of sets must be non-zero and a power of 2");
     }
     if (assoc <= 0) {
@@ -73,50 +73,48 @@ BaseSetAssoc::BaseSetAssoc(const Params *p)
     setShift = floorLog2(blkSize);
     setMask = numSets - 1;
     tagShift = setShift + floorLog2(numSets);
-    /** @todo Make warmup percentage a parameter. */
-    warmupBound = numSets * assoc;
-
-    sets = new SetType[numSets];
-    blks = new BlkType[numSets * assoc];
-    // allocate data storage in one big chunk
-    numBlocks = numSets * assoc;
-    dataBlks = new uint8_t[numBlocks * blkSize];
 
     unsigned blkIndex = 0;       // index into blks array
     for (unsigned i = 0; i < numSets; ++i) {
         sets[i].assoc = assoc;
 
-        sets[i].blks = new BlkType*[assoc];
+        sets[i].blks.resize(assoc);
 
         // link in the data blocks
         for (unsigned j = 0; j < assoc; ++j) {
-            // locate next cache block
-            BlkType *blk = &blks[blkIndex];
+            // Select block within the set to be linked
+            BlkType*& blk = sets[i].blks[j];
+
+            // Locate next cache block
+            blk = &blks[blkIndex];
+
+            // Associate a data chunk to the block
             blk->data = &dataBlks[blkSize*blkIndex];
-            ++blkIndex;
 
-            // invalidate new cache block
-            blk->invalidate();
+            // Associate a replacement data entry to the block
+            blk->replacementData = replacementPolicy->instantiateEntry();
 
-            //EGH Fix Me : do we need to initialize blk?
-
-            // Setting the tag to j is just to prevent long chains in the hash
-            // table; won't matter because the block is invalid
+            // Setting the tag to j is just to prevent long chains in the
+            // hash table; won't matter because the block is invalid
             blk->tag = j;
-            blk->whenReady = 0;
-            blk->isTouched = false;
-            sets[i].blks[j]=blk;
+
+            // Set its set and way
             blk->set = i;
             blk->way = j;
+
+            // Update block index
+            ++blkIndex;
         }
     }
 }
 
-BaseSetAssoc::~BaseSetAssoc()
+void
+BaseSetAssoc::invalidate(CacheBlk *blk)
 {
-    delete [] dataBlks;
-    delete [] blks;
-    delete [] sets;
+    BaseTags::invalidate(blk);
+
+    // Invalidate replacement data
+    replacementPolicy->invalidate(blk->replacementData);
 }
 
 CacheBlk*
@@ -137,14 +135,10 @@ BaseSetAssoc::findBlockBySetAndWay(int set, int way) const
 std::string
 BaseSetAssoc::print() const {
     std::string cache_state;
-    for (unsigned i = 0; i < numSets; ++i) {
-        // link in the data blocks
-        for (unsigned j = 0; j < assoc; ++j) {
-            BlkType *blk = sets[i].blks[j];
-            if (blk->isValid())
-                cache_state += csprintf("\tset: %d block: %d %s\n", i, j,
-                        blk->print());
-        }
+    for (const CacheBlk& blk : blks) {
+        if (blk.isValid())
+            cache_state += csprintf("\tset: %d way: %d %s\n", blk.set,
+                                    blk.way, blk.print());
     }
     if (cache_state.empty())
         cache_state = "no valid tags\n";
@@ -154,9 +148,9 @@ BaseSetAssoc::print() const {
 void
 BaseSetAssoc::cleanupRefs()
 {
-    for (unsigned i = 0; i < numSets*assoc; ++i) {
-        if (blks[i].isValid()) {
-            totalRefs += blks[i].refCount;
+    for (const CacheBlk& blk : blks) {
+        if (blk.isValid()) {
+            totalRefs += blk.refCount;
             ++sampledRefs;
         }
     }
@@ -172,12 +166,12 @@ BaseSetAssoc::computeStats()
         }
     }
 
-    for (unsigned i = 0; i < numSets * assoc; ++i) {
-        if (blks[i].isValid()) {
-            assert(blks[i].task_id < ContextSwitchTaskId::NumTaskId);
-            occupanciesTaskId[blks[i].task_id]++;
-            assert(blks[i].tickInserted <= curTick());
-            Tick age = curTick() - blks[i].tickInserted;
+    for (const CacheBlk& blk : blks) {
+        if (blk.isValid()) {
+            assert(blk.task_id < ContextSwitchTaskId::NumTaskId);
+            occupanciesTaskId[blk.task_id]++;
+            assert(blk.tickInserted <= curTick());
+            Tick age = curTick() - blk.tickInserted;
 
             int age_index;
             if (age / SimClock::Int::us < 10) { // <10us
@@ -191,7 +185,13 @@ BaseSetAssoc::computeStats()
             } else
                 age_index = 4; // >10ms
 
-            ageTaskId[blks[i].task_id][age_index]++;
+            ageTaskId[blk.task_id][age_index]++;
         }
     }
+}
+
+BaseSetAssoc *
+BaseSetAssocParams::create()
+{
+    return new BaseSetAssoc(this);
 }

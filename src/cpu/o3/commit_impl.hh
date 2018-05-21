@@ -1,6 +1,6 @@
 /*
  * Copyright 2014 Google, Inc.
- * Copyright (c) 2010-2014 ARM Limited
+ * Copyright (c) 2010-2014, 2017 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -71,26 +71,12 @@
 using namespace std;
 
 template <class Impl>
-DefaultCommit<Impl>::TrapEvent::TrapEvent(DefaultCommit<Impl> *_commit,
-                                          ThreadID _tid)
-    : Event(CPU_Tick_Pri, AutoDelete), commit(_commit), tid(_tid)
-{
-}
-
-template <class Impl>
 void
-DefaultCommit<Impl>::TrapEvent::process()
+DefaultCommit<Impl>::processTrapEvent(ThreadID tid)
 {
     // This will get reset by commit if it was switched out at the
     // time of this event processing.
-    commit->trapSquash[tid] = true;
-}
-
-template <class Impl>
-const char *
-DefaultCommit<Impl>::TrapEvent::description() const
-{
-    return "Trap";
+    trapSquash[tid] = true;
 }
 
 template <class Impl>
@@ -257,6 +243,13 @@ DefaultCommit<Impl>::regStats()
         .init(cpu->numThreads)
         .name(name() + ".fp_insts")
         .desc("Number of committed floating point instructions.")
+        .flags(total)
+        ;
+
+    statComVector
+        .init(cpu->numThreads)
+        .name(name() + ".vec_insts")
+        .desc("Number of committed Vector instructions.")
         .flags(total)
         ;
 
@@ -530,7 +523,9 @@ DefaultCommit<Impl>::generateTrapEvent(ThreadID tid, Fault inst_fault)
 {
     DPRINTF(Commit, "Generating trap event for [tid:%i]\n", tid);
 
-    TrapEvent *trap = new TrapEvent(this, tid);
+    EventFunctionWrapper *trap = new EventFunctionWrapper(
+        [this, tid]{ processTrapEvent(tid); },
+        "Trap", true, Event::CPU_Tick_Pri);
 
     Cycles latency = dynamic_pointer_cast<SyscallRetryFault>(inst_fault) ?
                      cpu->syscallRetryLatency : trapLatency;
@@ -1049,6 +1044,12 @@ DefaultCommit<Impl>::commitInsts()
                                              (!(pc[0].instAddr() & 0x3)));
                 }
 
+                // at this point store conditionals should either have
+                // been completed or predicated false
+                assert(!head_inst->isStoreConditional() ||
+                       head_inst->isCompleted() ||
+                       !head_inst->readPredicate());
+
                 // Updates misc. registers.
                 head_inst->updateMiscRegs();
 
@@ -1224,7 +1225,10 @@ DefaultCommit<Impl>::commitHead(DynInstPtr &head_inst, unsigned inst_num)
         // needed to update the state as soon as possible.  This
         // prevents external agents from changing any specific state
         // that the trap need.
-        cpu->trap(inst_fault, tid, head_inst->staticInst);
+        cpu->trap(inst_fault, tid,
+                  head_inst->notAnInst() ?
+                      StaticInst::nullStaticInstPtr :
+                      head_inst->staticInst);
 
         // Exit state update mode to avoid accidental updating.
         thread[tid]->noSquashFromTC = false;
@@ -1404,6 +1408,9 @@ DefaultCommit<Impl>::updateComInstStats(DynInstPtr &inst)
     // Floating Point Instruction
     if (inst->isFloating())
         statComFloating[tid]++;
+    // Vector Instruction
+    if (inst->isVector())
+        statComVector[tid]++;
 
     // Function Calls
     if (inst->isCall())

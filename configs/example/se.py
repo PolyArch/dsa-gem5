@@ -42,6 +42,8 @@
 #
 # "m5 test.py"
 
+from __future__ import print_function
+
 import optparse
 import sys
 import os
@@ -49,7 +51,7 @@ import os
 import m5
 from m5.defines import buildEnv
 from m5.objects import *
-from m5.util import addToPath, fatal
+from m5.util import addToPath, fatal, warn
 
 addToPath('../')
 
@@ -91,7 +93,7 @@ def get_processes(options):
 
     idx = 0
     for wrkld in workloads:
-        process = Process()
+        process = Process(pid = 100 + idx)
         process.executable = wrkld
         process.cwd = os.getcwd()
 
@@ -115,7 +117,7 @@ def get_processes(options):
         idx += 1
 
     if options.smt:
-        assert(options.cpu_type == "detailed")
+        assert(options.cpu_type == "DerivO3CPU")
         return multiprocesses, idx
     else:
         return multiprocesses, 1
@@ -131,7 +133,7 @@ if '--ruby' in sys.argv:
 (options, args) = parser.parse_args()
 
 if args:
-    print "Error: script doesn't take any positional arguments"
+    print("Error: script doesn't take any positional arguments")
     sys.exit(1)
 
 multiprocesses = []
@@ -140,7 +142,7 @@ numThreads = 1
 if options.bench:
     apps = options.bench.split("-")
     if len(apps) != options.num_cpus:
-        print "number of benchmarks not equal to set num_cpus!"
+        print("number of benchmarks not equal to set num_cpus!")
         sys.exit(1)
 
     for app in apps:
@@ -156,13 +158,14 @@ if options.bench:
                         app, options.spec_input))
             multiprocesses.append(workload.makeProcess())
         except:
-            print >>sys.stderr, "Unable to find workload for %s: %s" % (
-                    buildEnv['TARGET_ISA'], app)
+            print("Unable to find workload for %s: %s" %
+                  (buildEnv['TARGET_ISA'], app),
+                  file=sys.stderr)
             sys.exit(1)
 elif options.cmd:
     multiprocesses, numThreads = get_processes(options)
 else:
-    print >> sys.stderr, "No workload specified. Exiting!\n"
+    print("No workload specified. Exiting!\n", file=sys.stderr)
     sys.exit(1)
 
 
@@ -252,10 +255,6 @@ for i in xrange(np):
     system.cpu[i].createThreads()
 
 if options.ruby:
-    if options.cpu_type == "atomic" or options.cpu_type == "AtomicSimpleCPU":
-        print >> sys.stderr, "Ruby does not work with atomic cpu!!"
-        sys.exit(1)
-
     Ruby.create_system(options, False, system)
     assert(options.num_cpus == len(system.ruby._cpu_ports))
 

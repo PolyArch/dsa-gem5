@@ -43,7 +43,6 @@
 #include "debug/Checkpoint.hh"
 #include "debug/VGIC.hh"
 #include "dev/arm/base_gic.hh"
-#include "dev/terminal.hh"
 #include "mem/packet.hh"
 #include "mem/packet_access.hh"
 
@@ -53,11 +52,19 @@ VGic::VGic(const Params *p)
       maintInt(p->ppint)
 {
     for (int x = 0; x < VGIC_CPU_MAX; x++) {
-        postVIntEvent[x] = new PostVIntEvent(x, p->platform);
+        postVIntEvent[x] = new EventFunctionWrapper(
+            [this, x]{ processPostVIntEvent(x); },
+            "Post VInterrupt to CPU");
         maintIntPosted[x] = false;
         vIntPosted[x] = false;
     }
     assert(sys->numRunningContexts() <= VGIC_CPU_MAX);
+}
+
+VGic::~VGic()
+{
+    for (int x = 0; x < VGIC_CPU_MAX; x++)
+        delete postVIntEvent[x];
 }
 
 Tick
@@ -361,6 +368,13 @@ VGic::unPostVInt(uint32_t cpu)
     DPRINTF(VGIC, "Unposting VIRQ to %d\n", cpu);
     platform->intrctrl->clear(cpu, ArmISA::INT_VIRT_IRQ, 0);
 }
+
+void
+VGic::processPostVIntEvent(uint32_t cpu)
+{
+     platform->intrctrl->post(cpu, ArmISA::INT_VIRT_IRQ, 0);
+}
+
 
 void
 VGic::postMaintInt(uint32_t cpu)

@@ -41,6 +41,7 @@ from m5.SimObject import SimObject
 from m5.params import *
 from m5.proxy import *
 from MemObject import MemObject
+from BaseTLB import BaseTLB
 
 # Basic stage 1 translation objects
 class ArmTableWalker(MemObject):
@@ -59,10 +60,11 @@ class ArmTableWalker(MemObject):
 
     sys = Param.System(Parent.any, "system object parameter")
 
-class ArmTLB(SimObject):
+class ArmTLB(BaseTLB):
     type = 'ArmTLB'
     cxx_class = 'ArmISA::TLB'
     cxx_header = "arch/arm/tlb.hh"
+    sys = Param.System(Parent.any, "system object parameter")
     size = Param.Int(64, "TLB size")
     walker = Param.ArmTableWalker(ArmTableWalker(), "HW Table walker")
     is_stage2 = Param.Bool(False, "Is this a stage 2 TLB?")

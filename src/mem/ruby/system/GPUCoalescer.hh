@@ -14,9 +14,9 @@
  * this list of conditions and the following disclaimer in the documentation
  * and/or other materials provided with the distribution.
  *
- * 3. Neither the name of the copyright holder nor the names of its contributors
- * may be used to endorse or promote products derived from this software
- * without specific prior written permission.
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from this
+ * software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -30,7 +30,7 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  *
- * Author: Sooraj Puthoor
+ * Authors: Sooraj Puthoor
  */
 
 #ifndef __MEM_RUBY_SYSTEM_GPU_COALESCER_HH__
@@ -255,17 +255,7 @@ class GPUCoalescer : public RubyPort
 
     bool handleLlsc(Addr address, GPUCoalescerRequest* request);
 
-    class IssueEvent : public Event
-    {
-      private:
-        GPUCoalescer *seq;
-      public:
-        IssueEvent(GPUCoalescer *_seq);
-        void process();
-        const char *description() const;
-    };
-
-    IssueEvent issueEvent;
+    EventFunctionWrapper issueEvent;
 
 
   // Changed to protected to enable inheritance by VIPER Coalescer
@@ -305,22 +295,7 @@ class GPUCoalescer : public RubyPort
 
     bool m_runningGarnetStandalone;
 
-    class GPUCoalescerWakeupEvent : public Event
-    {
-      private:
-        GPUCoalescer *m_GPUCoalescer_ptr;
-
-      public:
-        GPUCoalescerWakeupEvent(GPUCoalescer *_seq) :
-            m_GPUCoalescer_ptr(_seq) {}
-        void process() { m_GPUCoalescer_ptr->wakeup(); }
-        const char *description() const
-        {
-            return "GPUCoalescer deadlock check";
-        }
-    };
-
-    GPUCoalescerWakeupEvent deadlockCheckEvent;
+    EventFunctionWrapper deadlockCheckEvent;
     bool assumingRfOCoherence;
 
     // m5 style stats for TCP hit/miss counts
@@ -382,4 +357,3 @@ operator<<(std::ostream& out, const GPUCoalescer& obj)
 }
 
 #endif // __MEM_RUBY_SYSTEM_GPU_COALESCER_HH__
-

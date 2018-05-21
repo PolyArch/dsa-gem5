@@ -48,10 +48,10 @@
 #include "debug/GIC.hh"
 #include "debug/IPI.hh"
 #include "debug/Interrupt.hh"
-#include "dev/terminal.hh"
 #include "mem/packet.hh"
 #include "mem/packet_access.hh"
 
+const AddrRange Pl390::GICD_IGROUPR   (0x080, 0x0ff);
 const AddrRange Pl390::GICD_ISENABLER (0x100, 0x17f);
 const AddrRange Pl390::GICD_ICENABLER (0x180, 0x1ff);
 const AddrRange Pl390::GICD_ISPENDR   (0x200, 0x27f);
@@ -86,12 +86,20 @@ Pl390::Pl390(const Params *p)
         cpuBpr[x] = GICC_BPR_MINIMUM;
         // Initialize cpu highest int
         cpuHighestInt[x] = SPURIOUS_INT;
-        postIntEvent[x] = new PostIntEvent(*this, x);
+        postIntEvent[x] =
+            new EventFunctionWrapper([this, x]{ postDelayedInt(x); },
+                                     "Post Interrupt to CPU");
     }
     DPRINTF(Interrupt, "cpuEnabled[0]=%d cpuEnabled[1]=%d\n", cpuEnabled[0],
             cpuEnabled[1]);
 
     gem5ExtensionsEnabled = false;
+}
+
+Pl390::~Pl390()
+{
+    for (int x = 0; x < CPU_MAX; x++)
+        delete postIntEvent[x];
 }
 
 Tick
@@ -153,6 +161,10 @@ Pl390::readDistributor(PacketPtr pkt)
 uint32_t
 Pl390::readDistributor(ContextID ctx, Addr daddr, size_t resp_sz)
 {
+    if (GICD_IGROUPR.contains(daddr)) {
+        return 0; // unimplemented; RAZ (read as zero)
+    }
+
     if (GICD_ISENABLER.contains(daddr)) {
         uint32_t ix = (daddr - GICD_ISENABLER.start()) >> 2;
         assert(ix < 32);
@@ -247,6 +259,18 @@ Pl390::readDistributor(ContextID ctx, Addr daddr, size_t resp_sz)
         return (((sys->numRunningContexts() - 1) << 5) |
                 (itLines/INT_BITS_MAX -1) |
                 (haveGem5Extensions ? 0x100 : 0x0));
+      case GICD_PIDR0:
+        //ARM defined DevID
+        return (GICD_400_PIDR_VALUE & 0xFF);
+      case GICD_PIDR1:
+        return ((GICD_400_PIDR_VALUE >> 8) & 0xFF);
+      case GICD_PIDR2:
+        return ((GICD_400_PIDR_VALUE >> 16) & 0xFF);
+      case GICD_PIDR3:
+        return ((GICD_400_PIDR_VALUE >> 24) & 0xFF);
+      case GICD_IIDR:
+         /* revision id is resorted to 1 and variant to 0*/
+        return GICD_400_IIDR_VALUE;
       default:
         panic("Tried to read Gic distributor at offset %#x\n", daddr);
         break;
@@ -276,7 +300,7 @@ Pl390::readCpu(ContextID ctx, Addr daddr)
 {
     switch(daddr) {
       case GICC_IIDR:
-        return 0;
+        return GICC_400_IIDR_VALUE;
       case GICC_CTLR:
         return cpuEnabled[ctx];
       case GICC_PMR:
@@ -387,6 +411,10 @@ void
 Pl390::writeDistributor(ContextID ctx, Addr daddr, uint32_t data,
                         size_t data_sz)
 {
+    if (GICD_IGROUPR.contains(daddr)) {
+        return; // unimplemented; WI (writes ignored)
+    }
+
     if (GICD_ISENABLER.contains(daddr)) {
         uint32_t ix = (daddr - GICD_ISENABLER.start()) >> 2;
         assert(ix < 32);
@@ -854,6 +882,14 @@ Pl390::drain()
     } else {
         return DrainState::Draining;
     }
+}
+
+
+void
+Pl390::drainResume()
+{
+    // There may be pending interrupts if checkpointed from Kvm; post them.
+    updateIntState(-1);
 }
 
 void

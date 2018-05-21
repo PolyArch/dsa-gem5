@@ -45,15 +45,27 @@
 #ifndef __SIM_SYSCALL_EMUL_HH__
 #define __SIM_SYSCALL_EMUL_HH__
 
-#define NO_STAT64 (defined(__APPLE__) || defined(__OpenBSD__) || \
-  defined(__FreeBSD__) || defined(__CYGWIN__) || \
-  defined(__NetBSD__))
+#if (defined(__APPLE__) || defined(__OpenBSD__) ||      \
+     defined(__FreeBSD__) || defined(__CYGWIN__) ||     \
+     defined(__NetBSD__))
+#define NO_STAT64 1
+#else
+#define NO_STAT64 0
+#endif
 
-#define NO_STATFS (defined(__APPLE__) || defined(__OpenBSD__) || \
-  defined(__FreeBSD__) || defined(__NetBSD__))
+#if (defined(__APPLE__) || defined(__OpenBSD__) ||      \
+     defined(__FreeBSD__) || defined(__NetBSD__))
+#define NO_STATFS 1
+#else
+#define NO_STATFS 0
+#endif
 
-#define NO_FALLOCATE (defined(__APPLE__) || defined(__OpenBSD__) || \
-  defined(__FreeBSD__) || defined(__NetBSD__))
+#if (defined(__APPLE__) || defined(__OpenBSD__) ||      \
+     defined(__FreeBSD__) || defined(__NetBSD__))
+#define NO_FALLOCATE 1
+#else
+#define NO_FALLOCATE 0
+#endif
 
 ///
 /// @file syscall_emul.hh
@@ -81,10 +93,11 @@
 #include <memory>
 #include <string>
 
+#include "arch/generic/tlb.hh"
 #include "arch/utility.hh"
 #include "base/intmath.hh"
 #include "base/loader/object_file.hh"
-#include "base/misc.hh"
+#include "base/logging.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
 #include "config/the_isa.hh"
@@ -417,7 +430,7 @@ getElapsedTimeNano(T1 &sec, T2 &nsec)
 //// memory space.  Used by stat(), fstat(), and lstat().
 
 template <typename target_stat, typename host_stat>
-static void
+void
 convertStatBuf(target_stat &tgt, host_stat *host, bool fakeTTY = false)
 {
     using namespace TheISA;
@@ -466,7 +479,7 @@ convertStatBuf(target_stat &tgt, host_stat *host, bool fakeTTY = false)
 // Same for stat64
 
 template <typename target_stat, typename host_stat64>
-static void
+void
 convertStat64Buf(target_stat &tgt, host_stat64 *host, bool fakeTTY = false)
 {
     using namespace TheISA;
@@ -488,7 +501,7 @@ convertStat64Buf(target_stat &tgt, host_stat64 *host, bool fakeTTY = false)
 
 // Here are a couple of convenience functions
 template<class OS>
-static void
+void
 copyOutStatBuf(SETranslatingPortProxy &mem, Addr addr,
                hst_stat *host, bool fakeTTY = false)
 {
@@ -499,7 +512,7 @@ copyOutStatBuf(SETranslatingPortProxy &mem, Addr addr,
 }
 
 template<class OS>
-static void
+void
 copyOutStat64Buf(SETranslatingPortProxy &mem, Addr addr,
                  hst_stat64 *host, bool fakeTTY = false)
 {
@@ -510,7 +523,7 @@ copyOutStat64Buf(SETranslatingPortProxy &mem, Addr addr,
 }
 
 template <class OS>
-static void
+void
 copyOutStatfsBuf(SETranslatingPortProxy &mem, Addr addr,
                  hst_statfs *host)
 {
@@ -920,6 +933,8 @@ mremapFunc(SyscallDesc *desc, int callnum, Process *process, ThreadContext *tc)
 
         if ((start + old_length) == mmap_end &&
             (!use_provided_address || provided_address == start)) {
+            // This case cannot occur when growing downward, as
+            // start is greater than or equal to mmap_end.
             uint64_t diff = new_length - old_length;
             process->allocateMem(mmap_end, diff);
             mem_state->setMmapEnd(mmap_end + diff);
@@ -929,8 +944,15 @@ mremapFunc(SyscallDesc *desc, int callnum, Process *process, ThreadContext *tc)
                 warn("can't remap here and MREMAP_MAYMOVE flag not set\n");
                 return -ENOMEM;
             } else {
-                uint64_t new_start = use_provided_address ?
-                    provided_address : mmap_end;
+                uint64_t new_start = provided_address;
+                if (!use_provided_address) {
+                    new_start = process->mmapGrowsDown() ?
+                                mmap_end - new_length : mmap_end;
+                    mmap_end = process->mmapGrowsDown() ?
+                               new_start : mmap_end + new_length;
+                    mem_state->setMmapEnd(mmap_end);
+                }
+
                 process->pTable->remap(start, old_length, new_start);
                 warn("mremapping to new vaddr %08p-%08p, adding %d\n",
                      new_start, new_start + new_length,
@@ -939,10 +961,11 @@ mremapFunc(SyscallDesc *desc, int callnum, Process *process, ThreadContext *tc)
                 process->allocateMem(new_start + old_length,
                                      new_length - old_length,
                                      use_provided_address /* clobber */);
-                if (!use_provided_address)
-                    mem_state->setMmapEnd(mmap_end + new_length);
                 if (use_provided_address &&
-                    new_start + new_length > mem_state->getMmapEnd()) {
+                    ((new_start + new_length > mem_state->getMmapEnd() &&
+                      !process->mmapGrowsDown()) ||
+                    (new_start < mem_state->getMmapEnd() &&
+                      process->mmapGrowsDown()))) {
                     // something fishy going on here, at least notify the user
                     // @todo: increase mmap_end?
                     warn("mmap region limit exceeded with MREMAP_FIXED\n");
@@ -1219,11 +1242,23 @@ SyscallReturn
 cloneFunc(SyscallDesc *desc, int callnum, Process *p, ThreadContext *tc)
 {
     int index = 0;
+
     TheISA::IntReg flags = p->getSyscallArg(tc, index);
     TheISA::IntReg newStack = p->getSyscallArg(tc, index);
     Addr ptidPtr = p->getSyscallArg(tc, index);
+
+#if THE_ISA == RISCV_ISA
+    /**
+     * Linux kernel 4.15 sets CLONE_BACKWARDS flag for RISC-V.
+     * The flag defines the list of clone() arguments in the following
+     * order: flags -> newStack -> ptidPtr -> tlsPtr -> ctidPtr
+     */
+    Addr tlsPtr M5_VAR_USED = p->getSyscallArg(tc, index);
+    Addr ctidPtr = p->getSyscallArg(tc, index);
+#else
     Addr ctidPtr = p->getSyscallArg(tc, index);
     Addr tlsPtr M5_VAR_USED = p->getSyscallArg(tc, index);
+#endif
 
     if (((flags & OS::TGT_CLONE_SIGHAND)&& !(flags & OS::TGT_CLONE_VM)) ||
         ((flags & OS::TGT_CLONE_THREAD) && !(flags & OS::TGT_CLONE_SIGHAND)) ||
@@ -1318,7 +1353,7 @@ cloneFunc(SyscallDesc *desc, int callnum, Process *p, ThreadContext *tc)
     ctc->setMiscReg(TheISA::MISCREG_ASI, TheISA::ASI_PRIMARY);
     for (int y = 8; y < 32; y++)
         ctc->setIntReg(y, tc->readIntReg(y));
-#elif THE_ISA == ARM_ISA or THE_ISA == X86_ISA
+#elif THE_ISA == ARM_ISA or THE_ISA == X86_ISA or THE_ISA == RISCV_ISA
     TheISA::copyRegs(tc, ctc);
 #endif
 
@@ -1662,6 +1697,48 @@ getrlimitFunc(SyscallDesc *desc, int callnum, Process *process,
     }
 
     rlp.copyOut(tc->getMemProxy());
+    return 0;
+}
+
+template <class OS>
+SyscallReturn
+prlimitFunc(SyscallDesc *desc, int callnum, Process *process,
+            ThreadContext *tc)
+{
+    int index = 0;
+    if (process->getSyscallArg(tc, index) != 0)
+    {
+        warn("prlimit: ignoring rlimits for nonzero pid");
+        return -EPERM;
+    }
+    int resource = process->getSyscallArg(tc, index);
+    Addr n = process->getSyscallArg(tc, index);
+    if (n != 0)
+        warn("prlimit: ignoring new rlimit");
+    Addr o = process->getSyscallArg(tc, index);
+    if (o != 0)
+    {
+        TypedBufferArg<typename OS::rlimit> rlp(o);
+        switch (resource) {
+          case OS::TGT_RLIMIT_STACK:
+            // max stack size in bytes: make up a number (8MB for now)
+            rlp->rlim_cur = rlp->rlim_max = 8 * 1024 * 1024;
+            rlp->rlim_cur = TheISA::htog(rlp->rlim_cur);
+            rlp->rlim_max = TheISA::htog(rlp->rlim_max);
+            break;
+          case OS::TGT_RLIMIT_DATA:
+            // max data segment size in bytes: make up a number
+            rlp->rlim_cur = rlp->rlim_max = 256*1024*1024;
+            rlp->rlim_cur = TheISA::htog(rlp->rlim_cur);
+            rlp->rlim_max = TheISA::htog(rlp->rlim_max);
+            break;
+          default:
+            warn("prlimit: unimplemented resource %d", resource);
+            return -EINVAL;
+            break;
+        }
+        rlp.copyOut(tc->getMemProxy());
+    }
     return 0;
 }
 

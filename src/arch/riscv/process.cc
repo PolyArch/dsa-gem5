@@ -36,14 +36,18 @@
 #include <algorithm>
 #include <cstddef>
 #include <iostream>
+#include <iterator>
 #include <map>
 #include <string>
 #include <vector>
 
+#include "arch/riscv/isa.hh"
 #include "arch/riscv/isa_traits.hh"
+#include "arch/riscv/registers.hh"
 #include "base/loader/elf_object.hh"
 #include "base/loader/object_file.hh"
-#include "base/misc.hh"
+#include "base/logging.hh"
+#include "base/random.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Stack.hh"
 #include "mem/page_table.hh"
@@ -57,16 +61,18 @@
 using namespace std;
 using namespace RiscvISA;
 
-RiscvProcess::RiscvProcess(ProcessParams * params,
-    ObjectFile *objFile) : Process(params, objFile)
+RiscvProcess::RiscvProcess(ProcessParams *params, ObjectFile *objFile) :
+        Process(params,
+                new EmulationPageTable(params->name, params->pid, PageBytes),
+                objFile)
 {
-    const Addr mem_base = 0x80000000;
-    const Addr stack_base = mem_base;
-    const Addr max_stack_size = PageBytes * 64;
+    fatal_if(params->useArchPT, "Arch page tables not implemented.");
+    const Addr stack_base = 0x7FFFFFFFFFFFFFFFL;
+    const Addr max_stack_size = 8 * 1024 * 1024;
     const Addr next_thread_stack_base = stack_base - max_stack_size;
     const Addr brk_point = roundUp(objFile->bssBase() + objFile->bssSize(),
             PageBytes);
-    const Addr mmap_end = mem_base;
+    const Addr mmap_end = 0x4000000000000000L;
     memState = make_shared<MemState>(brk_point, stack_base, max_stack_size,
             next_thread_stack_base, mmap_end);
 }
@@ -77,11 +83,15 @@ RiscvProcess::initState()
     Process::initState();
 
     argsInit<uint64_t>(PageBytes);
+    for (ContextID ctx: contextIds)
+        system->getThreadContext(ctx)->setMiscRegNoEffect(MISCREG_PRV, PRV_U);
 }
 
 template<class IntType> void
 RiscvProcess::argsInit(int pageSize)
 {
+    const int RandomBytes = 16;
+
     updateBias();
     objFile->loadSections(initVirtMem);
     ElfObject* elfObject = dynamic_cast<ElfObject*>(objFile);
@@ -89,6 +99,7 @@ RiscvProcess::argsInit(int pageSize)
 
     // Determine stack size and populate auxv
     Addr stack_top = memState->getStackMin();
+    stack_top -= RandomBytes;
     for (const string& arg: argv)
         stack_top -= arg.size() + 1;
     for (const string& env: envp)
@@ -113,6 +124,13 @@ RiscvProcess::argsInit(int pageSize)
     memState->setStackSize(memState->getStackBase() - stack_top);
     allocateMem(roundDown(stack_top, pageSize),
             roundUp(memState->getStackSize(), pageSize));
+
+    // Copy random bytes (for AT_RANDOM) to stack
+    memState->setStackMin(memState->getStackMin() - RandomBytes);
+    uint8_t at_random[RandomBytes];
+    generate(begin(at_random), end(at_random),
+             [&]{ return random_mt.random(0, 0xFF); });
+    initVirtMem.writeBlob(memState->getStackMin(), at_random, RandomBytes);
 
     // Copy argv to stack
     vector<Addr> argPointers;
@@ -204,10 +222,10 @@ RiscvProcess::argsInit(int pageSize)
 RiscvISA::IntReg
 RiscvProcess::getSyscallArg(ThreadContext *tc, int &i)
 {
-    // RISC-V only has four system call argument registers by convention, so
-    // if a larger index is requested return 0
+    // If a larger index is requested than there are syscall argument
+    // registers, return 0
     RiscvISA::IntReg retval = 0;
-    if (i < 4)
+    if (i < SyscallArgumentRegs.size())
         retval = tc->readIntReg(SyscallArgumentRegs[i]);
     i++;
     return retval;

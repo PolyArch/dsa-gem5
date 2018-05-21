@@ -36,7 +36,7 @@
 #include <string>
 #include <vector>
 
-#include "base/misc.hh"
+#include "base/logging.hh"
 #include "base/random.hh"
 #include "base/statistics.hh"
 #include "debug/GarnetSyntheticTraffic.hh"
@@ -76,7 +76,8 @@ GarnetSyntheticTraffic::sendPkt(PacketPtr pkt)
 
 GarnetSyntheticTraffic::GarnetSyntheticTraffic(const Params *p)
     : MemObject(p),
-      tickEvent(this),
+      tickEvent([this]{ tick(); }, "GarnetSyntheticTraffic tick",
+                false, Event::CPU_Tick_Pri),
       cachePort("GarnetSyntheticTraffic", this),
       retryPkt(NULL),
       size(p->memory_size),
@@ -92,7 +93,7 @@ GarnetSyntheticTraffic::GarnetSyntheticTraffic(const Params *p)
       injVnet(p->inj_vnet),
       precision(p->precision),
       responseLimit(p->response_limit),
-      masterId(p->system->getMasterId(name()))
+      masterId(p->system->getMasterId(this))
 {
     // set up counters
     noResponseCycles = 0;

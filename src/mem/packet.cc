@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2016 ARM Limited
+ * Copyright (c) 2011-2018 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -54,8 +54,9 @@
 #include <iostream>
 
 #include "base/cprintf.hh"
-#include "base/misc.hh"
+#include "base/logging.hh"
 #include "base/trace.hh"
+#include "mem/packet_access.hh"
 
 using namespace std;
 
@@ -95,6 +96,9 @@ MemCmd::commandInfo[] =
      * dirty. */
     { SET5(IsWrite, IsRequest, IsEviction, HasData, FromCache),
             InvalidCmd, "WritebackClean" },
+    /* WriteClean - This allows a cache to write a dirty block to a memory
+       below without evicting its copy. */
+    { SET4(IsWrite, IsRequest, HasData, FromCache), InvalidCmd, "WriteClean" },
     /* CleanEvict */
     { SET3(IsRequest, IsEviction, FromCache), InvalidCmd, "CleanEvict" },
     /* SoftPFReq */
@@ -181,6 +185,24 @@ MemCmd::commandInfo[] =
     {SET2(IsRequest, NeedsResponse), MemFenceResp, "MemFenceReq"},
     /* MemFenceResp -- for synchronization responses */
     {SET1(IsResponse), InvalidCmd, "MemFenceResp"},
+    /* Cache Clean Request -- Update with the latest data all existing
+       copies of the block down to the point indicated by the
+       request */
+    { SET4(IsRequest, IsClean, NeedsResponse, FromCache),
+      CleanSharedResp, "CleanSharedReq" },
+    /* Cache Clean Response - Indicates that all caches up to the
+       specified point of reference have a up-to-date copy of the
+       cache block or no copy at all */
+    { SET2(IsResponse, IsClean), InvalidCmd, "CleanSharedResp" },
+    /* Cache Clean and Invalidate Request -- Invalidate all existing
+       copies down to the point indicated by the request */
+    { SET5(IsRequest, IsInvalidate, IsClean, NeedsResponse, FromCache),
+      CleanInvalidResp, "CleanInvalidReq" },
+     /* Cache Clean and Invalidate Respose -- Indicates that no cache
+        above the specified point holds the block and that the block
+        was written to a memory below the specified point. */
+    { SET3(IsResponse, IsInvalidate, IsClean),
+      InvalidCmd, "CleanInvalidResp" },
     /* InvalidDestError  -- packet dest field invalid */
     { SET2(IsResponse, IsError), InvalidCmd, "InvalidDestError" },
     /* BadAddressError   -- memory address invalid */
@@ -343,15 +365,56 @@ Packet::popSenderState()
     return sender_state;
 }
 
+uint64_t
+Packet::getUintX(ByteOrder endian) const
+{
+    switch(getSize()) {
+      case 1:
+        return (uint64_t)get<uint8_t>(endian);
+      case 2:
+        return (uint64_t)get<uint16_t>(endian);
+      case 4:
+        return (uint64_t)get<uint32_t>(endian);
+      case 8:
+        return (uint64_t)get<uint64_t>(endian);
+      default:
+        panic("%i isn't a supported word size.\n", getSize());
+    }
+}
+
+void
+Packet::setUintX(uint64_t w, ByteOrder endian)
+{
+    switch(getSize()) {
+      case 1:
+        set<uint8_t>((uint8_t)w, endian);
+        break;
+      case 2:
+        set<uint16_t>((uint16_t)w, endian);
+        break;
+      case 4:
+        set<uint32_t>((uint32_t)w, endian);
+        break;
+      case 8:
+        set<uint64_t>((uint64_t)w, endian);
+        break;
+      default:
+        panic("%i isn't a supported word size.\n", getSize());
+    }
+
+}
+
 void
 Packet::print(ostream &o, const int verbosity, const string &prefix) const
 {
-    ccprintf(o, "%s%s [%x:%x]%s%s%s%s", prefix, cmdString(),
+    ccprintf(o, "%s%s [%x:%x]%s%s%s%s%s%s", prefix, cmdString(),
              getAddr(), getAddr() + getSize() - 1,
              req->isSecure() ? " (s)" : "",
              req->isInstFetch() ? " IF" : "",
              req->isUncacheable() ? " UC" : "",
-             isExpressSnoop() ? " ES" : "");
+             isExpressSnoop() ? " ES" : "",
+             req->isToPOC() ? " PoC" : "",
+             req->isToPOU() ? " PoU" : "");
 }
 
 std::string

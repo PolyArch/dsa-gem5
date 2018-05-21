@@ -43,9 +43,10 @@
 #include <string>
 #include <vector>
 
+#include "arch/x86/pagetable.hh"
+#include "mem/multi_level_page_table.hh"
 #include "sim/aux_vector.hh"
 #include "sim/process.hh"
-#include "mem/multi_level_page_table.hh"
 
 class SyscallDesc;
 
@@ -59,6 +60,13 @@ namespace X86ISA
     class X86Process : public Process
     {
       protected:
+        /**
+         * Declaration of architectural page table for x86.
+         *
+         * These page tables are stored in system memory and respect x86
+         * specification.
+         */
+
         Addr _gdtStart;
         Addr _gdtSize;
 
@@ -79,11 +87,12 @@ namespace X86ISA
         Addr gdtSize()
         { return _gdtSize; }
 
-        SyscallDesc* getDesc(int callnum);
+        SyscallDesc* getDesc(int callnum) override;
 
-        void setSyscallReturn(ThreadContext *tc, SyscallReturn return_value);
+        void setSyscallReturn(ThreadContext *tc,
+                              SyscallReturn return_value) override;
         void clone(ThreadContext *old_tc, ThreadContext *new_tc,
-                   Process *process, TheISA::IntReg flags);
+                   Process *process, TheISA::IntReg flags) override;
 
         X86Process &
         operator=(const X86Process &in)
@@ -131,14 +140,15 @@ namespace X86ISA
 
       public:
         void argsInit(int pageSize);
-        void initState();
+        void initState() override;
 
-        X86ISA::IntReg getSyscallArg(ThreadContext *tc, int &i);
+        X86ISA::IntReg getSyscallArg(ThreadContext *tc, int &i) override;
         /// Explicitly import the otherwise hidden getSyscallArg
         using Process::getSyscallArg;
-        void setSyscallArg(ThreadContext *tc, int i, X86ISA::IntReg val);
+        void setSyscallArg(ThreadContext *tc, int i,
+                           X86ISA::IntReg val) override;
         void clone(ThreadContext *old_tc, ThreadContext *new_tc,
-                   Process *process, TheISA::IntReg flags);
+                   Process *process, TheISA::IntReg flags) override;
     };
 
     class I386Process : public X86Process
@@ -173,22 +183,19 @@ namespace X86ISA
 
       public:
         void argsInit(int pageSize);
-        void initState();
+        void initState() override;
 
-        void syscall(int64_t callnum, ThreadContext *tc, Fault *fault);
-        X86ISA::IntReg getSyscallArg(ThreadContext *tc, int &i);
-        X86ISA::IntReg getSyscallArg(ThreadContext *tc, int &i, int width);
-        void setSyscallArg(ThreadContext *tc, int i, X86ISA::IntReg val);
+        void syscall(int64_t callnum, ThreadContext *tc,
+                     Fault *fault) override;
+        X86ISA::IntReg getSyscallArg(ThreadContext *tc,
+                                     int &i) override;
+        X86ISA::IntReg getSyscallArg(ThreadContext *tc, int &i,
+                                     int width) override;
+        void setSyscallArg(ThreadContext *tc, int i,
+                           X86ISA::IntReg val) override;
         void clone(ThreadContext *old_tc, ThreadContext *new_tc,
-                   Process *process, TheISA::IntReg flags);
+                   Process *process, TheISA::IntReg flags) override;
     };
-
-    /**
-     * Declaration of architectural page table for x86.
-     *
-     * These page tables are stored in system memory and respect x86 specification.
-     */
-    typedef MultiLevelPageTable<PageTableOps> ArchPageTable;
 
 }
 

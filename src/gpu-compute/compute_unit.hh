@@ -14,9 +14,9 @@
  * this list of conditions and the following disclaimer in the documentation
  * and/or other materials provided with the distribution.
  *
- * 3. Neither the name of the copyright holder nor the names of its contributors
- * may be used to endorse or promote products derived from this software
- * without specific prior written permission.
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from this
+ * software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -30,7 +30,8 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  *
- * Author: John Kalamatianos, Anthony Gutierrez
+ * Authors: John Kalamatianos,
+ *          Anthony Gutierrez
  */
 
 #ifndef __COMPUTE_UNIT_HH__
@@ -440,39 +441,11 @@ class ComputeUnit : public MemObject
                   saved(sender_state) { }
         };
 
-        class MemReqEvent : public Event
-        {
-          private:
-            DataPort *dataPort;
-            PacketPtr pkt;
+        void processMemReqEvent(PacketPtr pkt);
+        EventFunctionWrapper *createMemReqEvent(PacketPtr pkt);
 
-          public:
-            MemReqEvent(DataPort *_data_port, PacketPtr _pkt)
-                : Event(), dataPort(_data_port), pkt(_pkt)
-            {
-              setFlags(Event::AutoDelete);
-            }
-
-            void process();
-            const char *description() const;
-        };
-
-        class MemRespEvent : public Event
-        {
-          private:
-            DataPort *dataPort;
-            PacketPtr pkt;
-
-          public:
-            MemRespEvent(DataPort *_data_port, PacketPtr _pkt)
-                : Event(), dataPort(_data_port), pkt(_pkt)
-            {
-              setFlags(Event::AutoDelete);
-            }
-
-            void process();
-            const char *description() const;
-        };
+        void processMemRespEvent(PacketPtr pkt);
+        EventFunctionWrapper *createMemRespEvent(PacketPtr pkt);
 
         std::deque<std::pair<PacketPtr, GPUDynInstPtr>> retries;
 

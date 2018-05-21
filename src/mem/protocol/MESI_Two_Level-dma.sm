@@ -69,6 +69,7 @@ machine(MachineType:DMA, "DMA Controller")
   TBETable TBEs, template="<DMA_TBE>", constructor="m_number_of_TBEs";
 
   Tick clockEdge();
+  MachineID mapAddressToMachine(Addr addr, MachineType mtype);
 
   State getState(TBE tbe, Addr addr) {
     if (is_valid(tbe)) {
@@ -136,9 +137,10 @@ machine(MachineType:DMA, "DMA Controller")
       enqueue(requestToDir_out, RequestMsg, request_latency) {
         out_msg.addr := in_msg.PhysicalAddress;
         out_msg.Type := CoherenceRequestType:DMA_READ;
+        out_msg.Requestor := machineID;
         out_msg.DataBlk := in_msg.DataBlk;
         out_msg.Len := in_msg.Len;
-        out_msg.Destination.add(map_Address_to_Directory(address));
+        out_msg.Destination.add(mapAddressToMachine(address, MachineType:Directory));
         out_msg.MessageSize := MessageSizeType:Writeback_Control;
       }
     }
@@ -149,9 +151,10 @@ machine(MachineType:DMA, "DMA Controller")
       enqueue(requestToDir_out, RequestMsg, request_latency) {
           out_msg.addr := in_msg.PhysicalAddress;
           out_msg.Type := CoherenceRequestType:DMA_WRITE;
+          out_msg.Requestor := machineID;
           out_msg.DataBlk := in_msg.DataBlk;
           out_msg.Len := in_msg.Len;
-          out_msg.Destination.add(map_Address_to_Directory(address));
+          out_msg.Destination.add(mapAddressToMachine(address, MachineType:Directory));
           out_msg.MessageSize := MessageSizeType:Writeback_Control;
         }
       }

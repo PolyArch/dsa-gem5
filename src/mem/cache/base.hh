@@ -55,7 +55,7 @@
 #include <string>
 #include <vector>
 
-#include "base/misc.hh"
+#include "base/logging.hh"
 #include "base/statistics.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
@@ -177,8 +177,7 @@ class BaseCache : public MemObject
 
         void processSendRetry();
 
-        EventWrapper<CacheSlavePort,
-                     &CacheSlavePort::processSendRetry> sendRetryEvent;
+        EventFunctionWrapper sendRetryEvent;
 
     };
 
@@ -229,7 +228,7 @@ class BaseCache : public MemObject
     /**
      * Write back dirty blocks in the cache using functional accesses.
      */
-    virtual void memWriteback() = 0;
+    virtual void memWriteback() override = 0;
     /**
      * Invalidates all blocks in the cache.
      *
@@ -237,7 +236,7 @@ class BaseCache : public MemObject
      * memory. Make sure to call functionalWriteback() first if you
      * want the to write them to memory.
      */
-    virtual void memInvalidate() = 0;
+    virtual void memInvalidate() override = 0;
     /**
      * Determine if there are any dirty blocks in the cache.
      *
@@ -454,6 +453,9 @@ class BaseCache : public MemObject
     /** The average overall latency of an MSHR miss. */
     Stats::Formula overallAvgMshrUncacheableLatency;
 
+    /** Number of replacements of valid blocks. */
+    Stats::Scalar replacements;
+
     /**
      * @}
      */
@@ -461,18 +463,18 @@ class BaseCache : public MemObject
     /**
      * Register stats for this object.
      */
-    virtual void regStats();
+    virtual void regStats() override;
 
   public:
     BaseCache(const BaseCacheParams *p, unsigned blk_size);
     ~BaseCache() {}
 
-    virtual void init();
+    virtual void init() override;
 
     virtual BaseMasterPort &getMasterPort(const std::string &if_name,
-                                          PortID idx = InvalidPortID);
+                                          PortID idx = InvalidPortID) override;
     virtual BaseSlavePort &getSlavePort(const std::string &if_name,
-                                        PortID idx = InvalidPortID);
+                                        PortID idx = InvalidPortID) override;
 
     /**
      * Query block size of a cache.

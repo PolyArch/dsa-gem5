@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2012-2013, 2015 ARM Limited
+ * Copyright (c) 2010, 2012-2013, 2015,2017-2018 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -44,6 +44,7 @@
 
 #include <iostream>
 
+#include "arch/arm/semihosting.hh"
 #include "base/loader/object_file.hh"
 #include "base/loader/symtab.hh"
 #include "cpu/thread_context.hh"
@@ -62,9 +63,15 @@ ArmSystem::ArmSystem(Params *p)
       _haveVirtualization(p->have_virtualization),
       _genericTimer(nullptr),
       _highestELIs64(p->highest_el_is_64),
-      _resetAddr64(p->reset_addr_64),
+      _resetAddr64(p->auto_reset_addr_64 ?
+                   (kernelEntry & loadAddrMask) + loadAddrOffset :
+                   p->reset_addr_64),
       _physAddrRange64(p->phys_addr_range_64),
       _haveLargeAsid64(p->have_large_asid_64),
+      _m5opRange(p->m5ops_base ?
+                 RangeSize(p->m5ops_base, 0x10000) :
+                 AddrRange(1, 0)), // Create an empty range if disabled
+      semihosting(p->semihosting),
       multiProc(p->multi_proc)
 {
     // Check if the physical address range is valid
@@ -166,15 +173,18 @@ ArmSystem::initState()
     }
 }
 
+ArmSystem*
+ArmSystem::getArmSystem(ThreadContext *tc)
+{
+    ArmSystem *a_sys = dynamic_cast<ArmSystem *>(tc->getSystemPtr());
+    assert(a_sys);
+    return a_sys;
+}
+
 bool
 ArmSystem::haveSecurity(ThreadContext *tc)
 {
-    if (!FullSystem)
-        return false;
-
-    ArmSystem *a_sys = dynamic_cast<ArmSystem *>(tc->getSystemPtr());
-    assert(a_sys);
-    return a_sys->haveSecurity();
+    return FullSystem? getArmSystem(tc)->haveSecurity() : false;
 }
 
 
@@ -198,63 +208,88 @@ ArmSystem::getBootLoader(ObjectFile *const obj)
 bool
 ArmSystem::haveLPAE(ThreadContext *tc)
 {
-    if (!FullSystem)
-        return false;
-
-    ArmSystem *a_sys = dynamic_cast<ArmSystem *>(tc->getSystemPtr());
-    assert(a_sys);
-    return a_sys->haveLPAE();
+    return FullSystem? getArmSystem(tc)->haveLPAE() : false;
 }
 
 bool
 ArmSystem::haveVirtualization(ThreadContext *tc)
 {
-    if (!FullSystem)
-        return false;
-
-    ArmSystem *a_sys = dynamic_cast<ArmSystem *>(tc->getSystemPtr());
-    assert(a_sys);
-    return a_sys->haveVirtualization();
+    return FullSystem? getArmSystem(tc)->haveVirtualization() : false;
 }
 
 bool
 ArmSystem::highestELIs64(ThreadContext *tc)
 {
-    return FullSystem ?
-        dynamic_cast<ArmSystem *>(tc->getSystemPtr())->highestELIs64() :
-        true;
+    return FullSystem? getArmSystem(tc)->highestELIs64() : true;
 }
 
 ExceptionLevel
 ArmSystem::highestEL(ThreadContext *tc)
 {
-    return FullSystem ?
-        dynamic_cast<ArmSystem *>(tc->getSystemPtr())->highestEL() :
-        EL1;
+    return FullSystem? getArmSystem(tc)->highestEL() : EL1;
+}
+
+bool
+ArmSystem::haveEL(ThreadContext *tc, ExceptionLevel el)
+{
+    switch (el) {
+      case EL0:
+      case EL1:
+        return true;
+      case EL2:
+        return haveVirtualization(tc);
+      case EL3:
+        return haveSecurity(tc);
+      default:
+        warn("Unimplemented Exception Level\n");
+        return false;
+    }
 }
 
 Addr
 ArmSystem::resetAddr64(ThreadContext *tc)
 {
-    return dynamic_cast<ArmSystem *>(tc->getSystemPtr())->resetAddr64();
+    return getArmSystem(tc)->resetAddr64();
 }
 
 uint8_t
 ArmSystem::physAddrRange(ThreadContext *tc)
 {
-    return dynamic_cast<ArmSystem *>(tc->getSystemPtr())->physAddrRange();
+    return getArmSystem(tc)->physAddrRange();
 }
 
 Addr
 ArmSystem::physAddrMask(ThreadContext *tc)
 {
-    return dynamic_cast<ArmSystem *>(tc->getSystemPtr())->physAddrMask();
+    return getArmSystem(tc)->physAddrMask();
 }
 
 bool
 ArmSystem::haveLargeAsid64(ThreadContext *tc)
 {
-    return dynamic_cast<ArmSystem *>(tc->getSystemPtr())->haveLargeAsid64();
+    return getArmSystem(tc)->haveLargeAsid64();
+}
+
+bool
+ArmSystem::haveSemihosting(ThreadContext *tc)
+{
+    return FullSystem && getArmSystem(tc)->haveSemihosting();
+}
+
+uint64_t
+ArmSystem::callSemihosting64(ThreadContext *tc,
+                             uint32_t op, uint64_t param)
+{
+    ArmSystem *sys = getArmSystem(tc);
+    return sys->semihosting->call64(tc, op, param);
+}
+
+uint32_t
+ArmSystem::callSemihosting32(ThreadContext *tc,
+                             uint32_t op, uint32_t param)
+{
+    ArmSystem *sys = getArmSystem(tc);
+    return sys->semihosting->call32(tc, op, param);
 }
 
 ArmSystem *

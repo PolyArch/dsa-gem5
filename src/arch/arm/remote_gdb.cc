@@ -1,7 +1,7 @@
 /*
  * Copyright 2015 LabWare
  * Copyright 2014 Google Inc.
- * Copyright (c) 2010, 2013 ARM Limited
+ * Copyright (c) 2010, 2013, 2016 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -164,8 +164,8 @@
 using namespace std;
 using namespace ArmISA;
 
-RemoteGDB::RemoteGDB(System *_system, ThreadContext *tc)
-    : BaseRemoteGDB(_system, tc)
+RemoteGDB::RemoteGDB(System *_system, ThreadContext *tc, int _port)
+    : BaseRemoteGDB(_system, tc, _port), regCache32(this), regCache64(this)
 {
 }
 
@@ -177,7 +177,7 @@ RemoteGDB::acc(Addr va, size_t len)
 {
     if (FullSystem) {
         for (ChunkGenerator gen(va, len, PageBytes); !gen.done(); gen.next()) {
-            if (!virtvalid(context, gen.addr())) {
+            if (!virtvalid(context(), gen.addr())) {
                 DPRINTF(GDBAcc, "acc:   %#x mapping is invalid\n", va);
                 return false;
             }
@@ -186,12 +186,9 @@ RemoteGDB::acc(Addr va, size_t len)
         DPRINTF(GDBAcc, "acc:   %#x mapping is valid\n", va);
         return true;
     } else {
-        TlbEntry entry;
-        //Check to make sure the first byte is mapped into the processes address
-        //space.
-        if (context->getProcessPtr()->pTable->lookup(va, entry))
-            return true;
-        return false;
+        // Check to make sure the first byte is mapped into the processes
+        // address space.
+        return context()->getProcessPtr()->pTable->lookup(va) != nullptr;
     }
 }
 
@@ -211,6 +208,10 @@ RemoteGDB::AArch64GdbRegCache::getRegs(ThreadContext *context)
         r.v[i + 1] = context->readFloatRegBits(i + 3);
         r.v[i + 2] = context->readFloatRegBits(i + 0);
         r.v[i + 3] = context->readFloatRegBits(i + 1);
+    }
+
+    for (int i = 0; i < 32; i ++) {
+        r.vec[i] = context->readVecReg(RegId(VecRegClass,i));
     }
 }
 
@@ -233,6 +234,10 @@ RemoteGDB::AArch64GdbRegCache::setRegs(ThreadContext *context) const
         context->setFloatRegBits(i + 3, r.v[i + 1]);
         context->setFloatRegBits(i + 0, r.v[i + 2]);
         context->setFloatRegBits(i + 1, r.v[i + 3]);
+    }
+
+    for (int i = 0; i < 32; i ++) {
+        context->setVecReg(RegId(VecRegClass, i), r.vec[i]);
     }
 }
 
@@ -293,11 +298,11 @@ RemoteGDB::AArch32GdbRegCache::setRegs(ThreadContext *context) const
     context->setMiscRegNoEffect(MISCREG_CPSR, r.cpsr);
 }
 
-RemoteGDB::BaseGdbRegCache*
+BaseGdbRegCache*
 RemoteGDB::gdbRegs()
 {
-    if (inAArch64(context))
-        return new AArch64GdbRegCache(this);
+    if (inAArch64(context()))
+        return &regCache64;
     else
-        return new AArch32GdbRegCache(this);
+        return &regCache32;
 }

@@ -14,9 +14,9 @@
  * this list of conditions and the following disclaimer in the documentation
  * and/or other materials provided with the distribution.
  *
- * 3. Neither the name of the copyright holder nor the names of its contributors
- * may be used to endorse or promote products derived from this software
- * without specific prior written permission.
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from this
+ * software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -30,7 +30,7 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  *
- * Author: Lisa Hsu
+ * Authors: Lisa Hsu
  */
 
 #ifndef __TLB_COALESCER_HH__
@@ -46,7 +46,7 @@
 #include "arch/isa_traits.hh"
 #include "arch/x86/pagetable.hh"
 #include "arch/x86/regs/segment.hh"
-#include "base/misc.hh"
+#include "base/logging.hh"
 #include "base/statistics.hh"
 #include "gpu-compute/gpu_tlb.hh"
 #include "mem/mem_object.hh"
@@ -214,35 +214,14 @@ class TLBCoalescer : public MemObject
     BaseMasterPort& getMasterPort(const std::string &if_name, PortID idx);
     BaseSlavePort& getSlavePort(const std::string &if_name, PortID idx);
 
-    class IssueProbeEvent : public Event
-    {
-      private:
-        TLBCoalescer *coalescer;
+    void processProbeTLBEvent();
+    /// This event issues the TLB probes
+    EventFunctionWrapper probeTLBEvent;
 
-      public:
-        IssueProbeEvent(TLBCoalescer *_coalescer);
-        void process();
-        const char *description() const;
-    };
-
-    // this event issues the TLB probes
-    IssueProbeEvent probeTLBEvent;
-
-    // the cleanupEvent is scheduled after a TLBEvent triggers
-    // in order to free memory and do the required clean-up
-    class CleanupEvent : public Event
-    {
-      private:
-        TLBCoalescer *coalescer;
-
-      public:
-        CleanupEvent(TLBCoalescer *_coalescer);
-        void process();
-        const char* description() const;
-     };
-
-    // schedule cleanup
-    CleanupEvent cleanupEvent;
+    void processCleanupEvent();
+    /// The cleanupEvent is scheduled after a TLBEvent triggers
+    /// in order to free memory and do the required clean-up
+    EventFunctionWrapper cleanupEvent;
 
     // this FIFO queue keeps track of the virt. page
     // addresses that are pending cleanup

@@ -14,9 +14,9 @@
  * this list of conditions and the following disclaimer in the documentation
  * and/or other materials provided with the distribution.
  *
- * 3. Neither the name of the copyright holder nor the names of its contributors
- * may be used to endorse or promote products derived from this software
- * without specific prior written permission.
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from this
+ * software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -126,6 +126,7 @@ machine(MachineType:TCC, "TCC Cache")
   void wakeUpAllBuffers();
   void wakeUpBuffers(Addr a);
 
+  MachineID mapAddressToMachine(Addr addr, MachineType mtype);
 
   // FUNCTION DEFINITIONS
   Tick clockEdge();
@@ -366,7 +367,7 @@ machine(MachineType:TCC, "TCC Cache")
     }
     enqueue(unblockToNB_out, UnblockMsg, 1) {
       out_msg.addr := address;
-      out_msg.Destination.add(map_Address_to_Directory(address));
+      out_msg.Destination.add(mapAddressToMachine(address, MachineType:Directory));
       out_msg.MessageSize := MessageSizeType:Unblock_Control;
       DPRINTF(RubySlicc, "%s\n", out_msg);
     }
@@ -380,7 +381,7 @@ machine(MachineType:TCC, "TCC Cache")
           out_msg.addr := address;
           out_msg.Type := in_msg.Type;
           out_msg.Requestor := machineID;
-          out_msg.Destination.add(map_Address_to_Directory(address));
+          out_msg.Destination.add(mapAddressToMachine(address, MachineType:Directory));
           out_msg.Shared := false; // unneeded for this request
           out_msg.MessageSize := in_msg.MessageSize;
           DPRINTF(RubySlicc, "%s\n", out_msg);
@@ -479,7 +480,7 @@ machine(MachineType:TCC, "TCC Cache")
         out_msg.addr := address;
         out_msg.Requestor := machineID;
         out_msg.WTRequestor := in_msg.Requestor;
-        out_msg.Destination.add(map_Address_to_Directory(address));
+        out_msg.Destination.add(mapAddressToMachine(address, MachineType:Directory));
         out_msg.MessageSize := MessageSizeType:Data;
         out_msg.Type := CoherenceRequestType:WriteThrough;
         out_msg.Dirty := true;
@@ -494,7 +495,7 @@ machine(MachineType:TCC, "TCC Cache")
       out_msg.addr := address;
       out_msg.Requestor := machineID;
       out_msg.WTRequestor := machineID;
-      out_msg.Destination.add(map_Address_to_Directory(address));
+      out_msg.Destination.add(mapAddressToMachine(address, MachineType:Directory));
       out_msg.MessageSize := MessageSizeType:Data;
       out_msg.Type := CoherenceRequestType:WriteThrough;
       out_msg.Dirty := true;
@@ -509,7 +510,7 @@ machine(MachineType:TCC, "TCC Cache")
         out_msg.addr := address;
         out_msg.Requestor := machineID;
         out_msg.WTRequestor := in_msg.Requestor;
-        out_msg.Destination.add(map_Address_to_Directory(address));
+        out_msg.Destination.add(mapAddressToMachine(address, MachineType:Directory));
         out_msg.MessageSize := MessageSizeType:Data;
         out_msg.Type := CoherenceRequestType:Atomic;
         out_msg.Dirty := true;
@@ -523,7 +524,7 @@ machine(MachineType:TCC, "TCC Cache")
       out_msg.addr := address;
       out_msg.Type := CoherenceResponseType:CPUPrbResp;  // TCC, L3  respond in same way to probes
       out_msg.Sender := machineID;
-      out_msg.Destination.add(map_Address_to_Directory(address));
+      out_msg.Destination.add(mapAddressToMachine(address, MachineType:Directory));
       out_msg.Dirty := false;
       out_msg.Hit := false;
       out_msg.Ntsl := true;

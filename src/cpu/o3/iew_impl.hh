@@ -1100,7 +1100,7 @@ DefaultIEW<Impl>::dispatchInsts(ThreadID tid)
             add_to_iq = true;
         }
 
-        if (inst->isNonSpeculative()) {
+        if (add_to_iq && inst->isNonSpeculative()) {
             DPRINTF(IEW, "[tid:%i]: Issue: Nonspeculative instruction "
                     "encountered, skipping.\n", tid);
 
@@ -1433,8 +1433,9 @@ DefaultIEW<Impl>::writebackInsts()
 
             for (int i = 0; i < inst->numDestRegs(); i++) {
                 //mark as Ready
-                DPRINTF(IEW,"Setting Destination Register %i\n",
-                        inst->renamedDestRegIdx(i));
+                DPRINTF(IEW,"Setting Destination Register %i (%s)\n",
+                        inst->renamedDestRegIdx(i)->index(),
+                        inst->renamedDestRegIdx(i)->className());
                 scoreboard->setReg(inst->renamedDestRegIdx(i));
             }
 

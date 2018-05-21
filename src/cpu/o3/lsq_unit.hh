@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2014 ARM Limited
+ * Copyright (c) 2012-2014,2017 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -610,8 +610,8 @@ LSQUnit<Impl>::read(Request *req, Request *sreqLow, Request *sreqHigh,
         Cycles delay(0);
         PacketPtr data_pkt = new Packet(req, MemCmd::ReadReq);
 
+        data_pkt->dataStatic(load_inst->memData);
         if (!TheISA::HasUnalignedMemAcc || !sreqLow) {
-            data_pkt->dataStatic(load_inst->memData);
             delay = TheISA::handleIprRead(thread, data_pkt);
         } else {
             assert(sreqLow->isMmappedIpr() && sreqHigh->isMmappedIpr());
@@ -650,10 +650,14 @@ LSQUnit<Impl>::read(Request *req, Request *sreqLow, Request *sreqHigh,
 
         store_size = storeQueue[store_idx].size;
 
-        if (store_size == 0)
+        if (!store_size || storeQueue[store_idx].inst->strictlyOrdered() ||
+            (storeQueue[store_idx].req &&
+             storeQueue[store_idx].req->isCacheMaintenance())) {
+            // Cache maintenance instructions go down via the store
+            // path but they carry no data and they shouldn't be
+            // considered for forwarding
             continue;
-        else if (storeQueue[store_idx].inst->strictlyOrdered())
-            continue;
+        }
 
         assert(storeQueue[store_idx].inst->effAddrValid());
 
@@ -671,8 +675,9 @@ LSQUnit<Impl>::read(Request *req, Request *sreqLow, Request *sreqHigh,
             (req->getVaddr() + req->getSize()) >
             storeQueue[store_idx].inst->effAddr;
 
-        // If the store's data has all of the data needed, we can forward.
-        if ((store_has_lower_limit && store_has_upper_limit)) {
+        // If the store's data has all of the data needed and the load isn't
+        // LLSC, we can forward.
+        if (store_has_lower_limit && store_has_upper_limit && !req->isLLSC()) {
             // Get shift amount for offset into the store's data.
             int shift_amt = req->getVaddr() - storeQueue[store_idx].inst->effAddr;
 
@@ -707,11 +712,18 @@ LSQUnit<Impl>::read(Request *req, Request *sreqLow, Request *sreqHigh,
 
             ++lsqForwLoads;
             return NoFault;
-        } else if ((store_has_lower_limit && lower_load_has_store_part) ||
-                   (store_has_upper_limit && upper_load_has_store_part) ||
-                   (lower_load_has_store_part && upper_load_has_store_part)) {
+        } else if (
+                (!req->isLLSC() &&
+                 ((store_has_lower_limit && lower_load_has_store_part) ||
+                  (store_has_upper_limit && upper_load_has_store_part) ||
+                  (lower_load_has_store_part && upper_load_has_store_part))) ||
+                (req->isLLSC() &&
+                 ((store_has_lower_limit || upper_load_has_store_part) &&
+                  (store_has_upper_limit || lower_load_has_store_part)))) {
             // This is the partial store-load forwarding case where a store
-            // has only part of the load's data.
+            // has only part of the load's data and the load isn't LLSC or
+            // the load is LLSC and the store has all or part of the load's
+            // data
 
             // If it's already been written back, then don't worry about
             // stalling on it.
@@ -886,9 +898,9 @@ LSQUnit<Impl>::write(Request *req, Request *sreqLow, Request *sreqHigh,
     storeQueue[store_idx].sreqHigh = sreqHigh;
     unsigned size = req->getSize();
     storeQueue[store_idx].size = size;
-    storeQueue[store_idx].isAllZeros = req->getFlags() & Request::CACHE_BLOCK_ZERO;
-    assert(size <= sizeof(storeQueue[store_idx].data) ||
-            (req->getFlags() & Request::CACHE_BLOCK_ZERO));
+    bool store_no_data = req->getFlags() & Request::STORE_NO_DATA;
+    storeQueue[store_idx].isAllZeros = store_no_data;
+    assert(size <= sizeof(storeQueue[store_idx].data) || store_no_data);
 
     // Split stores can only occur in ISAs with unaligned memory accesses.  If
     // a store request has been split, sreqLow and sreqHigh will be non-null.
@@ -896,7 +908,8 @@ LSQUnit<Impl>::write(Request *req, Request *sreqLow, Request *sreqHigh,
         storeQueue[store_idx].isSplit = true;
     }
 
-    if (!(req->getFlags() & Request::CACHE_BLOCK_ZERO))
+    if (!(req->getFlags() & Request::CACHE_BLOCK_ZERO) && \
+        !req->isCacheMaintenance())
         memcpy(storeQueue[store_idx].data, data, size);
 
     // This function only writes the data to the store queue, so no fault

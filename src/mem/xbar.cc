@@ -49,7 +49,7 @@
 
 #include "mem/xbar.hh"
 
-#include "base/misc.hh"
+#include "base/logging.hh"
 #include "base/trace.hh"
 #include "debug/AddrRanges.hh"
 #include "debug/Drain.hh"
@@ -147,7 +147,7 @@ template <typename SrcType, typename DstType>
 BaseXBar::Layer<SrcType,DstType>::Layer(DstType& _port, BaseXBar& _xbar,
                                        const std::string& _name) :
     port(_port), xbar(_xbar), _name(_name), state(IDLE),
-    waitingForPeer(NULL), releaseEvent(this)
+    waitingForPeer(NULL), releaseEvent([this]{ releaseLayer(); }, name())
 {
 }
 

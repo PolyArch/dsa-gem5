@@ -86,9 +86,9 @@ MemTest::sendPkt(PacketPtr pkt) {
 
 MemTest::MemTest(const Params *p)
     : MemObject(p),
-      tickEvent(this),
-      noRequestEvent(this),
-      noResponseEvent(this),
+      tickEvent([this]{ tick(); }, name()),
+      noRequestEvent([this]{ noRequest(); }, name()),
+      noResponseEvent([this]{ noResponse(); }, name()),
       port("port", *this),
       retryPkt(nullptr),
       size(p->size),
@@ -96,7 +96,7 @@ MemTest::MemTest(const Params *p)
       percentReads(p->percent_reads),
       percentFunctional(p->percent_functional),
       percentUncacheable(p->percent_uncacheable),
-      masterId(p->system->getMasterId(name())),
+      masterId(p->system->getMasterId(this)),
       blockSize(p->system->cacheLineSize()),
       blockAddrMask(blockSize - 1),
       progressInterval(p->progress_interval),

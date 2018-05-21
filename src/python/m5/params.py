@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2014 ARM Limited
+# Copyright (c) 2012-2014, 2017 ARM Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -59,6 +59,8 @@
 #
 #####################################################################
 
+from __future__ import print_function
+
 import copy
 import datetime
 import re
@@ -102,12 +104,9 @@ class ParamValue(object):
     def cxx_predecls(cls, code):
         pass
 
-    # Generate the code needed as a prerequisite for including a
-    # reference to a C++ object of this type in a SWIG .i file.
-    # Typically generates one or more %import or %include statements.
     @classmethod
-    def swig_predecls(cls, code):
-        pass
+    def pybind_predecls(cls, code):
+        cls.cxx_predecls(code)
 
     # default for printing to .ini file is regular string conversion.
     # will be overridden in some cases
@@ -222,8 +221,8 @@ class ParamDesc(object):
         code('#include <cstddef>')
         self.ptype.cxx_predecls(code)
 
-    def swig_predecls(self, code):
-        self.ptype.swig_predecls(code)
+    def pybind_predecls(self, code):
+        self.ptype.pybind_predecls(code)
 
     def cxx_decl(self, code):
         code('${{self.ptype.cxx_type}} ${{self.name}};')
@@ -248,10 +247,12 @@ class VectorParamValue(list):
         return [ v.getValue() for v in self ]
 
     def unproxy(self, base):
-        if len(self) == 1 and isinstance(self[0], proxy.AllProxy):
+        if len(self) == 1 and isinstance(self[0], proxy.BaseProxy):
+            # The value is a proxy (e.g. Parent.any, Parent.all or
+            # Parent.x) therefore try resolve it
             return self[0].unproxy(base)
         else:
-             return [v.unproxy(base) for v in self]
+            return [v.unproxy(base) for v in self]
 
 class SimObjectVector(VectorParamValue):
     # support clone operation
@@ -271,7 +272,7 @@ class SimObjectVector(VectorParamValue):
                 v.set_parent(parent, "%s%0*d" % (name, width, i))
 
     def has_parent(self):
-        return reduce(lambda x,y: x and y, [v.has_parent() for v in self])
+        return any([e.has_parent() for e in self if not isNullPointer(e)])
 
     # return 'cpu0 cpu1' etc. for print_ini()
     def get_name(self):
@@ -312,7 +313,7 @@ class SimObjectVector(VectorParamValue):
                         cmd_line_str = "",
                         access_str = ""):
         if hasattr(self, "_paramEnumed"):
-            print "Cycle detected enumerating params at %s?!" % (cmd_line_str)
+            print("Cycle detected enumerating params at %s?!" % (cmd_line_str))
         else:
             x = 0
             for vals in self:
@@ -379,34 +380,13 @@ class VectorParamDesc(ParamDesc):
 
         return VectorParamValue(tmp_list)
 
-    def swig_module_name(self):
-        return "%s_vector" % self.ptype_str
-
-    def swig_predecls(self, code):
-        code('%import "${{self.swig_module_name()}}.i"')
-
-    def swig_decl(self, code):
-        code('%module(package="_m5") ${{self.swig_module_name()}}')
-        code('%{')
-        self.ptype.cxx_predecls(code)
-        code('%}')
-        code()
-        # Make sure the SWIGPY_SLICE_ARG is defined through this inclusion
-        code('%include "std_container.i"')
-        code()
-        self.ptype.swig_predecls(code)
-        code()
-        code('%include "std_vector.i"')
-        code()
-
-        ptype = self.ptype_str
-        cxx_type = self.ptype.cxx_type
-
-        code('%template(vector_$ptype) std::vector< $cxx_type >;')
-
     def cxx_predecls(self, code):
         code('#include <vector>')
         self.ptype.cxx_predecls(code)
+
+    def pybind_predecls(self, code):
+        code('#include <vector>')
+        self.ptype.pybind_predecls(code)
 
     def cxx_decl(self, code):
         code('std::vector< ${{self.ptype.cxx_type}} > ${{self.name}};')
@@ -457,10 +437,6 @@ class String(ParamValue,str):
     @classmethod
     def cxx_predecls(self, code):
         code('#include <string>')
-
-    @classmethod
-    def swig_predecls(cls, code):
-        code('%include "std_string.i"')
 
     def __call__(self, value):
         self = value
@@ -584,12 +560,6 @@ class CheckedInt(NumericParamValue):
     def cxx_predecls(cls, code):
         # most derived types require this, so we just do it here once
         code('#include "base/types.hh"')
-
-    @classmethod
-    def swig_predecls(cls, code):
-        # most derived types require this, so we just do it here once
-        code('%import "stdint.i"')
-        code('%import "base/types.hh"')
 
     def getValue(self):
         return long(self.value)
@@ -792,8 +762,9 @@ class AddrRange(ParamValue):
         code('#include "base/addr_range.hh"')
 
     @classmethod
-    def swig_predecls(cls, code):
-        Addr.swig_predecls(code)
+    def pybind_predecls(cls, code):
+        Addr.pybind_predecls(code)
+        code('#include "base/addr_range.hh"')
 
     @classmethod
     def cxx_ini_predecls(cls, code):
@@ -826,8 +797,7 @@ class AddrRange(ParamValue):
         code('${ret} _ret;')
 
     def getValue(self):
-        # Go from the Python class to the wrapped C++ class generated
-        # by swig
+        # Go from the Python class to the wrapped C++ class
         from _m5.range import AddrRange
 
         return AddrRange(long(self.start), long(self.end),
@@ -909,10 +879,6 @@ class EthernetAddr(ParamValue):
     def cxx_predecls(cls, code):
         code('#include "base/inet.hh"')
 
-    @classmethod
-    def swig_predecls(cls, code):
-        code('%include "python/swig/inet.i"')
-
     def __init__(self, value):
         if value == NextEthernetAddr:
             self.value = value
@@ -941,7 +907,7 @@ class EthernetAddr(ParamValue):
         return self
 
     def getValue(self):
-        from m5.internal.params import EthAddr
+        from _m5.net import EthAddr
         return EthAddr(self.value)
 
     def __str__(self):
@@ -965,10 +931,6 @@ class IpAddress(ParamValue):
     @classmethod
     def cxx_predecls(cls, code):
         code('#include "base/inet.hh"')
-
-    @classmethod
-    def swig_predecls(cls, code):
-        code('%include "python/swig/inet.i"')
 
     def __init__(self, value):
         if isinstance(value, IpAddress):
@@ -1007,7 +969,7 @@ class IpAddress(ParamValue):
             raise TypeError, "invalid ip address %#08x" % self.ip
 
     def getValue(self):
-        from m5.internal.params import IpAddress
+        from _m5.net import IpAddress
         return IpAddress(self.ip)
 
 # When initializing an IpNetmask, pass in an existing IpNetmask, a string of
@@ -1021,10 +983,6 @@ class IpNetmask(IpAddress):
     @classmethod
     def cxx_predecls(cls, code):
         code('#include "base/inet.hh"')
-
-    @classmethod
-    def swig_predecls(cls, code):
-        code('%include "python/swig/inet.i"')
 
     def __init__(self, *args, **kwargs):
         def handle_kwarg(self, kwargs, key, elseVal = None):
@@ -1086,7 +1044,7 @@ class IpNetmask(IpAddress):
             raise TypeError, "invalid netmask %d" % netmask
 
     def getValue(self):
-        from m5.internal.params import IpNetmask
+        from _m5.net import IpNetmask
         return IpNetmask(self.ip, self.netmask)
 
 # When initializing an IpWithPort, pass in an existing IpWithPort, a string of
@@ -1099,10 +1057,6 @@ class IpWithPort(IpAddress):
     @classmethod
     def cxx_predecls(cls, code):
         code('#include "base/inet.hh"')
-
-    @classmethod
-    def swig_predecls(cls, code):
-        code('%include "python/swig/inet.i"')
 
     def __init__(self, *args, **kwargs):
         def handle_kwarg(self, kwargs, key, elseVal = None):
@@ -1164,7 +1118,7 @@ class IpWithPort(IpAddress):
             raise TypeError, "invalid port %d" % self.port
 
     def getValue(self):
-        from m5.internal.params import IpWithPort
+        from _m5.net import IpWithPort
         return IpWithPort(self.ip, self.port)
 
 time_formats = [ "%a %b %d %H:%M:%S %Z %Y",
@@ -1212,10 +1166,6 @@ class Time(ParamValue):
     def cxx_predecls(cls, code):
         code('#include <time.h>')
 
-    @classmethod
-    def swig_predecls(cls, code):
-        code('%include "python/swig/time.i"')
-
     def __init__(self, value):
         self.value = parse_time(value)
 
@@ -1224,30 +1174,10 @@ class Time(ParamValue):
         return value
 
     def getValue(self):
-        from m5.internal.params import tm
+        from _m5.core import tm
+        import calendar
 
-        c_time = tm()
-        py_time = self.value
-
-        # UNIX is years since 1900
-        c_time.tm_year = py_time.tm_year - 1900;
-
-        # Python starts at 1, UNIX starts at 0
-        c_time.tm_mon =  py_time.tm_mon - 1;
-        c_time.tm_mday = py_time.tm_mday;
-        c_time.tm_hour = py_time.tm_hour;
-        c_time.tm_min = py_time.tm_min;
-        c_time.tm_sec = py_time.tm_sec;
-
-        # Python has 0 as Monday, UNIX is 0 as sunday
-        c_time.tm_wday = py_time.tm_wday + 1
-        if c_time.tm_wday > 6:
-            c_time.tm_wday -= 7;
-
-        # Python starts at 1, Unix starts at 0
-        c_time.tm_yday = py_time.tm_yday - 1;
-
-        return c_time
+        return tm.gmtime(calendar.timegm(self.value))
 
     def __str__(self):
         return time.asctime(self.value)
@@ -1375,17 +1305,39 @@ $wrapper $wrapper_name {
             code('} // namespace $wrapper_name')
             code.dedent(1)
 
-    def swig_decl(cls, code):
+    def pybind_def(cls, code):
         name = cls.__name__
-        code('''\
-%module(package="_m5") enum_$name
+        wrapper_name = cls.wrapper_name
+        enum_name = cls.__name__ if cls.enum_name is None else cls.enum_name
 
-%{
-#include "enums/$name.hh"
-%}
+        code('''#include "pybind11/pybind11.h"
+#include "pybind11/stl.h"
 
-%include "enums/$name.hh"
+#include <sim/init.hh>
+
+namespace py = pybind11;
+
+static void
+module_init(py::module &m_internal)
+{
+    py::module m = m_internal.def_submodule("enum_${name}");
+
+    py::enum_<${wrapper_name}::${enum_name}>(m, "enum_${name}")
 ''')
+
+        code.indent()
+        code.indent()
+        for val in cls.vals:
+            code('.value("${val}", ${wrapper_name}::${val})')
+        code('.value("Num_${name}", ${wrapper_name}::Num_${enum_name})')
+        code('.export_values()')
+        code(';')
+        code.dedent()
+
+        code('}')
+        code.dedent()
+        code()
+        code('static EmbeddedPyBind embed_enum("enum_${name}", module_init);')
 
 
 # Base class for enum types.
@@ -1418,10 +1370,6 @@ class Enum(ParamValue):
         code('#include "enums/$0.hh"', cls.__name__)
 
     @classmethod
-    def swig_predecls(cls, code):
-        code('%import "python/_m5/enum_$0.i"', cls.__name__)
-
-    @classmethod
     def cxx_ini_parse(cls, code, src, dest, ret):
         code('if (false) {')
         for elem_name in cls.map.iterkeys():
@@ -1435,7 +1383,9 @@ class Enum(ParamValue):
         code('}')
 
     def getValue(self):
-        return int(self.map[self.value])
+        import m5.internal.params
+        e = getattr(m5.internal.params, "enum_%s" % self.__class__.__name__)
+        return e(self.map[self.value])
 
     def __str__(self):
         return self.value
@@ -1451,11 +1401,6 @@ class TickParamValue(NumericParamValue):
     @classmethod
     def cxx_predecls(cls, code):
         code('#include "base/types.hh"')
-
-    @classmethod
-    def swig_predecls(cls, code):
-        code('%import "stdint.i"')
-        code('%import "base/types.hh"')
 
     def __call__(self, value):
         self.__init__(value)
@@ -1598,71 +1543,38 @@ class Clock(TickParamValue):
     def ini_str(self):
         return self.period.ini_str()
 
-class Voltage(float,ParamValue):
-    cxx_type = 'double'
+class Voltage(Float):
     ex_str = "1V"
-    cmd_line_settable = True
 
     def __new__(cls, value):
-        # convert to voltage
-        val = convert.toVoltage(value)
-        return super(cls, Voltage).__new__(cls, val)
+        value = convert.toVoltage(value)
+        return super(cls, Voltage).__new__(cls, value)
 
-    def __call__(self, value):
-        val = convert.toVoltage(value)
-        self.__init__(val)
-        return value
+    def __init__(self, value):
+        value = convert.toVoltage(value)
+        super(Voltage, self).__init__(value)
 
-    def __str__(self):
-        return str(self.getValue())
-
-    def getValue(self):
-        value = float(self)
-        return value
-
-    def ini_str(self):
-        return '%f' % self.getValue()
-
-    @classmethod
-    def cxx_ini_predecls(cls, code):
-        code('#include <sstream>')
-
-    @classmethod
-    def cxx_ini_parse(self, code, src, dest, ret):
-        code('%s (std::istringstream(%s) >> %s).eof();' % (ret, src, dest))
-
-class Current(float, ParamValue):
-    cxx_type = 'double'
+class Current(Float):
     ex_str = "1mA"
-    cmd_line_settable = False
 
     def __new__(cls, value):
-        # convert to current
-        val = convert.toCurrent(value)
-        return super(cls, Current).__new__(cls, val)
+        value = convert.toCurrent(value)
+        return super(cls, Current).__new__(cls, value)
 
-    def __call__(self, value):
-        val = convert.toCurrent(value)
-        self.__init__(val)
-        return value
+    def __init__(self, value):
+        value = convert.toCurrent(value)
+        super(Current, self).__init__(value)
 
-    def __str__(self):
-        return str(self.getValue())
+class Energy(Float):
+    ex_str = "1pJ"
 
-    def getValue(self):
-        value = float(self)
-        return value
+    def __new__(cls, value):
+        value = convert.toEnergy(value)
+        return super(cls, Energy).__new__(cls, value)
 
-    def ini_str(self):
-        return '%f' % self.getValue()
-
-    @classmethod
-    def cxx_ini_predecls(cls, code):
-        code('#include <sstream>')
-
-    @classmethod
-    def cxx_ini_parse(self, code, src, dest, ret):
-        code('%s (std::istringstream(%s) >> %s).eof();' % (ret, src, dest))
+    def __init__(self, value):
+        value = convert.toEnergy(value)
+        super(Energy, self).__init__(value)
 
 class NetworkBandwidth(float,ParamValue):
     cxx_type = 'float'
@@ -1751,6 +1663,7 @@ class MemoryBandwidth(float,ParamValue):
 # only one copy of a particular node
 class NullSimObject(object):
     __metaclass__ = Singleton
+    _name = 'Null'
 
     def __call__(cls):
         return cls
@@ -1767,8 +1680,21 @@ class NullSimObject(object):
     def set_path(self, parent, name):
         pass
 
+    def set_parent(self, parent, name):
+        pass
+
+    def clear_parent(self, old_parent):
+        pass
+
+    def descendants(self):
+        return
+        yield None
+
+    def get_config_as_dict(self):
+        return {}
+
     def __str__(self):
-        return 'Null'
+        return self._name
 
     def config_value(self):
         return None
@@ -1902,8 +1828,8 @@ class PortRef(object):
             try:
                 realPeer = self.peer.unproxy(self.simobj)
             except:
-                print "Error in unproxying port '%s' of %s" % \
-                      (self.name, self.simobj.path())
+                print("Error in unproxying port '%s' of %s" %
+                      (self.name, self.simobj.path()))
                 raise
             self.connect(realPeer)
 
@@ -1932,9 +1858,9 @@ class PortRef(object):
             connectPorts(self.simobj.getCCObject(), self.name, self.index,
                          peer.simobj.getCCObject(), peer.name, peer.index)
         except:
-            print "Error connecting port %s.%s to %s.%s" % \
+            print("Error connecting port %s.%s to %s.%s" %
                   (self.simobj.path(), self.name,
-                   peer.simobj.path(), peer.name)
+                   peer.simobj.path(), peer.name))
             raise
         self.ccConnected = True
         peer.ccConnected = True
@@ -2040,6 +1966,9 @@ class Port(object):
     def cxx_predecls(self, code):
         pass
 
+    def pybind_predecls(self, code):
+        cls.cxx_predecls(self, code)
+
     # Declare an unsigned int with the same name as the port, that
     # will eventually hold the number of connected ports (and thus the
     # number of elements for a VectorPort).
@@ -2119,7 +2048,7 @@ __all__ = ['Param', 'VectorParam',
            'TcpPort', 'UdpPort', 'EthernetAddr',
            'IpAddress', 'IpNetmask', 'IpWithPort',
            'MemorySize', 'MemorySize32',
-           'Latency', 'Frequency', 'Clock', 'Voltage',
+           'Latency', 'Frequency', 'Clock', 'Voltage', 'Current', 'Energy',
            'NetworkBandwidth', 'MemoryBandwidth',
            'AddrRange',
            'MaxAddr', 'MaxTick', 'AllMemory',

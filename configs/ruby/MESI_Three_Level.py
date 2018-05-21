@@ -33,7 +33,7 @@ import math
 import m5
 from m5.objects import *
 from m5.defines import buildEnv
-from Ruby import create_topology
+from Ruby import create_topology, create_directories
 from Ruby import send_evicts
 
 #
@@ -49,7 +49,8 @@ def define_options(parser):
             caches private to clusters")
     return
 
-def create_system(options, full_system, system, dma_ports, ruby_system):
+def create_system(options, full_system, system, dma_ports, bootmem,
+                  ruby_system):
 
     if buildEnv['PROTOCOL'] != 'MESI_Three_Level':
         fatal("This script requires the MESI_Three_Level protocol to be\
@@ -66,7 +67,6 @@ def create_system(options, full_system, system, dma_ports, ruby_system):
     l0_cntrl_nodes = []
     l1_cntrl_nodes = []
     l2_cntrl_nodes = []
-    dir_cntrl_nodes = []
     dma_cntrl_nodes = []
 
     assert (options.num_cpus % options.num_clusters == 0)
@@ -194,31 +194,18 @@ def create_system(options, full_system, system, dma_ports, ruby_system):
             l2_cntrl.responseToL2Cache = MessageBuffer()
             l2_cntrl.responseToL2Cache.slave = ruby_system.network.master
 
-    phys_mem_size = sum(map(lambda r: r.size(), system.mem_ranges))
-    assert(phys_mem_size % options.num_dirs == 0)
-    mem_module_size = phys_mem_size / options.num_dirs
-
     # Run each of the ruby memory controllers at a ratio of the frequency of
     # the ruby system
     # clk_divider value is a fix to pass regression.
     ruby_system.memctrl_clk_domain = DerivedClockDomain(
             clk_domain = ruby_system.clk_domain, clk_divider = 3)
 
-    for i in xrange(options.num_dirs):
-        #
-        # Create the Ruby objects associated with the directory controller
-        #
-        dir_size = MemorySize('0B')
-        dir_size.value = mem_module_size
-
-        dir_cntrl = Directory_Controller(version = i,
-                directory = RubyDirectoryMemory(version = i, size = dir_size),
-                transitions_per_cycle = options.ports,
-                ruby_system = ruby_system)
-
-        exec("ruby_system.dir_cntrl%d = dir_cntrl" % i)
-        dir_cntrl_nodes.append(dir_cntrl)
-
+    mem_dir_cntrl_nodes, rom_dir_cntrl_node = create_directories(
+        options, system.mem_ranges, bootmem, ruby_system, system)
+    dir_cntrl_nodes = mem_dir_cntrl_nodes[:]
+    if rom_dir_cntrl_node is not None:
+        dir_cntrl_nodes.append(rom_dir_cntrl_node)
+    for dir_cntrl in dir_cntrl_nodes:
         # Connect the directory controllers and the network
         dir_cntrl.requestToDir = MessageBuffer()
         dir_cntrl.requestToDir.slave = ruby_system.network.master
@@ -276,4 +263,4 @@ def create_system(options, full_system, system, dma_ports, ruby_system):
 
     ruby_system.network.number_of_virtual_networks = 3
     topology = create_topology(all_cntrls, options)
-    return (cpu_sequencers, dir_cntrl_nodes, topology)
+    return (cpu_sequencers, mem_dir_cntrl_nodes, topology)

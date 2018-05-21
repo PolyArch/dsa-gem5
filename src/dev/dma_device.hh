@@ -123,7 +123,7 @@ class DmaPort : public MasterPort, public Drainable
     std::deque<PacketPtr> transmitList;
 
     /** Event used to schedule a future sending from the transmit list. */
-    EventWrapper<DmaPort, &DmaPort::sendDma> sendEvent;
+    EventFunctionWrapper sendEvent;
 
     /** Number of outstanding packets the dma port has. */
     uint32_t pendingCount;
@@ -240,22 +240,6 @@ class DmaCallback : public Drainable
         }
     }
 
-    /**
-     * Event invoked by DmaDevice on completion of each chunk.
-     */
-    class DmaChunkEvent : public Event
-    {
-      private:
-        DmaCallback *callback;
-
-      public:
-        DmaChunkEvent(DmaCallback *cb)
-          : Event(Default_Pri, AutoDelete), callback(cb)
-        { }
-
-        void process() { callback->chunkComplete(); }
-    };
-
   public:
 
     /**
@@ -265,7 +249,8 @@ class DmaCallback : public Drainable
     Event *getChunkEvent()
     {
         ++count;
-        return new DmaChunkEvent(this);
+        return new EventFunctionWrapper([this]{ chunkComplete(); }, name(),
+                                        true);
     }
 };
 

@@ -79,7 +79,9 @@ repository directly from our gerrit instance at
 https://gem5.googlesource.com/.
 
 To clone the master gem5 repository:
- > git clone https://gem5.googlesource.com/public/gem5
+```
+ git clone https://gem5.googlesource.com/public/gem5
+```
 
 Other gem5 repositories
 -----------------------
@@ -113,10 +115,10 @@ changes, we require all change descriptions be strictly formatted.
 
 A canonical commit message consists of three parts:
  * A short summary line describing the change. This line starts with one or
-   more keywords separated by commas followed by a colon and a description of
-   the change. This line should be no more than 65 characters long since
-   version control systems usually add a prefix that causes line-wrapping for
-   longer lines.
+   more keywords (found in the MAINTAINERS file) separated by commas followed
+   by a colon and a description of the change. This line should be no more than
+   65 characters long since version control systems usually add a prefix that
+   causes line-wrapping for longer lines.
  * (Optional, but highly recommended) A detailed description. This describes
    what you have done and why. If the change isn't obvious, you might want to
    motivate why it is needed. Lines need to be wrapped to 75 characters or
@@ -124,31 +126,6 @@ A canonical commit message consists of three parts:
  * Tags describing patch metadata. You are highly recommended to use
    tags to acknowledge reviewers for their work. Gerrit will automatically add
    most tags.
-
-The keyword should be one or more of the following separated by commas:
- * Architecture name in lower case (e.g., arm or x86): Anything that is
-   target-architecture specific.
- * base
- * ext
- * stats
- * sim
- * syscall_emul
- * config:
- * mem: Classic memory system. Ruby uses its own keyword.
- * ruby: Ruby memory models.
- * cpu: CPU-model specific (except for kvm)
- * kvm: KVM-specific. Changes to host architecture specific components should
-   include an architecture keyword (e.g., arm or x86) as well.
- * gpu-compute
- * energy
- * dev
- * arch: General architecture support (src/arch/)
- * scons: Build-system related. Trivial changes as a side effect of doing
-   something unrelated (e.g., adding a source file to a SConscript) don't
-   require this.
- * tests
- * style: Changes to the style checkers of style fixes.
- * misc
 
 Tags are an optional mechanism to store additional metadata about a patch and
 acknowledge people who reported a bug or reviewed that patch. Tags are
@@ -197,7 +174,9 @@ If this happens, update your changeset descriptions to match the required style
 and resubmit. The following is a useful git command to update the most recent
 commit (HEAD).
 
- > git commit --amend
+```
+ git commit --amend
+```
 
 Posting a review
 ================
@@ -224,13 +203,17 @@ There are three ways to push your changes to gerrit.
 Push change to gerrit review
 ----------------------------
 
- > git push origin HEAD:refs/for/master
+```
+ git push origin HEAD:refs/for/master
+```
 
 Assuming origin is https://gem5.googlesource.com/public/gem5 and you want to
 push the changeset at HEAD, this will create a new review request on top of the
 master branch. More generally,
 
- > git push <gem5 gerrit instance> <changeset>:refs/for/<branch>
+```
+ git push <gem5 gerrit instance> <changeset>:refs/for/<branch>
+```
 
 See https://gerrit-review.googlesource.com/Documentation/user-upload.html for
 more information.
@@ -239,33 +222,43 @@ Pushing your first change
 --------------------------
 The first time you push a change you may get the following error:
 
- > remote: ERROR: [fb1366b] missing Change-Id in commit message footer
- > ...
+```
+ remote: ERROR: [fb1366b] missing Change-Id in commit message footer
+ ...
+```
 
 Within the error message, there is a command line you should run. For every new
 clone of the git repo, you need to run the following command to automatically
 insert the change id in the the commit (all on one line).
 
- > curl -Lo `git rev-parse --git-dir`/hooks/commit-msg
-   https://gerrit-review.googlesource.com/tools/hooks/commit-msg ; chmod +x
-   `git rev-parse --git-dir`/hooks/commit-msg
+```
+ curl -Lo `git rev-parse --git-dir`/hooks/commit-msg \
+	https://gerrit-review.googlesource.com/tools/hooks/commit-msg ; \
+ chmod +x `git rev-parse --git-dir`/hooks/commit-msg
+```
 
 If you receive the above error, simply run this command and then amend your
 changeset.
 
- > git commit --amend
+```
+ git commit --amend
+```
 
 Push change to gerrit as a draft
 --------------------------------
 
- > git push origin HEAD:refs/drafts/master
+```
+ git push origin HEAD:refs/drafts/master
+```
 
 Push change bypassing gerrit
 -----------------------------
 
 Only maintainers can bypass gerrit review. This should very rarely be used.
 
- > git push origin HEAD:refs/heads/master
+```
+ git push origin HEAD:refs/heads/master
+```
 
 Other gerrit push options
 -------------------------
@@ -316,7 +309,9 @@ changes. To do this, you should update the original git changeset. Then, you
 can simply push the changeset again to the same Gerrit branch to update the
 review request.
 
- > git push origin HEAD:refs/for/master
+```
+ git push origin HEAD:refs/for/master
+```
 
 Note: If you have posted a patch and don't receive any reviews, you may need to
 prod the reviewers. You can do this by adding a reply to your changeset review

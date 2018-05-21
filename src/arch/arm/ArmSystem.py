@@ -1,4 +1,4 @@
-# Copyright (c) 2009, 2012-2013, 2015 ARM Limited
+# Copyright (c) 2009, 2012-2013, 2015-2018 ARM Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -34,10 +34,14 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # Authors: Ali Saidi
+#          Glenn Bergmans
 
 from m5.params import *
+from m5.SimObject import *
+from m5.util.fdthelper import *
 
 from System import System
+from ArmSemihosting import ArmSemihosting
 
 class ArmMachineType(Enum):
     map = {
@@ -51,7 +55,6 @@ class ArmMachineType(Enum):
 class ArmSystem(System):
     type = 'ArmSystem'
     cxx_header = "arch/arm/system.hh"
-    load_addr_mask = 0xffffffff
     multi_proc = Param.Bool(True, "Multiprocessor system?")
     boot_loader = VectorParam.String([],
         "File that contains the boot loader code. Zero or more files may be "
@@ -70,16 +73,57 @@ class ArmSystem(System):
     reset_addr_64 = Param.Addr(0x0,
         "Reset address if the highest implemented exception level is 64 bits "
         "(ARMv8)")
+    auto_reset_addr_64 = Param.Bool(False,
+        "Determine reset address from kernel entry point if no boot loader")
     phys_addr_range_64 = Param.UInt8(40,
         "Supported physical address range in bits when using AArch64 (ARMv8)")
     have_large_asid_64 = Param.Bool(False,
         "True if ASID is 16 bits in AArch64 (ARMv8)")
 
+    semihosting = Param.ArmSemihosting(NULL,
+        "Enable support for the Arm semihosting by settings this parameter")
+
+    m5ops_base = Param.Addr(0,
+        "Base of the 64KiB PA range used for memory-mapped m5ops. Set to 0 "
+        "to disable.")
+
+    def generateDeviceTree(self, state):
+        # Generate a device tree root node for the system by creating the root
+        # node and adding the generated subnodes of all children.
+        # When a child needs to add multiple nodes, this is done by also
+        # creating a node called '/' which will then be merged with the
+        # root instead of appended.
+
+        def generateMemNode(mem_range):
+            node = FdtNode("memory@%x" % long(mem_range.start))
+            node.append(FdtPropertyStrings("device_type", ["memory"]))
+            node.append(FdtPropertyWords("reg",
+                state.addrCells(mem_range.start) +
+                state.sizeCells(mem_range.size()) ))
+            return node
+
+        root = FdtNode('/')
+        root.append(state.addrCellsProperty())
+        root.append(state.sizeCellsProperty())
+
+        # Add memory nodes
+        for mem_range in self.mem_ranges:
+            root.append(generateMemNode(mem_range))
+
+        for node in self.recurseDeviceTree(state):
+            # Merge root nodes instead of adding them (for children
+            # that need to add multiple root level nodes)
+            if node.get_name() == root.get_name():
+                root.merge(node)
+            else:
+                root.append(node)
+
+        return root
+
 class GenericArmSystem(ArmSystem):
     type = 'GenericArmSystem'
     cxx_header = "arch/arm/system.hh"
-    load_addr_mask = 0x0fffffff
-    machine_type = Param.ArmMachineType('VExpress_EMM',
+    machine_type = Param.ArmMachineType('DTOnly',
         "Machine id from http://www.arm.linux.org.uk/developer/machines/")
     atags_addr = Param.Addr("Address where default atags structure should " \
                                 "be written")
@@ -98,9 +142,14 @@ class LinuxArmSystem(GenericArmSystem):
     type = 'LinuxArmSystem'
     cxx_header = "arch/arm/linux/system.hh"
 
-    @classmethod
-    def export_methods(cls, code):
-        code('''void dumpDmesg();''')
+    @cxxMethod
+    def dumpDmesg(self):
+        """Dump dmesg from the simulated kernel to standard out"""
+        pass
+
+    # Have Linux systems for ARM auto-calc their load_addr_mask for proper
+    # kernel relocation.
+    load_addr_mask = 0x0
 
 class FreebsdArmSystem(GenericArmSystem):
     type = 'FreebsdArmSystem'

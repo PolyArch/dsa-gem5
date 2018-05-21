@@ -38,7 +38,7 @@
 #include "arch/x86/regs/misc.hh"
 #include "arch/x86/types.hh"
 #include "base/bitfield.hh"
-#include "base/misc.hh"
+#include "base/logging.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
 #include "cpu/decode_cache.hh"
@@ -178,9 +178,10 @@ class Decoder
         ResetState,
         FromCacheState,
         PrefixState,
-        TwoByteVexState,
-        ThreeByteVexFirstState,
-        ThreeByteVexSecondState,
+        Vex2Of2State,
+        Vex2Of3State,
+        Vex3Of3State,
+        VexOpcodeState,
         OneByteOpcodeState,
         TwoByteOpcodeState,
         ThreeByte0F38OpcodeState,
@@ -199,9 +200,10 @@ class Decoder
     State doResetState();
     State doFromCacheState();
     State doPrefixState(uint8_t);
-    State doTwoByteVexState(uint8_t);
-    State doThreeByteVexFirstState(uint8_t);
-    State doThreeByteVexSecondState(uint8_t);
+    State doVex2Of2State(uint8_t);
+    State doVex2Of3State(uint8_t);
+    State doVex3Of3State(uint8_t);
+    State doVexOpcodeState(uint8_t);
     State doOneByteOpcodeState(uint8_t);
     State doTwoByteOpcodeState(uint8_t);
     State doThreeByte0F38OpcodeState(uint8_t);
@@ -227,8 +229,9 @@ class Decoder
     typedef std::unordered_map<CacheKey, DecodePages *> AddrCacheMap;
     AddrCacheMap addrCacheMap;
 
-    DecodeCache::InstMap *instMap;
-    typedef std::unordered_map<CacheKey, DecodeCache::InstMap *> InstCacheMap;
+    DecodeCache::InstMap<ExtMachInst> *instMap;
+    typedef std::unordered_map<
+            CacheKey, DecodeCache::InstMap<ExtMachInst> *> InstCacheMap;
     static InstCacheMap instCacheMap;
 
   public:
@@ -275,7 +278,7 @@ class Decoder
         if (imIter != instCacheMap.end()) {
             instMap = imIter->second;
         } else {
-            instMap = new DecodeCache::InstMap;
+            instMap = new DecodeCache::InstMap<ExtMachInst>;
             instCacheMap[m5Reg] = instMap;
         }
     }

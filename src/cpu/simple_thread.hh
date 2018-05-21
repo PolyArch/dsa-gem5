@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2012 ARM Limited
+ * Copyright (c) 2011-2012, 2016 ARM Limited
  * Copyright (c) 2013 Advanced Micro Devices, Inc.
  * All rights reserved
  *
@@ -46,10 +46,10 @@
 #define __CPU_SIMPLE_THREAD_HH__
 
 #include "arch/decoder.hh"
+#include "arch/generic/tlb.hh"
 #include "arch/isa.hh"
 #include "arch/isa_traits.hh"
 #include "arch/registers.hh"
-#include "arch/tlb.hh"
 #include "arch/types.hh"
 #include "base/types.hh"
 #include "config/the_isa.hh"
@@ -59,6 +59,7 @@
 #include "debug/FloatRegs.hh"
 #include "debug/IntRegs.hh"
 #include "debug/SD.hh"
+#include "debug/VecRegs.hh"
 #include "mem/page_table.hh"
 #include "mem/request.hh"
 #include "sim/byteswap.hh"
@@ -103,6 +104,8 @@ class SimpleThread : public ThreadState
     typedef TheISA::FloatReg FloatReg;
     typedef TheISA::FloatRegBits FloatRegBits;
     typedef TheISA::CCReg CCReg;
+    using VecRegContainer = TheISA::VecRegContainer;
+    using VecElem = TheISA::VecElem;
   public:
     typedef ThreadContext::Status Status;
 
@@ -112,6 +115,7 @@ class SimpleThread : public ThreadState
         FloatRegBits i[TheISA::NumFloatRegs];
     } floatRegs;
     TheISA::IntReg intRegs[TheISA::NumIntRegs];
+    VecRegContainer vecRegs[TheISA::NumVecRegs];
 #ifdef ISA_HAS_CC_REGS
     TheISA::CCReg ccRegs[TheISA::NumCCRegs];
 #endif
@@ -136,19 +140,19 @@ class SimpleThread : public ThreadState
 
     System *system;
 
-    TheISA::TLB *itb;
-    TheISA::TLB *dtb;
+    BaseTLB *itb;
+    BaseTLB *dtb;
 
     TheISA::Decoder decoder;
 
     // constructor: initialize SimpleThread from given process structure
     // FS
     SimpleThread(BaseCPU *_cpu, int _thread_num, System *_system,
-                 TheISA::TLB *_itb, TheISA::TLB *_dtb, TheISA::ISA *_isa,
+                 BaseTLB *_itb, BaseTLB *_dtb, TheISA::ISA *_isa,
                  bool use_kernel_stats = true);
     // SE
     SimpleThread(BaseCPU *_cpu, int _thread_num, System *_system,
-                 Process *_process, TheISA::TLB *_itb, TheISA::TLB *_dtb,
+                 Process *_process, BaseTLB *_itb, BaseTLB *_dtb,
                  TheISA::ISA *_isa);
 
     virtual ~SimpleThread();
@@ -202,9 +206,9 @@ class SimpleThread : public ThreadState
 
     BaseCPU *getCpuPtr() { return baseCpu; }
 
-    TheISA::TLB *getITBPtr() { return itb; }
+    BaseTLB *getITBPtr() { return itb; }
 
-    TheISA::TLB *getDTBPtr() { return dtb; }
+    BaseTLB *getDTBPtr() { return dtb; }
 
     CheckerCPU *getCheckerCpuPtr() { return NULL; }
 
@@ -232,6 +236,9 @@ class SimpleThread : public ThreadState
         _pcState = 0;
         memset(intRegs, 0, sizeof(intRegs));
         memset(floatRegs.i, 0, sizeof(floatRegs.i));
+        for (int i = 0; i < TheISA::NumVecRegs; i++) {
+            vecRegs[i].zero();
+        }
 #ifdef ISA_HAS_CC_REGS
         memset(ccRegs, 0, sizeof(ccRegs));
 #endif
@@ -270,6 +277,98 @@ class SimpleThread : public ThreadState
                 reg_idx, flatIndex, regVal, floatRegs.f[flatIndex]);
         return regVal;
     }
+
+    const VecRegContainer&
+    readVecReg(const RegId& reg) const
+    {
+        int flatIndex = isa->flattenVecIndex(reg.index());
+        assert(flatIndex < TheISA::NumVecRegs);
+        const VecRegContainer& regVal = readVecRegFlat(flatIndex);
+        DPRINTF(VecRegs, "Reading vector reg %d (%d) as %s.\n",
+                reg.index(), flatIndex, regVal.as<TheISA::VecElem>().print());
+        return regVal;
+    }
+
+    VecRegContainer&
+    getWritableVecReg(const RegId& reg)
+    {
+        int flatIndex = isa->flattenVecIndex(reg.index());
+        assert(flatIndex < TheISA::NumVecRegs);
+        VecRegContainer& regVal = getWritableVecRegFlat(flatIndex);
+        DPRINTF(VecRegs, "Reading vector reg %d (%d) as %s for modify.\n",
+                reg.index(), flatIndex, regVal.as<TheISA::VecElem>().print());
+        return regVal;
+    }
+
+    /** Vector Register Lane Interfaces. */
+    /** @{ */
+    /** Reads source vector <T> operand. */
+    template <typename T>
+    VecLaneT<T, true>
+    readVecLane(const RegId& reg) const
+    {
+        int flatIndex = isa->flattenVecIndex(reg.index());
+        assert(flatIndex < TheISA::NumVecRegs);
+        auto regVal = readVecLaneFlat<T>(flatIndex, reg.elemIndex());
+        DPRINTF(VecRegs, "Reading vector lane %d (%d)[%d] as %lx.\n",
+                reg.index(), flatIndex, reg.elemIndex(), regVal);
+        return regVal;
+    }
+
+    /** Reads source vector 8bit operand. */
+    virtual ConstVecLane8
+    readVec8BitLaneReg(const RegId& reg) const
+    { return readVecLane<uint8_t>(reg); }
+
+    /** Reads source vector 16bit operand. */
+    virtual ConstVecLane16
+    readVec16BitLaneReg(const RegId& reg) const
+    { return readVecLane<uint16_t>(reg); }
+
+    /** Reads source vector 32bit operand. */
+    virtual ConstVecLane32
+    readVec32BitLaneReg(const RegId& reg) const
+    { return readVecLane<uint32_t>(reg); }
+
+    /** Reads source vector 64bit operand. */
+    virtual ConstVecLane64
+    readVec64BitLaneReg(const RegId& reg) const
+    { return readVecLane<uint64_t>(reg); }
+
+    /** Write a lane of the destination vector register. */
+    template <typename LD>
+    void setVecLaneT(const RegId& reg, const LD& val)
+    {
+        int flatIndex = isa->flattenVecIndex(reg.index());
+        assert(flatIndex < TheISA::NumVecRegs);
+        setVecLaneFlat(flatIndex, reg.elemIndex(), val);
+        DPRINTF(VecRegs, "Reading vector lane %d (%d)[%d] to %lx.\n",
+                reg.index(), flatIndex, reg.elemIndex(), val);
+    }
+    virtual void setVecLane(const RegId& reg,
+            const LaneData<LaneSize::Byte>& val)
+    { return setVecLaneT(reg, val); }
+    virtual void setVecLane(const RegId& reg,
+            const LaneData<LaneSize::TwoByte>& val)
+    { return setVecLaneT(reg, val); }
+    virtual void setVecLane(const RegId& reg,
+            const LaneData<LaneSize::FourByte>& val)
+    { return setVecLaneT(reg, val); }
+    virtual void setVecLane(const RegId& reg,
+            const LaneData<LaneSize::EightByte>& val)
+    { return setVecLaneT(reg, val); }
+    /** @} */
+
+    const VecElem& readVecElem(const RegId& reg) const
+    {
+        int flatIndex = isa->flattenVecElemIndex(reg.index());
+        assert(flatIndex < TheISA::NumVecRegs);
+        const VecElem& regVal = readVecElemFlat(flatIndex, reg.elemIndex());
+        DPRINTF(VecRegs, "Reading element %d of vector reg %d (%d) as"
+                " %#x.\n", reg.elemIndex(), reg.index(), flatIndex, regVal);
+        return regVal;
+    }
+
 
     CCReg readCCReg(int reg_idx)
     {
@@ -315,6 +414,24 @@ class SimpleThread : public ThreadState
             setFloatRegBitsFlat(flatIndex, val);
         DPRINTF(FloatRegs, "Setting float reg %d (%d) bits to %#x, %#f.\n",
                 reg_idx, flatIndex, val, floatRegs.f[flatIndex]);
+    }
+
+    void setVecReg(const RegId& reg, const VecRegContainer& val)
+    {
+        int flatIndex = isa->flattenVecIndex(reg.index());
+        assert(flatIndex < TheISA::NumVecRegs);
+        setVecRegFlat(flatIndex, val);
+        DPRINTF(VecRegs, "Setting vector reg %d (%d) to %s.\n",
+                reg.index(), flatIndex, val.print());
+    }
+
+    void setVecElem(const RegId& reg, const VecElem& val)
+    {
+        int flatIndex = isa->flattenVecElemIndex(reg.index());
+        assert(flatIndex < TheISA::NumVecRegs);
+        setVecElemFlat(flatIndex, reg.elemIndex(), val);
+        DPRINTF(VecRegs, "Setting element %d of vector reg %d (%d) to"
+                " %#x.\n", reg.elemIndex(), reg.index(), flatIndex, val);
     }
 
     void setCCReg(int reg_idx, CCReg val)
@@ -406,28 +523,10 @@ class SimpleThread : public ThreadState
         return isa->setMiscReg(misc_reg, val, tc);
     }
 
-    int
-    flattenIntIndex(int reg)
+    RegId
+    flattenRegId(const RegId& regId) const
     {
-        return isa->flattenIntIndex(reg);
-    }
-
-    int
-    flattenFloatIndex(int reg)
-    {
-        return isa->flattenFloatIndex(reg);
-    }
-
-    int
-    flattenCCIndex(int reg)
-    {
-        return isa->flattenCCIndex(reg);
-    }
-
-    int
-    flattenMiscIndex(int reg)
-    {
-        return isa->flattenMiscIndex(reg);
+        return isa->flattenRegId(regId);
     }
 
     unsigned readStCondFailures() { return storeCondFailures; }
@@ -449,6 +548,45 @@ class SimpleThread : public ThreadState
     FloatRegBits readFloatRegBitsFlat(int idx) { return floatRegs.i[idx]; }
     void setFloatRegBitsFlat(int idx, FloatRegBits val) {
         floatRegs.i[idx] = val;
+    }
+
+    const VecRegContainer& readVecRegFlat(const RegIndex& reg) const
+    {
+        return vecRegs[reg];
+    }
+
+    VecRegContainer& getWritableVecRegFlat(const RegIndex& reg)
+    {
+        return vecRegs[reg];
+    }
+
+    void setVecRegFlat(const RegIndex& reg, const VecRegContainer& val)
+    {
+        vecRegs[reg] = val;
+    }
+
+    template <typename T>
+    VecLaneT<T, true> readVecLaneFlat(const RegIndex& reg, int lId) const
+    {
+        return vecRegs[reg].laneView<T>(lId);
+    }
+
+    template <typename LD>
+    void setVecLaneFlat(const RegIndex& reg, int lId, const LD& val)
+    {
+        vecRegs[reg].laneView<typename LD::UnderlyingType>(lId) = val;
+    }
+
+    const VecElem& readVecElemFlat(const RegIndex& reg,
+                                   const ElemIndex& elemIndex) const
+    {
+        return vecRegs[reg].as<TheISA::VecElem>()[elemIndex];
+    }
+
+    void setVecElemFlat(const RegIndex& reg, const ElemIndex& elemIndex,
+                        const VecElem val)
+    {
+        vecRegs[reg].as<TheISA::VecElem>()[elemIndex] = val;
     }
 
 #ifdef ISA_HAS_CC_REGS

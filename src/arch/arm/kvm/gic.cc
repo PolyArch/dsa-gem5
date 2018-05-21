@@ -54,6 +54,10 @@ KvmKernelGicV2::KvmKernelGicV2(KvmVM &_vm, Addr cpu_addr, Addr dist_addr,
       vm(_vm),
       kdev(vm.createDevice(KVM_DEV_TYPE_ARM_VGIC_V2))
 {
+    // Tell the VM that we will emulate the GIC in the kernel. This
+    // disables IRQ and FIQ handling in the KVM CPU model.
+    vm.enableKernelIRQChip();
+
     kdev.setAttr<uint64_t>(
         KVM_DEV_ARM_VGIC_GRP_ADDR, KVM_VGIC_V2_ADDR_TYPE_DIST, dist_addr);
     kdev.setAttr<uint64_t>(
@@ -180,16 +184,10 @@ MuxingKvmGic::~MuxingKvmGic()
 }
 
 void
-MuxingKvmGic::loadState(CheckpointIn &cp)
-{
-    Pl390::loadState(cp);
-}
-
-void
 MuxingKvmGic::startup()
 {
     Pl390::startup();
-    usingKvm = (kernelGic != nullptr) && validKvmEnvironment();
+    usingKvm = (kernelGic != nullptr) && system.validKvmEnvironment();
     if (usingKvm)
         fromPl390ToKvm();
 }
@@ -206,7 +204,7 @@ void
 MuxingKvmGic::drainResume()
 {
     Pl390::drainResume();
-    bool use_kvm = (kernelGic != nullptr) && validKvmEnvironment();
+    bool use_kvm = (kernelGic != nullptr) && system.validKvmEnvironment();
     if (use_kvm != usingKvm) {
         // Should only occur due to CPU switches
         if (use_kvm) // from simulation to KVM emulation
@@ -215,19 +213,6 @@ MuxingKvmGic::drainResume()
 
         usingKvm = use_kvm;
     }
-}
-
-void
-MuxingKvmGic::serialize(CheckpointOut &cp) const
-{
-    // drain() already ensured Pl390 updated with KvmGic state if necessary
-    Pl390::serialize(cp);
-}
-
-void
-MuxingKvmGic::unserialize(CheckpointIn &cp)
-{
-    Pl390::unserialize(cp);
 }
 
 Tick
@@ -287,18 +272,15 @@ MuxingKvmGic::clearPPInt(uint32_t num, uint32_t cpu)
     kernelGic->clearPPI(cpu, num);
 }
 
-bool
-MuxingKvmGic::validKvmEnvironment() const
+void
+MuxingKvmGic::updateIntState(int hint)
 {
-    if (system.threadContexts.empty())
-        return false;
-
-    for (auto tc : system.threadContexts) {
-        if (dynamic_cast<BaseArmKvmCPU*>(tc->getCpuPtr()) == nullptr) {
-            return false;
-        }
-    }
-    return true;
+    // During Kvm->Pl390 state transfer, writes to the Pl390 will call
+    // updateIntState() which can post an interrupt.  Since we're only
+    // using the Pl390 model for holding state in this circumstance, we
+    // short-circuit this behavior, as the Pl390 is not actually active.
+    if (!usingKvm)
+        return Pl390::updateIntState(hint);
 }
 
 void
@@ -323,7 +305,7 @@ void
 MuxingKvmGic::copyBankedDistRange(BaseGicRegisters* from, BaseGicRegisters* to,
                                   Addr daddr, size_t size)
 {
-    for (int ctx = 0; ctx < system._numContexts; ++ctx)
+    for (int ctx = 0; ctx < system.numContexts(); ++ctx)
         for (auto a = daddr; a < daddr + size; a += 4)
             copyDistRegister(from, to, ctx, a);
 }
@@ -332,7 +314,7 @@ void
 MuxingKvmGic::clearBankedDistRange(BaseGicRegisters* to,
                                    Addr daddr, size_t size)
 {
-    for (int ctx = 0; ctx < system._numContexts; ++ctx)
+    for (int ctx = 0; ctx < system.numContexts(); ++ctx)
         for (auto a = daddr; a < daddr + size; a += 4)
             to->writeDistributor(ctx, a, 0xFFFFFFFF);
 }
@@ -363,7 +345,7 @@ MuxingKvmGic::copyGicState(BaseGicRegisters* from, BaseGicRegisters* to)
     // Copy CPU Interface Control Register (CTLR),
     //      Interrupt Priority Mask Register (PMR), and
     //      Binary Point Register (BPR)
-    for (int ctx = 0; ctx < system._numContexts; ++ctx) {
+    for (int ctx = 0; ctx < system.numContexts(); ++ctx) {
         copyCpuRegister(from, to, ctx, GICC_CTLR);
         copyCpuRegister(from, to, ctx, GICC_PMR);
         copyCpuRegister(from, to, ctx, GICC_BPR);
@@ -441,7 +423,7 @@ MuxingKvmGic::fromKvmToPl390()
     // have been shifted by three bits due to its having been emulated by
     // a VGIC with only 5 PMR bits in its VMCR register.  Presently the
     // Linux kernel does not repair this inaccuracy, so we correct it here.
-    for (int cpu = 0; cpu < system._numContexts; ++cpu) {
+    for (int cpu = 0; cpu < system.numContexts(); ++cpu) {
        cpuPriority[cpu] <<= 3;
        assert((cpuPriority[cpu] & ~0xff) == 0);
     }

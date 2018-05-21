@@ -41,7 +41,7 @@
 
 #include "cpu/testers/rubytest/RubyTester.hh"
 
-#include "base/misc.hh"
+#include "base/logging.hh"
 #include "base/trace.hh"
 #include "cpu/testers/rubytest/Check.hh"
 #include "debug/RubyTest.hh"
@@ -50,8 +50,10 @@
 #include "sim/system.hh"
 
 RubyTester::RubyTester(const Params *p)
-  : MemObject(p), checkStartEvent(this),
-    _masterId(p->system->getMasterId(name())),
+  : MemObject(p),
+    checkStartEvent([this]{ wakeup(); }, "RubyTester tick",
+                    false, Event::CPU_Tick_Pri),
+    _masterId(p->system->getMasterId(this)),
     m_checkTable_ptr(nullptr),
     m_num_cpus(p->num_cpus),
     m_checks_to_complete(p->checks_to_complete),

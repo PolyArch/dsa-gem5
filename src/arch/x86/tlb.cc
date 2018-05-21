@@ -94,7 +94,7 @@ TLB::evictLRU()
 }
 
 TlbEntry *
-TLB::insert(Addr vpn, TlbEntry &entry)
+TLB::insert(Addr vpn, const TlbEntry &entry)
 {
     // If somebody beat us to it, just use that existing entry.
     TlbEntry *newEntry = trie.lookup(vpn);
@@ -332,7 +332,20 @@ TLB::translate(RequestPtr req, ThreadContext *tc, Translation *translation,
             DPRINTF(TLB, "Paging enabled.\n");
             // The vaddr already has the segment base applied.
             TlbEntry *entry = lookup(vaddr);
+            if (mode == Read) {
+                rdAccesses++;
+            } else {
+                wrAccesses++;
+            }
             if (!entry) {
+                DPRINTF(TLB, "Handling a TLB miss for "
+                        "address %#x at pc %#x.\n",
+                        vaddr, tc->instAddr());
+                if (mode == Read) {
+                    rdMisses++;
+                } else {
+                    wrMisses++;
+                }
                 if (FullSystem) {
                     Fault fault = walker->start(tc, translation, req, mode);
                     if (timing || fault != NoFault) {
@@ -343,28 +356,27 @@ TLB::translate(RequestPtr req, ThreadContext *tc, Translation *translation,
                     entry = lookup(vaddr);
                     assert(entry);
                 } else {
-                    DPRINTF(TLB, "Handling a TLB miss for "
-                            "address %#x at pc %#x.\n",
-                            vaddr, tc->instAddr());
-
                     Process *p = tc->getProcessPtr();
-                    TlbEntry newEntry;
-                    bool success = p->pTable->lookup(vaddr, newEntry);
-                    if (!success && mode != Execute) {
+                    const EmulationPageTable::Entry *pte =
+                        p->pTable->lookup(vaddr);
+                    if (!pte && mode != Execute) {
                         // Check if we just need to grow the stack.
                         if (p->fixupStackFault(vaddr)) {
                             // If we did, lookup the entry for the new page.
-                            success = p->pTable->lookup(vaddr, newEntry);
+                            pte = p->pTable->lookup(vaddr);
                         }
                     }
-                    if (!success) {
+                    if (!pte) {
                         return std::make_shared<PageFault>(vaddr, true, mode,
                                                            true, false);
                     } else {
                         Addr alignedVaddr = p->pTable->pageAlign(vaddr);
                         DPRINTF(TLB, "Mapping %#x to %#x\n", alignedVaddr,
-                                newEntry.pageStart());
-                        entry = insert(alignedVaddr, newEntry);
+                                pte->paddr);
+                        entry = insert(alignedVaddr, TlbEntry(
+                                p->pTable->pid(), alignedVaddr, pte->paddr,
+                                pte->flags & EmulationPageTable::Uncacheable,
+                                pte->flags & EmulationPageTable::ReadOnly));
                     }
                     DPRINTF(TLB, "Miss was serviced.\n");
                 }
@@ -431,17 +443,33 @@ TLB::translateTiming(RequestPtr req, ThreadContext *tc,
         translation->finish(fault, req, tc, mode);
 }
 
-Fault
-TLB::translateFunctional(RequestPtr req, ThreadContext *tc, Mode mode)
-{
-    panic("Not implemented\n");
-    return NoFault;
-}
-
 Walker *
 TLB::getWalker()
 {
     return walker;
+}
+
+void
+TLB::regStats()
+{
+    using namespace Stats;
+
+    rdAccesses
+        .name(name() + ".rdAccesses")
+        .desc("TLB accesses on read requests");
+
+    wrAccesses
+        .name(name() + ".wrAccesses")
+        .desc("TLB accesses on write requests");
+
+    rdMisses
+        .name(name() + ".rdMisses")
+        .desc("TLB misses on read requests");
+
+    wrMisses
+        .name(name() + ".wrMisses")
+        .desc("TLB misses on write requests");
+
 }
 
 void

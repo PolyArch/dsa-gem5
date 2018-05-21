@@ -219,10 +219,7 @@ class MinorDynInst : public RefCounted
     /** Flat register indices so that, when clearing the scoreboard, we
      *  have the same register indices as when the instruction was marked
      *  up */
-    TheISA::RegIndex flatDestRegIdx[TheISA::MaxInstDestRegs];
-
-    /** Effective address as set by ExecContext::setEA */
-    Addr ea;
+    RegId flatDestRegIdx[TheISA::MaxInstDestRegs];
 
   public:
     MinorDynInst(InstId id_ = InstId(), Fault fault_ = NoFault) :
@@ -232,8 +229,7 @@ class MinorDynInst : public RefCounted
         fuIndex(0), inLSQ(false), inStoreBuffer(false),
         canEarlyIssue(false),
         instToWaitFor(0), extraCommitDelay(Cycles(0)),
-        extraCommitDelayExpr(NULL), minimumCommitCycle(Cycles(0)),
-        ea(0)
+        extraCommitDelayExpr(NULL), minimumCommitCycle(Cycles(0))
     { }
 
   public:

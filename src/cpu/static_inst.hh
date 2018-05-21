@@ -33,18 +33,22 @@
 #define __CPU_STATIC_INST_HH__
 
 #include <bitset>
+#include <memory>
 #include <string>
 
 #include "arch/registers.hh"
 #include "arch/types.hh"
-#include "base/misc.hh"
+#include "base/logging.hh"
 #include "base/refcnt.hh"
 #include "base/types.hh"
 #include "config/the_isa.hh"
 #include "cpu/op_class.hh"
+#include "cpu/reg_class.hh"
+#include "cpu/reg_class_impl.hh"
 #include "cpu/static_inst_fwd.hh"
 #include "cpu/thread_context.hh"
 #include "enums/StaticInstFlags.hh"
+#include "sim/byteswap.hh"
 
 // forward declarations
 class Packet;
@@ -70,8 +74,6 @@ class StaticInst : public RefCounted, public StaticInstFlags
   public:
     /// Binary extended machine instruction type.
     typedef TheISA::ExtMachInst ExtMachInst;
-    /// Logical register index type.
-    typedef TheISA::RegIndex RegIndex;
 
     enum {
         MaxInstSrcRegs = TheISA::MaxInstSrcRegs,        //< Max source regs
@@ -100,13 +102,20 @@ class StaticInst : public RefCounted, public StaticInstFlags
     int8_t _numCCDestRegs;
     //@}
 
+    /** To use in architectures with vector register file. */
+    /** @{ */
+    int8_t _numVecDestRegs;
+    int8_t _numVecElemDestRegs;
+    /** @} */
+
   public:
 
     /// @name Register information.
-    /// The sum of numFPDestRegs() and numIntDestRegs() equals
-    /// numDestRegs().  The former two functions are used to track
-    /// physical register usage for machines with separate int & FP
-    /// reg files.
+    /// The sum of numFPDestRegs(), numIntDestRegs(), numVecDestRegs() and
+    /// numVecelemDestRegs() equals numDestRegs().  The former two functions
+    /// are used to track physical register usage for machines with separate
+    /// int & FP reg files, the next two is for machines with vector register
+    /// file.
     //@{
     /// Number of source registers.
     int8_t numSrcRegs()  const { return _numSrcRegs; }
@@ -116,7 +125,10 @@ class StaticInst : public RefCounted, public StaticInstFlags
     int8_t numFPDestRegs()  const { return _numFPDestRegs; }
     /// Number of integer destination regs.
     int8_t numIntDestRegs() const { return _numIntDestRegs; }
-    //@}
+    /// Number of vector destination regs.
+    int8_t numVecDestRegs() const { return _numVecDestRegs; }
+    /// Number of vector element destination regs.
+    int8_t numVecElemDestRegs() const { return _numVecElemDestRegs; }
     /// Number of coprocesor destination regs.
     int8_t numCCDestRegs() const { return _numCCDestRegs; }
     //@}
@@ -140,6 +152,7 @@ class StaticInst : public RefCounted, public StaticInstFlags
 
     bool isInteger()      const { return flags[IsInteger]; }
     bool isFloating()     const { return flags[IsFloating]; }
+    bool isVector()       const { return flags[IsVector]; }
     bool isCC()           const { return flags[IsCC]; }
 
     bool isControl()      const { return flags[IsControl]; }
@@ -192,34 +205,17 @@ class StaticInst : public RefCounted, public StaticInstFlags
 
     /// Return logical index (architectural reg num) of i'th destination reg.
     /// Only the entries from 0 through numDestRegs()-1 are valid.
-    RegIndex destRegIdx(int i) const { return _destRegIdx[i]; }
+    const RegId& destRegIdx(int i) const { return _destRegIdx[i]; }
 
     /// Return logical index (architectural reg num) of i'th source reg.
     /// Only the entries from 0 through numSrcRegs()-1 are valid.
-    RegIndex srcRegIdx(int i)  const { return _srcRegIdx[i]; }
+    const RegId& srcRegIdx(int i)  const { return _srcRegIdx[i]; }
 
     /// Pointer to a statically allocated "null" instruction object.
-    /// Used to give eaCompInst() and memAccInst() something to return
-    /// when called on non-memory instructions.
     static StaticInstPtr nullStaticInstPtr;
 
-    /**
-     * Memory references only: returns "fake" instruction representing
-     * the effective address part of the memory operation.  Used to
-     * obtain the dependence info (numSrcRegs and srcRegIdx[]) for
-     * just the EA computation.
-     */
-    virtual const
-    StaticInstPtr &eaCompInst() const { return nullStaticInstPtr; }
-
-    /**
-     * Memory references only: returns "fake" instruction representing
-     * the memory access part of the memory operation.  Used to
-     * obtain the dependence info (numSrcRegs and srcRegIdx[]) for
-     * just the memory access (not the EA computation).
-     */
-    virtual const
-    StaticInstPtr &memAccInst() const { return nullStaticInstPtr; }
+    /// Pointer to a statically allocated generic "nop" instruction object.
+    static StaticInstPtr nopStaticInstPtr;
 
     /// The binary machine instruction.
     const ExtMachInst machInst;
@@ -228,14 +224,15 @@ class StaticInst : public RefCounted, public StaticInstFlags
      * Obtain the immediate field
      */
     virtual uint64_t imm() { return 0; }
-    virtual uint64_t alt_imm() { return 0; }
+    virtual uint64_t get_imm() { return 0; } // some idiots used "imm" variable within derived classes, so we need a new function!
+
 
   protected:
 
     /// See destRegIdx().
-    RegIndex _destRegIdx[MaxInstDestRegs];
+    RegId _destRegIdx[MaxInstDestRegs];
     /// See srcRegIdx().
-    RegIndex _srcRegIdx[MaxInstSrcRegs];
+    RegId _srcRegIdx[MaxInstSrcRegs];
 
     /**
      * Base mnemonic (e.g., "add").  Used by generateDisassembly()
@@ -265,7 +262,8 @@ class StaticInst : public RefCounted, public StaticInstFlags
     StaticInst(const char *_mnemonic, ExtMachInst _machInst, OpClass __opClass)
         : _opClass(__opClass), _numSrcRegs(0), _numDestRegs(0),
           _numFPDestRegs(0), _numIntDestRegs(0), _numCCDestRegs(0),
-          machInst(_machInst), mnemonic(_mnemonic), cachedDisassembly(0)
+          _numVecDestRegs(0), _numVecElemDestRegs(0), machInst(_machInst),
+          mnemonic(_mnemonic), cachedDisassembly(0)
     { }
 
   public:
@@ -273,11 +271,6 @@ class StaticInst : public RefCounted, public StaticInstFlags
 
     virtual Fault execute(ExecContext *xc,
                           Trace::InstRecord *traceData) const = 0;
-    virtual Fault eaComp(ExecContext *xc,
-                         Trace::InstRecord *traceData) const
-    {
-        panic("eaComp not defined!");
-    }
 
     virtual Fault initiateAcc(ExecContext *xc,
                               Trace::InstRecord *traceData) const
@@ -340,6 +333,31 @@ class StaticInst : public RefCounted, public StaticInstFlags
 
     /// Return name of machine instruction
     std::string getName() { return mnemonic; }
+
+  protected:
+    template<typename T>
+    size_t
+    simpleAsBytes(void *buf, size_t max_size, const T &t)
+    {
+        size_t size = sizeof(T);
+        if (size <= max_size)
+            *reinterpret_cast<T *>(buf) = htole<T>(t);
+        return size;
+    }
+
+  public:
+    /**
+     * Instruction classes can override this function to return a
+     * a representation of themselves as a blob of bytes, generally assumed to
+     * be that instructions ExtMachInst.
+     *
+     * buf is a buffer to hold the bytes.
+     * max_size is the size allocated for that buffer by the caller.
+     * The return value is how much data was actually put into the buffer,
+     * zero if no data was put in the buffer, or the necessary size of the
+     * buffer if there wasn't enough space.
+     */
+    virtual size_t asBytes(void *buf, size_t max_size) { return 0; }
 };
 
 #endif // __CPU_STATIC_INST_HH__

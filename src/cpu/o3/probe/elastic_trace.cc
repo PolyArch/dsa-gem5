@@ -50,7 +50,7 @@
 
 ElasticTrace::ElasticTrace(const ElasticTraceParams* params)
     :  ProbeListenerObject(params),
-       regEtraceListenersEvent(this),
+       regEtraceListenersEvent([this]{ regEtraceListeners(); }, name()),
        firstWin(true),
        lastClearedSeqNum(0),
        depWindowSize(params->depWindowSize),
@@ -238,22 +238,31 @@ ElasticTrace::updateRegDep(const DynInstPtr &dyn_inst)
     // dependency on the last writer.
     int8_t max_regs = dyn_inst->numSrcRegs();
     for (int src_idx = 0; src_idx < max_regs; src_idx++) {
-        // Get the physical register index of the i'th source register.
-        PhysRegIndex src_reg = dyn_inst->renamedSrcRegIdx(src_idx);
-        DPRINTFR(ElasticTrace, "[sn:%lli] Check map for src reg %i\n", seq_num,
-                    src_reg);
-        auto itr_last_writer = physRegDepMap.find(src_reg);
-        if (itr_last_writer != physRegDepMap.end()) {
-            InstSeqNum last_writer = itr_last_writer->second;
-            // Additionally the dependency distance is kept less than the window
-            // size parameter to limit the memory allocation to nodes in the
-            // graph. If the window were tending to infinite we would have to
-            // load a large number of node objects during replay.
-            if (seq_num - last_writer < depWindowSize) {
-                // Record a physical register dependency.
-                exec_info_ptr->physRegDepSet.insert(last_writer);
+
+        const RegId& src_reg = dyn_inst->srcRegIdx(src_idx);
+        if (!src_reg.isMiscReg() &&
+            !src_reg.isZeroReg()) {
+            // Get the physical register index of the i'th source register.
+            PhysRegIdPtr phys_src_reg = dyn_inst->renamedSrcRegIdx(src_idx);
+            DPRINTFR(ElasticTrace, "[sn:%lli] Check map for src reg"
+                     " %i (%s)\n", seq_num,
+                     phys_src_reg->flatIndex(), phys_src_reg->className());
+            auto itr_writer = physRegDepMap.find(phys_src_reg->flatIndex());
+            if (itr_writer != physRegDepMap.end()) {
+                InstSeqNum last_writer = itr_writer->second;
+                // Additionally the dependency distance is kept less than the
+                // window size parameter to limit the memory allocation to
+                // nodes in the graph. If the window were tending to infinite
+                // we would have to load a large number of node objects during
+                // replay.
+                if (seq_num - last_writer < depWindowSize) {
+                    // Record a physical register dependency.
+                    exec_info_ptr->physRegDepSet.insert(last_writer);
+                }
             }
+
         }
+
     }
 
     // Loop through the destination registers of this instruction and update
@@ -262,15 +271,16 @@ ElasticTrace::updateRegDep(const DynInstPtr &dyn_inst)
     for (int dest_idx = 0; dest_idx < max_regs; dest_idx++) {
         // For data dependency tracking the register must be an int, float or
         // CC register and not a Misc register.
-        TheISA::RegIndex dest_reg = dyn_inst->destRegIdx(dest_idx);
-        if (regIdxToClass(dest_reg) != MiscRegClass) {
-            // Get the physical register index of the i'th destination register.
-            dest_reg = dyn_inst->renamedDestRegIdx(dest_idx);
-            if (dest_reg != TheISA::ZeroReg) {
-                DPRINTFR(ElasticTrace, "[sn:%lli] Update map for dest reg %i\n",
-                            seq_num, dest_reg);
-                physRegDepMap[dest_reg] = seq_num;
-            }
+        const RegId& dest_reg = dyn_inst->destRegIdx(dest_idx);
+        if (!dest_reg.isMiscReg() &&
+            !dest_reg.isZeroReg()) {
+            // Get the physical register index of the i'th destination
+            // register.
+            PhysRegIdPtr phys_dest_reg = dyn_inst->renamedDestRegIdx(dest_idx);
+            DPRINTFR(ElasticTrace, "[sn:%lli] Update map for dest reg"
+                     " %i (%s)\n", seq_num, phys_dest_reg->flatIndex(),
+                     dest_reg.className());
+            physRegDepMap[phys_dest_reg->flatIndex()] = seq_num;
         }
     }
     maxPhysRegDepMapSize = std::max(physRegDepMap.size(),
@@ -281,7 +291,7 @@ void
 ElasticTrace::removeRegDepMapEntry(const SeqNumRegPair &inst_reg_pair)
 {
     DPRINTFR(ElasticTrace, "Remove Map entry for Reg %i\n",
-                inst_reg_pair.second);
+            inst_reg_pair.second);
     auto itr_regdep_map = physRegDepMap.find(inst_reg_pair.second);
     if (itr_regdep_map != physRegDepMap.end())
         physRegDepMap.erase(itr_regdep_map);

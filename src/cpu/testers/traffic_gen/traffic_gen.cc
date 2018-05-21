@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2013, 2016 ARM Limited
+ * Copyright (c) 2012-2013, 2016-2017 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -57,18 +57,18 @@ using namespace std;
 TrafficGen::TrafficGen(const TrafficGenParams* p)
     : MemObject(p),
       system(p->system),
-      masterID(system->getMasterId(name())),
+      masterID(system->getMasterId(this)),
       configFile(p->config_file),
       elasticReq(p->elastic_req),
       progressCheck(p->progress_check),
-      noProgressEvent(this),
+      noProgressEvent([this]{ noProgress(); }, name()),
       nextTransitionTick(0),
       nextPacketTick(0),
       currState(0),
       port(name() + ".port", *this),
       retryPkt(NULL),
       retryPktTick(0),
-      updateEvent(this),
+      updateEvent([this]{ update(); }, name()),
       numSuppressed(0)
 {
 }
@@ -305,6 +305,9 @@ TrafficGen::parseConfig()
                 } else if (mode == "IDLE") {
                     states[id] = new IdleGen(name(), masterID, duration);
                     DPRINTF(TrafficGen, "State: %d IdleGen\n", id);
+                } else if (mode == "EXIT") {
+                    states[id] = new ExitGen(name(), masterID, duration);
+                    DPRINTF(TrafficGen, "State: %d ExitGen\n", id);
                 } else if (mode == "LINEAR" || mode == "RANDOM" ||
                            mode == "DRAM"   || mode == "DRAM_ROTATE") {
                     uint32_t read_percent;

@@ -43,7 +43,7 @@ class AlphaProcess : public Process
   protected:
     AlphaProcess(ProcessParams *params, ObjectFile *objFile);
 
-    void loadState(CheckpointIn &cp) override;
+    void unserialize(CheckpointIn &cp) override;
     void initState() override;
 
     void argsInit(int intSize, int pageSize);
@@ -60,8 +60,5 @@ class AlphaProcess : public Process
     // region for Alpha platforms grows upward
     virtual bool mmapGrowsDown() const override { return false; }
 };
-
-/* No architectural page table defined for this ISA */
-typedef NoArchPageTable ArchPageTable;
 
 #endif // __ARCH_ALPHA_PROCESS_HH__

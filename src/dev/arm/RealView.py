@@ -1,4 +1,4 @@
-# Copyright (c) 2009-2017 ARM Limited
+# Copyright (c) 2009-2018 ARM Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -39,9 +39,12 @@
 # Authors: Ali Saidi
 #          Gabe Black
 #          William Wang
+#          Glenn Bergmans
 
+from m5.defines import buildEnv
 from m5.params import *
 from m5.proxy import *
+from m5.util.fdthelper import *
 from ClockDomain import ClockDomain
 from VoltageDomain import VoltageDomain
 from Device import BasicPioDevice, PioDevice, IsaFake, BadAddr, DmaDevice
@@ -54,8 +57,12 @@ from Uart import Uart
 from SimpleMemory import SimpleMemory
 from Gic import *
 from EnergyCtrl import EnergyCtrl
+from ClockedObject import ClockedObject
 from ClockDomain import SrcClockDomain
 from SubSystem import SubSystem
+from Graphics import ImageFormat
+from ClockedObject import ClockedObject
+from PS2 import *
 
 # Platforms with KVM support should generally use in-kernel GIC
 # emulation. Use a GIC model that automatically switches between
@@ -112,12 +119,89 @@ class GenericArmPciHost(GenericPciHost):
     int_base = Param.Unsigned("PCI interrupt base")
     int_count = Param.Unsigned("Maximum number of interrupts used by this host")
 
+    def generateDeviceTree(self, state):
+        local_state = FdtState(addr_cells=3, size_cells=2, cpu_cells=1)
+        intterrupt_cells = 1
+
+        node = FdtNode("pci")
+
+        if int(self.conf_device_bits) == 8:
+            node.appendCompatible("pci-host-cam-generic")
+        elif int(self.conf_device_bits) == 12:
+            node.appendCompatible("pci-host-ecam-generic")
+        else:
+            m5.fatal("No compatibility string for the set conf_device_width")
+
+        node.append(FdtPropertyStrings("device_type", ["pci"]))
+
+        # Cell sizes of child nodes/peripherals
+        node.append(local_state.addrCellsProperty())
+        node.append(local_state.sizeCellsProperty())
+        node.append(FdtPropertyWords("#interrupt-cells", intterrupt_cells))
+        # PCI address for CPU
+        node.append(FdtPropertyWords("reg",
+            state.addrCells(self.conf_base) +
+            state.sizeCells(self.conf_size) ))
+
+        # Ranges mapping
+        # For now some of this is hard coded, because the PCI module does not
+        # have a proper full understanding of the memory map, but adapting the
+        # PCI module is beyond the scope of what I'm trying to do here.
+        # Values are taken from the VExpress_GEM5_V1 platform.
+        ranges = []
+        # Pio address range
+        ranges += self.pciFdtAddr(space=1, addr=0)
+        ranges += state.addrCells(self.pci_pio_base)
+        ranges += local_state.sizeCells(0x10000)  # Fixed size
+
+        # AXI memory address range
+        ranges += self.pciFdtAddr(space=2, addr=0)
+        ranges += state.addrCells(0x40000000) # Fixed offset
+        ranges += local_state.sizeCells(0x40000000) # Fixed size
+        node.append(FdtPropertyWords("ranges", ranges))
+
+        if str(self.int_policy) == 'ARM_PCI_INT_DEV':
+            int_phandle = state.phandle(self._parent.unproxy(self).gic)
+            # Interrupt mapping
+            interrupts = []
+            for i in range(int(self.int_count)):
+                interrupts += self.pciFdtAddr(device=i, addr=0) + \
+                    [0x0, int_phandle, 0, int(self.int_base) - 32 + i, 1]
+
+            node.append(FdtPropertyWords("interrupt-map", interrupts))
+
+            int_count = int(self.int_count)
+            if int_count & (int_count - 1):
+                fatal("PCI interrupt count should be power of 2")
+
+            intmask = self.pciFdtAddr(device=int_count - 1, addr=0) + [0x0]
+            node.append(FdtPropertyWords("interrupt-map-mask", intmask))
+        else:
+            m5.fatal("Unsupported PCI interrupt policy " +
+                     "for Device Tree generation")
+
+        node.append(FdtProperty("dma-coherent"))
+
+        yield node
+
 class RealViewCtrl(BasicPioDevice):
     type = 'RealViewCtrl'
     cxx_header = "dev/arm/rv_ctrl.hh"
     proc_id0 = Param.UInt32(0x0C000000, "Processor ID, SYS_PROCID")
     proc_id1 = Param.UInt32(0x0C000222, "Processor ID, SYS_PROCID1")
     idreg = Param.UInt32(0x00000000, "ID Register, SYS_ID")
+
+    def generateDeviceTree(self, state):
+        node = FdtNode("sysreg@%x" % long(self.pio_addr))
+        node.appendCompatible("arm,vexpress-sysreg")
+        node.append(FdtPropertyWords("reg",
+            state.addrCells(self.pio_addr) +
+            state.sizeCells(0x1000) ))
+        node.append(FdtProperty("gpio-controller"))
+        node.append(FdtPropertyWords("#gpio-cells", [2]))
+        node.appendPhandle(self)
+
+        yield node
 
 class RealViewOsc(ClockDomain):
     type = 'RealViewOsc'
@@ -140,6 +224,20 @@ class RealViewOsc(ClockDomain):
     device = Param.UInt8("Device ID")
 
     freq = Param.Clock("Default frequency")
+
+    def generateDeviceTree(self, state):
+        phandle = state.phandle(self)
+        node = FdtNode("osc@" + format(long(phandle), 'x'))
+        node.appendCompatible("arm,vexpress-osc")
+        node.append(FdtPropertyWords("arm,vexpress-sysreg,func",
+                                     [0x1, int(self.device)]))
+        node.append(FdtPropertyWords("#clock-cells", [0]))
+        freq = int(1.0/self.freq.value) # Values are stored as a clock period
+        node.append(FdtPropertyWords("freq-range", [freq, freq]))
+        node.append(FdtPropertyStrings("clock-output-names",
+                                       ["oscclk" + str(phandle)]))
+        node.appendPhandle(self)
+        yield node
 
 class RealViewTemperatureSensor(SimObject):
     type = 'RealViewTemperatureSensor'
@@ -179,6 +277,20 @@ Express (V2M-P1) motherboard. See ARM DUI 0447J for details.
     # See Table 4.19 in ARM DUI 0447J (Motherboard Express uATX TRM).
     temp_crtl = Temperature(device=0)
 
+    def generateDeviceTree(self, state):
+        node = FdtNode("mcc")
+        node.appendCompatible("arm,vexpress,config-bus")
+        node.append(FdtPropertyWords("arm,vexpress,site", [0]))
+
+        for obj in self._children.values():
+            if issubclass(type(obj), SimObject):
+                node.append(obj.generateDeviceTree(state))
+
+        io_phandle = state.phandle(self.osc_mcc.parent.unproxy(self))
+        node.append(FdtPropertyWords("arm,vexpress,config-bridge", io_phandle))
+
+        yield node
+
 class CoreTile2A15DCC(SubSystem):
     """ARM CoreTile Express A15x2 Daughterboard Configuration Controller
 
@@ -198,6 +310,19 @@ ARM DUI 0604E for details.
     osc_sys = Osc(device=7, freq="60MHz")
     osc_ddr = Osc(device=8, freq="40MHz")
 
+    def generateDeviceTree(self, state):
+        node = FdtNode("dcc")
+        node.appendCompatible("arm,vexpress,config-bus")
+
+        for obj in self._children.values():
+            if isinstance(obj, SimObject):
+                node.append(obj.generateDeviceTree(state))
+
+        io_phandle = state.phandle(self.osc_cpu.parent.unproxy(self))
+        node.append(FdtPropertyWords("arm,vexpress,config-bridge", io_phandle))
+
+        yield node
+
 class VGic(PioDevice):
     type = 'VGic'
     cxx_header = "dev/arm/vgic.hh"
@@ -208,6 +333,34 @@ class VGic(PioDevice):
     pio_delay = Param.Latency('10ns', "Delay for PIO r/w")
    # The number of list registers is not currently configurable at runtime.
     ppint = Param.UInt32("HV maintenance interrupt number")
+
+    def generateDeviceTree(self, state):
+        gic = self.gic.unproxy(self)
+
+        node = FdtNode("interrupt-controller")
+        node.appendCompatible(["gem5,gic", "arm,cortex-a15-gic",
+                               "arm,cortex-a9-gic"])
+        node.append(FdtPropertyWords("#interrupt-cells", [3]))
+        node.append(FdtPropertyWords("#address-cells", [0]))
+        node.append(FdtProperty("interrupt-controller"))
+
+        regs = (
+            state.addrCells(gic.dist_addr) +
+            state.sizeCells(0x1000) +
+            state.addrCells(gic.cpu_addr) +
+            state.sizeCells(0x1000) +
+            state.addrCells(self.hv_addr) +
+            state.sizeCells(0x2000) +
+            state.addrCells(self.vcpu_addr) +
+            state.sizeCells(0x2000) )
+
+        node.append(FdtPropertyWords("reg", regs))
+        node.append(FdtPropertyWords("interrupts",
+                                     [1, int(self.ppint)-16, 0xf04]))
+
+        node.appendPhandle(gic)
+
+        yield node
 
 class AmbaFake(AmbaPioDevice):
     type = 'AmbaFake'
@@ -223,6 +376,20 @@ class Pl011(Uart):
     end_on_eot = Param.Bool(False, "End the simulation when a EOT is received on the UART")
     int_delay = Param.Latency("100ns", "Time between action and interrupt generation by UART")
 
+    def generateDeviceTree(self, state):
+        node = self.generateBasicPioDeviceNode(state, 'uart', self.pio_addr,
+                                               0x1000, [int(self.int_num)])
+        node.appendCompatible(["arm,pl011", "arm,primecell"])
+
+        # Hardcoded reference to the realview platform clocks, because the
+        # clk_domain can only store one clock (i.e. it is not a VectorParam)
+        realview = self._parent.unproxy(self)
+        node.append(FdtPropertyWords("clocks",
+            [state.phandle(realview.mcc.osc_peripheral),
+            state.phandle(realview.dcc.osc_smb)]))
+        node.append(FdtPropertyStrings("clock-names", ["uartclk", "apb_pclk"]))
+        yield node
+
 class Sp804(AmbaPioDevice):
     type = 'Sp804'
     cxx_header = "dev/arm/timer_sp804.hh"
@@ -233,6 +400,12 @@ class Sp804(AmbaPioDevice):
     clock1 = Param.Clock('1MHz', "Clock speed of the input")
     amba_id = 0x00141804
 
+class A9GlobalTimer(BasicPioDevice):
+    type = 'A9GlobalTimer'
+    cxx_header = "dev/arm/timer_a9global.hh"
+    gic = Param.BaseGic(Parent.any, "Gic to use for interrupting")
+    int_num = Param.UInt32("Interrrupt number that connects to GIC")
+
 class CpuLocalTimer(BasicPioDevice):
     type = 'CpuLocalTimer'
     cxx_header = "dev/arm/timer_cpulocal.hh"
@@ -240,7 +413,7 @@ class CpuLocalTimer(BasicPioDevice):
     int_num_timer = Param.UInt32("Interrrupt number used per-cpu to GIC")
     int_num_watchdog = Param.UInt32("Interrupt number for per-cpu watchdog to GIC")
 
-class GenericTimer(SimObject):
+class GenericTimer(ClockedObject):
     type = 'GenericTimer'
     cxx_header = "dev/arm/generic_timer.hh"
     system = Param.ArmSystem(Parent.any, "system")
@@ -249,6 +422,20 @@ class GenericTimer(SimObject):
     # normal behaviour when security extensions are disabled.
     int_phys = Param.UInt32("Physical timer interrupt number")
     int_virt = Param.UInt32("Virtual timer interrupt number")
+
+    def generateDeviceTree(self, state):
+        node = FdtNode("timer")
+
+        node.appendCompatible(["arm,cortex-a15-timer",
+                               "arm,armv7-timer",
+                               "arm,armv8-timer"])
+        node.append(FdtPropertyWords("interrupts",
+            [1, int(self.int_phys) - 16, 0xf08,
+            1, int(self.int_virt) - 16, 0xf08]))
+        clock = state.phandle(self.clk_domain.unproxy(self))
+        node.append(FdtPropertyWords("clocks", clock))
+
+        yield node
 
 class GenericTimerMem(PioDevice):
     type = 'GenericTimerMem'
@@ -266,13 +453,32 @@ class PL031(AmbaIntDevice):
     time = Param.Time('01/01/2009', "System time to use ('Now' for actual time)")
     amba_id = 0x00341031
 
+    def generateDeviceTree(self, state):
+        node = self.generateBasicPioDeviceNode(state, 'rtc', self.pio_addr,
+                                               0x1000, [int(self.int_num)])
+
+        node.appendCompatible(["arm,pl031", "arm,primecell"])
+        clock = state.phandle(self.clk_domain.unproxy(self))
+        node.append(FdtPropertyWords("clocks", clock))
+
+        yield node
+
 class Pl050(AmbaIntDevice):
     type = 'Pl050'
     cxx_header = "dev/arm/kmi.hh"
-    vnc = Param.VncInput(Parent.any, "Vnc server for remote frame buffer display")
-    is_mouse = Param.Bool(False, "Is this interface a mouse, if not a keyboard")
-    int_delay = '1us'
     amba_id = 0x00141050
+
+    ps2 = Param.PS2Device("PS/2 device")
+
+    def generateDeviceTree(self, state):
+        node = self.generateBasicPioDeviceNode(state, 'kmi', self.pio_addr,
+                                               0x1000, [int(self.int_num)])
+
+        node.appendCompatible(["arm,pl050", "arm,primecell"])
+        clock = state.phandle(self.clk_domain.unproxy(self))
+        node.append(FdtPropertyWords("clocks", clock))
+
+        yield node
 
 class Pl111(AmbaDmaDevice):
     type = 'Pl111'
@@ -292,7 +498,10 @@ class HDLcd(AmbaDmaDevice):
                                     "selector order in some kernels")
     workaround_dma_line_count = Param.Bool(True, "Workaround incorrect "
                                            "DMA line count (off by 1)")
-    enable_capture = Param.Bool(True, "capture frame to system.framebuffer.bmp")
+    enable_capture = Param.Bool(True, "capture frame to "
+                                      "system.framebuffer.{extension}")
+    frame_format = Param.ImageFormat("Auto",
+                                     "image format of the captured frame")
 
     pixel_buffer_size = Param.MemorySize32("2kB", "Size of address range")
 
@@ -300,6 +509,23 @@ class HDLcd(AmbaDmaDevice):
     pixel_chunk = Param.Unsigned(32, "Number of pixels to handle in one batch")
     virt_refresh_rate = Param.Frequency("20Hz", "Frame refresh rate "
                                         "in KVM mode")
+
+    def generateDeviceTree(self, state):
+        # Interrupt number is hardcoded; it is not a property of this class
+        node = self.generateBasicPioDeviceNode(state, 'hdlcd',
+                                               self.pio_addr, 0x1000, [63])
+
+        node.appendCompatible(["arm,hdlcd"])
+        node.append(FdtPropertyWords("clocks", state.phandle(self.pxl_clk)))
+        node.append(FdtPropertyStrings("clock-names", ["pxlclk"]))
+
+        # This driver is disabled by default since the required DT nodes
+        # haven't been standardized yet. To use it,  override this status to
+        # "ok" and add the display configuration nodes required by the driver.
+        # See the driver for more information.
+        node.append(FdtPropertyStrings("status", ["disabled"]))
+
+        yield node
 
 class RealView(Platform):
     type = 'RealView'
@@ -345,24 +571,40 @@ class RealView(Platform):
     def offChipIOClkDomain(self, clkdomain):
         self._attach_clk(self._off_chip_devices(), clkdomain)
 
-    def attachOnChipIO(self, bus, bridge=None, **kwargs):
-        self._attach_io(self._on_chip_devices(), bus, **kwargs)
+    def attachOnChipIO(self, bus, bridge=None, *args, **kwargs):
+        self._attach_io(self._on_chip_devices(), bus, *args, **kwargs)
         if bridge:
             bridge.ranges = self._off_chip_ranges
 
     def attachIO(self, *args, **kwargs):
         self._attach_io(self._off_chip_devices(), *args, **kwargs)
 
-
     def setupBootLoader(self, mem_bus, cur_sys, loc):
-        self.nvmem = SimpleMemory(range = AddrRange('2GB', size = '64MB'),
-                                  conf_table_reported = False)
-        self.nvmem.port = mem_bus.master
+        cur_sys.bootmem = SimpleMemory(
+            range = AddrRange('2GB', size = '64MB'),
+            conf_table_reported = False)
+        if mem_bus is not None:
+            cur_sys.bootmem.port = mem_bus.master
         cur_sys.boot_loader = loc('boot.arm')
         cur_sys.atags_addr = 0x100
-        cur_sys.load_addr_mask = 0xfffffff
         cur_sys.load_offset = 0
 
+    def generateDeviceTree(self, state):
+        node = FdtNode("/") # Things in this module need to end up in the root
+        node.append(FdtPropertyWords("interrupt-parent",
+                                     state.phandle(self.gic)))
+
+        for device in [getattr(self, c) for c in self._children]:
+            if issubclass(type(device), SimObject):
+                subnode = device.generateDeviceTree(state)
+                node.append(subnode)
+
+        yield node
+
+    def annotateCpuDeviceNode(self, cpu, state):
+        cpu.append(FdtPropertyStrings("enable-method", "spin-table"))
+        cpu.append(FdtPropertyWords("cpu-release-addr", \
+                                    state.addrCells(0x8000fff8)))
 
 # Reference for memory map and interrupt number
 # RealView Platform Baseboard Explore for Cortex-A9 User Guide(ARM DUI 0440A)
@@ -378,10 +620,12 @@ class RealViewPBX(RealView):
         pci_pio_base=0)
     timer0 = Sp804(int_num0=36, int_num1=36, pio_addr=0x10011000)
     timer1 = Sp804(int_num0=37, int_num1=37, pio_addr=0x10012000)
-    local_cpu_timer = CpuLocalTimer(int_num_timer=29, int_num_watchdog=30, pio_addr=0x1f000600)
+    global_timer = A9GlobalTimer(int_num=27, pio_addr=0x1f000200)
+    local_cpu_timer = CpuLocalTimer(int_num_timer=29, int_num_watchdog=30,
+                                    pio_addr=0x1f000600)
     clcd = Pl111(pio_addr=0x10020000, int_num=55)
-    kmi0   = Pl050(pio_addr=0x10006000, int_num=52)
-    kmi1   = Pl050(pio_addr=0x10007000, int_num=53, is_mouse=True)
+    kmi0   = Pl050(pio_addr=0x10006000, int_num=52, ps2=PS2Keyboard())
+    kmi1   = Pl050(pio_addr=0x10007000, int_num=53, ps2=PS2TouchKit())
     a9scu  = A9SCU(pio_addr=0x1f000000)
     cf_ctrl = IdeController(disks=[], pci_func=0, pci_dev=7, pci_bus=2,
                             io_shift = 1, ctrl_offset = 2, Command = 0x1,
@@ -417,6 +661,7 @@ class RealViewPBX(RealView):
        self.gic.pio = bus.master
        self.l2x0_fake.pio = bus.master
        self.a9scu.pio = bus.master
+       self.global_timer.pio = bus.master
        self.local_cpu_timer.pio = bus.master
        # Bridge ranges based on excluding what is part of on-chip I/O
        # (gic, l2x0, a9scu, local_cpu_timer)
@@ -508,8 +753,8 @@ class RealViewEB(RealView):
     timer0 = Sp804(int_num0=36, int_num1=36, pio_addr=0x10011000)
     timer1 = Sp804(int_num0=37, int_num1=37, pio_addr=0x10012000)
     clcd   = Pl111(pio_addr=0x10020000, int_num=23)
-    kmi0   = Pl050(pio_addr=0x10006000, int_num=20)
-    kmi1   = Pl050(pio_addr=0x10007000, int_num=21, is_mouse=True)
+    kmi0   = Pl050(pio_addr=0x10006000, int_num=20, ps2=PS2Keyboard())
+    kmi1   = Pl050(pio_addr=0x10007000, int_num=21, ps2=PS2TouchKit())
 
     l2x0_fake     = IsaFake(pio_addr=0x1f002000, pio_size=0xfff, warn_access="1")
     flash_fake    = IsaFake(pio_addr=0x40000000, pio_size=0x20000000-1,
@@ -612,27 +857,55 @@ class RealViewEB(RealView):
 
 class VExpress_EMM(RealView):
     _mem_regions = [(Addr('2GB'), Addr('2GB'))]
-    uart = Pl011(pio_addr=0x1c090000, int_num=37)
-    realview_io = RealViewCtrl(
-        proc_id0=0x14000000, proc_id1=0x14000000,
-        idreg=0x02250000, pio_addr=0x1C010000)
+
+    # Ranges based on excluding what is part of on-chip I/O (gic,
+    # a9scu)
+    _off_chip_ranges = [AddrRange(0x2F000000, size='16MB'),
+                        AddrRange(0x30000000, size='256MB'),
+                        AddrRange(0x40000000, size='512MB'),
+                        AddrRange(0x18000000, size='64MB'),
+                        AddrRange(0x1C000000, size='64MB')]
+
+    # Platform control device (off-chip)
+    realview_io = RealViewCtrl(proc_id0=0x14000000, proc_id1=0x14000000,
+                               idreg=0x02250000, pio_addr=0x1C010000)
+
     mcc = VExpressMCC()
     dcc = CoreTile2A15DCC()
+
+    ### On-chip devices ###
     gic = Pl390(dist_addr=0x2C001000, cpu_addr=0x2C002000)
+    vgic   = VGic(vcpu_addr=0x2c006000, hv_addr=0x2c004000, ppint=25)
+
+    local_cpu_timer = CpuLocalTimer(int_num_timer=29, int_num_watchdog=30,
+                                    pio_addr=0x2C080000)
+
+    hdlcd  = HDLcd(pxl_clk=dcc.osc_pxl,
+                   pio_addr=0x2b000000, int_num=117,
+                   workaround_swap_rb=True)
+
+    def _on_chip_devices(self):
+        devices = [
+            self.gic, self.vgic,
+            self.local_cpu_timer
+        ]
+        if hasattr(self, "gicv2m"):
+            devices.append(self.gicv2m)
+        devices.append(self.hdlcd)
+        return devices
+
+    ### Off-chip devices ###
+    uart = Pl011(pio_addr=0x1c090000, int_num=37)
     pci_host = GenericPciHost(
         conf_base=0x30000000, conf_size='256MB', conf_device_bits=16,
         pci_pio_base=0)
-    local_cpu_timer = CpuLocalTimer(int_num_timer=29, int_num_watchdog=30, pio_addr=0x2C080000)
+
     generic_timer = GenericTimer(int_phys=29, int_virt=27)
     timer0 = Sp804(int_num0=34, int_num1=34, pio_addr=0x1C110000, clock0='1MHz', clock1='1MHz')
     timer1 = Sp804(int_num0=35, int_num1=35, pio_addr=0x1C120000, clock0='1MHz', clock1='1MHz')
     clcd   = Pl111(pio_addr=0x1c1f0000, int_num=46)
-    hdlcd  = HDLcd(pxl_clk=dcc.osc_pxl,
-                   pio_addr=0x2b000000, int_num=117,
-                   workaround_swap_rb=True)
-    kmi0   = Pl050(pio_addr=0x1c060000, int_num=44)
-    kmi1   = Pl050(pio_addr=0x1c070000, int_num=45, is_mouse=True)
-    vgic   = VGic(vcpu_addr=0x2c006000, hv_addr=0x2c004000, ppint=25)
+    kmi0   = Pl050(pio_addr=0x1c060000, int_num=44, ps2=PS2Keyboard())
+    kmi1   = Pl050(pio_addr=0x1c070000, int_num=45, ps2=PS2TouchKit())
     cf_ctrl = IdeController(disks=[], pci_func=0, pci_dev=0, pci_bus=2,
                             io_shift = 2, ctrl_offset = 2, Command = 0x1,
                             BAR0 = 0x1C1A0000, BAR0Size = '256B',
@@ -655,6 +928,38 @@ class VExpress_EMM(RealView):
     mmc_fake       = AmbaFake(pio_addr=0x1c050000)
     energy_ctrl    = EnergyCtrl(pio_addr=0x1c080000)
 
+    def _off_chip_devices(self):
+        devices = [
+            self.uart,
+            self.realview_io,
+            self.pci_host,
+            self.timer0,
+            self.timer1,
+            self.clcd,
+            self.kmi0,
+            self.kmi1,
+            self.cf_ctrl,
+            self.rtc,
+            self.vram,
+            self.l2x0_fake,
+            self.uart1_fake,
+            self.uart2_fake,
+            self.uart3_fake,
+            self.sp810_fake,
+            self.watchdog_fake,
+            self.aaci_fake,
+            self.lan_fake,
+            self.usb_fake,
+            self.mmc_fake,
+            self.energy_ctrl,
+        ]
+        # Try to attach the I/O if it exists
+        if hasattr(self, "ide"):
+            devices.append(self.ide)
+        if hasattr(self, "ethernet"):
+            devices.append(self.ethernet)
+        return devices
+
     # Attach any PCI devices that are supported
     def attachPciDevices(self):
         self.ethernet = IGbE_e1000(pci_bus=0, pci_dev=0, pci_func=0,
@@ -668,107 +973,14 @@ class VExpress_EMM(RealView):
         self.gicv2m.frames = [Gicv2mFrame(spi_base=256, spi_len=64, addr=0x2C1C0000)]
 
     def setupBootLoader(self, mem_bus, cur_sys, loc):
-        self.nvmem = SimpleMemory(range = AddrRange('64MB'),
-                                  conf_table_reported = False)
-        self.nvmem.port = mem_bus.master
-        cur_sys.boot_loader = loc('boot_emm.arm')
+        cur_sys.bootmem = SimpleMemory(range = AddrRange('64MB'),
+                                       conf_table_reported = False)
+        if mem_bus is not None:
+            cur_sys.bootmem.port = mem_bus.master
+        if not cur_sys.boot_loader:
+            cur_sys.boot_loader = loc('boot_emm.arm')
         cur_sys.atags_addr = 0x8000000
-        cur_sys.load_addr_mask = 0xfffffff
         cur_sys.load_offset = 0x80000000
-
-    # Attach I/O devices that are on chip and also set the appropriate
-    # ranges for the bridge
-    def attachOnChipIO(self, bus, bridge=None):
-        self.gic.pio             = bus.master
-        self.vgic.pio            = bus.master
-        self.local_cpu_timer.pio = bus.master
-        if hasattr(self, "gicv2m"):
-            self.gicv2m.pio      = bus.master
-        self.hdlcd.dma           = bus.slave
-        if bridge:
-            # Bridge ranges based on excluding what is part of on-chip I/O
-            # (gic, a9scu)
-            bridge.ranges = [AddrRange(0x2F000000, size='16MB'),
-                             AddrRange(0x2B000000, size='4MB'),
-                             AddrRange(0x30000000, size='256MB'),
-                             AddrRange(0x40000000, size='512MB'),
-                             AddrRange(0x18000000, size='64MB'),
-                             AddrRange(0x1C000000, size='64MB')]
-
-
-    # Set the clock domain for IO objects that are considered
-    # to be "close" to the cores.
-    def onChipIOClkDomain(self, clkdomain):
-        self.gic.clk_domain             = clkdomain
-        if hasattr(self, "gicv2m"):
-            self.gicv2m.clk_domain      = clkdomain
-        self.hdlcd.clk_domain           = clkdomain
-        self.vgic.clk_domain            = clkdomain
-
-    # Attach I/O devices to specified bus object.  Done here
-    # as the specified bus to connect to may not always be fixed.
-    def attachIO(self, bus):
-       self.uart.pio            = bus.master
-       self.realview_io.pio     = bus.master
-       self.pci_host.pio        = bus.master
-       self.timer0.pio          = bus.master
-       self.timer1.pio          = bus.master
-       self.clcd.pio            = bus.master
-       self.clcd.dma            = bus.slave
-       self.hdlcd.pio           = bus.master
-       self.kmi0.pio            = bus.master
-       self.kmi1.pio            = bus.master
-       self.cf_ctrl.pio         = bus.master
-       self.cf_ctrl.dma         = bus.slave
-       self.rtc.pio             = bus.master
-       self.vram.port           = bus.master
-
-       self.l2x0_fake.pio       = bus.master
-       self.uart1_fake.pio      = bus.master
-       self.uart2_fake.pio      = bus.master
-       self.uart3_fake.pio      = bus.master
-       self.sp810_fake.pio      = bus.master
-       self.watchdog_fake.pio   = bus.master
-       self.aaci_fake.pio       = bus.master
-       self.lan_fake.pio        = bus.master
-       self.usb_fake.pio        = bus.master
-       self.mmc_fake.pio        = bus.master
-       self.energy_ctrl.pio     = bus.master
-
-       # Try to attach the I/O if it exists
-       try:
-           self.ide.pio         = bus.master
-           self.ide.dma         = bus.slave
-           self.ethernet.pio    = bus.master
-           self.ethernet.dma    = bus.slave
-       except:
-           pass
-
-    # Set the clock domain for IO objects that are considered
-    # to be "far" away from the cores.
-    def offChipIOClkDomain(self, clkdomain):
-        self.uart.clk_domain          = clkdomain
-        self.realview_io.clk_domain   = clkdomain
-        self.timer0.clk_domain        = clkdomain
-        self.timer1.clk_domain        = clkdomain
-        self.clcd.clk_domain          = clkdomain
-        self.kmi0.clk_domain          = clkdomain
-        self.kmi1.clk_domain          = clkdomain
-        self.cf_ctrl.clk_domain       = clkdomain
-        self.rtc.clk_domain           = clkdomain
-        self.vram.clk_domain          = clkdomain
-
-        self.l2x0_fake.clk_domain     = clkdomain
-        self.uart1_fake.clk_domain    = clkdomain
-        self.uart2_fake.clk_domain    = clkdomain
-        self.uart3_fake.clk_domain    = clkdomain
-        self.sp810_fake.clk_domain    = clkdomain
-        self.watchdog_fake.clk_domain = clkdomain
-        self.aaci_fake.clk_domain     = clkdomain
-        self.lan_fake.clk_domain      = clkdomain
-        self.usb_fake.clk_domain      = clkdomain
-        self.mmc_fake.clk_domain      = clkdomain
-        self.energy_ctrl.clk_domain   = clkdomain
 
 class VExpress_EMM64(VExpress_EMM):
     # Three memory regions are specified totalling 512GB
@@ -779,14 +991,14 @@ class VExpress_EMM64(VExpress_EMM):
         pci_pio_base=0x2f000000)
 
     def setupBootLoader(self, mem_bus, cur_sys, loc):
-        self.nvmem = SimpleMemory(range=AddrRange(0, size='64MB'),
-                                  conf_table_reported=False)
-        self.nvmem.port = mem_bus.master
-        cur_sys.boot_loader = loc('boot_emm.arm64')
+        cur_sys.bootmem = SimpleMemory(range=AddrRange(0, size='64MB'),
+                                       conf_table_reported=False)
+        if mem_bus is not None:
+            cur_sys.bootmem.port = mem_bus.master
+        if not cur_sys.boot_loader:
+            cur_sys.boot_loader = loc('boot_emm.arm64')
         cur_sys.atags_addr = 0x8000000
-        cur_sys.load_addr_mask = 0xfffffff
         cur_sys.load_offset = 0x80000000
-
 
 class VExpress_GEM5_V1(RealView):
     """
@@ -817,6 +1029,7 @@ Memory map:
    0x0c000000-0x0fffffff: Reserved (Off-chip, CS4)
    0x10000000-0x13ffffff: gem5-specific peripherals (Off-chip, CS5)
        0x10000000-0x1000ffff: gem5 energy controller
+       0x10010000-0x1001ffff: gem5 pseudo-ops
 
    0x14000000-0x17ffffff: Reserved (Off-chip, PSRAM, CS1)
    0x18000000-0x1bffffff: Reserved (Off-chip, Peripherals, CS2)
@@ -918,10 +1131,13 @@ Interrupts:
         ]
 
     ### Off-chip devices ###
+    clock24MHz = SrcClockDomain(clock="24MHz",
+        voltage_domain=VoltageDomain(voltage="3.3V"))
+
     uart0 = Pl011(pio_addr=0x1c090000, int_num=37)
 
-    kmi0 = Pl050(pio_addr=0x1c060000, int_num=44)
-    kmi1 = Pl050(pio_addr=0x1c070000, int_num=45, is_mouse=True)
+    kmi0 = Pl050(pio_addr=0x1c060000, int_num=44, ps2=PS2Keyboard())
+    kmi1 = Pl050(pio_addr=0x1c070000, int_num=45, ps2=PS2TouchKit())
 
     rtc = PL031(pio_addr=0x1c170000, int_num=36)
 
@@ -938,10 +1154,12 @@ Interrupts:
         return [
             self.realview_io,
             self.uart0,
-            self.kmi0, self.kmi1,
+            self.kmi0,
+            self.kmi1,
             self.rtc,
             self.pci_host,
             self.energy_ctrl,
+            self.clock24MHz,
         ]
 
     def attachPciDevice(self, device, *args, **kwargs):
@@ -949,10 +1167,30 @@ Interrupts:
         self._attach_device(device, *args, **kwargs)
 
     def setupBootLoader(self, mem_bus, cur_sys, loc):
-        self.nvmem = SimpleMemory(range=AddrRange(0, size='64MB'),
-                                  conf_table_reported=False)
-        self.nvmem.port = mem_bus.master
-        cur_sys.boot_loader = [ loc('boot_emm.arm64'), loc('boot_emm.arm') ]
+        cur_sys.bootmem = SimpleMemory(range=AddrRange(0, size='64MB'),
+                                       conf_table_reported=False)
+        if mem_bus is not None:
+            cur_sys.bootmem.port = mem_bus.master
+        if not cur_sys.boot_loader:
+            cur_sys.boot_loader = [ loc('boot_emm.arm64'), loc('boot_emm.arm') ]
         cur_sys.atags_addr = 0x8000000
-        cur_sys.load_addr_mask = 0xfffffff
         cur_sys.load_offset = 0x80000000
+
+        #  Setup m5ops. It's technically not a part of the boot
+        #  loader, but this is the only place we can configure the
+        #  system.
+        cur_sys.m5ops_base = 0x10010000
+
+    def generateDeviceTree(self, state):
+        # Generate using standard RealView function
+        dt = list(super(VExpress_GEM5_V1, self).generateDeviceTree(state))
+        if len(dt) > 1:
+            raise Exception("System returned too many DT nodes")
+        node = dt[0]
+
+        node.appendCompatible(["arm,vexpress"])
+        node.append(FdtPropertyStrings("model", ["V2P-CA15"]))
+        node.append(FdtPropertyWords("arm,hbi", [0x0]))
+        node.append(FdtPropertyWords("arm,vexpress,site", [0xf]))
+
+        yield node

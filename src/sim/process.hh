@@ -54,7 +54,7 @@ struct ProcessParams;
 
 class EmulatedDriver;
 class ObjectFile;
-class PageTableBase;
+class EmulationPageTable;
 class SyscallDesc;
 class SyscallReturn;
 class System;
@@ -63,7 +63,8 @@ class ThreadContext;
 class Process : public SimObject
 {
   public:
-    Process(ProcessParams *params, ObjectFile *obj_file);
+    Process(ProcessParams *params, EmulationPageTable *pTable,
+            ObjectFile *obj_file);
 
     void serialize(CheckpointOut &cp) const override;
     void unserialize(CheckpointIn &cp) override;
@@ -71,7 +72,7 @@ class Process : public SimObject
     void initState() override;
     DrainState drain() override;
 
-    void syscall(int64_t callnum, ThreadContext *tc, Fault *fault);
+    virtual void syscall(int64_t callnum, ThreadContext *tc, Fault *fault);
     virtual TheISA::IntReg getSyscallArg(ThreadContext *tc, int &i) = 0;
     virtual TheISA::IntReg getSyscallArg(ThreadContext *tc, int &i, int width);
     virtual void setSyscallArg(ThreadContext *tc, int i,
@@ -161,8 +162,8 @@ class Process : public SimObject
     void replicatePage(Addr vaddr, Addr new_paddr, ThreadContext *old_tc,
                        ThreadContext *new_tc, bool alloc_page);
 
-    void clone(ThreadContext *old_tc, ThreadContext *new_tc, Process *new_p,
-               TheISA::IntReg flags);
+    virtual void clone(ThreadContext *old_tc, ThreadContext *new_tc,
+                       Process *new_p, TheISA::IntReg flags);
 
     // thread contexts associated with this process
     std::vector<ContextID> contextIds;
@@ -175,7 +176,7 @@ class Process : public SimObject
     bool useArchPT; // flag for using architecture specific page table
     bool kvmInSE;   // running KVM requires special initialization
 
-    PageTableBase* pTable;
+    EmulationPageTable *pTable;
 
     SETranslatingPortProxy initVirtMem; // memory proxy for initial image load
 

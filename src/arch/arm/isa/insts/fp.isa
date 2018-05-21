@@ -60,12 +60,10 @@ class VfpMacroRegRegOp : public VfpMacroOp
             nextIdxs(_dest, _op1);
         }
     }
-
-    %(BasicExecPanic)s
 };
 
 template <class VfpOp>
-static StaticInstPtr
+StaticInstPtr
 decodeVfpRegRegOp(ExtMachInst machInst,
         IntRegIndex dest, IntRegIndex op1, bool wide)
 {
@@ -96,12 +94,10 @@ class VfpMacroRegImmOp : public VfpMacroOp
             nextIdxs(_dest);
         }
     }
-
-    %(BasicExecPanic)s
 };
 
 template <class VfpOp>
-static StaticInstPtr
+StaticInstPtr
 decodeVfpRegImmOp(ExtMachInst machInst,
         IntRegIndex dest, uint64_t imm, bool wide)
 {
@@ -132,12 +128,10 @@ class VfpMacroRegRegImmOp : public VfpMacroOp
             nextIdxs(_dest, _op1);
         }
     }
-
-    %(BasicExecPanic)s
 };
 
 template <class VfpOp>
-static StaticInstPtr
+StaticInstPtr
 decodeVfpRegRegImmOp(ExtMachInst machInst, IntRegIndex dest,
                      IntRegIndex op1, uint64_t imm, bool wide)
 {
@@ -168,12 +162,10 @@ class VfpMacroRegRegRegOp : public VfpMacroOp
             nextIdxs(_dest, _op1, _op2);
         }
     }
-
-    %(BasicExecPanic)s
 };
 
 template <class VfpOp>
-static StaticInstPtr
+StaticInstPtr
 decodeVfpRegRegRegOp(ExtMachInst machInst, IntRegIndex dest,
                      IntRegIndex op1, IntRegIndex op2, bool wide)
 {
@@ -224,7 +216,7 @@ let {{
     if (!inSecureState(scr, cpsr) && (cpsr.mode != MODE_HYP)) {
         HCR hcr = Hcr;
         bool hypTrap = false;
-        switch(xc->tcBase()->flattenMiscIndex(op1)) {
+        switch(xc->tcBase()->flattenRegId(RegId(MiscRegClass, op1)).index()) {
           case MISCREG_FPSID:
             hypTrap = hcr.tid0;
             break;

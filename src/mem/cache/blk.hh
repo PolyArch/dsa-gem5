@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2016 ARM Limited
+ * Copyright (c) 2012-2017 ARM Limited
  * All rights reserved.
  *
  * The license below extends only to copyright in the software and shall
@@ -51,6 +51,7 @@
 #include <list>
 
 #include "base/printable.hh"
+#include "mem/cache/replacement_policies/base.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
 
@@ -76,7 +77,7 @@ enum CacheBlkStatusBits : unsigned {
  * A Basic Cache block.
  * Contains the tag, status, and a pointer to data.
  */
-class CacheBlk
+class CacheBlk : public ReplaceableEntry
 {
   public:
     /** Task Id associated with this block */
@@ -99,7 +100,7 @@ class CacheBlk
     /** The current status of this block. @sa CacheBlockStatusBits */
     State status;
 
-    /** Which curTick() will this block be accessable */
+    /** Which curTick() will this block be accessible */
     Tick whenReady;
 
     /**
@@ -108,15 +109,13 @@ class CacheBlk
      */
     int set, way;
 
-    /** whether this block has been touched */
-    bool isTouched;
-
     /** Number of references to this block since it was brought in. */
     unsigned refCount;
 
     /** holds the source requestor ID for this block. */
     int srcMasterId;
 
+    /** Tick on which the block was inserted in the cache. */
     Tick tickInserted;
 
   protected:
@@ -164,15 +163,13 @@ class CacheBlk
   public:
 
     CacheBlk()
-        : task_id(ContextSwitchTaskId::Unknown),
-          tag(0), data(0), status(0), whenReady(0),
-          set(-1), way(-1), isTouched(false), refCount(0),
-          srcMasterId(Request::invldMasterId),
-          tickInserted(0)
-    {}
+    {
+        invalidate();
+    }
 
     CacheBlk(const CacheBlk&) = delete;
     CacheBlk& operator=(const CacheBlk&) = delete;
+    virtual ~CacheBlk() {};
 
     /**
      * Checks the write permissions of this block.
@@ -208,10 +205,15 @@ class CacheBlk
     /**
      * Invalidate the block and clear all state.
      */
-    void invalidate()
+    virtual void invalidate()
     {
+        tag = MaxAddr;
+        task_id = ContextSwitchTaskId::Unknown;
         status = 0;
-        isTouched = false;
+        whenReady = MaxTick;
+        refCount = 0;
+        srcMasterId = Request::invldMasterId;
+        tickInserted = MaxTick;
         lockList.clear();
     }
 
@@ -242,6 +244,20 @@ class CacheBlk
     {
         return (status & BlkSecure) != 0;
     }
+
+    /**
+     * Set member variables when a block insertion occurs. Resets reference
+     * count to 1 (the insertion counts as a reference), and touch block if
+     * it hadn't been touched previously. Sets the insertion tick to the
+     * current tick. Does not make block valid.
+     *
+     * @param tag Block address tag.
+     * @param is_secure Whether the block is in secure space or not.
+     * @param src_master_ID The source requestor ID.
+     * @param task_ID The new task ID.
+     */
+    void insert(const Addr tag, const State is_secure, const int src_master_ID,
+                const uint32_t task_ID);
 
     /**
      * Track the fact that a local locked was issued to the

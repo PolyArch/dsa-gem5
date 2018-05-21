@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2014 ARM Limited
+ * Copyright (c) 2012-2014,2017 ARM Limited
  * All rights reserved.
  *
  * The license below extends only to copyright in the software and shall
@@ -45,15 +45,17 @@
  * Declaration of a base set associative tag store.
  */
 
-#ifndef __MEM_CACHE_TAGS_BASESETASSOC_HH__
-#define __MEM_CACHE_TAGS_BASESETASSOC_HH__
+#ifndef __MEM_CACHE_TAGS_BASE_SET_ASSOC_HH__
+#define __MEM_CACHE_TAGS_BASE_SET_ASSOC_HH__
 
 #include <cassert>
 #include <cstring>
-#include <list>
+#include <vector>
 
+#include "debug/CacheRepl.hh"
 #include "mem/cache/base.hh"
 #include "mem/cache/blk.hh"
+#include "mem/cache/replacement_policies/base.hh"
 #include "mem/cache/tags/base.hh"
 #include "mem/cache/tags/cacheset.hh"
 #include "mem/packet.hh"
@@ -63,15 +65,9 @@
  * A BaseSetAssoc cache tag store.
  * @sa  \ref gem5MemorySystem "gem5 Memory System"
  *
- * The BaseSetAssoc tags provide a base, as well as the functionality
- * common to any set associative tags. Any derived class must implement
- * the methods related to the specifics of the actual replacment policy.
- * These are:
- *
- * BlkType* accessBlock();
- * BlkType* findVictim();
- * void insertBlock();
- * void invalidate();
+ * The BaseSetAssoc placement policy divides the cache into s sets of w
+ * cache lines (ways). A cache line is mapped onto a set, and can be placed
+ * into any of the ways of this set.
  */
 class BaseSetAssoc : public BaseTags
 {
@@ -81,24 +77,23 @@ class BaseSetAssoc : public BaseTags
     /** Typedef the set type used in this tag store. */
     typedef CacheSet<CacheBlk> SetType;
 
-
   protected:
     /** The associativity of the cache. */
     const unsigned assoc;
     /** The allocatable associativity of the cache (alloc mask). */
     unsigned allocAssoc;
+
+    /** The cache blocks. */
+    std::vector<BlkType> blks;
+
     /** The number of sets in the cache. */
     const unsigned numSets;
+
     /** Whether tags and data are accessed sequentially. */
     const bool sequentialAccess;
 
     /** The cache sets. */
-    SetType *sets;
-
-    /** The cache blocks. */
-    BlkType *blks;
-    /** The data blocks, 1 per cache block. */
-    uint8_t *dataBlks;
+    std::vector<SetType> sets;
 
     /** The amount to shift the address to get the set. */
     int setShift;
@@ -107,8 +102,10 @@ class BaseSetAssoc : public BaseTags
     /** Mask out all bits that aren't part of the set index. */
     unsigned setMask;
 
-public:
+    /** Replacement policy */
+    BaseReplacementPolicy *replacementPolicy;
 
+  public:
     /** Convenience typedef. */
      typedef BaseSetAssocParams Params;
 
@@ -120,7 +117,15 @@ public:
     /**
      * Destructor
      */
-    virtual ~BaseSetAssoc();
+    virtual ~BaseSetAssoc() {};
+
+    /**
+     * This function updates the tags when a block is invalidated but does
+     * not invalidate the block itself. It also updates the replacement data.
+     *
+     * @param blk The block to invalidate.
+     */
+    void invalidate(CacheBlk *blk) override;
 
     /**
      * Find the cache block given set and way
@@ -129,22 +134,6 @@ public:
      * @return The cache block.
      */
     CacheBlk *findBlockBySetAndWay(int set, int way) const override;
-
-    /**
-     * Invalidate the given block.
-     * @param blk The block to invalidate.
-     */
-    void invalidate(CacheBlk *blk) override
-    {
-        assert(blk);
-        assert(blk->isValid());
-        tagsInUse--;
-        assert(blk->srcMasterId < cache->system->maxMasters());
-        occupancies[blk->srcMasterId]--;
-        blk->srcMasterId = Request::invldMasterId;
-        blk->task_id = ContextSwitchTaskId::Unknown;
-        blk->tickInserted = curTick();
-    }
 
     /**
      * Access block and update replacement data. May not succeed, in which case
@@ -158,9 +147,7 @@ public:
      */
     CacheBlk* accessBlock(Addr addr, bool is_secure, Cycles &lat) override
     {
-        Addr tag = extractTag(addr);
-        int set = extractSet(addr);
-        BlkType *blk = sets[set].findBlk(tag, is_secure);
+        BlkType *blk = findBlock(addr, is_secure);
 
         // Access all tags in parallel, hence one in each way.  The data side
         // either accesses all blocks in parallel, or one block sequentially on
@@ -185,7 +172,12 @@ public:
                 lat = cache->ticksToCycles(blk->whenReady - curTick()) +
                 accessLatency;
             }
-            blk->refCount += 1;
+
+            // Update number of references to accessed block
+            blk->refCount++;
+
+            // Update replacement data of accessed block
+            replacementPolicy->touch(blk->replacementData);
         } else {
             // If a cache miss
             lat = lookupLatency;
@@ -205,80 +197,55 @@ public:
     CacheBlk* findBlock(Addr addr, bool is_secure) const override;
 
     /**
-     * Find an invalid block to evict for the address provided.
-     * If there are no invalid blocks, this will return the block
-     * in the least-recently-used position.
-     * @param addr The addr to a find a replacement candidate for.
-     * @return The candidate block.
+     * Find replacement victim based on address.
+     *
+     * @param addr Address to find a victim for.
+     * @return Cache block to be replaced.
      */
     CacheBlk* findVictim(Addr addr) override
     {
-        BlkType *blk = nullptr;
-        int set = extractSet(addr);
+        // Get possible locations for the victim block
+        std::vector<CacheBlk*> locations = getPossibleLocations(addr);
 
-        // prefer to evict an invalid block
-        for (int i = 0; i < allocAssoc; ++i) {
-            blk = sets[set].blks[i];
-            if (!blk->isValid())
-                break;
-        }
+        // Choose replacement victim from replacement candidates
+        CacheBlk* victim = static_cast<CacheBlk*>(replacementPolicy->getVictim(
+                               std::vector<ReplaceableEntry*>(
+                                   locations.begin(), locations.end())));
 
-        return blk;
+        DPRINTF(CacheRepl, "set %x, way %x: selecting blk for replacement\n",
+            victim->set, victim->way);
+
+        return victim;
     }
 
     /**
-     * Insert the new block into the cache.
+     * Find all possible block locations for insertion and replacement of
+     * an address. Should be called immediately before ReplacementPolicy's
+     * findVictim() not to break cache resizing.
+     * Returns blocks in all ways belonging to the set of the address.
+     *
+     * @param addr The addr to a find possible locations for.
+     * @return The possible locations.
+     */
+    const std::vector<CacheBlk*> getPossibleLocations(Addr addr)
+    {
+        return sets[extractSet(addr)].blks;
+    }
+
+    /**
+     * Insert the new block into the cache and update replacement data.
+     *
      * @param pkt Packet holding the address to update
      * @param blk The block to update.
      */
-     void insertBlock(PacketPtr pkt, CacheBlk *blk) override
-     {
-         Addr addr = pkt->getAddr();
-         MasterID master_id = pkt->req->masterId();
-         uint32_t task_id = pkt->req->taskId();
+    void insertBlock(PacketPtr pkt, CacheBlk *blk) override
+    {
+        // Insert block
+        BaseTags::insertBlock(pkt, blk);
 
-         if (!blk->isTouched) {
-             tagsInUse++;
-             blk->isTouched = true;
-             if (!warmedUp && tagsInUse.value() >= warmupBound) {
-                 warmedUp = true;
-                 warmupCycle = curTick();
-             }
-         }
-
-         // If we're replacing a block that was previously valid update
-         // stats for it. This can't be done in findBlock() because a
-         // found block might not actually be replaced there if the
-         // coherence protocol says it can't be.
-         if (blk->isValid()) {
-             replacements[0]++;
-             totalRefs += blk->refCount;
-             ++sampledRefs;
-             blk->refCount = 0;
-
-             // deal with evicted block
-             assert(blk->srcMasterId < cache->system->maxMasters());
-             occupancies[blk->srcMasterId]--;
-
-             blk->invalidate();
-         }
-
-         blk->isTouched = true;
-
-         // Set tag for new block.  Caller is responsible for setting status.
-         blk->tag = extractTag(addr);
-
-         // deal with what we are bringing in
-         assert(master_id < cache->system->maxMasters());
-         occupancies[master_id]++;
-         blk->srcMasterId = master_id;
-         blk->task_id = task_id;
-         blk->tickInserted = curTick();
-
-         // We only need to write into one tag and one data block.
-         tagAccesses += 1;
-         dataAccesses += 1;
-     }
+        // Update replacement policy
+        replacementPolicy->reset(blk->replacementData);
+    }
 
     /**
      * Limit the allocation for the cache ways.
@@ -320,14 +287,14 @@ public:
     }
 
     /**
-     * Regenerate the block address from the tag.
-     * @param tag The tag of the block.
-     * @param set The set of the block.
-     * @return The block address.
+     * Regenerate the block address from the tag and set.
+     *
+     * @param block The block.
+     * @return the block address.
      */
-    Addr regenerateBlkAddr(Addr tag, unsigned set) const override
+    Addr regenerateBlkAddr(const CacheBlk* blk) const override
     {
-        return ((tag << tagShift) | ((Addr)set << setShift));
+        return ((blk->tag << tagShift) | ((Addr)blk->set << setShift));
     }
 
     /**
@@ -358,11 +325,11 @@ public:
      * \param visitor Visitor to call on each block.
      */
     void forEachBlk(CacheBlkVisitor &visitor) override {
-        for (unsigned i = 0; i < numSets * assoc; ++i) {
-            if (!visitor(blks[i]))
+        for (CacheBlk& blk : blks) {
+            if (!visitor(blk))
                 return;
         }
     }
 };
 
-#endif // __MEM_CACHE_TAGS_BASESETASSOC_HH__
+#endif //__MEM_CACHE_TAGS_BASE_SET_ASSOC_HH__

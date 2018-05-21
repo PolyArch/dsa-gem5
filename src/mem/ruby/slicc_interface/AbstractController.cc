@@ -1,4 +1,16 @@
 /*
+ * Copyright (c) 2017 ARM Limited
+ * All rights reserved.
+ *
+ * The license below extends only to copyright in the software and shall
+ * not be construed as granting a license to any other intellectual
+ * property including but not limited to intellectual property relating
+ * to a hardware implementation of the functionality of the software
+ * licensed hereunder.  You may use the software subject to the license
+ * terms below provided that you ensure that this notice is replicated
+ * unmodified and in its entirety in all distributions of the software,
+ * modified or unmodified, in source code or in binary form.
+ *
  * Copyright (c) 2011-2014 Mark D. Hill and David A. Wood
  * All rights reserved.
  *
@@ -39,11 +51,12 @@
 AbstractController::AbstractController(const Params *p)
     : MemObject(p), Consumer(this), m_version(p->version),
       m_clusterID(p->cluster_id),
-      m_masterId(p->system->getMasterId(name())), m_is_blocking(false),
+      m_masterId(p->system->getMasterId(this)), m_is_blocking(false),
       m_number_of_TBEs(p->number_of_TBEs),
       m_transitions_per_cycle(p->transitions_per_cycle),
       m_buffer_size(p->buffer_size), m_recycle_latency(p->recycle_latency),
-      memoryPort(csprintf("%s.memory", name()), this, "")
+      memoryPort(csprintf("%s.memory", name()), this, ""),
+      addrRanges(p->addr_ranges.begin(), p->addr_ranges.end())
 {
     if (m_version == 0) {
         // Combine the statistics from all controllers
@@ -345,6 +358,20 @@ AbstractController::recvTimingResp(PacketPtr pkt)
     getMemoryQueue()->enqueue(msg, clockEdge(), cyclesToTicks(Cycles(1)));
     delete pkt->req;
     delete pkt;
+}
+
+Tick
+AbstractController::recvAtomic(PacketPtr pkt)
+{
+   return ticksToCycles(memoryPort.sendAtomic(pkt));
+}
+
+MachineID
+AbstractController::mapAddressToMachine(Addr addr, MachineType mtype) const
+{
+    NodeID node = m_net_ptr->addressToNodeID(addr, mtype);
+    MachineID mach = {mtype, node};
+    return mach;
 }
 
 bool

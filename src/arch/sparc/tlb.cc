@@ -36,6 +36,7 @@
 #include "arch/sparc/faults.hh"
 #include "arch/sparc/registers.hh"
 #include "base/bitfield.hh"
+#include "base/compiler.hh"
 #include "base/trace.hh"
 #include "cpu/base.hh"
 #include "cpu/thread_context.hh"
@@ -849,13 +850,6 @@ TLB::translateTiming(RequestPtr req, ThreadContext *tc,
 }
 
 Fault
-TLB::translateFunctional(RequestPtr req, ThreadContext *tc, Mode mode)
-{
-    panic("Not implemented\n");
-    return NoFault;
-}
-
-Fault
 TLB::finalizePhysical(RequestPtr req, ThreadContext *tc, Mode mode) const
 {
     return NoFault;
@@ -871,7 +865,7 @@ TLB::doMmuRegRead(ThreadContext *tc, Packet *pkt)
     DPRINTF(IPR, "Memory Mapped IPR Read: asi=%#X a=%#x\n",
          (uint32_t)pkt->req->getArchFlags(), pkt->getAddr());
 
-    TLB *itb = tc->getITBPtr();
+    TLB *itb = dynamic_cast<TLB *>(tc->getITBPtr());
 
     switch (asi) {
       case ASI_LSU_CONTROL_REG:
@@ -1067,7 +1061,7 @@ TLB::doMmuRegWrite(ThreadContext *tc, Packet *pkt)
     DPRINTF(IPR, "Memory Mapped IPR Write: asi=%#X a=%#x d=%#X\n",
          (uint32_t)asi, va, data);
 
-    TLB *itb = tc->getITBPtr();
+    TLB *itb = dynamic_cast<TLB *>(tc->getITBPtr());
 
     switch (asi) {
       case ASI_LSU_CONTROL_REG:
@@ -1162,6 +1156,7 @@ TLB::doMmuRegWrite(ThreadContext *tc, Packet *pkt)
         break;
       case ASI_ITLB_DATA_ACCESS_REG:
         entry_insert = bits(va, 8,3);
+        M5_FALLTHROUGH;
       case ASI_ITLB_DATA_IN_REG:
         assert(entry_insert != -1 || mbits(va,10,9) == va);
         ta_insert = itb->tag_access;
@@ -1171,11 +1166,12 @@ TLB::doMmuRegWrite(ThreadContext *tc, Packet *pkt)
         real_insert = bits(va, 9,9);
         pte.populate(data, bits(va,10,10) ? PageTableEntry::sun4v :
                 PageTableEntry::sun4u);
-        tc->getITBPtr()->insert(va_insert, part_insert, ct_insert, real_insert,
-                pte, entry_insert);
+        itb->insert(va_insert, part_insert, ct_insert, real_insert,
+                    pte, entry_insert);
         break;
       case ASI_DTLB_DATA_ACCESS_REG:
         entry_insert = bits(va, 8,3);
+        M5_FALLTHROUGH;
       case ASI_DTLB_DATA_IN_REG:
         assert(entry_insert != -1 || mbits(va,10,9) == va);
         ta_insert = tag_access;
@@ -1209,15 +1205,14 @@ TLB::doMmuRegWrite(ThreadContext *tc, Packet *pkt)
         switch (bits(va,7,6)) {
           case 0: // demap page
             if (!ignore)
-                tc->getITBPtr()->demapPage(mbits(va,63,13), part_id,
-                        bits(va,9,9), ctx_id);
+                itb->demapPage(mbits(va,63,13), part_id, bits(va,9,9), ctx_id);
             break;
           case 1: // demap context
             if (!ignore)
-                tc->getITBPtr()->demapContext(part_id, ctx_id);
+                itb->demapContext(part_id, ctx_id);
             break;
           case 2:
-            tc->getITBPtr()->demapAll(part_id);
+            itb->demapAll(part_id);
             break;
           default:
             panic("Invalid type for IMMU demap\n");
@@ -1303,7 +1298,7 @@ void
 TLB::GetTsbPtr(ThreadContext *tc, Addr addr, int ctx, Addr *ptrs)
 {
     uint64_t tag_access = mbits(addr,63,13) | mbits(ctx,12,0);
-    TLB * itb = tc->getITBPtr();
+    TLB *itb = dynamic_cast<TLB *>(tc->getITBPtr());
     ptrs[0] = MakeTsbPtr(Ps0, tag_access,
                 c0_tsb_ps0,
                 c0_config,
@@ -1375,12 +1370,12 @@ TLB::serialize(CheckpointOut &cp) const
     SERIALIZE_SCALAR(cx_config);
     SERIALIZE_SCALAR(sfsr);
     SERIALIZE_SCALAR(tag_access);
+    SERIALIZE_SCALAR(sfar);
 
     for (int x = 0; x < size; x++) {
         ScopedCheckpointSection sec(cp, csprintf("PTE%d", x));
         tlb[x].serialize(cp);
     }
-    SERIALIZE_SCALAR(sfar);
 }
 
 void

@@ -1051,7 +1051,7 @@ $c_ident::functionalWriteBuffers(PacketPtr& pkt)
 #include <cassert>
 #include <typeinfo>
 
-#include "base/misc.hh"
+#include "base/logging.hh"
 
 ''')
         for f in self.debug_flags:
@@ -1168,7 +1168,7 @@ ${ident}_Controller::wakeup()
 
 #include <cassert>
 
-#include "base/misc.hh"
+#include "base/logging.hh"
 #include "base/trace.hh"
 #include "debug/ProtocolTrace.hh"
 #include "debug/RubyGenerated.hh"
@@ -1400,7 +1400,7 @@ if (!checkResourceAvailable(%s_RequestType_%s, addr)) {
         code('''
       default:
         panic("Invalid transition\\n"
-              "%s time: %d addr: %s event: %s state: %s\\n",
+              "%s time: %d addr: %#x event: %s state: %s\\n",
               name(), curCycle(), addr, event, state);
     }
 

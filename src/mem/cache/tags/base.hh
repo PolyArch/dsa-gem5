@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2014,2016 ARM Limited
+ * Copyright (c) 2012-2014,2016-2017 ARM Limited
  * All rights reserved.
  *
  * The license below extends only to copyright in the software and shall
@@ -46,14 +46,15 @@
  * Declaration of a common base class for cache tagstore objects.
  */
 
-#ifndef __BASE_TAGS_HH__
-#define __BASE_TAGS_HH__
+#ifndef __MEM_CACHE_TAGS_BASE_HH__
+#define __MEM_CACHE_TAGS_BASE_HH__
 
 #include <string>
 
 #include "base/callback.hh"
 #include "base/statistics.hh"
 #include "mem/cache/blk.hh"
+#include "mem/cache/replacement_policies/base.hh"
 #include "params/BaseTags.hh"
 #include "sim/clocked_object.hh"
 
@@ -86,21 +87,23 @@ class BaseTags : public ClockedObject
      * The number of tags that need to be touched to meet the warmup
      * percentage.
      */
-    int warmupBound;
+    const unsigned warmupBound;
     /** Marked true when the cache is warmed up. */
     bool warmedUp;
 
     /** the number of blocks in the cache */
-    unsigned numBlocks;
+    const unsigned numBlocks;
+
+    /** The data blocks, 1 per cache block. */
+    std::unique_ptr<uint8_t[]> dataBlks;
 
     // Statistics
     /**
+     * TODO: It would be good if these stats were acquired after warmup.
      * @addtogroup CacheStatistics
      * @{
      */
 
-    /** Number of replacements of valid blocks per thread. */
-    Stats::Vector replacements;
     /** Per cycle average of the number of tags that hold valid data. */
     Stats::Average tagsInUse;
 
@@ -120,7 +123,7 @@ class BaseTags : public ClockedObject
      */
     Stats::Formula avgRefs;
 
-    /** The cycle that the warmup percentage was hit. */
+    /** The cycle that the warmup percentage was hit. 0 on failure. */
     Stats::Scalar warmupCycle;
 
     /** Average occupancy of each requestor using the cache */
@@ -235,17 +238,51 @@ class BaseTags : public ClockedObject
         return -1;
     }
 
-    virtual void invalidate(CacheBlk *blk) = 0;
+    /**
+     * This function updates the tags when a block is invalidated
+     *
+     * @param blk A valid block to invalidate.
+     */
+    virtual void invalidate(CacheBlk *blk)
+    {
+        assert(blk);
+        assert(blk->isValid());
+
+        tagsInUse--;
+        occupancies[blk->srcMasterId]--;
+        totalRefs += blk->refCount;
+        sampledRefs++;
+
+        blk->invalidate();
+    }
+
+    /**
+     * Find replacement victim based on address.
+     *
+     * @param addr Address to find a victim for.
+     * @return Cache block to be replaced.
+     */
+    virtual CacheBlk* findVictim(Addr addr) = 0;
 
     virtual CacheBlk* accessBlock(Addr addr, bool is_secure, Cycles &lat) = 0;
 
     virtual Addr extractTag(Addr addr) const = 0;
 
-    virtual void insertBlock(PacketPtr pkt, CacheBlk *blk) = 0;
+    /**
+     * Insert the new block into the cache and update stats.
+     *
+     * @param pkt Packet holding the address to update
+     * @param blk The block to update.
+     */
+    virtual void insertBlock(PacketPtr pkt, CacheBlk *blk);
 
-    virtual Addr regenerateBlkAddr(Addr tag, unsigned set) const = 0;
-
-    virtual CacheBlk* findVictim(Addr addr) = 0;
+    /**
+     * Regenerate the block address.
+     *
+     * @param block The block.
+     * @return the block address.
+     */
+    virtual Addr regenerateBlkAddr(const CacheBlk* blk) const = 0;
 
     virtual int extractSet(Addr addr) const = 0;
 
@@ -268,4 +305,4 @@ class BaseTagsDumpCallback : public Callback
     virtual void process() { tags->computeStats(); };
 };
 
-#endif //__BASE_TAGS_HH__
+#endif //__MEM_CACHE_TAGS_BASE_HH__

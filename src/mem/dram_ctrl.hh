@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2016 ARM Limited
+ * Copyright (c) 2012-2018 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -43,6 +43,7 @@
  *          Omar Naji
  *          Matthias Jung
  *          Wendy Elsasser
+ *          Radhika Jagtap
  */
 
 /**
@@ -188,7 +189,8 @@ class DRAMCtrl : public AbstractMemory
         uint8_t bank;
         uint8_t bankgr;
 
-        Tick colAllowedAt;
+        Tick rdAllowedAt;
+        Tick wrAllowedAt;
         Tick preAllowedAt;
         Tick actAllowedAt;
 
@@ -197,7 +199,7 @@ class DRAMCtrl : public AbstractMemory
 
         Bank() :
             openRow(NO_ROW), bank(0), bankgr(0),
-            colAllowedAt(0), preAllowedAt(0), actAllowedAt(0),
+            rdAllowedAt(0), wrAllowedAt(0), preAllowedAt(0), actAllowedAt(0),
             rowAccesses(0), bytesAccessed(0)
         { }
     };
@@ -451,7 +453,7 @@ class DRAMCtrl : public AbstractMemory
         /** List to keep track of activate ticks */
         std::deque<Tick> actTicks;
 
-        Rank(DRAMCtrl& _memory, const DRAMCtrlParams* _p);
+        Rank(DRAMCtrl& _memory, const DRAMCtrlParams* _p, int rank);
 
         const std::string name() const
         {
@@ -472,15 +474,12 @@ class DRAMCtrl : public AbstractMemory
         void suspend();
 
         /**
-         * Check if the current rank is available for scheduling.
-         * Rank will be unavailable if refresh is ongoing.
-         * This includes refresh events explicitly scheduled from the the
-         * controller or memory initiated events which will occur during
-         * self-refresh mode.
+         * Check if there is no refresh and no preparation of refresh ongoing
+         * i.e. the refresh state machine is in idle
          *
          * @param Return true if the rank is idle from a refresh point of view
          */
-        bool isAvailable() const { return refreshState == REF_IDLE; }
+        bool inRefIdleState() const { return refreshState == REF_IDLE; }
 
         /**
          * Check if the current rank has all banks closed and is not
@@ -507,12 +506,12 @@ class DRAMCtrl : public AbstractMemory
         }
 
         /**
-         * Check if the current rank is idle and should enter a low-pwer state
+         * Check if the command queue of current rank is idle
          *
-         * @param Return true if the there are no read commands in Q
-         *                    and there are no outstanding events
+         * @param Return true if the there are no commands in Q.
+         *                    Bus direction determines queue checked.
          */
-        bool lowPowerEntryReady() const;
+        bool isQueueEmpty() const;
 
         /**
          * Let the rank check if it was waiting for requests to drain
@@ -539,6 +538,11 @@ class DRAMCtrl : public AbstractMemory
         void computeStats();
 
         /**
+         * Reset stats on a stats event
+         */
+        void resetStats();
+
+        /**
          * Schedule a transition to power-down (sleep)
          *
          * @param pwr_state Power state to transition to
@@ -556,41 +560,61 @@ class DRAMCtrl : public AbstractMemory
         void scheduleWakeUpEvent(Tick exit_delay);
 
         void processWriteDoneEvent();
-        EventWrapper<Rank, &Rank::processWriteDoneEvent>
-        writeDoneEvent;
+        EventFunctionWrapper writeDoneEvent;
 
         void processActivateEvent();
-        EventWrapper<Rank, &Rank::processActivateEvent>
-        activateEvent;
+        EventFunctionWrapper activateEvent;
 
         void processPrechargeEvent();
-        EventWrapper<Rank, &Rank::processPrechargeEvent>
-        prechargeEvent;
+        EventFunctionWrapper prechargeEvent;
 
         void processRefreshEvent();
-        EventWrapper<Rank, &Rank::processRefreshEvent>
-        refreshEvent;
+        EventFunctionWrapper refreshEvent;
 
         void processPowerEvent();
-        EventWrapper<Rank, &Rank::processPowerEvent>
-        powerEvent;
+        EventFunctionWrapper powerEvent;
 
         void processWakeUpEvent();
-        EventWrapper<Rank, &Rank::processWakeUpEvent>
-        wakeUpEvent;
+        EventFunctionWrapper wakeUpEvent;
 
     };
 
-    // define the process to compute stats on simulation exit
-    // defined per rank as the per rank stats are based on state
-    // transition and periodically updated, requiring re-sync at
-    // exit.
+    /**
+     * Define the process to compute stats on a stats dump event, e.g. on
+     * simulation exit or intermediate stats dump. This is defined per rank
+     * as the per rank stats are based on state transition and periodically
+     * updated, requiring re-sync at exit.
+     */
     class RankDumpCallback : public Callback
     {
         Rank *ranks;
       public:
         RankDumpCallback(Rank *r) : ranks(r) {}
         virtual void process() { ranks->computeStats(); };
+    };
+
+    /** Define a process to clear power lib counters on a stats reset */
+    class RankResetCallback : public Callback
+    {
+      private:
+        /** Pointer to the rank, thus we instantiate per rank */
+        Rank *rank;
+
+      public:
+        RankResetCallback(Rank *r) : rank(r) {}
+        virtual void process() { rank->resetStats(); };
+    };
+
+    /** Define a process to store the time on a stats reset */
+    class MemResetCallback : public Callback
+    {
+      private:
+        /** A reference to the DRAMCtrl instance */
+        DRAMCtrl *mem;
+
+      public:
+        MemResetCallback(DRAMCtrl *_mem) : mem(_mem) {}
+        virtual void process() { mem->lastStatsResetTick = curTick(); };
     };
 
     /**
@@ -685,10 +709,10 @@ class DRAMCtrl : public AbstractMemory
      * in these methods
      */
     void processNextReqEvent();
-    EventWrapper<DRAMCtrl,&DRAMCtrl::processNextReqEvent> nextReqEvent;
+    EventFunctionWrapper nextReqEvent;
 
     void processRespondEvent();
-    EventWrapper<DRAMCtrl, &DRAMCtrl::processRespondEvent> respondEvent;
+    EventFunctionWrapper respondEvent;
 
     /**
      * Check if the read queue has room for more entries
@@ -800,15 +824,16 @@ class DRAMCtrl : public AbstractMemory
 
     /**
      * Find which are the earliest banks ready to issue an activate
-     * for the enqueued requests. Assumes maximum of 64 banks per DIMM
+     * for the enqueued requests. Assumes maximum of 32 banks per rank
      * Also checks if the bank is already prepped.
      *
      * @param queue Queued requests to consider
-     * @param time of seamless burst command
+     * @param min_col_at time of seamless burst command
      * @return One-hot encoded mask of bank indices
      * @return boolean indicating burst can issue seamlessly, with no gaps
      */
-    std::pair<uint64_t, bool> minBankPrep(const std::deque<DRAMPacket*>& queue,
+    std::pair<std::vector<uint32_t>, bool> minBankPrep(
+                                          const std::deque<DRAMPacket*>& queue,
                                           Tick min_col_at) const;
 
     /**
@@ -916,10 +941,10 @@ class DRAMCtrl : public AbstractMemory
      * values.
      */
     const Tick M5_CLASS_VAR_USED tCK;
-    const Tick tWTR;
     const Tick tRTW;
     const Tick tCS;
     const Tick tBURST;
+    const Tick tCCD_L_WR;
     const Tick tCCD_L;
     const Tick tRCD;
     const Tick tCL;
@@ -935,6 +960,9 @@ class DRAMCtrl : public AbstractMemory
     const Tick tXP;
     const Tick tXS;
     const uint32_t activationLimit;
+    const Tick rankToRankDly;
+    const Tick wrToRdDly;
+    const Tick rdToWrDly;
 
     /**
      * Memory controller configuration initialized based on parameter
@@ -965,16 +993,16 @@ class DRAMCtrl : public AbstractMemory
     const Tick backendLatency;
 
     /**
-     * Till when has the main data bus been spoken for already?
+     * Till when must we wait before issuing next RD/WR burst?
      */
-    Tick busBusyUntil;
+    Tick nextBurstAt;
 
     Tick prevArrival;
 
     /**
      * The soonest you have to start thinking about the next request
      * is the longest access time that can occur before
-     * busBusyUntil. Assuming you need to precharge, open a new row,
+     * nextBurstAt. Assuming you need to precharge, open a new row,
      * and access, it is tRP + tRCD + tCL.
      */
     Tick nextReqTime;
@@ -1044,6 +1072,9 @@ class DRAMCtrl : public AbstractMemory
 
     // timestamp offset
     uint64_t timeStampOffset;
+
+    /** The time when stats were last reset used to calculate average power */
+    Tick lastStatsResetTick;
 
     /**
      * Upstream caches need this packet until true is returned, so

@@ -48,14 +48,13 @@
 #include "base/trace.hh"
 #include "debug/Drain.hh"
 
-using namespace std;
-
 SimpleMemory::SimpleMemory(const SimpleMemoryParams* p) :
     AbstractMemory(p),
     port(name() + ".port", *this), latency(p->latency),
     latency_var(p->latency_var), bandwidth(p->bandwidth), isBusy(false),
     retryReq(false), retryResp(false),
-    releaseEvent(this), dequeueEvent(this)
+    releaseEvent([this]{ release(); }, name()),
+    dequeueEvent([this]{ dequeue(); }, name())
 {
 }
 

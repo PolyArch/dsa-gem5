@@ -55,8 +55,9 @@
 
 DmaPort::DmaPort(MemObject *dev, System *s)
     : MasterPort(dev->name() + ".dma", dev),
-      device(dev), sys(s), masterId(s->getMasterId(dev->name())),
-      sendEvent(this), pendingCount(0), inRetry(false)
+      device(dev), sys(s), masterId(s->getMasterId(dev)),
+      sendEvent([this]{ sendDma(); }, dev->name()),
+      pendingCount(0), inRetry(false)
 { }
 
 void
@@ -437,7 +438,7 @@ DmaReadFifo::dmaDone()
     handlePending();
     resumeFill();
 
-    if (!old_active && isActive())
+    if (old_active && !isActive())
         onIdle();
 }
 

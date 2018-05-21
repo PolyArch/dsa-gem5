@@ -43,7 +43,9 @@
 
 #include "arch/riscv/registers.hh"
 #include "arch/riscv/types.hh"
-#include "base/misc.hh"
+#include "base/bitfield.hh"
+#include "base/logging.hh"
+#include "cpu/reg_class.hh"
 #include "sim/sim_object.hh"
 
 struct RiscvISAParams;
@@ -54,62 +56,43 @@ class EventManager;
 namespace RiscvISA
 {
 
+enum PrivilegeMode {
+    PRV_U = 0,
+    PRV_S = 1,
+    PRV_M = 3
+};
+
 class ISA : public SimObject
 {
   protected:
     std::vector<MiscReg> miscRegFile;
-    std::map<int, std::string> miscRegNames;
+
+    bool hpmCounterEnabled(int counter) const;
 
   public:
     typedef RiscvISAParams Params;
 
-    void
-    clear();
+    void clear();
 
-    MiscReg
-    readMiscRegNoEffect(int misc_reg) const;
+    MiscReg readMiscRegNoEffect(int misc_reg) const;
+    MiscReg readMiscReg(int misc_reg, ThreadContext *tc);
+    void setMiscRegNoEffect(int misc_reg, const MiscReg &val);
+    void setMiscReg(int misc_reg, const MiscReg &val, ThreadContext *tc);
 
-    MiscReg
-    readMiscReg(int misc_reg, ThreadContext *tc);
-
-    void
-    setMiscRegNoEffect(int misc_reg, const MiscReg &val);
-
-    void
-    setMiscReg(int misc_reg, const MiscReg &val, ThreadContext *tc);
-
-    int
-    flattenIntIndex(int reg) const
-    {
-        return reg;
-    }
-
-    int
-    flattenFloatIndex(int reg) const
-    {
-        return reg;
-    }
-
-    // dummy
-    int
-    flattenCCIndex(int reg) const
-    {
-        return reg;
-    }
-
-    int
-    flattenMiscIndex(int reg) const
-    {
-        return reg;
-    }
+    RegId flattenRegId(const RegId &regId) const { return regId; }
+    int flattenIntIndex(int reg) const { return reg; }
+    int flattenFloatIndex(int reg) const { return reg; }
+    int flattenVecIndex(int reg) const { return reg; }
+    int flattenVecElemIndex(int reg) const { return reg; }
+    int flattenCCIndex(int reg) const { return reg; }
+    int flattenMiscIndex(int reg) const { return reg; }
 
     void startup(ThreadContext *tc) {}
 
     /// Explicitly import the otherwise hidden startup
     using SimObject::startup;
 
-    const Params *
-    params() const;
+    const Params *params() const;
 
     ISA(Params *p);
 };

@@ -79,8 +79,8 @@
 #include <fstream>
 #include <memory>
 
-#include "base/bitmap.hh"
 #include "base/framebuffer.hh"
+#include "base/imgwriter.hh"
 #include "base/output.hh"
 #include "dev/arm/amba_device.hh"
 #include "dev/pixelpump.hh"
@@ -347,10 +347,13 @@ class HDLcd: public AmbaDmaDevice
 
     /** Handler for fast frame refresh in KVM-mode */
     void virtRefresh();
-    EventWrapper<HDLcd, &HDLcd::virtRefresh> virtRefreshEvent;
+    EventFunctionWrapper virtRefreshEvent;
 
     /** Helper to write out bitmaps */
-    Bitmap bmp;
+    std::unique_ptr<ImgWriter> imgWriter;
+
+    /** Image Format */
+    Enums::ImageFormat imgFormat;
 
     /** Picture of what the current frame buffer looks like */
     OutputStream *pic;

@@ -1,3 +1,15 @@
+# Copyright (c) 2016 ARM Limited
+# All rights reserved.
+#
+# The license below extends only to copyright in the software and shall
+# not be construed as granting a license to any other intellectual
+# property including but not limited to intellectual property relating
+# to a hardware implementation of the functionality of the software
+# licensed hereunder.  You may use the software subject to the license
+# terms below provided that you ensure that this notice is replicated
+# unmodified and in its entirety in all distributions of the software,
+# modified or unmodified, in source code or in binary form.
+#
 # Copyright (c) 2005-2007 The Regents of The University of Michigan
 # All rights reserved.
 #
@@ -25,6 +37,8 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # Authors: Kevin Lim
+
+from __future__ import print_function
 
 from m5.defines import buildEnv
 from m5.params import *
@@ -129,6 +143,8 @@ class DerivO3CPU(BaseCPU):
         # (it's a side effect of int reg renaming), so they should
         # never be the bottleneck here.
         _defaultNumPhysCCRegs = Self.numPhysIntRegs * 5
+    numPhysVecRegs = Param.Unsigned(256, "Number of physical vector "
+                                      "registers")
     numPhysCCRegs = Param.Unsigned(_defaultNumPhysCCRegs,
                                    "Number of physical cc registers")
     numIQEntries = Param.Unsigned(64, "Number of instruction queue entries")
@@ -163,5 +179,5 @@ class DerivO3CPU(BaseCPU):
             self.checker.cpu_id = self.cpu_id
 
         else:
-            print "ERROR: Checker only supported under ARM ISA!"
+            print("ERROR: Checker only supported under ARM ISA!")
             exit(1)

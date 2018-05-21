@@ -220,13 +220,14 @@ Execute::tryToBranch(MinorDynInstPtr inst, Fault fault, BranchData &branch)
     const TheISA::PCState &pc_before = inst->pc;
     TheISA::PCState target = thread->pcState();
 
-    /* Force a branch for SerializeAfter instructions at the end of micro-op
-     *  sequence when we're not suspended */
+    /* Force a branch for SerializeAfter/SquashAfter instructions
+     * at the end of micro-op sequence when we're not suspended */
     bool force_branch = thread->status() != ThreadContext::Suspended &&
         !inst->isFault() &&
         inst->isLastOpInInst() &&
         (inst->staticInst->isSerializeAfter() ||
-            inst->staticInst->isIprAccess());
+         inst->staticInst->isSquashAfter() ||
+         inst->staticInst->isIprAccess());
 
     DPRINTF(Branch, "tryToBranch before: %s after: %s%s\n",
         pc_before, target, (force_branch ? " (forcing)" : ""));
@@ -987,7 +988,7 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
          * backwards, so no other branches may evaluate this cycle*/
         completed_inst = false;
     } else if (inst->staticInst->isSDRecv() &&
-               !ssim.can_receive(inst->staticInst->alt_imm())) {
+               !ssim.can_receive(inst->staticInst->get_imm())) {
         /* Don't commit if you can't receive on output port*/
         DPRINTF(SD, "Could Not Recv: %s\n", *inst);
         completed_inst = false;
@@ -1006,21 +1007,21 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
         //break down by type
         if ( (inst->staticInst->isSDStream()  ||   
               (inst->staticInst->isSDWait() && 
-                  ssim_t::stall_core(inst->staticInst->imm())) )
+                  ssim_t::stall_core(inst->staticInst->get_imm())) )
               && !ssim.can_add_stream()) {
             should_commit = false;
             //DPRINTF(SD,"Can't issue stream b/c buffer is full");
             //continue;
         } else if(inst->staticInst->isSDWait() && 
-                  ssim_t::stall_core(inst->staticInst->imm())) {
-          if(!ssim.done(false,inst->staticInst->imm()) ) {
+                  ssim_t::stall_core(inst->staticInst->get_imm())) {
+          if(!ssim.done(false,inst->staticInst->get_imm()) ) {
             should_commit = false;
-            ssim.wait_inst(inst->staticInst->imm()); //track stats
+            ssim.wait_inst(inst->staticInst->get_imm()); //track stats
 
-            //DPRINTF(SD,"Wait blocked, mask: %x\n",inst->staticInst->imm());
+            //DPRINTF(SD,"Wait blocked, mask: %x\n",inst->staticInst->get_imm());
             //continue;
           } else {
-            DPRINTF(SD,"Wait complete, mask: %x\n",inst->staticInst->imm());
+            DPRINTF(SD,"Wait complete, mask: %x\n",inst->staticInst->get_imm());
           }
         } 
 

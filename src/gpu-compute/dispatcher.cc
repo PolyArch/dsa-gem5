@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2015 Advanced Micro Devices, Inc.
+ * Copyright (c) 2011-2015,2018 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
  * For use for simulation and test purposes only
@@ -14,9 +14,9 @@
  * this list of conditions and the following disclaimer in the documentation
  * and/or other materials provided with the distribution.
  *
- * 3. Neither the name of the copyright holder nor the names of its contributors
- * may be used to endorse or promote products derived from this software
- * without specific prior written permission.
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from this
+ * software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -30,7 +30,9 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  *
- * Author: Brad Beckmann, Marc Orr
+ * Authors: Brad Beckmann,
+ *          Marc Orr,
+ *          Anthony Gutierrez
  */
 
 
@@ -47,10 +49,12 @@
 GpuDispatcher *GpuDispatcher::instance = nullptr;
 
 GpuDispatcher::GpuDispatcher(const Params *p)
-    : DmaDevice(p), _masterId(p->system->getMasterId(name() + ".disp")),
+    : DmaDevice(p), _masterId(p->system->getMasterId(this, "disp")),
       pioAddr(p->pio_addr), pioSize(4096), pioDelay(p->pio_latency),
       dispatchCount(0), dispatchActive(false), cpu(p->cpu),
-      shader(p->shader_pointer), driver(p->cl_driver), tickEvent(this)
+      shader(p->shader_pointer), driver(p->cl_driver),
+      tickEvent([this]{ exec(); }, "GPU Dispatcher tick",
+                false, Event::CPU_Tick_Pri)
 {
     shader->handshake(this);
     driver->handshake(this);
@@ -361,23 +365,6 @@ GpuDispatcher::accessUserVar(BaseCPU *cpu, uint64_t addr, int val, int off)
     } else {
         panic("Cannot find host");
     }
-}
-
-GpuDispatcher::TickEvent::TickEvent(GpuDispatcher *_dispatcher)
-    : Event(CPU_Tick_Pri), dispatcher(_dispatcher)
-{
-}
-
-void
-GpuDispatcher::TickEvent::process()
-{
-    dispatcher->exec();
-}
-
-const char*
-GpuDispatcher::TickEvent::description() const
-{
-    return "GPU Dispatcher tick";
 }
 
 // helper functions for driver to retrieve GPU attributes

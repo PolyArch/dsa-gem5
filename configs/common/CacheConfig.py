@@ -41,23 +41,25 @@
 # Configure the M5 cache hierarchy config in one place
 #
 
+from __future__ import print_function
+
 import m5
 from m5.objects import *
 from Caches import *
 
 def config_cache(options, system):
     if options.external_memory_system and (options.caches or options.l2cache):
-        print "External caches and internal caches are exclusive options.\n"
+        print("External caches and internal caches are exclusive options.\n")
         sys.exit(1)
 
     if options.external_memory_system:
         ExternalCache = ExternalCacheFactory(options.external_memory_system)
 
-    if options.cpu_type == "arm_detailed":
+    if options.cpu_type == "O3_ARM_v7a_3":
         try:
-            from O3_ARM_v7a import *
+            from cores.arm.O3_ARM_v7a import *
         except:
-            print "arm_detailed is unavailable. Did you compile the O3 model?"
+            print("O3_ARM_v7a_3 is unavailable. Did you compile the O3 model?")
             sys.exit(1)
 
         dcache_class, icache_class, l2_cache_class, walk_cache_class = \

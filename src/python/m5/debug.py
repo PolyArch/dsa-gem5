@@ -26,6 +26,8 @@
 #
 # Authors: Nathan Binkert
 
+from __future__ import print_function
+
 from UserDict import DictMixin
 
 import _m5.debug
@@ -34,25 +36,25 @@ from _m5.debug import schedBreak, setRemoteGDBPort
 from m5.util import printList
 
 def help():
-    print "Base Flags:"
+    print("Base Flags:")
     for name in sorted(flags):
         if name == 'All':
             continue
         flag = flags[name]
         children = [c for c in flag.kids() ]
         if not children:
-            print "    %s: %s" % (name, flag.desc())
-    print
-    print "Compound Flags:"
+            print("    %s: %s" % (name, flag.desc()))
+    print()
+    print("Compound Flags:")
     for name in sorted(flags):
         if name == 'All':
             continue
         flag = flags[name]
         children = [c for c in flag.kids() ]
         if children:
-            print "    %s: %s" % (name, flag.desc())
+            print("    %s: %s" % (name, flag.desc()))
             printList([ c.name() for c in children ], indent=8)
-    print
+    print()
 
 class AllFlags(DictMixin):
     def __init__(self):
@@ -65,8 +67,8 @@ class AllFlags(DictMixin):
             return
 
         self._dict.clear()
-        for flag in _m5.debug.getAllFlags():
-            self._dict[flag.name()] = flag
+        for name, flag in _m5.debug.allFlags().items():
+            self._dict[name] = flag
         self._version = current_version
 
     def __contains__(self, item):

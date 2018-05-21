@@ -61,7 +61,9 @@ namespace X86ISA
 
     GpuTLB::GpuTLB(const Params *p)
         : MemObject(p), configAddress(0), size(p->size),
-          cleanupEvent(this, false, Event::Maximum_Pri), exitEvent(this)
+          cleanupEvent([this]{ cleanup(); }, name(), false,
+                       Event::Maximum_Pri),
+          exitEvent([this]{ exitCallback(); }, name())
     {
         assoc = p->assoc;
         assert(assoc <= size);
@@ -806,31 +808,32 @@ namespace X86ISA
                                 "at pc %#x.\n", vaddr, tc->instAddr());
 
                         Process *p = tc->getProcessPtr();
-                        GpuTlbEntry newEntry;
-                        bool success = p->pTable->lookup(vaddr, newEntry);
+                        const EmulationPageTable::Entry *pte =
+                            p->pTable->lookup(vaddr);
 
-                        if (!success && mode != BaseTLB::Execute) {
+                        if (!pte && mode != BaseTLB::Execute) {
                             // penalize a "page fault" more
-                            if (timing) {
+                            if (timing)
                                 latency += missLatency2;
-                            }
 
                             if (p->fixupStackFault(vaddr))
-                                success = p->pTable->lookup(vaddr, newEntry);
+                                pte = p->pTable->lookup(vaddr);
                         }
 
-                        if (!success) {
+                        if (!pte) {
                             return std::make_shared<PageFault>(vaddr, true,
                                                                mode, true,
                                                                false);
                         } else {
-                            newEntry.valid = success;
                             Addr alignedVaddr = p->pTable->pageAlign(vaddr);
 
                             DPRINTF(GPUTLB, "Mapping %#x to %#x\n",
-                                    alignedVaddr, newEntry.pageStart());
+                                    alignedVaddr, pte->paddr);
 
-                            entry = insert(alignedVaddr, newEntry);
+                            GpuTlbEntry gpuEntry(
+                                p->pTable->pid(), alignedVaddr,
+                                pte->paddr, true);
+                            entry = insert(alignedVaddr, gpuEntry);
                         }
 
                         DPRINTF(GPUTLB, "Miss was serviced.\n");
@@ -1328,25 +1331,27 @@ namespace X86ISA
                 safe_cast<TranslationState*>(pkt->senderState);
 
             Process *p = sender_state->tc->getProcessPtr();
-            TlbEntry newEntry;
             Addr vaddr = pkt->req->getVaddr();
     #ifndef NDEBUG
             Addr alignedVaddr = p->pTable->pageAlign(vaddr);
             assert(alignedVaddr == virtPageAddr);
     #endif
-            bool success;
-            success = p->pTable->lookup(vaddr, newEntry);
-            if (!success && sender_state->tlbMode != BaseTLB::Execute) {
-                if (p->fixupStackFault(vaddr)) {
-                    success = p->pTable->lookup(vaddr, newEntry);
-                }
+            const EmulationPageTable::Entry *pte = p->pTable->lookup(vaddr);
+            if (!pte && sender_state->tlbMode != BaseTLB::Execute &&
+                    p->fixupStackFault(vaddr)) {
+                pte = p->pTable->lookup(vaddr);
             }
 
-            DPRINTF(GPUTLB, "Mapping %#x to %#x\n", alignedVaddr,
-                    newEntry.pageStart());
+            if (pte) {
+                DPRINTF(GPUTLB, "Mapping %#x to %#x\n", alignedVaddr,
+                        pte->paddr);
 
-            sender_state->tlbEntry =
-                new GpuTlbEntry(0, newEntry.vaddr, newEntry.paddr, success);
+                sender_state->tlbEntry =
+                    new GpuTlbEntry(0, virtPageAddr, pte->paddr, true);
+            } else {
+                sender_state->tlbEntry =
+                    new GpuTlbEntry(0, 0, 0, false);
+            }
 
             handleTranslationReturn(virtPageAddr, TLB_MISS, pkt);
         } else if (outcome == MISS_RETURN) {
@@ -1522,7 +1527,6 @@ namespace X86ISA
                         virt_page_addr);
 
                 Process *p = tc->getProcessPtr();
-                TlbEntry newEntry;
 
                 Addr vaddr = pkt->req->getVaddr();
     #ifndef NDEBUG
@@ -1530,36 +1534,36 @@ namespace X86ISA
                 assert(alignedVaddr == virt_page_addr);
     #endif
 
-                bool success = p->pTable->lookup(vaddr, newEntry);
-                if (!success && sender_state->tlbMode != BaseTLB::Execute) {
-                    if (p->fixupStackFault(vaddr))
-                        success = p->pTable->lookup(vaddr, newEntry);
+                const EmulationPageTable::Entry *pte =
+                        p->pTable->lookup(vaddr);
+                if (!pte && sender_state->tlbMode != BaseTLB::Execute &&
+                        p->fixupStackFault(vaddr)) {
+                    pte = p->pTable->lookup(vaddr);
                 }
 
                 if (!sender_state->prefetch) {
                     // no PageFaults are permitted after
                     // the second page table lookup
-                    assert(success);
+                    assert(pte);
 
                     DPRINTF(GPUTLB, "Mapping %#x to %#x\n", alignedVaddr,
-                           newEntry.pageStart());
+                            pte->paddr);
 
-                    sender_state->tlbEntry = new GpuTlbEntry(0, newEntry.vaddr,
-                                                             newEntry.paddr,
-                                                             success);
+                    sender_state->tlbEntry =
+                        new GpuTlbEntry(0, virt_page_addr,
+                                        pte->paddr, true);
                 } else {
                     // If this was a prefetch, then do the normal thing if it
                     // was a successful translation.  Otherwise, send an empty
                     // TLB entry back so that it can be figured out as empty and
                     // handled accordingly.
-                    if (success) {
+                    if (pte) {
                         DPRINTF(GPUTLB, "Mapping %#x to %#x\n", alignedVaddr,
-                               newEntry.pageStart());
+                                pte->paddr);
 
-                        sender_state->tlbEntry = new GpuTlbEntry(0,
-                                                                 newEntry.vaddr,
-                                                                 newEntry.paddr,
-                                                                 success);
+                        sender_state->tlbEntry =
+                            new GpuTlbEntry(0, virt_page_addr,
+                                            pte->paddr, true);
                     } else {
                         DPRINTF(GPUPrefetch, "Prefetch failed %#x\n",
                                 alignedVaddr);

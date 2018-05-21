@@ -52,8 +52,6 @@
 #include "mem/cache/cache.hh"
 #include "mem/cache/mshr.hh"
 #include "mem/cache/tags/fa_lru.hh"
-#include "mem/cache/tags/lru.hh"
-#include "mem/cache/tags/random_repl.hh"
 #include "sim/full_system.hh"
 
 using namespace std;
@@ -62,7 +60,8 @@ BaseCache::CacheSlavePort::CacheSlavePort(const std::string &_name,
                                           BaseCache *_cache,
                                           const std::string &_label)
     : QueuedSlavePort(_name, _cache, queue), queue(*_cache, *this, _label),
-      blocked(false), mustSendRetry(false), sendRetryEvent(this)
+      blocked(false), mustSendRetry(false),
+      sendRetryEvent([this]{ processSendRetry(); }, _name)
 {
 }
 
@@ -759,4 +758,8 @@ BaseCache::regStats()
         overallAvgMshrUncacheableLatency.subname(i, system->getMasterName(i));
     }
 
+    replacements
+        .name(name() + ".replacements")
+        .desc("number of replacements")
+        ;
 }
