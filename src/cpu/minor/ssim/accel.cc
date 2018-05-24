@@ -2958,6 +2958,7 @@ void scratch_write_controller_t::cycle() {
       // auto& stream = _atomic_scr_stream;
 
       if(stream.stream_active()) {
+         std::cout << "And the atomic stream was active\n";
          port_data_t& out_addr = _accel->port_interf().out_port(stream._out_port);
          port_data_t& out_val = _accel->port_interf().out_port(stream._val_port);
 
@@ -3039,36 +3040,37 @@ void scratch_write_controller_t::cycle() {
         }
       }
     } else { // for const->scr stream
+      std::cout << "came in else condition for const_scr_stream_t\n";
       auto& stream=_const_scr_stream;
 
       if(stream.stream_active()) {
-        // std::cout << "const_scr_stream issued\n";
+        std::cout << "const_scr_stream active\n";
 
         uint64_t total_pushed=0;
         addr_t addr = stream._scratch_addr;
-        while(stream._iters_left!=0) {
-          // cout << "iters left for the stream is: " << stream._iters_left << "\n";
-          addr_t base_addr = addr & SCR_MASK;
-          addr_t max_addr = base_addr+SCR_WIDTH;
+        // while(stream._iters_left!=0) {
+        // cout << "iters left for the stream is: " << stream._iters_left << "\n";
+        addr_t base_addr = addr & SCR_MASK;
+        addr_t max_addr = base_addr+SCR_WIDTH;
 
 
-          uint64_t bytes_written=0;
-          // while(addr < max_addr) { // should be 'if'?
-          if(addr < max_addr) { 
-            SBDT val = stream._constant; 
+        uint64_t bytes_written=0;
+        // while(addr < max_addr) { // should be 'if'?
+        if(addr < max_addr) { 
+          SBDT val = stream._constant; 
 
-            assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
-            _accel->write_scratchpad(addr, &val, sizeof(SBDT),stream.id());
+          assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
+          _accel->write_scratchpad(addr, &val, sizeof(SBDT),stream.id());
 
 
-            bytes_written+=DATA_WIDTH;
-            _accel->_stat_scr_bytes_wr+=DATA_WIDTH;
-            _accel->_stat_scratch_write_bytes+=DATA_WIDTH;
-            stream._iters_left--;
-            total_pushed++;
-          }
-          addr += sizeof(SBDT);
+          bytes_written+=DATA_WIDTH;
+          _accel->_stat_scr_bytes_wr+=DATA_WIDTH;
+          _accel->_stat_scratch_write_bytes+=DATA_WIDTH;
+          stream._iters_left--;
+          total_pushed++;
         }
+        addr += sizeof(SBDT);
+        // }
         add_bw(stream.src(), stream.dest(), 1, total_pushed*DATA_WIDTH);
 
   

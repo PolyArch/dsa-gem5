@@ -733,7 +733,8 @@ class scratch_write_controller_t : public data_controller_t {
     _atomic_scr_streams.resize(1);
 
     // max_src = _port_scr_streams.size() + _bufs.size() + _atomic_scr_streams.size() + 1; // _const_scr_queue.size();: check only if stream is active there
-    max_src = _port_scr_streams.size() + _bufs.size() + _atomic_scr_streams.size() + 1; // _const_scr_queue.size();: check only if stream is active there
+    // max_src = _port_scr_streams.size() + _bufs.size() + _atomic_scr_streams.size() + 1; // _const_scr_queue.size();: check only if stream is active there
+    max_src = _port_scr_streams.size() + _bufs.size() + _atomic_scr_streams.size() + const_scr_streams_active(); // _const_scr_queue.size();: check only if stream is active there
 
     reset_stream_engines();
   }
