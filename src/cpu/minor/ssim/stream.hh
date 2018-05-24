@@ -637,6 +637,69 @@ struct const_port_stream_t : public base_stream_t {
 
 };
 
+
+
+
+
+
+// const->scr
+struct const_scr_stream_t : public base_stream_t {
+
+  uint64_t _constant;
+  int _num_elements;
+  int _iters_left;
+  addr_t _scratch_addr;
+    
+  virtual void set_orig() {
+    _iters_left=_num_elements;
+ }
+
+  uint64_t constant()    {return _constant;} 
+  uint64_t num_strides() {return _num_elements;} 
+
+  uint64_t scratch_addr(){return _scratch_addr;} 
+
+  virtual LOC src() {return LOC::CONST;}
+  virtual LOC dest() {return LOC::SCR;}
+
+  virtual bool stream_active() {
+    return _iters_left!=0;
+  }
+
+  virtual void print_status() {  
+     if(_num_elements) {
+       std::cout << "\tconst:" << _constant << " left=" << _iters_left
+                 << "/" << _num_elements;
+     }
+     std::cout << "\titers=" << _iters_left << "/" << _num_elements << "";
+
+    base_stream_t::print_status();
+  }
+
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 //Port -> Port 
 struct port_port_stream_t : public base_stream_t {
   port_port_stream_t(){
@@ -924,6 +987,11 @@ struct atomic_scr_stream_t : public mem_stream_base_t {
   int64_t  stride()      {return _stride;} 
 
 
+  /*
+  virtual bool stream_active() {
+    return _num_strides!=0;
+  }
+  */
   // set both src and dest
 
   virtual LOC src() {return LOC::PORT;}

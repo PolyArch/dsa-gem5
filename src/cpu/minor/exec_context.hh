@@ -581,6 +581,11 @@ class ExecContext : public ::ExecContext
                 thread.getSDReg(SD_OUT_PORT),      thread.getSDReg(SD_VAL_PORT),
                 thread.getSDReg(SD_OPCODE));
             break;
+            case SB_CONST_SCR: ssim.write_constant_scratchpad(
+                thread.getSDReg(SD_SCRATCH_ADDR),  thread.getSDReg(SD_CONSTANT),
+                thread.getSDReg(SD_NUM_STRIDES));
+            break;
+
             case SB_WAIT:
                 if(thread.getSDReg(SD_WAIT_MASK) == 0) {
                     ssim.set_not_in_use();

@@ -46,6 +46,7 @@ enum SDCmdIdx {
     SB_SET_ITERS,
     SB_GARB,
     SB_ATOMIC_SCR_OP,
+    SB_CONST_SCR,
     SB_WAIT,
     SB_NUM_CMDS
 };
@@ -72,6 +73,7 @@ const char* const SDCmdNames[] = {
     "SB_SET_ITERS",
     "SB_GARB",
     "SB_ATOMIC_SCR_OP",
+    "SB_CONST_SCR",
     "SB_WAIT",
     "SB_NUM_CMDS" };
 

@@ -732,7 +732,8 @@ class scratch_write_controller_t : public data_controller_t {
     }
     _atomic_scr_streams.resize(1);
 
-    max_src = _port_scr_streams.size() + _bufs.size() + _atomic_scr_streams.size();
+    // max_src = _port_scr_streams.size() + _bufs.size() + _atomic_scr_streams.size() + 1; // _const_scr_queue.size();: check only if stream is active there
+    max_src = _port_scr_streams.size() + _bufs.size() + _atomic_scr_streams.size() + 1; // _const_scr_queue.size();: check only if stream is active there
 
     reset_stream_engines();
   }
@@ -742,7 +743,7 @@ class scratch_write_controller_t : public data_controller_t {
     for(auto& i : _scr_scr_streams) {i.reset();}
     for(auto& i : _port_scr_streams) {i.reset();}
     for(auto& i : _atomic_scr_streams) {i.reset();}
-    // _atomic_scr_stream.reset();
+    _const_scr_stream.reset();
   }
 
   void reset_data() {
@@ -751,6 +752,7 @@ class scratch_write_controller_t : public data_controller_t {
     _buf_shs_write.reset_data();
   }
 
+  const_scr_stream_t& const_scr_stream() {return _const_scr_stream;}
 
   void cycle();
   void finish_cycle();
@@ -770,7 +772,7 @@ class scratch_write_controller_t : public data_controller_t {
 
   bool any_stream_active() {
     return comm_streams_active() || read_streams_active() 
-      || write_streams_active()  || atomic_scr_streams_active();
+      || write_streams_active()  || atomic_scr_streams_active() || const_scr_streams_active();
   }
   bool comm_streams_active() {
     return scr_scr_streams_active();
@@ -779,16 +781,19 @@ class scratch_write_controller_t : public data_controller_t {
     return false;
   }
   bool write_streams_active() {
-    return port_scr_streams_active(); // + atomic_scr_streams_active();
+    return port_scr_streams_active();
   } 
+
   
   // for atomic_stream
   bool atomic_scr_streams_active();
 
   bool scr_scr_streams_active();
   bool port_scr_streams_active();
+  bool const_scr_streams_active();
 
   bool schedule_port_scr(port_scr_stream_t& s);
+  bool schedule_const_scr(const_scr_stream_t& s);
   int scr_buf_size() {return _buf_dma_write.size();}
   bool accept_buffer(data_buffer& buf);
 
@@ -803,7 +808,8 @@ class scratch_write_controller_t : public data_controller_t {
 
   std::vector<scr_scr_stream_t> _scr_scr_streams; 
   std::vector<port_scr_stream_t> _port_scr_streams; 
-  // atomic_scr_stream_t _atomic_scr_stream; 
+  // std::vector<const_scr_stream_t> _const_scr_streams; 
+  const_scr_stream_t _const_scr_stream;  
   std::vector<atomic_scr_stream_t> _atomic_scr_streams; 
   dma_controller_t* _dma_c;
 };
@@ -1254,6 +1260,16 @@ private:
   bool can_add_indirect_stream()   {return _in_port_queue.size()  < _queue_size;}
   bool can_add_const_port_stream() {return _in_port_queue.size()  < _queue_size;}
 
+
+  // used nowhere?
+  bool can_add_const_scr_stream()    {
+    if(_sbconfig->dispatch_inorder()) {
+      return _in_port_queue.size()  < _queue_size;
+    } else {
+      return _const_scr_queue.size()  < _queue_size;
+    }
+  }
+  
   bool can_add_dma_scr_stream()    {
     if(_sbconfig->dispatch_inorder()) {
       return _in_port_queue.size()  < _queue_size;
@@ -1352,6 +1368,7 @@ private:
 
   std::list<std::shared_ptr<base_stream_t>> _in_port_queue;
   std::list<dma_scr_stream_t*> _dma_scr_queue;
+  std::list<const_scr_stream_t*> _const_scr_queue;
   std::list<scr_dma_stream_t*> _scr_dma_queue;
 
   std::map<uint64_t,std::vector<int>> _cgra_output_ready;

@@ -906,6 +906,12 @@ decode QUADRANT default Unknown::unknown() {
                     xc->setSDReg(imm >> 10, SD_FLAGS);
                     xc->callSDFunc(SB_PRT_PRT);
                 }}, uint64_t, IsSDStream, IsNonSpeculative, No_OpClass);
+                0x6: IOp::sb_const_scr({{
+                    xc->setSDReg(Rs1,SD_SCRATCH_ADDR);
+                    xc->setSDReg(Rs2,SD_CONSTANT);
+                    xc->callSDFunc(SB_CONST_SCR);
+                }}, uint64_t, IsSDStream, IsNonSpeculative, No_OpClass);
+
             }
             0x1e: decode FUNCT3 {
                 0x0: sb_stride({{

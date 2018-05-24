@@ -60,8 +60,8 @@ public:
                       SBDT constant, uint64_t num_elem, 
                       SBDT constant2, uint64_t num_elem2, 
                       uint64_t flags); 
-  // adding new function
   void atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int opcode);
+  void write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int num_elem);
 
   void insert_barrier(uint64_t mask);
   
