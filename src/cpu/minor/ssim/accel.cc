@@ -2951,14 +2951,14 @@ void scratch_write_controller_t::cycle() {
       }
     // } else if(_which<(_port_scr_streams.size()+_bufs.size())+_atomic_scr_streams.size()) {
     } else if(_which<(_port_scr_streams.size()+_bufs.size()+_atomic_scr_streams.size())) {
-      std::cout << "came in write controller to issue atomic update stream\n";
+      // std::cout << "came in write controller to issue atomic update stream\n";
       int index = _which-_port_scr_streams.size()-_bufs.size();
       assert(index==0 && "only 1 atomic scr update stream can be active at a time\n");
       auto& stream = _atomic_scr_streams[index];
       // auto& stream = _atomic_scr_stream;
 
       if(stream.stream_active()) {
-         std::cout << "And the atomic stream was active\n";
+         // std::cout << "And the atomic stream was active\n";
          port_data_t& out_addr = _accel->port_interf().out_port(stream._out_port);
          port_data_t& out_val = _accel->port_interf().out_port(stream._val_port);
 
@@ -3017,34 +3017,34 @@ void scratch_write_controller_t::cycle() {
                _accel->_stat_scr_bytes_wr+=DATA_WIDTH;
                _accel->_stat_scratch_write_bytes+=DATA_WIDTH;
 
-        }
+            }
                   // newly added
-                   stream._num_strides--;
+            stream._num_strides--;
 
 
-         if(_accel->_ssim->in_roi()) {
-           add_bw(stream.src(), stream.dest(), 1, elem_updated*8);// assuming 8 byte
-           _accel->_stat_scratch_writes+=1;
+            if(_accel->_ssim->in_roi()) {
+              add_bw(stream.src(), stream.dest(), 1, elem_updated*8);// assuming 8 byte
+              _accel->_stat_scratch_writes+=1;
+            }
+             
+            bool is_empty = stream.check_set_empty();
+            if(is_empty) {
+              _accel->process_stream_stats(stream);
+              if(SB_DEBUG::VP_SCORE2) {
+                cout << "SOURCE: PORT->SCR\n";
+              }
+              out_addr.set_status(port_data_t::STATUS::FREE);
+              out_val.set_status(port_data_t::STATUS::FREE);
+            }
+            break;
          }
-          
-         bool is_empty = stream.check_set_empty();
-         if(is_empty) {
-           _accel->process_stream_stats(stream);
-           if(SB_DEBUG::VP_SCORE2) {
-             cout << "SOURCE: PORT->SCR\n";
-           }
-           out_addr.set_status(port_data_t::STATUS::FREE);
-           out_val.set_status(port_data_t::STATUS::FREE);
-         }
-         break;
-        }
       }
     } else { // for const->scr stream
-      std::cout << "came in else condition for const_scr_stream_t\n";
+      // std::cout << "came in else condition for const_scr_stream_t\n";
       auto& stream=_const_scr_stream;
 
       if(stream.stream_active()) {
-        std::cout << "const_scr_stream active\n";
+        // std::cout << "const_scr_stream active\n";
 
         uint64_t total_pushed=0;
         addr_t addr = stream._scratch_addr;
