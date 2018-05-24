@@ -1703,9 +1703,11 @@ void accel_t::schedule_streams() {
       if(_ssim->in_roi()) {
         _stat_commands_issued++;
       }
-
+      // Added this for test
+      // if(!const_scr_streams_active()){
       delete _dma_scr_queue.front();
       _dma_scr_queue.pop_front();
+      //}
     }
   }
 
@@ -2881,6 +2883,7 @@ void scratch_write_controller_t::cycle() {
   
 // std::cout << " and s1: " << _port_scr_streams.size() << " and s2: " << _scr_scr_streams.size() << "max_scr: " << max_src << "\n";
   // maybe it is like it will always be 1
+  max_src += _accel->_const_scr_queue.size() + const_scr_streams_active();
   for(int i=0; i < max_src; ++i) {
       // shouldn't this be a last?
       _which=(_which+1==max_src)?0:_which+1;
@@ -2935,6 +2938,7 @@ void scratch_write_controller_t::cycle() {
         }
       }
 
+
     } else if(_which<(_port_scr_streams.size()+_bufs.size())) {
       int buf_index = _which-_port_scr_streams.size(); 
 
@@ -2950,15 +2954,61 @@ void scratch_write_controller_t::cycle() {
         break;
       }
     // } else if(_which<(_port_scr_streams.size()+_bufs.size())+_atomic_scr_streams.size()) {
-    } else if(_which<(_port_scr_streams.size()+_bufs.size()+_atomic_scr_streams.size())) {
-      // std::cout << "came in write controller to issue atomic update stream\n";
-      int index = _which-_port_scr_streams.size()-_bufs.size();
-      assert(index==0 && "only 1 atomic scr update stream can be active at a time\n");
-      auto& stream = _atomic_scr_streams[index];
+    } else if(_which<(_port_scr_streams.size()+_bufs.size()+_accel->_const_scr_queue.size()+const_scr_streams_active())){ // for const->scr stream
+      // std::cout << _accel->now() << " came in else condition for const_scr_stream_t\n";
+      auto& stream=_const_scr_stream;
+
+      if(stream.stream_active()) {
+        // std::cout << "const_scr_stream active\n";
+
+        uint64_t total_pushed=0;
+        addr_t addr = stream._scratch_addr;
+        // while(stream._iters_left!=0) {
+        // cout << "iters left for the stream is: " << stream._iters_left << "\n";
+        addr_t base_addr = addr & SCR_MASK;
+        addr_t max_addr = base_addr+SCR_WIDTH;
+
+
+        uint64_t bytes_written=0;
+        while(addr < max_addr && stream._iters_left>0) { 
+          SBDT val = stream._constant; 
+
+          assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
+          _accel->write_scratchpad(addr, &val, sizeof(SBDT),stream.id());
+
+
+          bytes_written+=DATA_WIDTH;
+          _accel->_stat_scr_bytes_wr+=DATA_WIDTH;
+          _accel->_stat_scratch_write_bytes+=DATA_WIDTH;
+          stream._iters_left--;
+          total_pushed++;
+          addr += sizeof(SBDT);
+        }
+        // }
+        add_bw(stream.src(), stream.dest(), 1, total_pushed*DATA_WIDTH);
+
+  
+         bool is_empty = stream.check_set_empty();
+         if(is_empty) {
+           _accel->process_stream_stats(stream);
+           if(SB_DEBUG::VP_SCORE2) {
+             cout << "SOURCE: CONST->SCR\n";
+           }
+         }
+         break;
+      }
+
+    } else { // if(_which<(_port_scr_streams.size()+_bufs.size()+_atomic_scr_streams.size())) {
+      // std::cout << _accel->now() << "came in write controller to issue atomic update stream\n";
+      // int index = _which-_port_scr_streams.size()-_bufs.size()-_accel->_const_scr_queue.size()-const_scr_streams_active();
+      // std::cout << "index in atomic scr: " << index << endl;
+      // assert(index==0 && "only 1 atomic scr update stream can be active at a time\n");
+      // auto& stream = _atomic_scr_streams[index];
+      auto& stream = _atomic_scr_streams[0];
       // auto& stream = _atomic_scr_stream;
 
       if(stream.stream_active()) {
-         // std::cout << "And the atomic stream was active\n";
+         // std::cout << "And the atomic stream was active: "<< stream._num_strides << "\n";
          port_data_t& out_addr = _accel->port_interf().out_port(stream._out_port);
          port_data_t& out_val = _accel->port_interf().out_port(stream._val_port);
 
@@ -3001,6 +3051,7 @@ void scratch_write_controller_t::cycle() {
                             break;
                }
                _accel->write_scratchpad(scr_addr, &val, sizeof(SBDT),stream.id());
+               stream._num_strides--;
 
                if(out_addr.mem_size() > 0 && out_val.mem_size() > 0) {
                  loc = out_addr.pop_out_data();
@@ -3018,8 +3069,6 @@ void scratch_write_controller_t::cycle() {
                _accel->_stat_scratch_write_bytes+=DATA_WIDTH;
 
             }
-                  // newly added
-            stream._num_strides--;
 
 
             if(_accel->_ssim->in_roi()) {
@@ -3039,59 +3088,7 @@ void scratch_write_controller_t::cycle() {
             break;
          }
       }
-    } else { // for const->scr stream
-      // std::cout << "came in else condition for const_scr_stream_t\n";
-      auto& stream=_const_scr_stream;
-
-      if(stream.stream_active()) {
-        // std::cout << "const_scr_stream active\n";
-
-        uint64_t total_pushed=0;
-        addr_t addr = stream._scratch_addr;
-        // while(stream._iters_left!=0) {
-        // cout << "iters left for the stream is: " << stream._iters_left << "\n";
-        addr_t base_addr = addr & SCR_MASK;
-        addr_t max_addr = base_addr+SCR_WIDTH;
-
-
-        uint64_t bytes_written=0;
-        // while(addr < max_addr) { // should be 'if'?
-        if(addr < max_addr) { 
-          SBDT val = stream._constant; 
-
-          assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
-          _accel->write_scratchpad(addr, &val, sizeof(SBDT),stream.id());
-
-
-          bytes_written+=DATA_WIDTH;
-          _accel->_stat_scr_bytes_wr+=DATA_WIDTH;
-          _accel->_stat_scratch_write_bytes+=DATA_WIDTH;
-          stream._iters_left--;
-          total_pushed++;
-        }
-        addr += sizeof(SBDT);
-        // }
-        add_bw(stream.src(), stream.dest(), 1, total_pushed*DATA_WIDTH);
-
-  
-         bool is_empty = stream.check_set_empty();
-         if(is_empty) {
-           _accel->process_stream_stats(stream);
-           if(SB_DEBUG::VP_SCORE2) {
-             cout << "SOURCE: CONST->SCR\n";
-           }
-         }
-         break;
-
-
-
-
-
-
-
-      }
-
-      }
+    }
   }
 }
 

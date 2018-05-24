@@ -987,11 +987,9 @@ struct atomic_scr_stream_t : public mem_stream_base_t {
   int64_t  stride()      {return _stride;} 
 
 
-  /*
   virtual bool stream_active() {
     return _num_strides!=0;
   }
-  */
   // set both src and dest
 
   virtual LOC src() {return LOC::PORT;}
