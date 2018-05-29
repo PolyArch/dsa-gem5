@@ -3012,10 +3012,12 @@ void scratch_write_controller_t::cycle() {
          port_data_t& out_addr = _accel->port_interf().out_port(stream._out_port);
          port_data_t& out_val = _accel->port_interf().out_port(stream._val_port);
 
+         int old_out_addr_size = out_addr.mem_size(); //debugging only
+         int old_out_val_size  = out_val.mem_size();
 
          addr_t base_addr = stream._mem_addr; // this is like offset
          if(out_addr.mem_size() > 0 && out_val.mem_size() > 0) {
-           SBDT loc = out_addr.pop_out_data();
+           SBDT loc = out_addr.peek_out_data();
            addr_t scr_addr = base_addr + loc*sizeof(SBDT); // this is like offset
 
            addr_t max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
@@ -3023,9 +3025,9 @@ void scratch_write_controller_t::cycle() {
              //go while stream and port does not run out
              uint64_t elem_updated=0;
              while(scr_addr < max_addr && stream._num_strides>0 //enough in dest
-                             && out_val.mem_size()) { //enough in source
+                 && out_addr.mem_size() && out_val.mem_size()) { //enough in source
 
-               SBDT inc = out_val.pop_out_data(); 
+               SBDT inc = out_val.peek_out_data(); 
                SBDT val = 0; // this should be read from scratchpad
 
                assert(scr_addr + DATA_WIDTH <= SCRATCH_SIZE);
@@ -3053,13 +3055,14 @@ void scratch_write_controller_t::cycle() {
                _accel->write_scratchpad(scr_addr, &val, sizeof(SBDT),stream.id());
                stream._num_strides--;
 
-               if(out_addr.mem_size() > 0 && out_val.mem_size() > 0) {
+               //if(out_addr.mem_size() > 0 && out_val.mem_size() > 0) {
+                 out_val.pop_out_data();
                  loc = out_addr.pop_out_data();
                  scr_addr = base_addr + loc*sizeof(SBDT);
 
                  max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
 
-               }
+               //}
 
                // scr_addr = stream.pop_addr();
 
@@ -3070,6 +3073,10 @@ void scratch_write_controller_t::cycle() {
 
             }
 
+            if(old_out_addr_size - out_addr.mem_size()!=
+               old_out_val_size   - out_val.mem_size()  ) {
+              assert(0);
+            }
 
             if(_accel->_ssim->in_roi()) {
               add_bw(stream.src(), stream.dest(), 1, elem_updated*8);// assuming 8 byte
