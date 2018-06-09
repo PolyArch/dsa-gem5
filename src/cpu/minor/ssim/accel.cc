@@ -3018,6 +3018,7 @@ void scratch_write_controller_t::cycle() {
          port_data_t& out_val = _accel->port_interf().out_port(stream._val_port);
          addr_t base_addr = stream._mem_addr; // this is like offset
 
+
          uint64_t bytes_written=0;
          if(out_addr.mem_size() > 0 && out_val.mem_size() > 0) { // enough in src and dest
            // loc = out_addr.pop_out_data();
@@ -3087,9 +3088,7 @@ void scratch_write_controller_t::cycle() {
              bytes_written+=DATA_WIDTH;
              _accel->_stat_scr_bytes_wr+=DATA_WIDTH;
              _accel->_stat_scratch_write_bytes+=DATA_WIDTH;
-
-            }
-
+           }
 
             if(_accel->_ssim->in_roi()) {
               add_bw(stream.src(), stream.dest(), 1, bytes_written);
