@@ -759,12 +759,7 @@ uint64_t accel_t::receive(int out_port) {
    return val;
 }
 
-// int test_n_zeros=0;
-// int test_n_one=0;
-// int test_n_two=0;
-// int test_n_three=0;
 void accel_t::cycle_cgra_backpressure() {
-  // bool ifCompute = false;
   int num_computed = 0;
   auto& active_in_ports=_soft_config.in_ports_active;
 
@@ -796,6 +791,8 @@ void accel_t::cycle_cgra_backpressure() {
            data.push_back(val);
         }
         // cout << "Allowed to push input: " << data[0] << " and next input: " << data[1] << "\n";
+        cout << "Port name: " << vec_in->gamsName() << " ";
+        cout << "Allowed to push input: " << data[0] << "\n";
 
         // this is supposed to be a flag, correct it later!
         num_computed = _pdg->push_vector(vec_in, data, data_valid); 
@@ -861,7 +858,10 @@ void accel_t::cycle_cgra_backpressure() {
         data_valid.clear(); // make sure it is empty here
         _pdg->pop_vector_output(vec_output, data, data_valid, len); // it just set hard-coded validity--should read there
       // push the data to the CGRA output port only if discard is not 0
-      
+     
+      // cout << "Allowed to pop output: " << data[0] << " and next output: " << data[1] << "\n";
+      cout << "Allowed to pop output: " << data[0] << "\n";
+
       int j = 0;
       for (j=0; j < len; ++j) {
         if(data_valid[j]) {
@@ -2908,7 +2908,7 @@ void scratch_write_controller_t::cycle() {
           while(addr < max_addr && stream._num_bytes>0 //enough in dest
                                 && out_vp.mem_size()) { //enough in source
             SBDT val = out_vp.pop_out_data(); 
-            //timestamp(); cout << "POPPED b/c port->scratch WRITE: " << out_vp.port() << " " << out_vp.mem_size() << "\n";
+            // timestamp(); cout << "POPPED b/c port->scratch WRITE: " << out_vp.port() << " " << out_vp.mem_size() << "\n";
 
             assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
             //std::memcpy(&_accel->scratchpad[addr], &val, sizeof(SBDT));
@@ -2961,7 +2961,7 @@ void scratch_write_controller_t::cycle() {
       if(stream.stream_active()) {
         // std::cout << "const_scr_stream active\n";
 
-        uint64_t total_pushed=0;
+        // uint64_t total_pushed=0;
         addr_t addr = stream._scratch_addr;
         // while(stream._iters_left!=0) {
         // cout << "iters left for the stream is: " << stream._iters_left << "\n";
@@ -2981,98 +2981,118 @@ void scratch_write_controller_t::cycle() {
           _accel->_stat_scr_bytes_wr+=DATA_WIDTH;
           _accel->_stat_scratch_write_bytes+=DATA_WIDTH;
           stream._iters_left--;
-          total_pushed++;
+          // total_pushed++;
           addr += sizeof(SBDT);
         }
         // }
-        add_bw(stream.src(), stream.dest(), 1, total_pushed*DATA_WIDTH);
+        // add_bw(stream.src(), stream.dest(), 1, total_pushed*DATA_WIDTH);
 
-  
-         bool is_empty = stream.check_set_empty();
-         if(is_empty) {
-           _accel->process_stream_stats(stream);
-           if(SB_DEBUG::VP_SCORE2) {
-             cout << "SOURCE: CONST->SCR\n";
-           }
-         }
+        if(_accel->_ssim->in_roi()) {
+           add_bw(stream.src(), stream.dest(), 1, bytes_written);
+          _accel->_stat_scratch_writes+=1;
+        }
+
+        bool is_empty = stream.check_set_empty();
+        if(is_empty) {
+          _accel->process_stream_stats(stream);
+          if(SB_DEBUG::VP_SCORE2) {
+            cout << "SOURCE: CONST->SCR\n";
+          }
+        }
          break;
       }
 
-    } else { // if(_which<(_port_scr_streams.size()+_bufs.size()+_atomic_scr_streams.size())) {
-      // std::cout << _accel->now() << "came in write controller to issue atomic update stream\n";
+    } else { 
+      // if(_which<(_port_scr_streams.size()+_bufs.size()+_atomic_scr_streams.size())) {
       // int index = _which-_port_scr_streams.size()-_bufs.size()-_accel->_const_scr_queue.size()-const_scr_streams_active();
-      // std::cout << "index in atomic scr: " << index << endl;
       // assert(index==0 && "only 1 atomic scr update stream can be active at a time\n");
       // auto& stream = _atomic_scr_streams[index];
       auto& stream = _atomic_scr_streams[0];
-      // auto& stream = _atomic_scr_stream;
+      SBDT loc; SBDT inc;
+      SBDT val = 0;
+      addr_t scr_addr, max_addr;
 
       if(stream.stream_active()) {
          // std::cout << "And the atomic stream was active: "<< stream._num_strides << "\n";
          port_data_t& out_addr = _accel->port_interf().out_port(stream._out_port);
          port_data_t& out_val = _accel->port_interf().out_port(stream._val_port);
-
-
          addr_t base_addr = stream._mem_addr; // this is like offset
-         if(out_addr.mem_size() > 0 && out_val.mem_size() > 0) {
-           SBDT loc = out_addr.pop_out_data();
-           addr_t scr_addr = base_addr + loc*sizeof(SBDT); // this is like offset
 
-           addr_t max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
+         uint64_t bytes_written=0;
+         if(out_addr.mem_size() > 0 && out_val.mem_size() > 0) { // enough in src and dest
+           // loc = out_addr.pop_out_data();
+           loc = out_addr.peek_out_data();
+           scr_addr = base_addr + loc*sizeof(SBDT); 
 
-             //go while stream and port does not run out
-             uint64_t elem_updated=0;
-             while(scr_addr < max_addr && stream._num_strides>0 //enough in dest
-                             && out_val.mem_size()) { //enough in source
+           max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
 
-               SBDT inc = out_val.pop_out_data(); 
-               SBDT val = 0; // this should be read from scratchpad
+           //go while stream and port does not run out
+           while(scr_addr < max_addr && stream._num_strides>0 
+                       && out_addr.mem_size()  && out_val.mem_size()) { //enough in source
+             
+             // std::cout << "scr_addr: " << scr_addr << " and loc is: " << loc << "\n";
+             assert(scr_addr + DATA_WIDTH <= SCRATCH_SIZE);
 
-               assert(scr_addr + DATA_WIDTH <= SCRATCH_SIZE);
-               _accel->read_scratchpad(&val, scr_addr, DATA_WIDTH, stream.id());
+             inc = out_val.peek_out_data(); 
 
-               // HACK, remember!
-               // if(val > 100000)
-               //     val=0;
-               
+             // std::cout << "old loc: " << loc << " and old_val: " << val << "\n";
 
-               int opcode = stream._op_code;
+             // for config: send this to stream.hh to find original value
+             loc = stream.cur_addr(loc);// loc & stream._addr_mask;
+             val = stream.cur_val(val);// loc & stream._val_mask;
 
-               switch(opcode){
-                   case 0: val += inc;
-                           break;
-                   case 1: val -= inc;
-                           break;
-                   case 2: val = std::min(val, inc);
-                           break;
-                   case 3: val = std::max(val, inc);
-                           break;
-                   default: cout << "Invalid opcode\n";
-                            break;
-               }
-               _accel->write_scratchpad(scr_addr, &val, sizeof(SBDT),stream.id());
-               stream._num_strides--;
+             // std::cout << "new loc: " << loc << " and new_val: " << val << "\n";
 
-               if(out_addr.mem_size() > 0 && out_val.mem_size() > 0) {
-                 loc = out_addr.pop_out_data();
-                 scr_addr = base_addr + loc*sizeof(SBDT);
+             _accel->read_scratchpad(&val, scr_addr, DATA_WIDTH, stream.id());
 
-                 max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
+             int opcode = stream._op_code;
 
-               }
+             switch(opcode){
+                 case 0: val += inc;
+                         break;
+                 case 1: val -= inc;
+                         break;
+                 case 2: val = std::min(val, inc);
+                         break;
+                 case 3: val = std::max(val, inc);
+                         break;
+                 default: cout << "Invalid opcode\n";
+                          break;
+             }
+             _accel->write_scratchpad(scr_addr, &val, sizeof(SBDT),stream.id());
 
-               // scr_addr = stream.pop_addr();
+             stream.inc_val_index();
+             stream.inc_addr_index();
+             // pop only if index in word is last?
+             if(stream.can_pop_val()) {
+               out_val.pop_out_data();
+             }
+             if(stream.can_pop_addr()) {
+               out_addr.pop_out_data();
+             }
+             // std::cout <<  "iters left are: " << stream._num_strides << "\n";
+             // std::cout << "out_addr mem_size: " << out_addr.mem_size() << " and data: " << out_val.mem_size() << "\n";
+             // should be decremented after every computation
+             stream._num_strides--;
 
-               // bytes_written+=DATA_WIDTH;
-               elem_updated++;
-               _accel->_stat_scr_bytes_wr+=DATA_WIDTH;
-               _accel->_stat_scratch_write_bytes+=DATA_WIDTH;
+             /*
+             if(out_addr.mem_size() > 0 && out_val.mem_size() > 0) { // enough in src and dest
+               loc = out_addr.pop_out_data();
+               scr_addr = base_addr + loc*sizeof(SBDT);
+               max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
+             }
+             */
+
+
+             bytes_written+=DATA_WIDTH;
+             _accel->_stat_scr_bytes_wr+=DATA_WIDTH;
+             _accel->_stat_scratch_write_bytes+=DATA_WIDTH;
 
             }
 
 
             if(_accel->_ssim->in_roi()) {
-              add_bw(stream.src(), stream.dest(), 1, elem_updated*8);// assuming 8 byte
+              add_bw(stream.src(), stream.dest(), 1, bytes_written);
               _accel->_stat_scratch_writes+=1;
             }
              
@@ -3528,12 +3548,12 @@ bool scratch_write_controller_t::done(bool show, int mask) {
       return false;
     }
     
-    /*
+    
     if(atomic_scr_streams_active()) {
       if(show) cout << "ATOMIC SCR Stream Not Empty\n";
       return false;
     }
-    */
+    
     
   }
   if(scr_scr_streams_active()) {

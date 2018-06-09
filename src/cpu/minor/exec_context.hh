@@ -579,7 +579,8 @@ class ExecContext : public ::ExecContext
             case SB_ATOMIC_SCR_OP: ssim.atomic_update_scratchpad(
                 thread.getSDReg(SD_OFFSET),        thread.getSDReg(SD_NUM_ELEM),
                 thread.getSDReg(SD_OUT_PORT),      thread.getSDReg(SD_VAL_PORT),
-                thread.getSDReg(SD_OPCODE));
+                thread.getSDReg(SD_IND_TYPE),      thread.getSDReg(SD_DTYPE),
+                thread.getSDReg(SD_ADDR_TYPE),     thread.getSDReg(SD_OPCODE));
             break;
             case SB_CONST_SCR: ssim.write_constant_scratchpad(
                 thread.getSDReg(SD_SCRATCH_ADDR),  thread.getSDReg(SD_CONSTANT),

@@ -404,13 +404,17 @@ void ssim_t::write_scratchpad(int out_port,
 
 
 // command decode for atomic stream update
-void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int opcode) {
+void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode) {
     atomic_scr_stream_t* s = new atomic_scr_stream_t();
     s->_mem_addr = offset;
     s->_num_strides = iters;
     s->_out_port = addr_port;
     s->_val_port = inc_port;
     s->_op_code = opcode;
+    s->_value_type=value_type;
+    s->_output_type=output_type;
+    s->_addr_type=addr_type;
+   
     s->set_orig(); 
 
     add_bitmask_stream(s);

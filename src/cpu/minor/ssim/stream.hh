@@ -678,28 +678,6 @@ struct const_scr_stream_t : public base_stream_t {
 
 };
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 //Port -> Port 
 struct port_port_stream_t : public base_stream_t {
   port_port_stream_t(){
@@ -970,8 +948,45 @@ struct atomic_scr_stream_t : public mem_stream_base_t {
   int _val_port;
   int _out_port;
   int _op_code;
+  int _value_type;
+  int _output_type;
+  int _addr_type;
+  uint8_t _value_bytes, _addr_bytes, _output_bytes; //, _indices_in_word;
+  uint64_t _value_mask, _addr_mask, _output_mask;
+  uint64_t _values_in_word;
+  uint64_t _addr_in_word;
+  uint64_t _cur_val_index;
+  uint64_t _cur_addr_index;
 
   atomic_scr_stream_t() {}
+  virtual void set_orig() { //like constructor but lazier
+    switch(_value_type) {
+      case T64: _value_bytes= 8; _value_mask = 0xFFFFFFFFFFFFFFFF;  break;
+      case T32: _value_bytes= 4; _value_mask = 0xFFFFFFFF;          break;
+      case T16: _value_bytes= 2; _value_mask = 0xFFFF;              break;
+      case T08: _value_bytes= 1; _value_mask = 0xFF;                break;
+      default: assert(0);
+    }
+    switch(_output_type) {
+      case T64: _output_bytes= 8; _output_mask = 0xFFFFFFFFFFFFFFFF;  break;
+      case T32: _output_bytes= 4; _output_mask = 0xFFFFFFFF;          break;
+      case T16: _output_bytes= 2; _output_mask = 0xFFFF;              break;
+      case T08: _output_bytes= 1; _output_mask = 0xFF;                break;
+      default: assert(0);
+    }
+    switch(_addr_type) {
+      case T64:  _addr_bytes= 8; _addr_mask = 0xFFFFFFFFFFFFFFFF; break;
+      case T32:  _addr_bytes= 4; _addr_mask = 0xFFFFFFFF;         break;
+      case T16:  _addr_bytes= 2; _addr_mask = 0xFFFF;             break;
+      case T08:  _addr_bytes= 1; _addr_mask = 0xFF;               break;
+      default: assert(0);
+    }
+    _cur_val_index=0;
+    _cur_addr_index=0;
+    _values_in_word = DATA_WIDTH / _value_bytes;
+    _addr_in_word = DATA_WIDTH / _addr_bytes;
+  }
+  
 
   // it's datatypes?
   // uint64_t ind_port()     {return _ind_port;} // this is out addr port
@@ -986,6 +1001,32 @@ struct atomic_scr_stream_t : public mem_stream_base_t {
   int64_t  access_size() {return _access_size;}  
   int64_t  stride()      {return _stride;} 
 
+  uint64_t cur_addr(uint64_t loc){
+    return (loc >> ((_addr_in_word - _cur_addr_index + 1)*8)) & 0xFFFF;
+  }
+  uint64_t cur_val(uint64_t val){
+    return (val >> ((_values_in_word - _cur_val_index + 1)*8)) & 0xFFFF;
+  }
+  void inc_val_index(){
+    _cur_val_index = (_cur_val_index+1)%(_values_in_word+1);
+  }
+  void inc_addr_index(){
+    _cur_addr_index = (_cur_addr_index+1)%(_addr_in_word+1);
+  }
+
+  bool can_pop_val(){
+    // std::cout << "_cur_val_index: " << _cur_val_index << " values in word: " << _values_in_word << "\n";
+    bool can_pop = (_cur_val_index==_values_in_word);
+    if(can_pop) { _cur_val_index=0; }
+    return can_pop;
+  }
+  bool can_pop_addr(){
+    // std::cout << "_cur_addr_index: " << _cur_addr_index << " values in word: " << _addr_in_word << "\n";
+    bool can_pop = (_cur_addr_index==_addr_in_word);
+    if(can_pop) { _cur_addr_index=0; }
+    return can_pop;
+
+  }
 
   virtual bool stream_active() {
     return _num_strides!=0;
@@ -996,10 +1037,10 @@ struct atomic_scr_stream_t : public mem_stream_base_t {
   virtual LOC dest() {return LOC::SCR;}
 
   virtual void print_status() {  
-    // std::cout << "port->ind_port" << "\tind_port=" << _ind_port
-    //          << "\tind_type:" << _type  << "\tind_addr:" << std::hex <<_index_addr
-    //    << std::dec << "\tnum_elem:" << _num_elements << "\tval_port:" << _out_port << "\top_code:" << _op_code;
-    base_stream_t::print_status();
+    std::cout << "port->scr" << "\tval_port=" << _val_port
+              << "\taddr_port:" << _out_port  << "\top_code:" << _op_code << "\titers left: " << _num_strides
+         << std::dec << "\tinput_type:" << _value_type << "\toutput_type:" << _output_type << "\taddr_type:" << _addr_type;
+    // base_stream_t::print_status();
   }
 };
 
