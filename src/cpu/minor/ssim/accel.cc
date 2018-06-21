@@ -769,7 +769,7 @@ void accel_t::cycle_cgra_backpressure() {
   bool print = false;
   if(SB_DEBUG::SB_COMP) {
     print = true;
-    *cgra_dbg_stream  <<"\n";
+    // *cgra_dbg_stream  <<"\n";
   }
 
   int num_computed = 0;
