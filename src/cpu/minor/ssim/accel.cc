@@ -760,6 +760,18 @@ uint64_t accel_t::receive(int out_port) {
 
 void accel_t::cycle_cgra_backpressure() {
   // std::cout << "NEW CYCLE\n";
+  ostream* cgra_dbg_stream = &std::cout;
+  if(SB_DEBUG::VERIF_CGRA_MULTI) {
+    cgra_dbg_stream = &cgra_multi_verif[_accel_index];
+  }
+  _pdg->set_dbg_stream(cgra_dbg_stream);
+
+  bool print = false;
+  if(SB_DEBUG::SB_COMP) {
+    print = true;
+    *cgra_dbg_stream  <<"\n";
+  }
+
   int num_computed = 0;
   auto& active_in_ports=_soft_config.in_ports_active;
 
@@ -820,7 +832,7 @@ void accel_t::cycle_cgra_backpressure() {
         // cout << "Allowed to push input: " << data[0] << "\n";
 
         // this is supposed to be a flag, correct it later!
-        num_computed = _pdg->push_vector(vec_in, data, data_valid); 
+        num_computed = _pdg->push_vector(vec_in, data, data_valid, print, true); 
         // cout << "Let's check num_computed this time: " << num_computed << endl;
 
         data.clear(); // clear the input data pushed to pdg
@@ -844,18 +856,7 @@ void accel_t::cycle_cgra_backpressure() {
   }
 
 
-  ostream* cgra_dbg_stream = &std::cout;
-  if(SB_DEBUG::VERIF_CGRA_MULTI) {
-    cgra_dbg_stream = &cgra_multi_verif[_accel_index];
-  }
-  _pdg->set_dbg_stream(cgra_dbg_stream);
-
-  bool print = false;
-  if(SB_DEBUG::SB_COMP) {
-    print = true;
-    *cgra_dbg_stream  <<"\n";
-  }
-
+  
   // int num_computed = _pdg->cycle_store(print, true); // calling with the default parameters for now
   num_computed = _pdg->cycle(print, true); // calling with the default parameters for now
   if(in_roi()) {
@@ -883,7 +884,7 @@ void accel_t::cycle_cgra_backpressure() {
         // cout << "Allowed to pop output\n";
         data.clear(); // make sure it is empty here
         data_valid.clear(); // make sure it is empty here
-        _pdg->pop_vector_output(vec_output, data, data_valid, len); // it just set hard-coded validity--should read there
+        _pdg->pop_vector_output(vec_output, data, data_valid, len, print, true); // it just set hard-coded validity--should read there
       // push the data to the CGRA output port only if discard is not 0
      
       // cout << "Allowed to pop output: " << data[0] << " and next output: " << data[1] << "\n";
@@ -3053,10 +3054,6 @@ void scratch_write_controller_t::cycle() {
       }
 
     } else { 
-      // if(_which<(_port_scr_streams.size()+_bufs.size()+_atomic_scr_streams.size())) {
-      // int index = _which-_port_scr_streams.size()-_bufs.size()-_accel->_const_scr_queue.size()-const_scr_streams_active();
-      // assert(index==0 && "only 1 atomic scr update stream can be active at a time\n");
-      // auto& stream = _atomic_scr_streams[index];
       auto& stream = _atomic_scr_streams[0];
       SBDT loc; SBDT inc;
       SBDT val = 0;
@@ -3076,7 +3073,6 @@ void scratch_write_controller_t::cycle() {
 
            // std::cout << "64 bit input into the output feature map: " << loc << "\n";
            // assert(loc>=0 && "Index into scratchpad is negative");
-           // loc =  (loc >> ((stream._addr_in_word - stream._cur_addr_index - 1)*stream._value_bytes)) & stream._addr_mask;
            loc = stream.cur_addr(loc);// loc & stream._addr_mask;
            // std::cout << "index into the output feature map: " << loc << "\n";
            // scr_addr = base_addr + loc*sizeof(SBDT); 
@@ -3099,8 +3095,7 @@ void scratch_write_controller_t::cycle() {
 
              // std::cout << "old loc: " << loc << " and old_val: " << val << "\n";
 
-             // for config: send this to stream.hh to find original value
-             inc = stream.cur_val(inc);// loc & stream._val_mask;
+             inc = stream.cur_val(inc);
 
              // std::cout << "new loc: " << loc << " and new_val: " << val << "\n";
 
@@ -3122,19 +3117,22 @@ void scratch_write_controller_t::cycle() {
              }
              _accel->write_scratchpad(scr_addr, &val, sizeof(SBDT),stream.id());
 
+             stream._num_strides--;
+
              stream.inc_val_index();
              stream.inc_addr_index();
              // pop only if index in word is last?
              if(stream.can_pop_val()) {
+               stream._cur_val_index=0;
                out_val.pop_out_data();
              }
              if(stream.can_pop_addr()) {
+               stream._cur_addr_index=0;
                out_addr.pop_out_data();
              }
              // std::cout <<  "iters left are: " << stream._num_strides << "\n";
              // std::cout << "out_addr mem_size: " << out_addr.mem_size() << " and data: " << out_val.mem_size() << "\n";
              // should be decremented after every computation
-             stream._num_strides--;
 
              /*
              if(out_addr.mem_size() > 0 && out_val.mem_size() > 0) { // enough in src and dest
