@@ -794,6 +794,7 @@ Execute::issue(ThreadID thread_id)
 
             if (discarded) {
                 num_insts_discarded++;
+                ssim.issued_discarded_inst();
             } else if (!inst->isBubble()) {
                 num_insts_issued++;
                 ssim.issued_inst();
@@ -803,6 +804,8 @@ Execute::issue(ThreadID thread_id)
 
                 if (num_insts_issued == issueLimit)
                     DPRINTF(MinorExecute, "Reached inst issue limit\n");
+            } else {
+                // ssim.issued_bubble_inst();
             }
 
             thread.inputIndex++;

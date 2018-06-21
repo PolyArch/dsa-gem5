@@ -1419,6 +1419,11 @@ private:
   int _stat_cmds_issued=0;
   int _stat_cmds_complete=0;
   int _stat_sb_insts=0;
+  // for backcgra
+  double _stat_sb_dfg_util=0.0;
+  double _stat_sb_data_avail_ratio=0.0;
+  int _slot_avail[NUM_IN_PORTS] = {0};
+  int _could_not_serve[NUM_IN_PORTS] = {0};
 
   bool _back_cgra=false;
 

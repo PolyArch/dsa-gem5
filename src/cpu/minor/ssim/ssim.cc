@@ -122,6 +122,9 @@ void ssim_t::print_stats() {
 
    out << "Cycles: " << roi_cycles() << "\n";
    out << "Control Core Insts Issued: " << control_core_insts() << "\n";
+   out << "Control Core Discarded Insts Issued: " << control_core_discarded_insts() << "\n";
+   out << "Control Core Discarded Inst Stalls: " << ((double)control_core_discarded_insts()/(double)control_core_insts()) << "\n";
+   // out << "Control Core Bubble Insts Issued: " << control_core_bubble_insts() << "\n";
    out << "Control Core Config Stalls: " 
        << ((double)config_waits()/roi_cycles()) << "\n";
    out << "Control Core Wait Stalls:   ";

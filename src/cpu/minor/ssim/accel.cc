@@ -721,7 +721,6 @@ void accel_t::tick() {
 
   cycle_out_interf();
   schedule_streams();
-  // cout << "CYCLE INCREMENTED HERE.........................!!!\n";
   _waiting_cycles++;
 
   _dma_c.finish_cycle(); 
@@ -760,8 +759,34 @@ uint64_t accel_t::receive(int out_port) {
 }
 
 void accel_t::cycle_cgra_backpressure() {
+  // std::cout << "NEW CYCLE\n";
   int num_computed = 0;
   auto& active_in_ports=_soft_config.in_ports_active;
+
+  // for stats, this may make simulation slower--have separate mode for it: TODO
+  int count_avail;
+  count_avail = 0;
+  for (int i=0; i < active_in_ports.size(); ++i) {
+    int port_index = active_in_ports[i];
+    auto& cur_in_port = _port_interf.in_port(port_index);
+    SbPDG_VecInput* vec_in = dynamic_cast<SbPDG_VecInput*>(_sched->vportOf(make_pair(true/*input*/,port_index)));
+    assert(vec_in!=NULL && "input port pointer is null\n");
+    // flag is true if data is available at this port
+    if (cur_in_port.num_ready()) { 
+      count_avail++;
+    }
+    if (_pdg->can_push_input(vec_in)) {
+      _slot_avail[i]++;
+      if (!cur_in_port.num_ready()) { 
+        _could_not_serve[i]++;
+      }
+    }
+  }
+  // when data is not available at any of the input ports => not an issue of
+  // control core: should return 1 (when none is available, memory bandwidth
+  // bottleneck)
+  double ratio = (double)count_avail/(double)active_in_ports.size();
+  _stat_sb_data_avail_ratio += std::max(ratio, 1-ratio);
 
   for (int i=0; i < active_in_ports.size(); ++i) {
     int port_index = active_in_ports[i];
@@ -791,8 +816,8 @@ void accel_t::cycle_cgra_backpressure() {
            data.push_back(val);
         }
         // cout << "Allowed to push input: " << data[0] << " and next input: " << data[1] << "\n";
-        cout << "Port name: " << vec_in->gamsName() << " ";
-        cout << "Allowed to push input: " << data[0] << "\n";
+        // cout << "Port name: " << vec_in->gamsName() << " ";
+        // cout << "Allowed to push input: " << data[0] << "\n";
 
         // this is supposed to be a flag, correct it later!
         num_computed = _pdg->push_vector(vec_in, data, data_valid); 
@@ -801,7 +826,7 @@ void accel_t::cycle_cgra_backpressure() {
         data.clear(); // clear the input data pushed to pdg
         data_valid.clear(); // clear the input data pushed to pdg
 
-        _cgra_issued ++;
+        // _cgra_issued ++;
 
         // pop input from CGRA port after it is pushed into the pdg node
         if (!vec_in->backPressureOn()) 
@@ -835,7 +860,9 @@ void accel_t::cycle_cgra_backpressure() {
   num_computed = _pdg->cycle(print, true); // calling with the default parameters for now
   if(in_roi()) {
     _stat_sb_insts+=num_computed;
+    _stat_sb_dfg_util+=(double)num_computed/_pdg->num_insts();
   }
+  _cgra_issued ++;
 
   // pop the ready outputs
   auto& active_out_ports=_soft_config.out_ports_active;
@@ -860,7 +887,11 @@ void accel_t::cycle_cgra_backpressure() {
       // push the data to the CGRA output port only if discard is not 0
      
       // cout << "Allowed to pop output: " << data[0] << " and next output: " << data[1] << "\n";
-      cout << "Allowed to pop output: " << data[0] << "\n";
+      // cout << "Allowed to pop output: " << data[0] << "\n";
+
+      if(in_roi()) {
+        _stat_comp_instances += 1;  
+      }
 
       int j = 0;
       for (j=0; j < len; ++j) {
@@ -1327,10 +1358,29 @@ void accel_t::print_statistics(std::ostream& out) {
      << ((double)_stat_cgra_busy_cycles)/((double)roi_cycles()) 
      << ", DFGs / Cycle: " 
      <<  ((double)_stat_comp_instances)/((double)roi_cycles())  <<  "\n";
+   // out << "For backcgra, Average thoughput of all ports (overall): " 
+   //   <<  ((double)_stat_comp_instances)/((double)roi_cycles()*_pdg->num_vec_output())
+   //   << ", CGRA outputs/cgra busy cycles: " 
+   //   <<  ((double)_stat_comp_instances)/((double)_stat_cgra_busy_cycles)  <<  "\n";
    out << "CGRA Insts / Computation Instance: "
       << ((double)_stat_sb_insts)/((double)_stat_comp_instances) << "\n";
    out << "CGRA Insts / Cycle: "
       << ((double)_stat_sb_insts)/((double)roi_cycles()) << " (overall activity factor)\n";
+   out << "Mapped DFG utilization: "
+       << ((double)_stat_sb_dfg_util)/((double)_stat_cgra_busy_cycles) << "\n";
+   out << "Data availability ratio: "
+       << ((double)_stat_sb_data_avail_ratio)/((double)_stat_cgra_busy_cycles) << "\n";
+   out << "Allowed input port consumption rate: ";
+   for(int i=0; i<NUM_OUT_PORTS; ++i){
+     out << ((double)_slot_avail[i]/(double)_stat_cgra_busy_cycles) << ", ";
+   }
+   out << "\n";
+   out << "percentage time we could not serve input ports: ";
+   for(int i=0; i<NUM_OUT_PORTS; ++i){
+     out << ((double)_could_not_serve[i]/(double)_stat_cgra_busy_cycles) << ", ";
+   }
+   out << "\n";
+
 
    out << "Cycle Breakdown: ";
    _pipe_stats.print_histo(out,roi_cycles());
@@ -3023,7 +3073,15 @@ void scratch_write_controller_t::cycle() {
          if(out_addr.mem_size() > 0 && out_val.mem_size() > 0) { // enough in src and dest
            // loc = out_addr.pop_out_data();
            loc = out_addr.peek_out_data();
-           scr_addr = base_addr + loc*sizeof(SBDT); 
+
+           // std::cout << "64 bit input into the output feature map: " << loc << "\n";
+           // assert(loc>=0 && "Index into scratchpad is negative");
+           // loc =  (loc >> ((stream._addr_in_word - stream._cur_addr_index - 1)*stream._value_bytes)) & stream._addr_mask;
+           loc = stream.cur_addr(loc);// loc & stream._addr_mask;
+           // std::cout << "index into the output feature map: " << loc << "\n";
+           // scr_addr = base_addr + loc*sizeof(SBDT); 
+           // scr_addr = base_addr + loc*stream._addr_bytes; // should be less than 10 bits 
+           scr_addr = base_addr + loc*stream._value_bytes; // should be less than 10 bits 
 
            max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
 
@@ -3031,16 +3089,18 @@ void scratch_write_controller_t::cycle() {
            while(scr_addr < max_addr && stream._num_strides>0 
                        && out_addr.mem_size()  && out_val.mem_size()) { //enough in source
              
-             // std::cout << "scr_addr: " << scr_addr << " and loc is: " << loc << "\n";
-             assert(scr_addr + DATA_WIDTH <= SCRATCH_SIZE);
+              if(SB_DEBUG::CYC_STAT) {
+                std::cout << "scr_addr: " << scr_addr << " and scr_size is: " << SCRATCH_SIZE << "\n";
+              }
+             // assert(scr_addr + DATA_WIDTH <= SCRATCH_SIZE);
+             assert(scr_addr + DATA_WIDTH/stream._addr_bytes <= SCRATCH_SIZE);
 
              inc = out_val.peek_out_data(); 
 
              // std::cout << "old loc: " << loc << " and old_val: " << val << "\n";
 
              // for config: send this to stream.hh to find original value
-             loc = stream.cur_addr(loc);// loc & stream._addr_mask;
-             val = stream.cur_val(val);// loc & stream._val_mask;
+             inc = stream.cur_val(inc);// loc & stream._val_mask;
 
              // std::cout << "new loc: " << loc << " and new_val: " << val << "\n";
 

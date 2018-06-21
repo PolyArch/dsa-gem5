@@ -119,6 +119,21 @@ public:
       _control_core_insts++;
     }
   }
+
+  // due to stream seq mismatch?
+  void issued_discarded_inst() {
+    if(in_roi()) {
+      _control_core_discarded_insts++;
+    }
+  }
+  /*
+  void issued_bubble_inst() {
+    if(in_roi()) {
+      _control_core_bubble_insts++;
+    }
+  }
+  */
+
   void wait_inst(uint64_t mask) {
     if(in_roi()) {
       _wait_map[mask]++;
@@ -136,6 +151,8 @@ public:
 
   uint64_t roi_cycles() {return _roi_cycles;}
   uint64_t control_core_insts() {return _control_core_insts;}
+  /*uint64_t control_core_bubble_insts() {return _control_core_bubble_insts;}*/
+  uint64_t control_core_discarded_insts() {return _control_core_discarded_insts;}
   uint64_t config_waits() {return _config_waits;}
 
   accel_t* get_acc(int i) {
@@ -187,6 +204,9 @@ private:
   uint64_t _roi_cycles=0;
 
   uint64_t _control_core_insts=0;
+  // uint64_t _control_core_bubble_insts=0;
+  uint64_t _control_core_discarded_insts=0;
+
   uint64_t _config_waits=0;
   std::unordered_map<uint64_t,uint64_t> _wait_map;
 
