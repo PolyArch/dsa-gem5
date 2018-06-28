@@ -759,7 +759,6 @@ uint64_t accel_t::receive(int out_port) {
 }
 
 void accel_t::cycle_cgra_backpressure() {
-  // std::cout << "NEW CYCLE\n";
   ostream* cgra_dbg_stream = &std::cout;
   if(SB_DEBUG::VERIF_CGRA_MULTI) {
     cgra_dbg_stream = &cgra_multi_verif[_accel_index];
@@ -769,6 +768,7 @@ void accel_t::cycle_cgra_backpressure() {
   bool print = false;
   if(SB_DEBUG::SB_COMP) {
     print = true;
+    // std::cout << "NEW CYCLE: " << now() << "\n";
     // *cgra_dbg_stream  <<"\n";
   }
 
@@ -3068,26 +3068,26 @@ void scratch_write_controller_t::cycle() {
 
          uint64_t bytes_written=0;
          if(out_addr.mem_size() > 0 && out_val.mem_size() > 0) { // enough in src and dest
-           // loc = out_addr.pop_out_data();
            loc = out_addr.peek_out_data();
+           if(SB_DEBUG::SB_COMP) {
+             std::cout << "64-bit value at the addr port is: " << loc;
+           }
+           loc = stream.cur_addr(loc);
 
            // std::cout << "64 bit input into the output feature map: " << loc << "\n";
-           // assert(loc>=0 && "Index into scratchpad is negative");
-           loc = stream.cur_addr(loc);// loc & stream._addr_mask;
-           // std::cout << "index into the output feature map: " << loc << "\n";
            // scr_addr = base_addr + loc*sizeof(SBDT); 
            // scr_addr = base_addr + loc*stream._addr_bytes; // should be less than 10 bits 
-           scr_addr = base_addr + loc*stream._value_bytes; // should be less than 10 bits 
-
+           
+           scr_addr = base_addr + loc*stream._value_bytes; 
            max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
 
            //go while stream and port does not run out
            while(scr_addr < max_addr && stream._num_strides>0 
                        && out_addr.mem_size()  && out_val.mem_size()) { //enough in source
              
-              if(SB_DEBUG::CYC_STAT) {
-                std::cout << "scr_addr: " << scr_addr << " and scr_size is: " << SCRATCH_SIZE << "\n";
-              }
+             if(SB_DEBUG::SB_COMP) {
+               std::cout << "\tupdate at index location: " << loc << " and scr_addr: " << scr_addr << " and scr_size is: " << SCRATCH_SIZE;
+             }
              // assert(scr_addr + DATA_WIDTH <= SCRATCH_SIZE);
              assert(scr_addr + DATA_WIDTH/stream._addr_bytes <= SCRATCH_SIZE);
 
@@ -3096,7 +3096,9 @@ void scratch_write_controller_t::cycle() {
              // std::cout << "old loc: " << loc << " and old_val: " << val << "\n";
 
              inc = stream.cur_val(inc);
-
+             if(SB_DEBUG::SB_COMP) {
+               std::cout << "\tvalues input: " << inc << "\n";
+             }
              // std::cout << "new loc: " << loc << " and new_val: " << val << "\n";
 
              _accel->read_scratchpad(&val, scr_addr, DATA_WIDTH, stream.id());
@@ -3104,44 +3106,58 @@ void scratch_write_controller_t::cycle() {
              int opcode = stream._op_code;
 
              switch(opcode){
-                 case 0: val += inc;
-                         break;
-                 case 1: val -= inc;
-                         break;
-                 case 2: val = std::min(val, inc);
-                         break;
-                 case 3: val = std::max(val, inc);
-                         break;
-                 default: cout << "Invalid opcode\n";
-                          break;
+               case 0: val += inc;
+                       break;
+               case 2: val = std::max(val, inc);
+                       break;
+               case 3: val = std::min(val, inc);
+                       break;
+               case 4: val = inc; // update
+                       break;
+               default: cout << "Invalid opcode\n";
+                        break;
              }
              _accel->write_scratchpad(scr_addr, &val, sizeof(SBDT),stream.id());
 
              stream._num_strides--;
-
+             if(SB_DEBUG::SB_COMP) {
+               std::cout << "stream strides left are: " << stream._num_strides;
+             }
              stream.inc_val_index();
              stream.inc_addr_index();
+
              // pop only if index in word is last?
              if(stream.can_pop_val()) {
                stream._cur_val_index=0;
                out_val.pop_out_data();
+               if(SB_DEBUG::SB_COMP) {
+                 std::cout << "\tpopped data from val port";
+               }
              }
              if(stream.can_pop_addr()) {
                stream._cur_addr_index=0;
                out_addr.pop_out_data();
+               if(SB_DEBUG::SB_COMP) {
+                 std::cout << "\tpopped data from addr port";
+               }
+             }
+             if(SB_DEBUG::SB_COMP) {
+               std::cout << "\n";
              }
              // std::cout <<  "iters left are: " << stream._num_strides << "\n";
              // std::cout << "out_addr mem_size: " << out_addr.mem_size() << " and data: " << out_val.mem_size() << "\n";
              // should be decremented after every computation
+             // new loop added for vector ports
+             if(out_addr.mem_size() > 0 && out_val.mem_size() > 0) {
+               loc = out_addr.peek_out_data();
+               if(SB_DEBUG::SB_COMP) {
+                 std::cout << "64-bit value at the addr port is: " << loc;
+               }
+               loc = stream.cur_addr(loc);
 
-             /*
-             if(out_addr.mem_size() > 0 && out_val.mem_size() > 0) { // enough in src and dest
-               loc = out_addr.pop_out_data();
-               scr_addr = base_addr + loc*sizeof(SBDT);
+               scr_addr = base_addr + loc*stream._value_bytes; 
                max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
              }
-             */
-
 
              bytes_written+=DATA_WIDTH;
              _accel->_stat_scr_bytes_wr+=DATA_WIDTH;
