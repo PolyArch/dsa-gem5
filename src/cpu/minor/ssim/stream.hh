@@ -915,7 +915,8 @@ struct indirect_stream_t : public indirect_base_stream_t {
   virtual void print_status() {  
     std::cout << "ind_port->port" << "\tind_port=" << _ind_port
               << "\tind_type:" << _ind_type  << "\tind_addr:" << _index_addr
-              << "\tnum_elem:" << _num_elements << "\tin_port" << _in_port;
+              << "\tnum_elem:" << _num_elements << "\tin_port" << _in_port
+              << "\toffets:" << _offset_list;
     base_stream_t::print_status();
   }
   virtual bool stream_active() {
