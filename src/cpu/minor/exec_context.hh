@@ -513,7 +513,8 @@ class ExecContext : public ::ExecContext
             //case SB_CFG_PORT: ssim.cfg_port(
             //    thread.getSDReg(SD_CONSTANT),      thread.getSDReg(SD_IN_PORT)); 
             //break;
-            case SB_CTX: ssim.set_context(thread.getSDReg(SD_CONTEXT)); 
+            case SB_CTX: ssim.set_context(thread.getSDReg(SD_CONTEXT),
+                                          thread.getSDReg(SD_OFFSET)); 
             break;
             case SB_FILL_MODE: ssim.set_fill_mode(thread.getSDReg(SD_CONSTANT)); 
             break;

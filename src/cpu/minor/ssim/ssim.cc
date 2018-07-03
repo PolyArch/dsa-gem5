@@ -208,6 +208,7 @@ void ssim_t::add_bitmask_stream(base_stream_t* s, uint64_t ctx) {
   //patch with implicit stuff
   s->set_fill_mode(_fill_mode);
   s->set_id();
+  s->set_context_offset(_context_offset);
 
   //Check if not active!
   if(debug && (SB_DEBUG::SB_COMMAND)  ) {
@@ -281,11 +282,12 @@ void ssim_t::timestamp_context() {
 
 
 // ----------------------- STREAM COMMANDS ------------------------------------
-void ssim_t::set_context(uint64_t context) {
+void ssim_t::set_context(uint64_t context, uint64_t offset) {
   if(debug && (SB_DEBUG::SB_CONTEXT)  ) {
     cout << "Set Context: " << std::hex << context << std::dec << "\n";
   }
 
+  _context_offset = offset;
   _context_bitmask = context;
   _ever_used_bitmask |= context;
 }

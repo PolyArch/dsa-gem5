@@ -28,7 +28,7 @@ public:
   // Interface from instructions to streams
   // IF SB_TIMING, these just send the commands to the respective controllers
   // ELSE, they carry out all operations that are possible at that point
-  void set_context(uint64_t context);
+  void set_context(uint64_t context, uint64_t offset);
   void set_fill_mode(uint64_t mode);
   void req_config(addr_t addr, int size);
   void load_dma_to_scratch(addr_t mem_addr, uint64_t stride, uint64_t acc_size,
@@ -178,6 +178,7 @@ private:
   unsigned _which_shr=0;
 
   Minor::MinorDynInstPtr _cur_minst;
+  uint64_t _context_offset=0; //no offset between addresses
   uint64_t _context_bitmask=1; //core 1 active
   uint64_t _ever_used_bitmask=1; //bitmask if core ever used
 

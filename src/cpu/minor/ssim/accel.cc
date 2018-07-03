@@ -1825,6 +1825,8 @@ bool dma_controller_t::schedule_dma_port(dma_port_stream_t& new_s) {
   for(auto& s : _dma_port_streams) {
     if(s.empty()) {
       s=new_s;
+      //UPDATE CONTEXT ADDRESS FOR SIMT-STYLE DMA INTERACTIONS
+      s._mem_addr += _accel->accel_index() * new_s.ctx_offset();
       return true;
     }
   }
@@ -1834,6 +1836,9 @@ bool dma_controller_t::schedule_dma_port(dma_port_stream_t& new_s) {
 bool dma_controller_t::schedule_dma_scr(dma_scr_stream_t& new_s) {
   if(_dma_scr_stream.empty()) {
     _dma_scr_stream=new_s;
+
+    //UPDATE CONTEXT ADDRESS FOR SIMT-STYLE DMA INTERACTIONS
+    _dma_scr_stream._mem_addr += _accel->accel_index() * new_s.ctx_offset();
     return true;
   }
   return false;
@@ -1843,6 +1848,9 @@ bool dma_controller_t::schedule_port_dma(port_dma_stream_t& new_s) {
   for(auto& s : _port_dma_streams) {
     if(s.empty()) {
       s=new_s;
+
+      //UPDATE CONTEXT ADDRESS FOR SIMT-STYLE DMA INTERACTIONS
+      s._mem_addr += _accel->accel_index() * new_s.ctx_offset();
       return true;
     }
   }
@@ -1874,6 +1882,7 @@ bool scratch_read_controller_t::schedule_scr_scr(scr_scr_stream_t& new_s) {
     if(s.empty()) {
       s=new_s; //copy the values
       //cout << s._remote_stream << " became " << &s << "\n";
+
       s._remote_stream->_remote_stream = &s;//update pointer to remote
       //cout << "hooked up writer to stable reader\n";
       return true;
@@ -1895,6 +1904,8 @@ bool scratch_read_controller_t::schedule_scr_port(scr_port_stream_t& new_s) {
 bool scratch_read_controller_t::schedule_scr_dma(scr_dma_stream_t& new_s) {
   if(_scr_dma_stream.empty()) {
     _scr_dma_stream=new_s;
+    //UPDATE CONTEXT ADDRESS FOR SIMT-STYLE DMA INTERACTIONS
+    _scr_dma_stream._mem_addr += _accel->accel_index() * new_s.ctx_offset();
     return true;
   }
   return false;
