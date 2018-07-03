@@ -1024,13 +1024,13 @@ struct atomic_scr_stream_t : public mem_stream_base_t {
   bool can_pop_val(){
     // std::cout << "_cur_val_index: " << _cur_val_index << " values in word: " << _values_in_word << "\n";
     bool can_pop = (_cur_val_index==_values_in_word);
-    if(can_pop) { _cur_val_index=0; }
+    // if(can_pop) { _cur_val_index=0; }
     return can_pop;
   }
   bool can_pop_addr(){
     // std::cout << "_cur_addr_index: " << _cur_addr_index << " values in word: " << _addr_in_word << "\n";
     bool can_pop = (_cur_addr_index==_addr_in_word);
-    if(can_pop) { _cur_addr_index=0; }
+    // if(can_pop) { _cur_addr_index=0; }
     return can_pop;
 
   }

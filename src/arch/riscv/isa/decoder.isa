@@ -913,9 +913,9 @@ decode QUADRANT default Unknown::unknown() {
                     xc->callSDFunc(SB_CONST_SCR);
                 }}, uint64_t, IsSDStream, IsNonSpeculative, No_OpClass);
                 0x7: sb_cfg_atom_op({{
-                    xc->setSDReg(imm>>10, SD_IND_TYPE); 
-                    xc->setSDReg((imm>>8)&0x3, SD_DTYPE); 
-                    xc->setSDReg(imm&0xFF, SD_ADDR_TYPE); 
+                    xc->setSDReg(imm>>4, SD_IND_TYPE); 
+                    xc->setSDReg((imm>>2)&0x3, SD_DTYPE); 
+                    xc->setSDReg(imm&0x3, SD_ADDR_TYPE); 
                 }}, No_OpClass);
 
             }
