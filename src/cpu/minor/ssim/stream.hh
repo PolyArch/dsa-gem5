@@ -94,6 +94,7 @@ struct base_stream_t {
   uint64_t requests()     {return _reqs;}
 
   virtual uint64_t mem_addr()    {return 0;}  
+  virtual uint64_t ctx_offset()  {return _ctx_offset;}  
   virtual int64_t  access_size() {return 0;}  
   virtual int64_t  stride()      {return 0;} 
   virtual uint64_t scratch_addr(){return 0;} 
@@ -125,6 +126,7 @@ struct base_stream_t {
   Minor::MinorDynInstPtr minst() {return _minst;}
 
   void set_fill_mode(uint32_t mode) {_fill_mode = mode;}
+  void set_context_offset(uint64_t offset) {_ctx_offset = offset;}
 
 protected:
   int      _id=0;
@@ -132,6 +134,7 @@ protected:
   bool _empty=false; //presumably, when we create this, it won't be empty
   Minor::MinorDynInstPtr _minst;
   uint64_t _reqs=0;
+  uint64_t _ctx_offset=0;
 };
 
 

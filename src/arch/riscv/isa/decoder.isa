@@ -821,6 +821,7 @@ decode QUADRANT default Unknown::unknown() {
                     } else {
                       xc->setSDReg(imm,SD_CONTEXT);
                     }
+                    xc->setSDReg(Rs2,SD_OFFSET);
                     xc->callSDFunc(SB_CTX);
                 }}, IsSDParam, IsNonSpeculative, No_OpClass);
                 0x3: sb_fill_mode({{
