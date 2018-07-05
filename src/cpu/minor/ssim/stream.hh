@@ -1002,10 +1002,16 @@ struct atomic_scr_stream_t : public mem_stream_base_t {
   int64_t  access_size() {return _access_size;}  
   int64_t  stride()      {return _stride;} 
 
+  uint64_t cur_offset(){
+    // return (loc >> ((_addr_in_word - _cur_addr_index - 1)*_value_bytes*8)) & _addr_mask;
+    // extracting from right (least significant bits)
+    return (mem_addr() >> (_cur_addr_index*_addr_bytes*8)) & _addr_mask;
+  }
   uint64_t cur_addr(uint64_t loc){
     // return (loc >> ((_addr_in_word - _cur_addr_index - 1)*_value_bytes*8)) & _addr_mask;
     // extracting from right (least significant bits)
-    return (loc >> (_cur_addr_index*_value_bytes*8)) & _addr_mask;
+    // return (loc >> (_cur_addr_index*_value_bytes*8)) & _addr_mask;
+    return (loc >> (_cur_addr_index*_addr_bytes*8)) & _addr_mask;
   }
   uint64_t cur_val(uint64_t val){
     // return (val >> ((_values_in_word - _cur_val_index - 1)*_value_bytes*8)) & _value_mask;

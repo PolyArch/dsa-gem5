@@ -723,7 +723,8 @@ class scratch_write_controller_t : public data_controller_t {
     _bufs.push_back(&_buf_dma_write);
     _bufs.push_back(&_buf_shs_write);
     mask.resize(SCR_WIDTH/DATA_WIDTH);
-    _port_scr_streams.resize(8); 
+    _port_scr_streams.resize(8);
+    _atomic_scr_issued_requests.resize(NUM_SCRATCH_BANKS);
 
     if(is_shared()) {
       _scr_scr_streams.resize(NUM_ACCEL); 
@@ -789,6 +790,8 @@ class scratch_write_controller_t : public data_controller_t {
   
   // for atomic_stream
   bool atomic_scr_streams_active();
+  // streams issued but not executed because of bank conflicts
+  bool atomic_scr_issued_requests_active();
 
   bool scr_scr_streams_active();
   bool port_scr_streams_active();
@@ -808,11 +811,20 @@ class scratch_write_controller_t : public data_controller_t {
   int max_src=0;
   int _which=0;
 
+  struct atomic_scr_op_req{
+    addr_t _scr_addr;
+    SBDT _inc;
+    int _opcode;
+    int _value_bytes;
+  };
+
   std::vector<scr_scr_stream_t> _scr_scr_streams; 
   std::vector<port_scr_stream_t> _port_scr_streams; 
   // std::vector<const_scr_stream_t> _const_scr_streams; 
   const_scr_stream_t _const_scr_stream;  
   std::vector<atomic_scr_stream_t> _atomic_scr_streams; 
+  // TODO: add request queue max size
+  std::vector<std::queue<atomic_scr_op_req>> _atomic_scr_issued_requests;
   dma_controller_t* _dma_c;
 };
 
@@ -1385,8 +1397,7 @@ private:
   int _cgra_issued;
   std::vector<bool> _cgra_prev_issued_group[NUM_GROUPS];
   //uint64_t _delay_group_until[NUM_GROUPS]={0,0,0,0,0,0};
-
-
+    
   //* Stats
   uint64_t _stat_comp_instances = 0;
   uint64_t _stat_cgra_busy_cycles = 0;
@@ -1394,6 +1405,7 @@ private:
   uint64_t _stat_scratch_write_bytes = 0;
   uint64_t _stat_scratch_reads = 0;
   uint64_t _stat_scratch_writes = 0;
+  // uint64_t _stat_scratch_bank_conflicts = 0;
 
   uint64_t _stat_commands_issued = 0;
 
