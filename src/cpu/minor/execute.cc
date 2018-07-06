@@ -895,7 +895,7 @@ void Execute::timeout_check(bool should_commit, MinorDynInstPtr inst) {
   uint64_t last_event = std::max(last_sd_issue, 
                         ssim.forward_progress_cycle());
   if(!should_commit) {
-    if(cyc > 995 + last_event) {
+    if(cyc > 9990 + last_event) {
       DPRINTF(SD,"Almost Aborting because of wait", *inst);
     }
 
