@@ -3799,11 +3799,13 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
   _pdg=_sched->sbpdg(); //now we have the pdg!
 
   //Lets print it for debugging purposes
-  std::ofstream ofs("viz/reconstructed.dot", std::ios::out);
+  std::ofstream ofs("viz/dfg-reconstructed.dot", std::ios::out);
   if(!ofs.good()) {
     cerr << "WARNING: viz/ folder not created\n";
   }
   _pdg->printGraphviz(ofs);
+
+  _sched->printGraphviz("viz/sched-reconstructed.gv");
 
   _soft_config.out_ports_lat.resize(64); // make this bigger if we need
 
@@ -3895,6 +3897,9 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
     }
   }
 
+  int max_lat_mis = _sched->decode_lat_mis();
+  std::cout << "fifo:" << _fu_fifo_len << " lat_mis:" << max_lat_mis << "\n";
+
   for(int g = 0; g < NUM_GROUPS; ++g) {
     auto& active_ports=_soft_config.in_ports_active_group[g];
     auto& active_out_ports=_soft_config.out_ports_active_group[g];
@@ -3902,16 +3907,11 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
     if(active_ports.size() > 0) {
 
       int thr = _pdg->maxGroupThroughput(g);
-      int max_lat_mis = _sched->max_lat_mis();
-
-      int max_lat;
-      _sched->calcLatency(max_lat, max_lat_mis, false);
 
       float thr_ratio = 1/(float)thr;
       float mis_ratio = ((float)_fu_fifo_len)/(_fu_fifo_len+max_lat_mis);
 
       //std::cout << g << ": " << thr_ratio << " " << mis_ratio << "\n";
-      //std::cout << _fu_fifo_len << " " << max_lat_mis << "\n";
 
       //setup the rate limiting structures
       if(thr_ratio < mis_ratio) { //group throughput is worse
