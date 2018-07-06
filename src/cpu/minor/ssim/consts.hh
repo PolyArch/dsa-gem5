@@ -6,6 +6,7 @@ typedef uint64_t addr_t;
 #define SBDT uint64_t           //cgra datatype
 #define DATA_WIDTH sizeof(SBDT)
 #define SCRATCH_SIZE (16384) //size in bytes -- 16KB
+#define NUM_SCRATCH_BANKS 64
 
 #define SB_TIMING
 

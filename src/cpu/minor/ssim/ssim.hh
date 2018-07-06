@@ -78,6 +78,7 @@ public:
   void set_in_use() {
     if(!_in_use) {
       if(SB_DEBUG::SB_COMMAND || SB_DEBUG::SB_ROI) {
+        timestamp();
         std::cout << "SSIM in use\n";
       }
     }
@@ -98,6 +99,17 @@ public:
 
   bool in_roi() {return _in_roi;}
   void roi_entry(bool enter);
+
+  /* To get prepared to enter ROI. */
+  void setup_stat_cycle();
+
+  /* After entering the ROI, updates the status of starting and ending cycle so that
+   * we can ignore those "white bubbles". */
+  void update_stat_cycle();
+
+  /* If it does not use any SB code, it will do normal ROI statistics.
+   * O.W it ignores those "white bubbles". */
+  void cleanup_stat_cycle();
 
   void timestamp(); //print timestamp
   void timestamp_index(int i); //print timestamp
@@ -201,6 +213,7 @@ private:
   uint64_t _times_roi_entered=0;
   uint64_t _orig_stat_start_cycle = 0;
   uint64_t _stat_start_cycle = 0;
+  uint64_t _roi_enter_cycle = 0;
   uint64_t _stat_stop_cycle = 0;
   uint64_t _roi_cycles=0;
 

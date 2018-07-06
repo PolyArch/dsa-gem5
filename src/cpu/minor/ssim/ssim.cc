@@ -579,6 +579,27 @@ uint64_t ssim_t::now() {
   return _lsq->get_cpu().curCycle();
 }
 
+void ssim_t::update_stat_cycle() {
+  assert(in_roi());
+  if (_stat_start_cycle == ~0ull) {
+    _stat_start_cycle = now();
+  } else {
+    _stat_stop_cycle = now();
+  }
+}
+
+void ssim_t::setup_stat_cycle() {
+  _stat_start_cycle = ~0ull;
+  _roi_enter_cycle = now();
+}
+
+void ssim_t::cleanup_stat_cycle() {
+  if (_stat_start_cycle == ~0ull) {
+    _stat_start_cycle = _roi_enter_cycle;
+    _stat_stop_cycle = now();
+  }
+}
+
 // ------------------------- TIMING ---------------------------------
 void ssim_t::roi_entry(bool enter) {
   if(enter) {
@@ -590,12 +611,11 @@ void ssim_t::roi_entry(bool enter) {
     if(_orig_stat_start_cycle==0) {
       _orig_stat_start_cycle=now();
     }
-    _stat_start_cycle=now();
+    setup_stat_cycle();
     clock_gettime(CLOCK_REALTIME,&_start_ts);
     _in_roi=true;
     _times_roi_entered+=1;
   } else {
-    _stat_stop_cycle=now();
     clock_gettime(CLOCK_REALTIME,&_stop_ts);
     _elapsed_time_in_roi += 1000000000 * (_stop_ts.tv_sec - _start_ts.tv_sec) +
                                           _stop_ts.tv_nsec - _start_ts.tv_nsec;
@@ -605,7 +625,7 @@ void ssim_t::roi_entry(bool enter) {
       cout << "Exiting ROI ------------";
       cout << "(" << _stat_start_cycle << "to" << _stat_stop_cycle << ")\n";
     }
-
+    
     _roi_cycles += _stat_stop_cycle - _stat_start_cycle;
     _in_roi=false;
   }
