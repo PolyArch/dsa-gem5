@@ -676,6 +676,8 @@ void accel_t::tick() {
   }
 
   if(in_roi()) {
+    get_ssim()->update_stat_cycle();
+
     if(SB_DEBUG::CYC_STAT && _accel_index==SB_DEBUG::ACC_INDEX) {
       cycle_status();
     }
@@ -3766,7 +3768,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
     //cout << "\n";
   }
 
-   assert(_in_config==true);
+   assert(_in_config);
   _in_config=false;
 
   _soft_config.reset(); //resets to no configuration
