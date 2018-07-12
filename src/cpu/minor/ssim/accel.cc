@@ -3904,11 +3904,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
   _sched = new Schedule(_sbconfig);
   //assert(_sched);
   
-  for(int i = 0; i < size; ++i) { //load in 64bit slices
-    _sched->slices().write(i,bits[i]);           
-  }
- 
-  _soft_config.inst_histo = _sched->interpretConfigBits();
+   _soft_config.inst_histo = _sched->interpretConfigBits(size, bits);
 
   _pdg=_sched->sbpdg(); //now we have the pdg!
 
@@ -3931,14 +3927,12 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
   _soft_config.output_pdg_node.resize(NUM_GROUPS);
   _soft_config.group_thr.resize(NUM_GROUPS);
 
-  // Associating the PDG Nodes from the configuration bits, with the vector ports defined by the hardware
-  for(auto& port_pair : _sbconfig->subModel()->io_interf().in_vports) {
-    int i = port_pair.first; //index of port
-
-    if(_sched->slices().read_slice(0,i,i)) {
+  for(int ind = 0; ind < _pdg->num_vec_input(); ++ind) {
+      SbPDG_Vec* vec_in = _pdg->vec_in(ind);
+      int i = _sched->vecPortOf(vec_in).second;
+        
       _soft_config.in_ports_active.push_back(i); //activate input vector port
 
-      SbPDG_Vec* vec_in = _sched->vportOf(make_pair(true/*input*/,i));
       SbPDG_VecInput* vec_input = dynamic_cast<SbPDG_VecInput*>(vec_in);
       assert(vec_input);
 
@@ -3970,16 +3964,14 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
         }
       }
       _soft_config.input_pdg_node[group_ind].push_back(pdg_inputs);
-    }
   }
 
-  for(auto& port_pair : _sbconfig->subModel()->io_interf().out_vports) {
-    int i = port_pair.first; //index of port
+  for(int ind = 0; ind < _pdg->num_vec_output(); ++ind) {
+      SbPDG_Vec* vec_out = _pdg->vec_out(ind);
+      int i = _sched->vecPortOf(vec_out).second;
 
-    if(_sched->slices().read_slice(1,i,i)) { //activate output port
       _soft_config.out_ports_active.push_back(i);
 
-      SbPDG_Vec* vec_out = _sched->vportOf(make_pair(false/*input*/,i));
       SbPDG_VecOutput* vec_output = dynamic_cast<SbPDG_VecOutput*>(vec_out);
       assert(vec_output);
 
@@ -4008,7 +4000,6 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
       }
       _soft_config.out_ports_lat[i]=max_lat;
       _soft_config.output_pdg_node[group_ind].push_back(pdg_outputs);
-    }
   }
 
   int max_lat_mis = _sched->decode_lat_mis();
