@@ -1405,7 +1405,8 @@ private:
   uint64_t _stat_scratch_write_bytes = 0;
   uint64_t _stat_scratch_reads = 0;
   uint64_t _stat_scratch_writes = 0;
-  // uint64_t _stat_scratch_bank_conflicts = 0;
+  uint64_t _stat_total_scratch_bank_requests = 0;
+  uint64_t _stat_total_scratch_bank_conflicts = 0;
 
   uint64_t _stat_commands_issued = 0;
 
