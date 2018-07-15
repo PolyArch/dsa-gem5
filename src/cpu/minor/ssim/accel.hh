@@ -52,6 +52,8 @@ public:
   uint64_t cur_config_addr;
 
   std::vector<int> in_ports_active;
+  std::vector<int> in_ports_active_backcgra; // which inputs triggered by backcgra
+
   std::vector<int> out_ports_active;
 
   //In ports active by group
@@ -60,7 +62,7 @@ public:
 
   std::vector<std::pair<int,int>> group_thr;
 
-  std::vector<int> in_ports_active_plus;
+  std::vector<int> in_ports_active_plus; //includes indirect ports as well
   std::vector<int> out_ports_active_plus;
 
   std::vector<int> in_port_delay; //delay ports -- no longer used
@@ -69,7 +71,7 @@ public:
 
   std::vector<bool> cgra_in_ports_active;
 
-  //input pdg nodes for group, vec, port
+  //input pdg nodes for [group][vec][port]
   std::vector<std::vector<std::vector<SbPDG_Input*>>>  input_pdg_node; 
   std::vector<std::vector<std::vector<SbPDG_Output*>>> output_pdg_node;
 
@@ -1140,8 +1142,10 @@ private:
   ssim_t* _ssim;
   Minor::LSQ* _lsq;
   std::ofstream in_port_verif, out_port_verif, scr_wr_verif, scr_rd_verif, cmd_verif;
-  std::ofstream cgra_multi_verif[NUM_ACCEL+1];
+  std::ofstream cgra_multi_verif;
   bool _cleanup_mode=false;
+
+  std::ostream* _cgra_dbg_stream=NULL;
 
   //softsim_interf_t* _sim_interf;
   //SBDT ld_mem8(addr_t addr,uint64_t& cycle, Minor::MinorDynInstPtr m) 

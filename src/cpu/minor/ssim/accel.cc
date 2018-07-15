@@ -352,8 +352,8 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
   ugh += system("mkdir -p viz/");
 
 
-  if(SB_DEBUG::VERIF_MEM || SB_DEBUG::VERIF_PORT || SB_DEBUG::VERIF_CGRA || SB_DEBUG::VERIF_CGRA_MULTI || SB_DEBUG::VERIF_SCR ||
-     SB_DEBUG::VERIF_CMD) {
+  if(SB_DEBUG::VERIF_MEM || SB_DEBUG::VERIF_PORT || SB_DEBUG::VERIF_CGRA || 
+     SB_DEBUG::VERIF_SCR || SB_DEBUG::VERIF_CMD) {
     ugh += system("mkdir -p verif/");
     cout << "DUMPING VERIFICATION OUTPUTS (dir: verif/) ... SIMULATION WILL BE SLOWER\n";
     cout << "ALSO, MEMORY ACCESS STATISTICS MAY DIFFER\n";
@@ -380,14 +380,16 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
                         ofstream::trunc | ofstream::out);
     assert(cmd_verif.is_open());
   }
-  if(SB_DEBUG::VERIF_CGRA_MULTI) {
+
+  _cgra_dbg_stream = &std::cout;
+
+  if(SB_DEBUG::VERIF_CGRA) {
     SB_DEBUG::SB_COMP=1;
-    for(int i = 0; i < NUM_ACCEL; ++i) { 
-      cgra_multi_verif[i].open(("verif/" + SB_DEBUG::verif_name + "cgra_comp" 
-                               + std::to_string(i) + ".txt").c_str(),
-                                 ofstream::trunc | ofstream::out);
-      assert(cgra_multi_verif[i].is_open());
-    }
+    cgra_multi_verif.open(("verif/" + SB_DEBUG::verif_name 
+          + "cgra_comp" + std::to_string(_accel_index) + ".txt").c_str(),
+                               ofstream::trunc | ofstream::out);
+    assert(cgra_multi_verif.is_open());
+    _cgra_dbg_stream = &cgra_multi_verif;
   }
 
   const char* fifo_len_str = std::getenv("FU_FIFO_LEN");
@@ -760,13 +762,11 @@ uint64_t accel_t::receive(int out_port) {
    return val;
 }
 
-void accel_t::cycle_cgra_backpressure() {
-  ostream* cgra_dbg_stream = &std::cout;
-  if(SB_DEBUG::VERIF_CGRA_MULTI) {
-    cgra_dbg_stream = &cgra_multi_verif[_accel_index];
-  }
-  _pdg->set_dbg_stream(cgra_dbg_stream);
+// Simulate the portion of the dataflow graph which requires either
+// 1. backpressure, or 2. temporal sharing.
+// Ports relevant for this simulation this are called "active_in_ports_bp"
 
+void accel_t::cycle_cgra_backpressure() {
   bool print = false;
   if(SB_DEBUG::SB_COMP) {
     print = true;
@@ -775,7 +775,7 @@ void accel_t::cycle_cgra_backpressure() {
   }
 
   int num_computed = 0;
-  auto& active_in_ports=_soft_config.in_ports_active;
+  auto& active_in_ports=_soft_config.in_ports_active_backcgra;
 
   // for stats, this may make simulation slower--have separate mode for it: TODO
   int count_avail;
@@ -783,7 +783,8 @@ void accel_t::cycle_cgra_backpressure() {
   for (int i=0; i < active_in_ports.size(); ++i) {
     int port_index = active_in_ports[i];
     auto& cur_in_port = _port_interf.in_port(port_index);
-    SbPDG_VecInput* vec_in = dynamic_cast<SbPDG_VecInput*>(_sched->vportOf(make_pair(true/*input*/,port_index)));
+    SbPDG_VecInput* vec_in = dynamic_cast<SbPDG_VecInput*>(
+        _sched->vportOf(make_pair(true/*input*/,port_index)));
     assert(vec_in!=NULL && "input port pointer is null\n");
     // flag is true if data is available at this port
     if (cur_in_port.num_ready()) { 
@@ -909,6 +910,7 @@ void accel_t::cycle_cgra_backpressure() {
 void accel_t::cycle_cgra_fixedtiming() {
   uint64_t cur_cycle = now();
   for(int group = 0; group < NUM_GROUPS; ++group) {
+    if(_pdg->group_prop(group).is_temporal) continue; //break out 
     std::vector<bool>& prev_issued_group = _cgra_prev_issued_group[group];
     //int mod_index = cur_cycle%prev_issued_group.size();
 
@@ -963,8 +965,8 @@ void accel_t::cycle_cgra_fixedtiming() {
         }
       }
     }
-
   }
+
   //some previously produced outputs might be ready at this point,
   //so, lets quickly check. (could be broken out as a separate function)
   if(!_cgra_output_ready.empty()) {
@@ -988,6 +990,7 @@ void accel_t::cycle_cgra() {
   if(_back_cgra) {
     cycle_cgra_backpressure();
   } else {
+    cycle_cgra_backpressure();
     cycle_cgra_fixedtiming();
   }
   if(in_roi()) {
@@ -997,14 +1000,10 @@ void accel_t::cycle_cgra() {
 
 
 void accel_t::execute_pdg(unsigned instance, int group) {
-  ostream* cgra_dbg_stream = &std::cout;
-  if(SB_DEBUG::VERIF_CGRA_MULTI) {
-    cgra_dbg_stream = &cgra_multi_verif[_accel_index];
-  }
   if(SB_DEBUG::SB_COMP) {
-    *cgra_dbg_stream << "inputs (group" << group << "):";
+    *_cgra_dbg_stream << "inputs (group" << group << "):";
   }
-  _pdg->set_dbg_stream(cgra_dbg_stream);
+  _pdg->set_dbg_stream(_cgra_dbg_stream);
 
   auto& active_ports=_soft_config.in_ports_active_group[group];
 
@@ -1029,8 +1028,8 @@ void accel_t::execute_pdg(unsigned instance, int group) {
       _soft_config.input_pdg_node[group][i][port_idx]->set_value(val,valid);  
       
       if(SB_DEBUG::SB_COMP) {
-        if(valid) *cgra_dbg_stream << std::hex << val << ", " << std::dec;
-        else      *cgra_dbg_stream << "inv, ";
+        if(valid) *_cgra_dbg_stream << std::hex << val << ", " << std::dec;
+        else      *_cgra_dbg_stream << "inv, ";
       }
 
       if(SB_DEBUG::VERIF_PORT) {
@@ -1057,7 +1056,7 @@ void accel_t::execute_pdg(unsigned instance, int group) {
   bool print = false;
   if(SB_DEBUG::SB_COMP) {
     print = true;
-    *cgra_dbg_stream  <<"\n";
+    *_cgra_dbg_stream  <<"\n";
   }
 
   if(SB_DEBUG::VERIF_PORT) {
@@ -1095,7 +1094,7 @@ void accel_t::execute_pdg(unsigned instance, int group) {
       cur_out_port.push_cgra_port(port_idx, val, valid);  //retreive from last inst
 
       if(SB_DEBUG::SB_COMP) {
-        *cgra_dbg_stream << "output:" << hex << val << ", valid:" << valid 
+        *_cgra_dbg_stream << "output:" << hex << val << ", valid:" << valid 
                          << dec << "\n";
       }
  
@@ -1338,10 +1337,8 @@ void accel_t::print_statistics(std::ostream& out) {
    if(SB_DEBUG::VERIF_CMD) {
      cmd_verif.flush();
    }
-   if(SB_DEBUG::VERIF_CGRA_MULTI) {
-     for(int i = 0; i < NUM_ACCEL; ++i) {
-       cgra_multi_verif[i].flush();
-     }
+   if(SB_DEBUG::VERIF_CGRA) {
+       cgra_multi_verif.flush();
    }
 
 
@@ -3906,13 +3903,10 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
   _sched = new Schedule(_sbconfig);
   //assert(_sched);
   
-  for(int i = 0; i < size; ++i) { //load in 64bit slices
-    _sched->slices().write(i,bits[i]);           
-  }
- 
-  _soft_config.inst_histo = _sched->interpretConfigBits();
+   _soft_config.inst_histo = _sched->interpretConfigBits(size, bits);
 
   _pdg=_sched->sbpdg(); //now we have the pdg!
+  _pdg->set_dbg_stream(_cgra_dbg_stream); //change debug stream for pdg
 
   //Lets print it for debugging purposes
   std::ofstream ofs("viz/dfg-reconstructed.dot", std::ios::out);
@@ -3933,14 +3927,12 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
   _soft_config.output_pdg_node.resize(NUM_GROUPS);
   _soft_config.group_thr.resize(NUM_GROUPS);
 
-  // Associating the PDG Nodes from the configuration bits, with the vector ports defined by the hardware
-  for(auto& port_pair : _sbconfig->subModel()->io_interf().in_vports) {
-    int i = port_pair.first; //index of port
-
-    if(_sched->slices().read_slice(0,i,i)) {
+  for(int ind = 0; ind < _pdg->num_vec_input(); ++ind) {
+      SbPDG_Vec* vec_in = _pdg->vec_in(ind);
+      int i = _sched->vecPortOf(vec_in).second;
+        
       _soft_config.in_ports_active.push_back(i); //activate input vector port
 
-      SbPDG_Vec* vec_in = _sched->vportOf(make_pair(true/*input*/,i));
       SbPDG_VecInput* vec_input = dynamic_cast<SbPDG_VecInput*>(vec_in);
       assert(vec_input);
 
@@ -3972,16 +3964,14 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
         }
       }
       _soft_config.input_pdg_node[group_ind].push_back(pdg_inputs);
-    }
   }
 
-  for(auto& port_pair : _sbconfig->subModel()->io_interf().out_vports) {
-    int i = port_pair.first; //index of port
+  for(int ind = 0; ind < _pdg->num_vec_output(); ++ind) {
+      SbPDG_Vec* vec_out = _pdg->vec_out(ind);
+      int i = _sched->vecPortOf(vec_out).second;
 
-    if(_sched->slices().read_slice(1,i,i)) { //activate output port
       _soft_config.out_ports_active.push_back(i);
 
-      SbPDG_Vec* vec_out = _sched->vportOf(make_pair(false/*input*/,i));
       SbPDG_VecOutput* vec_output = dynamic_cast<SbPDG_VecOutput*>(vec_out);
       assert(vec_output);
 
@@ -4010,7 +4000,6 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
       }
       _soft_config.out_ports_lat[i]=max_lat;
       _soft_config.output_pdg_node[group_ind].push_back(pdg_outputs);
-    }
   }
 
   int max_lat_mis = _sched->decode_lat_mis();
@@ -4064,6 +4053,22 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
   for(unsigned i = START_IND_PORTS; i < STOP_IND_PORTS; ++i) {
     _soft_config.in_ports_active_plus.push_back(i);
     _soft_config.out_ports_active_plus.push_back(i);
+  }
+
+  //compute the in ports active for backcgra
+  if(_back_cgra) {
+    _soft_config.in_ports_active_backcgra=_soft_config.in_ports_active;
+  } else {
+    //Iterate through the groups and input vectors from temporal groups
+    //into the overall group of inputs to check for backcgra
+    for(int g = 0; g < NUM_GROUPS; ++g) {
+      if(_pdg->group_prop(g).is_temporal) {
+        auto& active_ports=_soft_config.in_ports_active_group[g];
+        for(int i = 0; i < active_ports.size(); ++i) {
+          _soft_config.in_ports_active_backcgra.push_back(active_ports[i]);
+        }
+      }
+    }
   }
 
   ofs.close();
