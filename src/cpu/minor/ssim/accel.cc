@@ -4002,7 +4002,9 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
       _soft_config.output_pdg_node[group_ind].push_back(pdg_outputs);
   }
 
-  int max_lat_mis = _sched->decode_lat_mis();
+  int lat, lat_mis;
+  _sched->cheapCalcLatency(lat, lat_mis);
+  int max_lat_mis = lat_mis; //_sched->decode_lat_mis();
   std::cout << "fifo:" << _fu_fifo_len << " lat_mis:" << max_lat_mis << "\n";
 
   for(int g = 0; g < NUM_GROUPS; ++g) {
