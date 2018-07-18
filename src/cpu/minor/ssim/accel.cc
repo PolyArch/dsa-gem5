@@ -5,7 +5,6 @@
 #include <fstream>
 #include <iomanip>
  
-#include "consts.hh"
 #include "ssim.hh"
 #include "cpu/minor/cpu.hh"
 
