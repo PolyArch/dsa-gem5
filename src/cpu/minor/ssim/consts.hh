@@ -36,6 +36,7 @@ typedef uint64_t addr_t;
 #define START_IND_PORTS (25)
 #define STOP_IND_PORTS  (32)
 
+#define REPEAT_FXPNT (3)
 
 #define MAX_WAIT (1000) //max cycles to wait for forward progress
 

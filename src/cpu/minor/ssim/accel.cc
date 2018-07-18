@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iomanip>
  
+#include "consts.hh"
 #include "ssim.hh"
 #include "cpu/minor/cpu.hh"
 
@@ -144,10 +145,11 @@ void port_data_t::set_repeat(int r, int rs) {
 }
 
 bool port_data_t::inc_repeated() {
-  _num_times_repeated+=1;
-  if(_num_times_repeated>=_cur_repeat_lim) {
-    _num_times_repeated=0;
-    _cur_repeat_lim+=_repeat_stretch;
+  auto repeat_lim = (_cur_repeat_lim - 1) / (1 << REPEAT_FXPNT) + 1;
+  if(++_num_times_repeated >= repeat_lim) {
+    assert(_num_times_repeated == repeat_lim && "Repeat time cannot be more than repeat limit!");
+    _num_times_repeated = 0;
+    _cur_repeat_lim += _repeat_stretch;
   }
   return _num_times_repeated==0;
 }
