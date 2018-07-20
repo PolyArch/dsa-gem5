@@ -35,7 +35,7 @@ void ssim_t::req_config(addr_t addr, int size) {
     return;
   }
   
-   set_in_use();  //lets get going then..
+  set_in_use();  //lets get going then..
 
 
   //Send req_config to master accel -- TODO: is this the right decision? 

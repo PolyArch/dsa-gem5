@@ -144,10 +144,11 @@ void port_data_t::set_repeat(int r, int rs) {
 }
 
 bool port_data_t::inc_repeated() {
-  _num_times_repeated+=1;
-  if(_num_times_repeated>=_cur_repeat_lim) {
-    _num_times_repeated=0;
-    _cur_repeat_lim+=_repeat_stretch;
+  auto repeat_lim = (_cur_repeat_lim - 1) / (1 << REPEAT_FXPNT) + 1;
+  if(++_num_times_repeated >= repeat_lim) {
+    assert(_num_times_repeated == repeat_lim && "Repeat time cannot be more than repeat limit!");
+    _num_times_repeated = 0;
+    _cur_repeat_lim += _repeat_stretch;
   }
   return _num_times_repeated==0;
 }
@@ -1385,6 +1386,8 @@ void accel_t::print_statistics(std::ostream& out) {
        << ((double)_stat_sb_dfg_util)/((double)roi_cycles()) << "\n";
    out << "Data availability ratio: "
        << ((double)_stat_sb_data_avail_ratio)/((double)roi_cycles()) << "\n";
+   out << "Percentage bank conflicts: "
+       << ((double)_stat_total_scratch_bank_conflicts)/((double)_stat_total_scratch_bank_requests) << "\n";
    out << "Allowed input port consumption rate: ";
    for(int i=0; i<NUM_OUT_PORTS; ++i){
      out << ((double)_slot_avail[i]/(double)roi_cycles()) << ", ";
@@ -2220,6 +2223,9 @@ void dma_controller_t::print_status() {
     _dma_scr_stream.print_status();
   }
   for(auto& i : _port_dma_streams) {if(!i.empty()){i.print_status();}}
+  for(auto& i : _indirect_streams) {if(!i.empty()){i.print_status();}}
+  for(auto& i : _indirect_wr_streams) {if(!i.empty()){i.print_status();}}
+
 //  _scr_dma_stream.finish_cycle();
 }
 
@@ -2398,12 +2404,12 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
       indirect_wr_stream_t& ind_s = _indirect_wr_streams[which_wr];
       if(ind_s.stream_active() && _accel->_lsq->canRequest() &&
           _accel->_lsq->sd_transfers[MEM_WR_STREAM].canReserve()) {
-        _accel->_lsq->sd_transfers[MEM_WR_STREAM].reserve();
 
         port_data_t& out_port = _accel->port_interf().out_port(ind_s._out_port);
         port_data_t& ind_port = _accel->port_interf().in_port(ind_s._ind_port);
 
         if(out_port.mem_size()>0 && ind_port.mem_size()>0) { 
+          _accel->_lsq->sd_transfers[MEM_WR_STREAM].reserve();
           ind_write_req(ind_s);
           return;
         }
@@ -3085,21 +3091,27 @@ void scratch_write_controller_t::cycle() {
       SBDT loc; SBDT inc;
       SBDT val = 0;
       addr_t scr_addr, max_addr;
-      int count_ops_val = 0, count_ops_addr = 0;
+      // int count_ops_val = 0, count_ops_addr = 0;
       int logical_banks = NUM_SCRATCH_BANKS;
       int opcode = 0; int bank_id = 0;
       uint64_t bytes_written=0;
+      bool bank_conflicts[NUM_SCRATCH_BANKS];
+      // added to correct bank conflict calculation
+      int num_addr_pops = 0;
 
       if(stream.stream_active()) {
          logical_banks = NUM_SCRATCH_BANKS/stream._value_bytes;
+         for (int i=0; i<logical_banks; ++i) {
+           bank_conflicts[i] = false;
+         }
          // std::cout << "And the atomic stream was active: "<< stream._num_strides << "\n";
          port_data_t& out_addr = _accel->port_interf().out_port(stream._out_port);
          port_data_t& out_val = _accel->port_interf().out_port(stream._val_port);
          addr_t base_addr = stream._mem_addr; // this is like offset
 
 
-         int no_scr_banks = 8;
-         count_ops_val = 0; count_ops_addr = 0;
+         // int no_scr_banks = 8;
+         // count_ops_val = 0; count_ops_addr = 0;
          if(out_addr.mem_size() > 0 && out_val.mem_size() > 0) { // enough in src and dest
            loc = out_addr.peek_out_data();
            if(SB_DEBUG::SB_COMP) {
@@ -3107,20 +3119,34 @@ void scratch_write_controller_t::cycle() {
              std::cout << "64-bit value at the addr port is: " << loc;
            }
            loc = stream.cur_addr(loc);
+           // std::cout << "loc: " << loc << "\n";
 
            // making offset also configurable (same configuration as the
            // address)
-           base_addr = stream.cur_offset();
+           // base_addr = stream.cur_offset();
+           base_addr = stream.cur_offset()*stream._value_bytes;
            scr_addr = base_addr + loc*stream._value_bytes; 
-           max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
+           // max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
+           max_addr = (scr_addr & stream._value_mask)+stream._value_bytes;
 
            //go while stream and port does not run out
            // number of iterations of this loop cannot be more than 8*64-bits
            // => cannot pop more than 8 values from the port
           
            while(scr_addr < max_addr && stream._num_strides>0 
-                       && out_addr.mem_size()  && out_val.mem_size()  //enough in source
-                       && count_ops_val<no_scr_banks && count_ops_addr<no_scr_banks) { // opns in 1 cycle cannot be more than the number of banks
+                       && out_addr.mem_size()  && out_val.mem_size()) {  //enough in source
+                       // && count_ops_val<no_scr_banks && count_ops_addr<no_scr_banks) { // opns in 1 cycle cannot be more than the number of banks
+                       
+             // addr = 16, val=64 bits (max = 512/64 = 8 addr
+             // = 8/(8/addr_bytes)
+             // to check 1 iteration is done: something easier would also be
+             // there
+             if(num_addr_pops==((SCR_WIDTH/stream._value_bytes)/(8/stream._addr_bytes))){
+               for (int i=0; i<logical_banks; ++i) {
+                 bank_conflicts[i] = false;
+               }
+               num_addr_pops=0;
+             }
              
              
              if(SB_DEBUG::SB_COMP) {
@@ -3143,10 +3169,27 @@ void scratch_write_controller_t::cycle() {
 
 
              // bank_id = (scr_addr >> (sizeof(addr_t)*8-(int)(log(logical_banks)/log(2)))) & (logical_banks-1);
-             bank_id = (scr_addr >> stream._value_bytes) & (logical_banks-1);
+             // this is because scratchpad is byte addressable and now we want
+             // it to be value width addressable
+             // bank_id = (scr_addr >> (int)(log(SCRATCH_SIZE/logical_banks)/log(2))) & (logical_banks-1);
+             // bank_id = (scr_addr >> 4) & (logical_banks-1);
+             // MAPPING FOR GBDT
+             // bank_id = (scr_addr >> 6) & (logical_banks-1);
+             bank_id = (scr_addr >> 9) & (logical_banks-1);
+             // std::cout << "scr_addr: " << scr_addr << " logical banks: " << logical_banks << "\tbank_id: " << bank_id << "\n";
+             // bank_id = (scr_addr >> (int)(log(stream._value_bytes)/log(2))) & (logical_banks-1);
+             // bank_id = (scr_addr) & (logical_banks-1);
              assert(bank_id<logical_banks);
              _atomic_scr_issued_requests[bank_id].push(temp_req);
              stream._num_strides--;
+
+             if(!bank_conflicts[bank_id]){
+               bank_conflicts[bank_id]=true;
+               _accel->_stat_total_scratch_bank_requests++;
+             } else {
+               _accel->_stat_total_scratch_bank_conflicts++;
+               _accel->_stat_total_scratch_bank_requests++;
+             }
 
              // std::cout << "SCR OP request pushed is, addr: " << temp_req._scr_addr << " inc: " << temp_req._inc << " _value_bytes: " << temp_req._value_bytes << " and bank_id: " << bank_id << "\n";
              if(SB_DEBUG::SB_COMP) {
@@ -3154,33 +3197,6 @@ void scratch_write_controller_t::cycle() {
                std::cout << "stream strides left are: " << stream._num_strides << "\n";
              }
 
-             /*
-               // _accel->read_scratchpad(&val, scr_addr, DATA_WIDTH, stream.id());
-               _accel->read_scratchpad(&val, scr_addr, stream._value_bytes, stream.id());
-
-               opcode = stream._op_code;
-
-               switch(opcode){
-                 case 0: val += inc;
-                         break;
-                 case 1: val = std::max(val, inc);
-                         break;
-                 case 2: val = std::min(val, inc);
-                         break;
-                 case 3: val = inc; // update
-                         break;
-                 default: cout << "Invalid opcode\n";
-                          break;
-               }
-               // _accel->write_scratchpad(scr_addr, &val, sizeof(SBDT),stream.id());
-               _accel->write_scratchpad(scr_addr, &val, stream._value_bytes,stream.id());
-
-               stream._num_strides--;
-
-               if(SB_DEBUG::SB_COMP) {
-                 std::cout << "stream strides left are: " << stream._num_strides;
-               }
-             */
              stream.inc_val_index();
              stream.inc_addr_index();
 
@@ -3188,15 +3204,14 @@ void scratch_write_controller_t::cycle() {
              if(stream.can_pop_val()) {
                stream._cur_val_index=0;
                out_val.pop_out_data();
-               count_ops_val++;
                if(SB_DEBUG::SB_COMP) {
                  std::cout << "\tpopped data from val port";
                }
              }
              if(stream.can_pop_addr()) {
                stream._cur_addr_index=0;
+               num_addr_pops++;
                out_addr.pop_out_data();
-               count_ops_addr++;
                if(SB_DEBUG::SB_COMP) {
                  std::cout << "\tpopped data from addr port";
                }
@@ -3212,28 +3227,18 @@ void scratch_write_controller_t::cycle() {
                  std::cout << "64-bit value at the addr port is: " << loc;
                }
                loc = stream.cur_addr(loc);
+               // std::cout << "loc: " << loc << "\n";
                // making offset also configurable (same configuration as the
                // address)
-               base_addr = stream.cur_offset();
+               base_addr = stream.cur_offset()*stream._value_bytes;
 
+               // scr_addr = base_addr + loc*stream._value_bytes; 
                scr_addr = base_addr + loc*stream._value_bytes; 
-               max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
+               // max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
+               max_addr = (scr_addr & stream._value_mask)+stream._value_bytes;
              }
-             /*
-
-             bytes_written+=DATA_WIDTH;
-             _accel->_stat_scr_bytes_wr+=DATA_WIDTH;
-             _accel->_stat_scratch_write_bytes+=DATA_WIDTH;
-             */
            }
 
-           /*
-            if(_accel->_ssim->in_roi()) {
-              add_bw(stream.src(), stream.dest(), 1, bytes_written);
-              _accel->_stat_scratch_writes+=1;
-            }
-            */
-             
             bool is_empty = stream.check_set_empty();
             if(is_empty) {
               _accel->process_stream_stats(stream);
@@ -3279,9 +3284,7 @@ void scratch_write_controller_t::cycle() {
                       break;
             }
             _accel->write_scratchpad(scr_addr, &val, request._value_bytes,stream.id());
-
-
-
+             
             bytes_written+=request._value_bytes;
             _accel->_stat_scr_bytes_wr+=request._value_bytes;
             _accel->_stat_scratch_write_bytes+=request._value_bytes;
@@ -4015,7 +4018,9 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
       _soft_config.output_pdg_node[group_ind].push_back(pdg_outputs);
   }
 
-  int max_lat_mis = _sched->decode_lat_mis();
+  int lat, lat_mis;
+  _sched->cheapCalcLatency(lat, lat_mis);
+  int max_lat_mis = lat_mis; //_sched->decode_lat_mis();
   std::cout << "fifo:" << _fu_fifo_len << " lat_mis:" << max_lat_mis << "\n";
 
   for(int g = 0; g < NUM_GROUPS; ++g) {

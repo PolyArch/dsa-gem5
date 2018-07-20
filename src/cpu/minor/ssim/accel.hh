@@ -322,7 +322,9 @@ public:
 
   void set_repeat(int r, int rs);
   
-  //returns true if wrapped
+  // Increase the times of data repeated.
+  // Return true if the value should be popped.
+  // Or more accurately, repeat time runs out.
   bool inc_repeated();
 
   uint64_t total_pushed() { return _total_pushed; }
@@ -1417,7 +1419,8 @@ private:
   uint64_t _stat_scratch_write_bytes = 0;
   uint64_t _stat_scratch_reads = 0;
   uint64_t _stat_scratch_writes = 0;
-  // uint64_t _stat_scratch_bank_conflicts = 0;
+  uint64_t _stat_total_scratch_bank_requests = 0;
+  uint64_t _stat_total_scratch_bank_conflicts = 0;
 
   uint64_t _stat_commands_issued = 0;
 
