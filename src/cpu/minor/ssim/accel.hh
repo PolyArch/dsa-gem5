@@ -1444,6 +1444,8 @@ private:
 
   bool _back_cgra=false;
 
+  // newly added
+  const char* _banked_spad_mapping_strategy = "";
 
   std::map<SB_CONFIG::sb_inst_t,int> _total_histo;
   std::map<int,int> _vport_histo;

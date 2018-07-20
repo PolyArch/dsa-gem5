@@ -419,6 +419,8 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
   if(back_cgra_str!=NULL) {
     _back_cgra=true;
   }
+
+  _banked_spad_mapping_strategy = std::getenv("MAPPING");
  
 
   _sbconfig = new SbModel(sbconfig_file);
@@ -2481,7 +2483,7 @@ void dma_controller_t::ind_read_req(indirect_stream_t& stream,
     //addr_t addr = stream._index_addr + idx * stream.index_size();
     addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
 
-    //cout << "idx:" << idx << "\taddr:" << hex << addr << dec << "\n";
+    // cout << "idx:" << idx << "\taddr:" << hex << addr << dec << "\n";
     if(first) {
       first=false;
       base_addr = addr & MEM_MASK;
@@ -2949,7 +2951,7 @@ void scratch_read_controller_t::print_status() {
 void scratch_write_controller_t::cycle() {
   
 // std::cout << " and s1: " << _port_scr_streams.size() << " and s2: " << _scr_scr_streams.size() << "max_scr: " << max_src << "\n";
-  // maybe it is like it will always be 1
+  // maybe it is like it will always be 1: always increasing????
   max_src += _accel->_const_scr_queue.size() + const_scr_streams_active();
   for(int i=0; i < max_src; ++i) {
       // shouldn't this be a last?
@@ -3071,6 +3073,7 @@ void scratch_write_controller_t::cycle() {
 
     } else { 
       // _atomic_scr_issued_requests
+      // std::cout << "NEW CYCLE\n";
       auto& stream = _atomic_scr_streams[0];
       SBDT loc; SBDT inc;
       SBDT val = 0;
@@ -3083,19 +3086,18 @@ void scratch_write_controller_t::cycle() {
       // added to correct bank conflict calculation
       int num_addr_pops = 0;
 
+      // strides left in the stream or requests left in the queue
+      // if(stream.stream_active() || atomic_scr_issued_requests_active()) {
       if(stream.stream_active()) {
          logical_banks = NUM_SCRATCH_BANKS/stream._value_bytes;
          for (int i=0; i<logical_banks; ++i) {
            bank_conflicts[i] = false;
          }
-         // std::cout << "And the atomic stream was active: "<< stream._num_strides << "\n";
          port_data_t& out_addr = _accel->port_interf().out_port(stream._out_port);
          port_data_t& out_val = _accel->port_interf().out_port(stream._val_port);
          addr_t base_addr = stream._mem_addr; // this is like offset
 
 
-         // int no_scr_banks = 8;
-         // count_ops_val = 0; count_ops_addr = 0;
          if(out_addr.mem_size() > 0 && out_val.mem_size() > 0) { // enough in src and dest
            loc = out_addr.peek_out_data();
            if(SB_DEBUG::SB_COMP) {
@@ -3105,8 +3107,7 @@ void scratch_write_controller_t::cycle() {
            loc = stream.cur_addr(loc);
            // std::cout << "loc: " << loc << "\n";
 
-           // making offset also configurable (same configuration as the
-           // address)
+           // making offset also configurable (same configuration as the address)
            // base_addr = stream.cur_offset();
            base_addr = stream.cur_offset()*stream._value_bytes;
            scr_addr = base_addr + loc*stream._value_bytes; 
@@ -3158,24 +3159,40 @@ void scratch_write_controller_t::cycle() {
              // bank_id = (scr_addr >> (int)(log(SCRATCH_SIZE/logical_banks)/log(2))) & (logical_banks-1);
              // bank_id = (scr_addr >> 4) & (logical_banks-1);
              // MAPPING FOR GBDT
-             // bank_id = (scr_addr >> 6) & (logical_banks-1);
-             bank_id = (scr_addr >> 9) & (logical_banks-1);
+             // bank_id = (scr_addr >> 9) & (logical_banks-1);
              // std::cout << "scr_addr: " << scr_addr << " logical banks: " << logical_banks << "\tbank_id: " << bank_id << "\n";
              // bank_id = (scr_addr >> (int)(log(stream._value_bytes)/log(2))) & (logical_banks-1);
+             // Mapping for SCNN
              // bank_id = (scr_addr) & (logical_banks-1);
+             
+			 // by default is row interleaving for now
+			 
+			 /*
+			 if(_accel->_banked_spad_mapping_strategy==NULL){
+			   bank_id = (scr_addr) & (logical_banks-1);
+			 } else 
+			 */
+			 // std::cout << "mapping strategy being used is: " << _accel->_banked_spad_mapping_strategy << "\n";
+			 if(strcmp(_accel->_banked_spad_mapping_strategy,"COL")==0){
+			   bank_id = (scr_addr >> 9) & (logical_banks-1);
+			 } else {
+			   bank_id = (scr_addr) & (logical_banks-1);
+			 }
+			 // if(strcmp(_accel->_banked_spad_mapping_strategy,"ROW")){
+
+
              assert(bank_id<logical_banks);
              _atomic_scr_issued_requests[bank_id].push(temp_req);
              stream._num_strides--;
 
              if(!bank_conflicts[bank_id]){
                bank_conflicts[bank_id]=true;
-               _accel->_stat_total_scratch_bank_requests++;
+               // _accel->_stat_total_scratch_bank_requests++;
              } else {
                _accel->_stat_total_scratch_bank_conflicts++;
-               _accel->_stat_total_scratch_bank_requests++;
+               // _accel->_stat_total_scratch_bank_requests++;
              }
 
-             // std::cout << "SCR OP request pushed is, addr: " << temp_req._scr_addr << " inc: " << temp_req._inc << " _value_bytes: " << temp_req._value_bytes << " and bank_id: " << bank_id << "\n";
              if(SB_DEBUG::SB_COMP) {
                std::cout << "\tvalues input: " << inc << "\tbank_id: " << bank_id << "\n";
                std::cout << "stream strides left are: " << stream._num_strides << "\n";
@@ -3234,14 +3251,12 @@ void scratch_write_controller_t::cycle() {
             }
             break;
          }
-      }
+       }
 
-      // don't know if this condition is required
-      // if(atomic_scr_issued_requests_active()){
+       // if requests are available in the bank queues
+       if(atomic_scr_issued_requests_active()){
         for(int i=0; i<logical_banks; ++i){
-          // std::cout << "CURRENT BANK ID IS: " << i << std::endl;
-          // if(!_atomic_scr_issued_requests[i].empty()){
-          if(_atomic_scr_issued_requests[i].size()>0){
+          if(!_atomic_scr_issued_requests[i].empty()){
             atomic_scr_op_req request = _atomic_scr_issued_requests[i].front();
             scr_addr = request._scr_addr;
             inc = request._inc;
@@ -3250,6 +3265,7 @@ void scratch_write_controller_t::cycle() {
 
             if(SB_DEBUG::SB_COMP) {
                std::cout << "REAL EXECUTION, update at scr_addr: " << scr_addr << " at bankid: " << i << " with inc value: " << inc << "\n";
+               std::cout << "Available requests at the bank queue are: " << _atomic_scr_issued_requests[i].size() << "\n";
             }
             _accel->read_scratchpad(&val, scr_addr, request._value_bytes, stream.id());
 
@@ -3268,6 +3284,7 @@ void scratch_write_controller_t::cycle() {
                       break;
             }
             _accel->write_scratchpad(scr_addr, &val, request._value_bytes,stream.id());
+            _accel->_stat_total_scratch_bank_requests++;
              
             bytes_written+=request._value_bytes;
             _accel->_stat_scr_bytes_wr+=request._value_bytes;
@@ -3280,17 +3297,7 @@ void scratch_write_controller_t::cycle() {
           add_bw(stream.src(), stream.dest(), 1, bytes_written);
           _accel->_stat_scratch_writes+=1;
         }
-          
-        /*
-        bool is_empty = stream.check_set_empty();
-        if(is_empty) {
-          _accel->process_stream_stats(stream);
-          if(SB_DEBUG::VP_SCORE2) {
-            cout << "SOURCE: PORT->SCR\n";
-          }
-        }
-        */
-      // }
+      }
     }
   }
 }
@@ -3696,6 +3703,7 @@ bool scratch_write_controller_t::port_scr_streams_active() {
 bool scratch_write_controller_t::atomic_scr_streams_active() {
   for(auto& i : _atomic_scr_streams) 
     if(!i.empty())  return true;
+  // return atomic_scr_issued_requests_active();
   return false;
 
   /*
@@ -3712,7 +3720,6 @@ bool scratch_write_controller_t::atomic_scr_issued_requests_active() {
       return true;
     }
   }
-  
   return false;
 }
 
@@ -3740,24 +3747,19 @@ bool scratch_write_controller_t::done(bool show, int mask) {
       if(show) cout << "CONST -> SCR Stream Not Empty\n";
       return false;
     }
-    
-    
     if(atomic_scr_streams_active()) {
       if(show) cout << "ATOMIC SCR Stream Not Empty\n";
       return false;
     }
-
     if(atomic_scr_issued_requests_active()) {
       if(show) cout << "ATOMIC SCR bank buffers Not Empty\n";
         return false;
     }
-    
   }
   if(scr_scr_streams_active()) {
     if(show) cout << "SCR -> SCR Stream Not Empty\n";
     return false;
   }
-
   return true;
 }
 
