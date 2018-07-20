@@ -144,10 +144,11 @@ void port_data_t::set_repeat(int r, int rs) {
 }
 
 bool port_data_t::inc_repeated() {
-  _num_times_repeated+=1;
-  if(_num_times_repeated>=_cur_repeat_lim) {
-    _num_times_repeated=0;
-    _cur_repeat_lim+=_repeat_stretch;
+  auto repeat_lim = (_cur_repeat_lim - 1) / (1 << REPEAT_FXPNT) + 1;
+  if(++_num_times_repeated >= repeat_lim) {
+    assert(_num_times_repeated == repeat_lim && "Repeat time cannot be more than repeat limit!");
+    _num_times_repeated = 0;
+    _cur_repeat_lim += _repeat_stretch;
   }
   return _num_times_repeated==0;
 }
@@ -4004,7 +4005,9 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
       _soft_config.output_pdg_node[group_ind].push_back(pdg_outputs);
   }
 
-  int max_lat_mis = _sched->decode_lat_mis();
+  int lat, lat_mis;
+  _sched->cheapCalcLatency(lat, lat_mis);
+  int max_lat_mis = lat_mis; //_sched->decode_lat_mis();
   std::cout << "fifo:" << _fu_fifo_len << " lat_mis:" << max_lat_mis << "\n";
 
   for(int g = 0; g < NUM_GROUPS; ++g) {
