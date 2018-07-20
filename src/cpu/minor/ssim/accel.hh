@@ -970,7 +970,7 @@ struct stream_stats_t {
 
 
 struct pipeline_stats_t {
-  enum PIPE_STATUS {CONFIG, ISSUED, ISSUED_MULTI,
+  enum PIPE_STATUS {CONFIG, ISSUED, ISSUED_MULTI, TEMPORAL_ONLY,
                     CONST_FILL, SCR_FILL, DMA_FILL, REC_WAIT,
                     CORE_WAIT, SCR_BAR_WAIT, DMA_WRITE, CMD_QUEUE, CGRA_BACK,  
                     DRAIN, NOT_IN_USE, LAST};
@@ -982,6 +982,7 @@ struct pipeline_stats_t {
         PROCESS_VAL(CONFIG);
         PROCESS_VAL(ISSUED);
         PROCESS_VAL(ISSUED_MULTI);
+        PROCESS_VAL(TEMPORAL_ONLY);
         PROCESS_VAL(CONST_FILL);
         PROCESS_VAL(SCR_FILL);
         PROCESS_VAL(DMA_FILL);
@@ -1013,6 +1014,10 @@ struct pipeline_stats_t {
     for(int i=0; i < PIPE_STATUS::LAST; ++i) {
       total+=pipe_stats[i];
     } 
+
+    if(roi_cycles < total) {
+      total=roi_cycles;
+    }
 
     pipe_stats[NOT_IN_USE]=roi_cycles - total;
 
@@ -1399,6 +1404,9 @@ private:
   //* running variables
   bool _cgra_issued_group[NUM_GROUPS];
   int _cgra_issued;
+  int _dedicated_cgra_issued;
+  int _backcgra_issued;
+
   std::vector<bool> _cgra_prev_issued_group[NUM_GROUPS];
   //uint64_t _delay_group_until[NUM_GROUPS]={0,0,0,0,0,0};
     

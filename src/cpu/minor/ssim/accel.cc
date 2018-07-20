@@ -482,7 +482,7 @@ pipeline_stats_t::PIPE_STATUS accel_t::whos_to_blame(int group) {
         case LOC::CONST: any_const=true; break;
         default: break;
       }
-    } 
+    }
     num_unknown_input+=(empty_fifo&&!assigned_ivp);
     any_input_activity|=assigned_ivp || !empty_fifo;
     all_inputs_inactive = all_inputs_inactive && empty_fifo && !assigned_ivp;
@@ -588,9 +588,13 @@ void accel_t::whos_to_blame(std::vector<pipeline_stats_t::PIPE_STATUS>& blame_ve
 
   bool draining=false, cgra_back=false;
 
+  // Temp vec are for reasons that we consider to have priority
+  // when considering blame over draining and backpressure.
   std::vector<pipeline_stats_t::PIPE_STATUS> temp_vec;
 
   for(int g = 0; g < NUM_GROUPS; ++g) {
+    if(_pdg->group_prop(g).is_temporal) continue; 
+
     pipeline_stats_t::PIPE_STATUS blame = whos_to_blame(g);
     group_vec.push_back(blame);
     switch(blame){
@@ -601,15 +605,19 @@ void accel_t::whos_to_blame(std::vector<pipeline_stats_t::PIPE_STATUS>& blame_ve
     }
   }
 
-  if(_cgra_issued >1)  {
+  if(_dedicated_cgra_issued >1)  {
     blame_vec.push_back(pipeline_stats_t::ISSUED_MULTI); 
     return;
   }
-  if(_cgra_issued==1) {
+  if(_dedicated_cgra_issued==1) {
     blame_vec.push_back(pipeline_stats_t::ISSUED); 
     return;
   }
 
+  if(_backcgra_issued!=0) {
+    blame_vec.push_back(pipeline_stats_t::TEMPORAL_ONLY); 
+    return;  
+  }
 
   if(temp_vec.size()==0) {
     if(draining) {
@@ -656,6 +664,9 @@ void accel_t::whos_to_blame(std::vector<pipeline_stats_t::PIPE_STATUS>& blame_ve
 
 void accel_t::tick() {
   _cgra_issued=0; // for statistics reasons
+  _dedicated_cgra_issued=0;
+  _backcgra_issued=0;
+
   for(int i = 0; i < NUM_GROUPS; ++i) {
     _cgra_issued_group[i]=false;
   }
@@ -861,12 +872,16 @@ void accel_t::cycle_cgra_backpressure() {
 
   
   // int num_computed = _pdg->cycle_store(print, true); // calling with the default parameters for now
-  num_computed = _pdg->cycle(print, true); // calling with the default parameters for now
+  num_computed = _pdg->cycle(print, true); // calling with the default params for now
+  if(num_computed) {
+    _cgra_issued++;
+    _backcgra_issued++;
+  }
+
   if(in_roi()) {
     _stat_sb_insts+=num_computed;
     _stat_sb_dfg_util+=(double)num_computed/_pdg->num_insts();
   }
-  _cgra_issued ++;
 
   // pop the ready outputs
   auto& active_out_ports=_soft_config.out_ports_active;
@@ -874,7 +889,6 @@ void accel_t::cycle_cgra_backpressure() {
   vector<bool> data_valid;
 
   for (int i=0; i < active_out_ports.size(); ++i) {
-
     int port_index = active_out_ports[i];
     auto& cur_out_port = _port_interf.out_port(port_index);
     int len = cur_out_port.port_vec_elem();
@@ -1074,6 +1088,7 @@ void accel_t::execute_pdg(unsigned instance, int group) {
 
   _cgra_issued_group[group]=true;
   _cgra_issued++;
+  _dedicated_cgra_issued++;
 
   auto& active_out_ports=_soft_config.out_ports_active_group[group];
 
@@ -1367,17 +1382,17 @@ void accel_t::print_statistics(std::ostream& out) {
    out << "CGRA Insts / Cycle: "
       << ((double)_stat_sb_insts)/((double)roi_cycles()) << " (overall activity factor)\n";
    out << "Mapped DFG utilization: "
-       << ((double)_stat_sb_dfg_util)/((double)_stat_cgra_busy_cycles) << "\n";
+       << ((double)_stat_sb_dfg_util)/((double)roi_cycles()) << "\n";
    out << "Data availability ratio: "
-       << ((double)_stat_sb_data_avail_ratio)/((double)_stat_cgra_busy_cycles) << "\n";
+       << ((double)_stat_sb_data_avail_ratio)/((double)roi_cycles()) << "\n";
    out << "Allowed input port consumption rate: ";
    for(int i=0; i<NUM_OUT_PORTS; ++i){
-     out << ((double)_slot_avail[i]/(double)_stat_cgra_busy_cycles) << ", ";
+     out << ((double)_slot_avail[i]/(double)roi_cycles()) << ", ";
    }
    out << "\n";
    out << "percentage time we could not serve input ports: ";
    for(int i=0; i<NUM_OUT_PORTS; ++i){
-     out << ((double)_could_not_serve[i]/(double)_stat_cgra_busy_cycles) << ", ";
+     out << ((double)_could_not_serve[i]/(double)roi_cycles()) << ", ";
    }
    out << "\n";
 
