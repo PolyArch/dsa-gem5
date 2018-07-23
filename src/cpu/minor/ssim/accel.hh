@@ -232,6 +232,12 @@ public:
   }
 
   void set_status(STATUS status, LOC loc=LOC::NONE, uint32_t fill_mode=0) {
+    if(SB_DEBUG::VP_SCORE) {
+      std::cout << (_isInput ? "ip" : "op") << std::dec << _port;
+      std::cout << " " << status_string();
+      std::cout.flush();
+    }
+
     if(_status == STATUS::BUSY) {
       assert(status != STATUS::BUSY && "can't set busy if already busy\n");
     }
@@ -244,11 +250,6 @@ public:
     if(status == STATUS::BUSY) {
       assert((_loc==loc || _status==STATUS::FREE) && 
           "can only assign to a port with eqiv. loc, or if the status is FREE");
-    }
-
-    if(SB_DEBUG::VP_SCORE) {
-      std::cout << (_isInput ? "ip" : "op") << std::dec << _port;
-      std::cout << " " << status_string();
     }
     
     if(status == STATUS::FREE) {
@@ -568,19 +569,19 @@ class dma_controller_t : public data_controller_t {
   bool mem_writes_outstanding() {return _mem_write_reqs;}
   bool scr_reqs_outstanding()  {return _fake_scratch_reqs;}
 
-  bool any_stream_active() {
-    return comm_streams_active() || read_streams_active() 
-      || write_streams_active();
-  }
-  bool comm_streams_active() {
-    return dma_scr_streams_active();
-  }
-  bool read_streams_active() {
-    return dma_port_streams_active() || indirect_streams_active();
-  }
-  bool write_streams_active() {
-    return port_dma_streams_active() || indirect_wr_streams_active();
-  }
+  //bool any_stream_active() {
+  //  return comm_streams_active() || read_streams_active() 
+  //    || write_streams_active();
+  //}
+  //bool comm_streams_active() {
+  //  return dma_scr_streams_active();
+  //}
+  //bool read_streams_active() {
+  //  return dma_port_streams_active() || indirect_streams_active();
+  //}
+  //bool write_streams_active() {
+  //  return port_dma_streams_active() || indirect_wr_streams_active();
+  //}
 
   bool dma_port_streams_active();
   bool dma_scr_streams_active();
@@ -629,7 +630,6 @@ class dma_controller_t : public data_controller_t {
   //std::unordered_map<uint64_t, uint64_t> port_youngest_data;
 };
 
-//Limitation: 1 simulteanously active scratch read stream
 class scratch_read_controller_t : public data_controller_t {
   public:
   std::vector <bool> mask;
@@ -646,13 +646,17 @@ class scratch_read_controller_t : public data_controller_t {
       _scr_scr_streams.resize(1); 
     }
     _scr_port_streams.resize(8);
+    _ind_port_streams.resize(8);
 
-    max_src=1+_scr_port_streams.size() + _scr_scr_streams.size();
+
+    max_src=1+_scr_port_streams.size() + _ind_port_streams.size() +
+      _scr_scr_streams.size();
     reset_stream_engines();
   }
 
   void reset_stream_engines() {
     for(auto& i : _scr_scr_streams) {i.reset();}
+    for(auto& i : _ind_port_streams) {i.reset();}
     for(auto& i : _scr_port_streams) {i.reset();}
   }
 
@@ -663,6 +667,8 @@ class scratch_read_controller_t : public data_controller_t {
   }
 
   std::vector<SBDT> read_scratch(mem_stream_base_t& stream);
+  void read_scratch_ind(indirect_stream_t& stream, uint64_t scr_addr);
+
   bool xfer_stream_buf(mem_stream_base_t& stream,data_buffer& buf,
                        addr_t& addr);
 
@@ -676,6 +682,7 @@ class scratch_read_controller_t : public data_controller_t {
   bool schedule_scr_port(scr_port_stream_t& s);
   bool schedule_scr_dma(scr_dma_stream_t& s);
   bool schedule_scr_scr(scr_scr_stream_t& s);
+  bool schedule_indirect(indirect_stream_t& s);
 
   void print_status();
   void cycle_status();
@@ -684,19 +691,19 @@ class scratch_read_controller_t : public data_controller_t {
     return  !_buf_shs_read.empty_buffer() || !_buf_dma_read.empty_buffer();
   }
 
-  bool any_stream_active() {
-    return comm_streams_active() || read_streams_active() 
-      || write_streams_active();
-  }
-  bool comm_streams_active() {
-    return scr_scr_streams_active();
-  }
-  bool write_streams_active() {
-    return scr_dma_streams_active();
-  } 
-  bool read_streams_active() {
-    return scr_port_streams_active();
-  }
+  //bool any_stream_active() {
+  //  return comm_streams_active() || read_streams_active() 
+  //    || write_streams_active();
+  //}
+  //bool comm_streams_active() {
+  //  return scr_scr_streams_active();
+  //}
+  //bool write_streams_active() {
+  //  return scr_dma_streams_active();
+  //} 
+  //bool read_streams_active() {
+  //  return scr_port_streams_active();
+  //}
 
   bool scr_dma_streams_active();
   bool scr_port_streams_active();
@@ -713,6 +720,8 @@ class scratch_read_controller_t : public data_controller_t {
   scr_dma_stream_t _scr_dma_stream;
   std::vector<scr_port_stream_t> _scr_port_streams;
   std::vector<scr_scr_stream_t> _scr_scr_streams;
+  std::vector<indirect_stream_t> _ind_port_streams;
+
   dma_controller_t* _dma_c;  
 };
 
@@ -728,6 +737,7 @@ class scratch_write_controller_t : public data_controller_t {
     _bufs.push_back(&_buf_shs_write);
     mask.resize(SCR_WIDTH/DATA_WIDTH);
     _port_scr_streams.resize(8);
+    _ind_wr_streams.resize(4);
     _atomic_scr_issued_requests.resize(NUM_SCRATCH_BANKS);
 
     if(is_shared()) {
@@ -737,18 +747,18 @@ class scratch_write_controller_t : public data_controller_t {
     }
     _atomic_scr_streams.resize(1);
 
-    // max_src = _port_scr_streams.size() + _bufs.size() + _atomic_scr_streams.size() + 1; // _const_scr_queue.size();: check only if stream is active there
-    // max_src = _port_scr_streams.size() + _bufs.size() + _atomic_scr_streams.size() + 1; // _const_scr_queue.size();: check only if stream is active there
-    // max_src = _port_scr_streams.size() + _bufs.size() + _atomic_scr_streams.size() + const_scr_streams_active(); // _const_scr_queue.size();: check only if stream is active there
-    max_src = _port_scr_streams.size() + _bufs.size() + _atomic_scr_streams.size();
+    max_src = _port_scr_streams.size() + _ind_wr_streams.size() + 
+      _bufs.size() + _atomic_scr_streams.size();
 
     reset_stream_engines();
   }
-  
+
+  void write_scratch_ind(indirect_wr_stream_t& stream);
 
   void reset_stream_engines() {
     for(auto& i : _scr_scr_streams) {i.reset();}
     for(auto& i : _port_scr_streams) {i.reset();}
+    for(auto& i : _ind_wr_streams) {i.reset();}
     for(auto& i : _atomic_scr_streams) {i.reset();}
     _const_scr_stream.reset();
   }
@@ -766,8 +776,8 @@ class scratch_write_controller_t : public data_controller_t {
   bool done(bool,int);
 
   bool schedule_scr_scr(scr_scr_stream_t& s);
-  // new
   bool schedule_atomic_scr_op(atomic_scr_stream_t& s);
+  bool schedule_indirect_wr(indirect_wr_stream_t& s);
 
   void print_status();
   void cycle_status();
@@ -777,19 +787,19 @@ class scratch_write_controller_t : public data_controller_t {
     return  !_buf_shs_write.empty_buffer() || !_buf_dma_write.empty_buffer();
   }
 
-  bool any_stream_active() {
-    return comm_streams_active() || read_streams_active() 
-      || write_streams_active()  || atomic_scr_streams_active() || const_scr_streams_active();
-  }
-  bool comm_streams_active() {
-    return scr_scr_streams_active();
-  }
-  bool read_streams_active() {
-    return false;
-  }
-  bool write_streams_active() {
-    return port_scr_streams_active();
-  } 
+  //bool any_stream_active() {
+  //  return comm_streams_active() || read_streams_active() 
+  //    || write_streams_active()  || atomic_scr_streams_active() || const_scr_streams_active();
+  //}
+  //bool comm_streams_active() {
+  //  return scr_scr_streams_active();
+  //}
+  //bool read_streams_active() {
+  //  return false;
+  //}
+  //bool write_streams_active() {
+  //  return port_scr_streams_active();
+  //} 
 
   
   // for atomic_stream
@@ -827,6 +837,7 @@ class scratch_write_controller_t : public data_controller_t {
   // std::vector<const_scr_stream_t> _const_scr_streams; 
   const_scr_stream_t _const_scr_stream;  
   std::vector<atomic_scr_stream_t> _atomic_scr_streams; 
+  std::vector<indirect_wr_stream_t> _ind_wr_streams; 
   // TODO: add request queue max size
   std::vector<std::queue<atomic_scr_op_req>> _atomic_scr_issued_requests;
   dma_controller_t* _dma_c;
@@ -846,20 +857,20 @@ class port_controller_t : public data_controller_t {
 
   void cycle();
   void finish_cycle();
-
-  bool any_stream_active() {
-    return comm_streams_active() || read_streams_active() 
-      || write_streams_active();
-  }
-  bool comm_streams_active() {
-    return false;
-  }
-  bool read_streams_active() {
-    return port_port_streams_active() || const_port_streams_active();
-  }
-  bool write_streams_active() {
-    return port_port_streams_active();
-  }
+ 
+  //bool any_stream_active() {
+  //  return comm_streams_active() || read_streams_active() 
+  //    || write_streams_active();
+  //}
+  //bool comm_streams_active() {
+  //  return false;
+  //}
+  //bool read_streams_active() {
+  //  return port_port_streams_active() || const_port_streams_active();
+  //}
+  //bool write_streams_active() {
+  //  return port_port_streams_active();
+  //}
 
   bool port_port_streams_active();
   bool const_port_streams_active();
@@ -1126,6 +1137,7 @@ public:
     pr.first += times;
     pr.second += bytes;
 
+    //TODO: FIXME: need to check this logic
     if(l2 == LOC::PORT && (l1 == LOC::CONST || l1 == LOC::PORT)) {
       auto& pr = _bw_map[std::make_pair(l1,LOC::REC_BUS)];
       pr.first += times;
@@ -1319,12 +1331,13 @@ private:
     _forward_progress_cycle=now();
   }
 
+
   void read_scratchpad(void* dest, uint64_t scr_addr, 
       std::size_t count, int id) {
     assert(scr_addr < SCRATCH_SIZE);
 
     std::memcpy(dest, &scratchpad[scr_addr], count);
-    if(SB_DEBUG::CHECK_SCR_ALIAS) {
+    if(SB_DEBUG::CHECK_SCR_ALIAS) { //TODO: make this check work for unaligned
       for(int i = 0; i < count; i+=sizeof(SBDT)) {
         uint64_t running_addr=  scr_addr+i;
         if(scratchpad_writers[running_addr]) {

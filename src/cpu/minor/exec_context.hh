@@ -563,13 +563,15 @@ class ExecContext : public ::ExecContext
                 thread.getSDReg(SD_IN_PORT),       thread.getSDReg(SD_INDEX_ADDR),
                 thread.getSDReg(SD_NUM_ELEM),      thread.getSDReg(SD_REPEAT),
                 thread.getSDReg(SD_REPEAT_STRETCH),thread.getSDReg(SD_OFFSET_LIST),
-                thread.getSDReg(SD_DTYPE),         thread.getSDReg(SD_IND_MULT));
+                thread.getSDReg(SD_DTYPE),         thread.getSDReg(SD_IND_MULT),
+                thread.getSDReg(SD_IS_SCRATCH));
             break;
             case SB_PRT_IND: ssim.indirect_write(
                 thread.getSDReg(SD_IND_PORT),       thread.getSDReg(SD_IND_TYPE),
                 thread.getSDReg(SD_OUT_PORT),       thread.getSDReg(SD_INDEX_ADDR),
                 thread.getSDReg(SD_NUM_ELEM),       thread.getSDReg(SD_OFFSET_LIST),
-                thread.getSDReg(SD_DTYPE),         thread.getSDReg(SD_IND_MULT));
+                thread.getSDReg(SD_DTYPE),         thread.getSDReg(SD_IND_MULT),
+                thread.getSDReg(SD_IS_SCRATCH));
             break;
             case SB_CNS_PRT: ssim.write_constant(
                 thread.getSDReg(SD_NUM_STRIDES),   thread.getSDReg(SD_IN_PORT),
