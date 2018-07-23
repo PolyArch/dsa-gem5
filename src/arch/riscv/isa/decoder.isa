@@ -940,7 +940,7 @@ decode QUADRANT default Unknown::unknown() {
                     xc->setSDReg(Rs2,SD_NUM_ELEM);
                     xc->setSDReg(imm & 0x1F, SD_IND_PORT); //only 5 bits
                     xc->setSDReg((imm >> 5) & 0x1F, SD_IN_PORT);
-                    //xc->setSDReg(imm >> 10, SD_IND_TYPE);
+                    xc->setSDReg(imm >> 10, SD_IS_SCRATCH);
                     xc->callSDFunc(SB_IND_PRT);
                 }}, IsSDStream, IsNonSpeculative, No_OpClass);
                 0x6: sb_ind_wr({{
@@ -948,12 +948,12 @@ decode QUADRANT default Unknown::unknown() {
                     xc->setSDReg(Rs2,SD_NUM_ELEM);
                     xc->setSDReg(imm & 0x1F, SD_IND_PORT); //only 5 bits
                     xc->setSDReg((imm >> 5) & 0x1F, SD_OUT_PORT);
-                    //xc->setSDReg(imm >> 10, SD_IND_TYPE);
+                    xc->setSDReg(imm >> 10, SD_IS_SCRATCH);
                     xc->callSDFunc(SB_PRT_IND);
                 }}, IsSDStream, IsNonSpeculative, No_OpClass);
                 0x7: sb_cfg_ind({{
                     xc->setSDReg(Rs1,SD_OFFSET_LIST);
-                    xc->setSDReg(imm>>10, SD_IND_TYPE); 
+                    xc->setSDReg((imm>>10)&0x3, SD_IND_TYPE); 
                     xc->setSDReg((imm>>8)&0x3, SD_DTYPE); 
                     xc->setSDReg(imm&0xFF, SD_IND_MULT); 
                 }}, No_OpClass);
