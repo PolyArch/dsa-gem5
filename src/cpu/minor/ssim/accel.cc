@@ -904,7 +904,7 @@ void accel_t::cycle_cgra_backpressure() {
         // cout << "Allowed to pop output\n";
         data.clear(); // make sure it is empty here
         data_valid.clear(); // make sure it is empty here
-        _pdg->pop_vector_output(vec_output, data, data_valid, len, print, true); // it just set hard-coded validity--should read there
+        _pdg->pop_vector_output(vec_output, data, data_valid, len, print, true); 
       // push the data to the CGRA output port only if discard is not 0
      
       // cout << "Allowed to pop output: " << data[0] << " and next output: " << data[1] << "\n";
@@ -3055,7 +3055,8 @@ void scratch_write_controller_t::cycle() {
 
 
         uint64_t bytes_written=0;
-        while(addr < max_addr && stream._iters_left>0) { 
+		// to make sure only bandwidth number of constants are written in 1 cycle
+        while(addr < max_addr && stream._iters_left>0 && bytes_written<SCR_WIDTH) { 
           SBDT val = stream._constant; 
 
           assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
@@ -3227,6 +3228,7 @@ void scratch_write_controller_t::cycle() {
              }
              if(stream.can_pop_addr()) {
                stream._cur_addr_index=0;
+			   // for bank conflicts calc purposes
                num_addr_pops++;
                out_addr.pop_out_data();
                if(SB_DEBUG::SB_COMP) {
@@ -3285,7 +3287,7 @@ void scratch_write_controller_t::cycle() {
             }
             _accel->read_scratchpad(&val, scr_addr, request._value_bytes, stream.id());
 
-            opcode = stream._op_code;
+            // opcode = stream._op_code;
 
             switch(opcode){
               case 0: val += inc;
