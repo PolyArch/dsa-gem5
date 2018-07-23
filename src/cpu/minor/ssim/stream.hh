@@ -4,12 +4,12 @@
 #include <cstdint>
 #include "consts.hh"
 #include <iostream>
+#include "loc.hh"
 
 #include "cpu/minor/dyn_inst.hh" //don't like this, workaround later (TODO)
 
 
-enum class LOC {NONE, DMA, SCR, PORT, CONST, 
-                REMOTE_SCR, REMOTE_PORT, TOTAL, REC_BUS}; 
+
 
 //This is a hierarchical classification of access types
 enum class STR_PAT {PURE_CONTIG, SIMPLE_REPEATED, 
@@ -33,32 +33,28 @@ struct base_stream_t {
   virtual LOC dest() {return LOC::NONE;}
 
   static std::string loc_name(LOC loc) {
-    switch(loc) {
-      case LOC::NONE: return "NONE";
-      case LOC::DMA: return "DMA";
-      case LOC::SCR: return "SCR";
-      case LOC::PORT: return "PORT";
-      case LOC::CONST: return "CONST";
-      case LOC::REMOTE_PORT: return "REM_PORT";
-      case LOC::REMOTE_SCR: return "REM_SCR";
-      case LOC::TOTAL: return "TOTAL";
-      case LOC::REC_BUS: return "REC_BUS";
-    }
-    return "???";
+    std::string a;
+    if(loc==LOC::NONE)                     
+    if((loc&LOC::DMA)!=LOC::NONE)         return a+="DMA";
+    if((loc&LOC::SCR)!=LOC::NONE)         return a+="SCR";
+    if((loc&LOC::PORT)!=LOC::NONE)        return a+="PORT";
+    if((loc&LOC::CONST)!=LOC::NONE)       return a+="CONST";
+    if((loc&LOC::REMOTE_PORT)!=LOC::NONE) return a+="REM_PORT";
+    if((loc&LOC::REMOTE_SCR)!=LOC::NONE)  return a+="REM_SCR";
+    if((loc&LOC::REC_BUS)!=LOC::NONE)     return a+="REC_BUS";
+    return "NONE";
   }
 
   static std::string loc_short_name(LOC loc) {
-    switch(loc) {
-      case LOC::NONE: return "N";
-      case LOC::DMA: return "D";
-      case LOC::SCR: return "S";
-      case LOC::PORT: return "P";
-      case LOC::CONST: return "C";
-      case LOC::REMOTE_PORT: return "R";
-      case LOC::REMOTE_SCR: return "Q";
-      case LOC::TOTAL: return "T";
-      case LOC::REC_BUS: return "B";
-    }
+    std::string a;
+    if(loc==LOC::NONE)                     
+    if((loc&LOC::DMA)!=LOC::NONE)         return a+="D";
+    if((loc&LOC::SCR)!=LOC::NONE)         return a+="S";
+    if((loc&LOC::PORT)!=LOC::NONE)        return a+="P";
+    if((loc&LOC::CONST)!=LOC::NONE)       return a+="C";
+    if((loc&LOC::REMOTE_PORT)!=LOC::NONE) return a+="R";
+    if((loc&LOC::REMOTE_SCR)!=LOC::NONE)  return a+="Q";
+    if((loc&LOC::REC_BUS)!=LOC::NONE)     return a+="B";
     return "?";
   }
 
@@ -563,10 +559,10 @@ struct const_port_stream_t : public base_stream_t {
   int _in_port;
 
   addr_t _constant;
-  addr_t _num_elements;
+  addr_t _num_elements=0;
   addr_t _constant2;
-  addr_t _num_elements2;
-  addr_t _iters_left;
+  addr_t _num_elements2=0;
+  addr_t _iters_left=0;
 
   //running counters
   addr_t _elements_left;
@@ -650,7 +646,7 @@ struct const_scr_stream_t : public base_stream_t {
 
   uint64_t _constant;
   int _num_elements;
-  int _iters_left;
+  int _iters_left=0; //needs zeroing here, otherwise default can be active
   addr_t _scratch_addr;
     
   virtual void set_orig() {
@@ -808,11 +804,19 @@ struct indirect_base_stream_t : public base_stream_t {
   uint64_t _offset_list;
   uint64_t _ind_mult;
   std::vector<char> _offsets;
+  bool _scratch=false; // Use this to tell the command 
+                    // decoder where this stream should go
 
   addr_t _orig_elements;
   //These get set based on _type
   unsigned _index_bytes, _data_bytes, _indices_in_word;
-  uint64_t _index_mask; 
+  uint64_t _index_mask, _data_mask; 
+
+  //Note: since ports hold 64-bits, this is the adapter
+  //for indirect read so that it works regardless
+  uint64_t _cur_ind_val=0;
+  int _ind_bytes_complete=0;
+
   virtual void set_orig() { //like constructor but lazier
     _orig_elements = _num_elements;
     _index_in_word=0;
@@ -825,11 +829,11 @@ struct indirect_base_stream_t : public base_stream_t {
       case T08: _index_bytes= 1; _index_mask = 0xFF;                break;
       default: assert(0);
     }
-    switch(_ind_type) {
-      case T64:  _data_bytes= 8; break;
-      case T32:  _data_bytes= 4; break;
-      case T16:  _data_bytes= 2; break;
-      case T08:  _data_bytes= 1; break;
+    switch(_dtype) {
+      case T64:  _data_bytes= 8; _data_mask = 0xFFFFFFFFFFFFFFFF;  break;
+      case T32:  _data_bytes= 4; _data_mask = 0xFFFFFFFF;          break;
+      case T16:  _data_bytes= 2; _data_mask = 0xFFFF;              break;
+      case T08:  _data_bytes= 1; _data_mask = 0xFF;                break;
       default: assert(0);
     }
 
@@ -852,6 +856,8 @@ struct indirect_base_stream_t : public base_stream_t {
   virtual uint64_t offset_list()  {return _offset_list;} 
   virtual uint64_t ind_mult()     {return _ind_mult;} 
 
+  bool scratch()     {return _scratch;} 
+
 
   virtual uint64_t data_volume() {return _num_elements * sizeof(SBDT);} //TODO: config
   virtual STR_PAT stream_pattern() {return STR_PAT::IND;}
@@ -862,7 +868,7 @@ struct indirect_base_stream_t : public base_stream_t {
 
   addr_t cur_addr(SBDT val) {    
     uint64_t index =  (val >> (_index_in_word * _index_bytes * 8)) & _index_mask;
-    return   _index_addr + (index * _ind_mult +  _offsets[_index_in_offsets])*_data_bytes;
+    return   _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes;
   }  
 
   virtual LOC src() {return LOC::PORT;}
@@ -907,16 +913,12 @@ struct indirect_stream_t : public indirect_base_stream_t {
 
   virtual int repeat_in() {return _repeat_in;}
   virtual int repeat_str() {return _repeat_str;}
-
-  uint64_t ind_port()     {return _ind_port;} 
-  uint64_t num_strides()  {return _num_elements;} 
-  uint64_t index_addr()   {return _index_addr;} 
   int64_t  in_port()      {return _in_port;} 
 
   virtual int ivp_dest() {return _in_port;}
 
   virtual void print_status() {  
-    std::cout << "ind_port->port" << "\tind_port=" << _ind_port
+    std::cout << "mem[ind_port]->in_port" << "\tind_port=" << _ind_port
               << "\tind_type:" << _ind_type  << "\tind_addr:" << _index_addr
               << "\tnum_elem:" << _num_elements << "\tin_port" << _in_port
               << "\toffets:" << _offset_list;
@@ -925,6 +927,13 @@ struct indirect_stream_t : public indirect_base_stream_t {
   virtual bool stream_active() {
     return indirect_base_stream_t::stream_active();
   }
+  virtual LOC src() {
+    if(!scratch()) {
+      return LOC::PORT|LOC::DMA;
+    } else {
+      return LOC::PORT|LOC::SCR;
+    }
+  }  virtual LOC dest() {return LOC::PORT;}
 
 };
 
@@ -932,16 +941,26 @@ struct indirect_stream_t : public indirect_base_stream_t {
 struct indirect_wr_stream_t : public indirect_base_stream_t {
   int _out_port;
 
-  uint64_t ind_port()     {return _ind_port;} 
-  uint64_t num_strides() {return _num_elements;} 
-  uint64_t index_addr() {return _index_addr;} 
   int64_t out_port()     {return _out_port;} 
 
+  uint64_t cur_value(uint64_t val) {
+    return (val >> (_ind_bytes_complete * 8)) & _data_mask;
+  }
+
   virtual void print_status() {  
-    std::cout << "port->ind_port" << "\tind_port=" << _ind_port
+    std::cout << "out_port->mem[ind_port]" << "\tind_port=" << _ind_port
               << "\tind_type:" << _ind_type  << "\tind_addr:" << std::hex <<_index_addr
         << std::dec << "\tnum_elem:" << _num_elements << "\tout_port" << _out_port;
     base_stream_t::print_status();
+  }
+  
+  virtual LOC src() {return LOC::PORT;}
+  virtual LOC dest() {
+    if(!scratch()) {
+      return LOC::PORT|LOC::DMA;
+    } else {
+      return LOC::PORT|LOC::SCR;
+    }
   }
 };
 

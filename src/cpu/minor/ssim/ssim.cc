@@ -481,7 +481,7 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
 //Configure an indirect stream with params
 void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
     uint64_t num_elem, int repeat, int repeat_str,uint64_t offset_list, 
-    int dtype, uint64_t ind_mult) {
+    int dtype, uint64_t ind_mult, bool scratch) {
   indirect_stream_t* s = new indirect_stream_t();
   s->_ind_port=ind_port;
   s->_ind_type=ind_type;
@@ -493,6 +493,7 @@ void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr
   s->_offset_list=offset_list;
   s->_dtype=dtype;
   s->_ind_mult=ind_mult;
+  s->_scratch=scratch;
 
   s->set_orig();
 
@@ -502,7 +503,7 @@ void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr
 //Configure an indirect stream with params
 void ssim_t::indirect_write(int ind_port, int ind_type, int out_port, 
     addr_t index_addr, uint64_t num_elem, uint64_t offset_list, 
-    int dtype, uint64_t ind_mult) {
+    int dtype, uint64_t ind_mult, bool scratch) {
   indirect_wr_stream_t* s = new indirect_wr_stream_t();
   s->_ind_port=ind_port;
   s->_ind_type=ind_type;
@@ -511,6 +512,7 @@ void ssim_t::indirect_write(int ind_port, int ind_type, int out_port,
   s->_num_elements=num_elem;
   s->_dtype=dtype;
   s->_ind_mult=ind_mult;
+  s->_scratch=scratch;
 
   s->set_orig();
 
