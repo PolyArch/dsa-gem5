@@ -302,16 +302,25 @@ public:
   //necessary -- we construct our own pm from the mask -- maybe fix this later
   //when we are more ambitious
   void set_port_map(std::vector<std::pair<int, std::vector<int> > > pm, 
-                    std::vector<bool> mask) {
+                    std::vector<bool> mask, int temporal) {
     assert(mask.size() == pm.size()); //masks should be the same!
     assert(mask.size() != 0);
     int total=0;
     for(unsigned i = 0; i < mask.size(); ++i) {
       if(mask[i]) {
-        std::vector<int> v;
-        v.push_back(total);
-        _port_map.push_back(std::make_pair(pm[i].first,v));
-         ++total;
+        if(temporal) {
+           for(unsigned i = 0; i < temporal; ++i) {
+             std::vector<int> v;
+            v.push_back(total);
+             ++total;
+            _port_map.push_back(std::make_pair(pm[i].first,v));
+           }
+        } else {
+          std::vector<int> v;
+          v.push_back(total);
+          _port_map.push_back(std::make_pair(pm[i].first,v));
+           ++total;
+        }
       }
     }
     _cgra_data.resize(port_cgra_elem());

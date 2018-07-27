@@ -89,6 +89,7 @@ void soft_config_t::reset() {
   cur_config_addr=0;
   in_ports_active.clear();
   in_ports_active_group.clear();
+  in_ports_active_backcgra.clear();
   group_thr.clear();
   out_ports_active.clear();
   out_ports_active_group.clear();
@@ -4139,7 +4140,13 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
 
       //port mapping of 1 vector port - cgra_port_num: vector offset elements
       port_data_t& cur_in_port = _port_interf.in_port(i);
-      cur_in_port.set_port_map(_sbconfig->subModel()->io_interf().in_vports[i],mask);
+      if(vec_input->is_temporal()) {
+        cur_in_port.set_port_map(_sbconfig->subModel()->io_interf().in_vports[i],
+            mask,vec_input->num_inputs());
+      } else {
+        cur_in_port.set_port_map(_sbconfig->subModel()->io_interf().in_vports[i],
+                                  mask,0);
+      }
 
       //find corresponding pdg nodes
       std::vector<SbPDG_Input*> pdg_inputs;
@@ -4148,9 +4155,8 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
       for(unsigned port_idx = 0; port_idx < cur_in_port.port_cgra_elem(); ++port_idx) {
         int cgra_port_num = cur_in_port.cgra_port_for_index(port_idx);
         
-        //look up the dynode for the input cgra_port_num
-        sbinput* sbin =_sbconfig->subModel()->get_input(cgra_port_num);
-        SbPDG_Node* pdg_node = _sched->pdgNodeOf(sbin);
+        SbPDG_Node* pdg_node = vec_input->getInput(port_idx);
+        
         if(pdg_node) {
           SbPDG_Input* pdg_in = static_cast<SbPDG_Input*>(pdg_node);
           pdg_inputs.push_back(pdg_in);                 //get all the pdg inputs for ports
@@ -4178,17 +4184,21 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
 
       //port mapping of 1 vector port - cgra_port_num: vector offset elements
       auto& cur_out_port = _port_interf.out_port(i);
-      cur_out_port.set_port_map(_sbconfig->subModel()->io_interf().out_vports[i],mask);
+      if(vec_output->is_temporal()) {
+        cur_out_port.set_port_map(_sbconfig->subModel()->io_interf().out_vports[i],
+            mask,vec_output->num_outputs());
+      } else {
+        cur_out_port.set_port_map(_sbconfig->subModel()->io_interf().out_vports[i],
+                                  mask,0);
+      }
+
 
       //find corresponding pdg nodes
       std::vector<SbPDG_Output*> pdg_outputs;
 
       int max_lat=0;
       for(unsigned port_idx = 0; port_idx < cur_out_port.port_cgra_elem(); ++port_idx){
-        int cgra_port_num = cur_out_port.cgra_port_for_index(port_idx);
-        //look up the dynode for the cgra_port_num
-        sboutput* sbout =_sbconfig->subModel()->get_output(cgra_port_num);
-        SbPDG_Node* pdg_node = _sched->pdgNodeOf(sbout);
+        SbPDG_Node* pdg_node = vec_output->getOutput(port_idx);
         assert(pdg_node);
         SbPDG_Output* pdg_out = static_cast<SbPDG_Output*>(pdg_node);
         max_lat=std::max(_sched->latOf(pdg_out),max_lat);
@@ -4201,7 +4211,9 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
   int lat, lat_mis;
   _sched->cheapCalcLatency(lat, lat_mis);
   int max_lat_mis = lat_mis; //_sched->decode_lat_mis();
-  std::cout << "fifo:" << _fu_fifo_len << " lat_mis:" << max_lat_mis << "\n";
+
+  std::cout << "Switched to config: " << _sched->name()
+    << " lat_mis:" << max_lat_mis << " (group breakdown: ";
 
   for(int g = 0; g < NUM_GROUPS; ++g) {
     auto& active_ports=_soft_config.in_ports_active_group[g];
@@ -4214,7 +4226,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
       float thr_ratio = 1/(float)thr;
       float mis_ratio = ((float)_fu_fifo_len)/(_fu_fifo_len+max_lat_mis);
 
-      //std::cout << g << ": " << thr_ratio << " " << mis_ratio << "\n";
+      std::cout << "group" << g << ": fu_thr:" << thr_ratio << " mis:" << mis_ratio << " ";
 
       //setup the rate limiting structures
       if(thr_ratio < mis_ratio) { //group throughput is worse
@@ -4229,11 +4241,11 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
       }
 
       if(SB_DEBUG::SHOW_CONFIG) {
-        cout << "Group " << g << ", throughput: " << thr << "\n";
         for(int i = 0; i < active_ports.size(); ++i) {
           int p = active_ports[i];
-          cout << "in vp " << p << "\n";
+          cout << "in vp" << p << " ";
         }
+        cout << "\n";
         for(int i = 0; i < active_out_ports.size(); ++i) {
           int p = active_out_ports[i];
           cout << "out vp" << p << " has latency:" 
@@ -4242,7 +4254,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
       }
     }
   }
-
+  std::cout << ")\n";
 
   //compute active_plus
   _soft_config.in_ports_active_plus=_soft_config.in_ports_active;
