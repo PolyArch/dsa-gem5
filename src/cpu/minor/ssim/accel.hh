@@ -674,7 +674,8 @@ class scratch_read_controller_t : public data_controller_t {
 
 
   float calc_min_port_ready();
-  void cycle();
+  // void cycle();
+  void cycle(bool &performed_read);
 
   void finish_cycle();
   bool done(bool,int);
@@ -771,7 +772,10 @@ class scratch_write_controller_t : public data_controller_t {
 
   const_scr_stream_t& const_scr_stream() {return _const_scr_stream;}
 
-  void cycle();
+  bool crossbar_backpressureOn();
+
+  // void cycle();
+  void cycle(bool can_perform_atomic_scr, bool &performed_atomic_scr);
   void finish_cycle();
   bool done(bool,int);
 
@@ -1432,8 +1436,11 @@ private:
   uint64_t _stat_scratch_write_bytes = 0;
   uint64_t _stat_scratch_reads = 0;
   uint64_t _stat_scratch_writes = 0;
-  uint64_t _stat_total_scratch_bank_requests = 0;
-  uint64_t _stat_total_scratch_bank_conflicts = 0;
+  uint64_t _stat_scratch_bank_requests_pushed = 0;
+  uint64_t _stat_scratch_bank_requests_executed = 0;
+  double _stat_bank_conflicts=0.0;
+  uint64_t _stat_cycles_atomic_scr_pushed=0;
+  uint64_t _stat_cycles_atomic_scr_executed=0;
 
   uint64_t _stat_commands_issued = 0;
 

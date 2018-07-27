@@ -57,7 +57,6 @@ void accel_t::req_config(addr_t addr, int size, uint64_t context) {
 }
 
 void accel_t::request_reset_data() {
-   // cout << "CYCLE WHEN CLEAN UP MODE IS SET TO TRUE: " << now();
   _cleanup_mode=true; 
   reset_data();
 }
@@ -675,8 +674,26 @@ void accel_t::tick() {
   }
 
   _dma_c.cycle();
-  _scr_r_c.cycle();
-  _scr_w_c.cycle();
+  
+  // HACK: logic such that only atomic or rd/wr occurs in 1 cycle
+  bool performed_atomic_scr = false;
+  bool performed_read = false;
+  int turn = 0;
+
+  if(turn==0){
+    _scr_w_c.cycle(true, performed_atomic_scr);
+    if(!performed_atomic_scr){
+      _scr_r_c.cycle(performed_read);
+    }
+  }
+  if(turn==1){
+    _scr_r_c.cycle(performed_read);
+	_scr_w_c.cycle(!performed_read, performed_atomic_scr);
+  }
+  turn = (turn+1)%2;
+
+
+
   _port_c.cycle();
   cycle_in_interf();
   cycle_cgra();
@@ -918,7 +935,9 @@ void accel_t::cycle_cgra_backpressure() {
       for (j=0; j < len; ++j) {
         if(data_valid[j]) {
           cur_out_port.push_mem_data(data[j]);
-        }
+        } else{
+		  // std::cout << "Some invalid data at the output port\n";
+		}
       }
     }
   }
@@ -1389,7 +1408,9 @@ void accel_t::print_statistics(std::ostream& out) {
    out << "Data availability ratio: "
        << ((double)_stat_sb_data_avail_ratio)/((double)roi_cycles()) << "\n";
    out << "Percentage bank conflicts: "
-       << ((double)_stat_total_scratch_bank_conflicts)/((double)_stat_total_scratch_bank_requests) << "\n";
+       // << ((double)_stat_total_scratch_bank_conflicts)/((double)_stat_total_scratch_bank_requests) << "\n";
+       << ((double)_stat_cycles_atomic_scr_executed)/((double)_stat_cycles_atomic_scr_pushed) << "\n";
+	   // << ((double)_stat_bank_conflicts/(double)roi_cycles());
    out << "Allowed input port consumption rate: ";
    for(int i=0; i<NUM_OUT_PORTS; ++i){
      out << ((double)_slot_avail[i]/(double)roi_cycles()) << ", ";
@@ -2977,10 +2998,11 @@ float scratch_read_controller_t::calc_min_port_ready() {
   return min_port_ready;
 }
 
-void scratch_read_controller_t::cycle() {
+void scratch_read_controller_t::cycle(bool &performed_read) {
   float min_port_ready=-2;
 
-  for(int i=0; i < max_src; ++i) {
+  int i=0;
+  for(i=0; i < max_src; ++i) {
      _which=(_which+1==max_src)?0:_which+1;
 
     if(_which<_scr_port_streams.size()) {
@@ -3082,6 +3104,11 @@ void scratch_read_controller_t::cycle() {
       }    
     }
   }
+  if(i==max_src){
+	performed_read = false;
+  } else {
+	performed_read = true;
+  }
 }
 
 void scratch_read_controller_t::finish_cycle() {
@@ -3099,8 +3126,15 @@ void scratch_read_controller_t::print_status() {
   }
 }
 
+bool scratch_write_controller_t::crossbar_backpressureOn(){
+  for(int i=0; i<NUM_SCRATCH_BANKS; ++i){
+	if(_atomic_scr_issued_requests[i].size()==MAX_BANK_BUFFER_SIZE)
+	  return true;
+  }
+  return false;
+}
 
-void scratch_write_controller_t::cycle() {
+void scratch_write_controller_t::cycle(bool can_perform_atomic_scr, bool &performed_atomic_scr) {
   
 // std::cout << " and s1: " << _port_scr_streams.size() << " and s2: " << _scr_scr_streams.size() << "max_scr: " << max_src << "\n";
   // maybe it is like it will always be 1: always increasing????
@@ -3239,7 +3273,6 @@ void scratch_write_controller_t::cycle() {
 
     } else { 
       // _atomic_scr_issued_requests
-      // std::cout << "NEW CYCLE\n";
       auto& stream = _atomic_scr_streams[0];
       SBDT loc; SBDT inc;
       SBDT val = 0;
@@ -3248,7 +3281,6 @@ void scratch_write_controller_t::cycle() {
       int logical_banks = NUM_SCRATCH_BANKS;
       int opcode = 0; int bank_id = 0;
       uint64_t bytes_written=0;
-      bool bank_conflicts[NUM_SCRATCH_BANKS];
       // added to correct bank conflict calculation
       int num_addr_pops = 0;
 
@@ -3256,15 +3288,21 @@ void scratch_write_controller_t::cycle() {
       // if(stream.stream_active() || atomic_scr_issued_requests_active()) {
       if(stream.stream_active()) {
          logical_banks = NUM_SCRATCH_BANKS/stream._value_bytes;
-         for (int i=0; i<logical_banks; ++i) {
-           bank_conflicts[i] = false;
-         }
+		 
          port_data_t& out_addr = _accel->port_interf().out_port(stream._out_port);
          port_data_t& out_val = _accel->port_interf().out_port(stream._val_port);
          addr_t base_addr = stream._mem_addr; // this is like offset
 
 
-         if(out_addr.mem_size() > 0 && out_val.mem_size() > 0) { // enough in src and dest
+         if(out_addr.mem_size() > 0 && out_val.mem_size() > 0 && !crossbar_backpressureOn()) { // enough in src and dest
+
+
+           // hopefully it pushes data here
+		   if(_accel->_ssim->in_roi()){
+		     _accel->_stat_cycles_atomic_scr_pushed++;
+		   }
+
+		   num_addr_pops=0;
            loc = out_addr.peek_out_data();
            if(SB_DEBUG::SB_COMP) {
              std::cout << "1 cycle execution : " << "\n";
@@ -3285,21 +3323,9 @@ void scratch_write_controller_t::cycle() {
            // => cannot pop more than 8 values from the port
           
            while(scr_addr < max_addr && stream._num_strides>0 
-                       && out_addr.mem_size()  && out_val.mem_size()) {  //enough in source
+                       && out_addr.mem_size()  && out_val.mem_size() && num_addr_pops < (64/stream._addr_bytes)) {  //enough in source
                        // && count_ops_val<no_scr_banks && count_ops_addr<no_scr_banks) { // opns in 1 cycle cannot be more than the number of banks
                        
-             // addr = 16, val=64 bits (max = 512/64 = 8 addr
-             // = 8/(8/addr_bytes)
-             // to check 1 iteration is done: something easier would also be
-             // there
-             if(num_addr_pops==((SCR_WIDTH/stream._value_bytes)/(8/stream._addr_bytes))){
-               for (int i=0; i<logical_banks; ++i) {
-                 bank_conflicts[i] = false;
-               }
-               num_addr_pops=0;
-             }
-             
-             
              if(SB_DEBUG::SB_COMP) {
                std::cout << "\tupdate at index location: " << loc << " and scr_addr: " << scr_addr << " and scr_size is: " << SCRATCH_SIZE;
              }
@@ -3324,33 +3350,24 @@ void scratch_write_controller_t::cycle() {
              // it to be value width addressable
              // bank_id = (scr_addr >> (int)(log(SCRATCH_SIZE/logical_banks)/log(2))) & (logical_banks-1);
              // bank_id = (scr_addr >> 4) & (logical_banks-1);
-             // MAPPING FOR GBDT
-             // bank_id = (scr_addr >> 9) & (logical_banks-1);
-             // std::cout << "scr_addr: " << scr_addr << " logical banks: " << logical_banks << "\tbank_id: " << bank_id << "\n";
              // bank_id = (scr_addr >> (int)(log(stream._value_bytes)/log(2))) & (logical_banks-1);
-             // Mapping for SCNN
-             // bank_id = (scr_addr) & (logical_banks-1);
              
 			 // by default is row interleaving for now
 			 
-			 /*
-			 if(_accel->_banked_spad_mapping_strategy==NULL){
-			   bank_id = (scr_addr) & (logical_banks-1);
-			 } else 
-			 */
-			 // std::cout << "mapping strategy being used is: " << _accel->_banked_spad_mapping_strategy << "\n";
 			 if(strcmp(_accel->_banked_spad_mapping_strategy,"COL")==0){
 			   bank_id = (scr_addr >> 9) & (logical_banks-1);
 			 } else {
-			   bank_id = (scr_addr) & (logical_banks-1);
+			   bank_id = (scr_addr >> 1) & (logical_banks-1);
 			 }
 			 // if(strcmp(_accel->_banked_spad_mapping_strategy,"ROW")){
 
 
              assert(bank_id<logical_banks);
              _atomic_scr_issued_requests[bank_id].push(temp_req);
+			 _accel->_stat_scratch_bank_requests_pushed++;
              stream._num_strides--;
 
+			 /*
              if(!bank_conflicts[bank_id]){
                bank_conflicts[bank_id]=true;
                // _accel->_stat_total_scratch_bank_requests++;
@@ -3358,6 +3375,7 @@ void scratch_write_controller_t::cycle() {
                _accel->_stat_total_scratch_bank_conflicts++;
                // _accel->_stat_total_scratch_bank_requests++;
              }
+			 */
 
              if(SB_DEBUG::SB_COMP) {
                std::cout << "\tvalues input: " << inc << "\tbank_id: " << bank_id << "\n";
@@ -3416,12 +3434,11 @@ void scratch_write_controller_t::cycle() {
               out_addr.set_status(port_data_t::STATUS::FREE);
               out_val.set_status(port_data_t::STATUS::FREE);
             }
-            break;
+            // break; // this is just pulling data not serving it
          }
        }
-
        // if requests are available in the bank queues
-       if(atomic_scr_issued_requests_active()){
+       if(atomic_scr_issued_requests_active() && can_perform_atomic_scr){
         for(int i=0; i<logical_banks; ++i){
           if(!_atomic_scr_issued_requests[i].empty()){
             atomic_scr_op_req request = _atomic_scr_issued_requests[i].front();
@@ -3451,7 +3468,8 @@ void scratch_write_controller_t::cycle() {
                       break;
             }
             _accel->write_scratchpad(scr_addr, &val, request._value_bytes,stream.id());
-            _accel->_stat_total_scratch_bank_requests++;
+            // _accel->_stat_total_scratch_bank_requests++;
+			_accel->_stat_scratch_bank_requests_executed++;
              
             bytes_written+=request._value_bytes;
             _accel->_stat_scr_bytes_wr+=request._value_bytes;
@@ -3464,8 +3482,17 @@ void scratch_write_controller_t::cycle() {
           add_bw(stream.src(), stream.dest(), 1, bytes_written);
           _accel->_stat_scratch_writes+=1;
         }
+
+		if(_accel->_ssim->in_roi()){
+		  _accel->_stat_cycles_atomic_scr_executed++;
+		}
+
+		// to implement the functionality of common scratch controller
+	    performed_atomic_scr = true;
+		break;
       }
-    }
+	}
+ // _accel->_stat_bank_conflicts = (_accel->_stat_scratch_bank_requests_executed/_accel->_stat_scratch_bank_requests_pushed);
   }
 }
 
