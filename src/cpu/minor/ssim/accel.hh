@@ -758,7 +758,7 @@ class scratch_write_controller_t : public data_controller_t {
     _atomic_scr_streams.resize(1);
 
     max_src = _port_scr_streams.size() + _ind_wr_streams.size() + 
-      _bufs.size() + _atomic_scr_streams.size();
+      _bufs.size() + _atomic_scr_streams.size() + 1;
 
     reset_stream_engines();
   }

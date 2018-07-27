@@ -1069,7 +1069,7 @@ struct atomic_scr_stream_t : public mem_stream_base_t {
   virtual LOC dest() {return LOC::SCR;}
 
   virtual void print_status() {  
-    std::cout << "port->scr" << "\tval_port=" << _val_port
+    std::cout << "atomic_scr " << "\tval_port=" << _val_port
               << "\taddr_port:" << _out_port  << "\top_code:" << _op_code << "\titers left: " << _num_strides
          << std::dec << "\tinput_type:" << _value_type << "\toutput_type:" << _output_type << "\taddr_type:" << _addr_type;
     // base_stream_t::print_status();
