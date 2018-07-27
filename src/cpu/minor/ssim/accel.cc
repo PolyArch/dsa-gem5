@@ -4133,6 +4133,8 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
         if(pdg_node) {
           SbPDG_Input* pdg_in = static_cast<SbPDG_Input*>(pdg_node);
           pdg_inputs.push_back(pdg_in);                 //get all the pdg inputs for ports
+          if (cgra_port_num >= _soft_config.cgra_in_ports_active.size())
+            _soft_config.cgra_in_ports_active.resize(cgra_port_num + 1);
           _soft_config.cgra_in_ports_active[cgra_port_num]=true;
         } else {
           //TODO: is there something I SHOULD DO INCASE input DOESN'T EXIST?
