@@ -3942,6 +3942,9 @@ bool scratch_write_controller_t::done(bool show, int mask) {
       if(show) cout << "CONST -> SCR Stream Not Empty\n";
       return false;
     }
+  }
+  if(mask==0 || mask&WAIT_CMP || mask&WAIT_SCR_WR || mask&WAIT_SCR_RD 
+      || mask&WAIT_SCR_ATOMIC) {
     if(atomic_scr_streams_active()) {
       if(show) cout << "ATOMIC SCR Stream Not Empty\n";
       return false;
@@ -3951,6 +3954,7 @@ bool scratch_write_controller_t::done(bool show, int mask) {
         return false;
     }
   }
+
   if(scr_scr_streams_active()) {
     if(show) cout << "SCR -> SCR Stream Not Empty\n";
     return false;

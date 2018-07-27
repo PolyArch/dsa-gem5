@@ -49,11 +49,13 @@ typedef uint64_t addr_t;
 #define NUM_GROUPS (6)
 
 //bit std::vectors for sb_wait
-#define WAIT_SCR_WR   1 //wait for just scratch
-#define WAIT_CMP      2 //wait for everything to complete
-#define WAIT_SCR_RD   4 //wait for all reads to complete
-#define WAIT_SCR_RD_Q 8 //wait for all reads to be de-queued
-#define WAIT_MEM_WR   16//wait for all writes to complete
+#define WAIT_SCR_WR       1 //wait for just scratch
+#define WAIT_CMP          2 //wait for everything to complete
+#define WAIT_SCR_RD       4 //wait for all reads to complete (not impl)
+#define WAIT_SCR_RD_Q     8 //wait for all reads to be de-queued (not impl)
+#define WAIT_MEM_WR       16//wait for all writes to complete (not impl)
+#define WAIT_SCR_ATOMIC   32//wait for all atomics to be done, delay the core
+
 
 //fill modes
 #define NO_FILL        0
