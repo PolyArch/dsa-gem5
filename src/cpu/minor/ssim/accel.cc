@@ -3136,10 +3136,7 @@ bool scratch_write_controller_t::crossbar_backpressureOn(){
 
 void scratch_write_controller_t::cycle(bool can_perform_atomic_scr, bool &performed_atomic_scr) {
   
-// std::cout << " and s1: " << _port_scr_streams.size() << " and s2: " << _scr_scr_streams.size() << "max_scr: " << max_src << "\n";
-  // maybe it is like it will always be 1: always increasing????
-  // max_src += _accel->_const_scr_queue.size() + const_scr_streams_active();
-  // max_src += _accel->_const_scr_queue.size();
+ 
   for(int i=0; i < max_src; ++i) {
       // shouldn't this be a last?
       _which=(_which+1==max_src)?0:_which+1;
