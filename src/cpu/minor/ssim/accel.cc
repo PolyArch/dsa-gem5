@@ -90,6 +90,8 @@ void soft_config_t::reset() {
   in_ports_active.clear();
   in_ports_active_group.clear();
   in_ports_active_backcgra.clear();
+  in_ports_name.clear();
+  out_ports_name.clear();
   group_thr.clear();
   out_ports_active.clear();
   out_ports_active_group.clear();
@@ -220,14 +222,13 @@ SBDT port_data_t::pop_out_data() {
   return val;
 }
 
-//pop data from port
+//peek at output data
 SBDT port_data_t::peek_out_data() {
    assert(_mem_data.size());
    SBDT val = _mem_data.front();
   return val;
 }
 
-//pop data from port
 SBDT port_data_t::peek_out_data(int i) {
    SBDT val = _mem_data[i];
   return val;
@@ -755,6 +756,7 @@ void accel_t::tick() {
   }
 
   cycle_out_interf();
+  cycle_indirect_interf();
   schedule_streams();
   _waiting_cycles++;
 
@@ -762,6 +764,23 @@ void accel_t::tick() {
   _scr_w_c.finish_cycle(); 
   _scr_r_c.finish_cycle(); 
 }
+
+//forward from indirect inputs to indirect outputs -- this makes the protocol
+//simpler than it used to be
+void accel_t::cycle_indirect_interf() {
+  for(unsigned i = START_IND_PORTS; i < STOP_IND_PORTS; ++i ) {  //ind read ports
+
+    auto& ind_in_port  = _port_interf.in_port(i);
+    auto& ind_out_port = _port_interf.out_port(i);
+
+    //we only allow 8 words in the output vector port, since there's already
+    //buffering in the input vector port, so it would be kindof cheating
+    while(ind_in_port.mem_size() && ind_out_port.mem_size() < 8) {
+      ind_out_port.push_data(ind_in_port.pop_in_data());
+    }
+  }
+}
+
 
 void accel_t::cycle_in_interf() {
   for(unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
@@ -1292,7 +1311,8 @@ void accel_t::print_status() {
    cout << "Ports:\n";
    for(unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
      unsigned cur_p = _soft_config.in_ports_active[i];
-     std::cout << "In Port " << cur_p << ": ";
+     string& s = _soft_config.in_ports_name[cur_p];
+     std::cout << "In Port " << cur_p << " " << s <<": ";
      std::cout << "  Mem Size: "  << _port_interf.in_port(cur_p).mem_size() <<"";
      std::cout << "  Num Ready: " << _port_interf.in_port(cur_p).num_ready() <<"\n";
    }
@@ -1307,7 +1327,8 @@ void accel_t::print_status() {
 
    for(unsigned i = 0; i < _soft_config.out_ports_active.size(); ++i) {
      unsigned cur_p = _soft_config.out_ports_active[i];
-     std::cout << "Out Port " << cur_p << ": ";
+     string& s = _soft_config.out_ports_name[cur_p];
+     std::cout << "Out Port " << cur_p << " " << s << ": ";
      std::cout << "  In Flight: " <<_port_interf.out_port(cur_p).num_in_flight()<<"";
      std::cout << "  Num Ready: " <<_port_interf.out_port(cur_p).num_ready()<<"";
      std::cout << "  Mem Size: "  <<_port_interf.out_port(cur_p).mem_size()<<"\n";
@@ -1551,7 +1572,7 @@ void accel_t::schedule_streams() {
     port_data_t* in_vp=NULL;
     port_data_t* out_vp=NULL;
     port_data_t* out_vp2=NULL; // for atomic stream
-    port_data_t* out_ind_vp=NULL; 
+    port_data_t* ind_vp=NULL; 
 
     bool scheduled_in=false;
     bool scheduled_out=false;
@@ -1676,14 +1697,14 @@ void accel_t::schedule_streams() {
       }
 
     } else if(auto ind_stream = dynamic_cast<indirect_stream_t*>(ip)) {
-      int out_ind_port = ind_stream->_ind_port; //grab output res
+      int ind_port = ind_stream->_ind_port; //grab output res
       int in_port = ind_stream->_in_port;
-      out_ind_vp = &_port_interf.out_port(out_ind_port); //indirect output port
+      ind_vp = &_port_interf.out_port(ind_port); //indirect output port
       in_vp = &_port_interf.in_port(in_port);
 
       if(in_vp->can_take(LOC::PORT,repeat,repeat_str) && 
-          out_ind_vp->can_take(LOC::PORT)
-          && !blocked_ivp[in_port] && !blocked_ovp[out_ind_port]) {
+          ind_vp->can_take(LOC::PORT)
+          && !blocked_ivp[in_port] && !blocked_ovp[ind_port]) {
 
         //ports okay, schedule to scratch or dma!
         bool succ=false;
@@ -1694,24 +1715,24 @@ void accel_t::schedule_streams() {
           scheduled_in = true;
           scheduled_out = true;
           in_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
-          out_ind_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
+          ind_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
         }
       }
     } else if(auto ind_stream = dynamic_cast<indirect_wr_stream_t*>(ip)) {
-      int out_ind_port = ind_stream->_ind_port; //grab output res
+      int ind_port = ind_stream->_ind_port; //grab output res
       int out_port = ind_stream->_out_port;
-      out_ind_vp = &_port_interf.out_port(out_ind_port); //indirect output port
+      ind_vp = &_port_interf.out_port(ind_port); //indirect output port
       out_vp = &_port_interf.out_port(out_port);
 
-      if(out_vp->can_take(LOC::PORT) && out_ind_vp->can_take(LOC::PORT)
-          && !blocked_ovp[out_port] && !blocked_ovp[out_ind_port]) {
+      if(out_vp->can_take(LOC::PORT) && ind_vp->can_take(LOC::PORT)
+          && !blocked_ovp[out_port] && !blocked_ovp[ind_port]) {
         bool succ=false;
         if(ind_stream->scratch()) succ = _scr_w_c.schedule_indirect_wr(*ind_stream);
         else succ = _dma_c.schedule_indirect_wr(*ind_stream);
         if(succ) {
           scheduled_out=true;
           out_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
-          out_ind_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
+          ind_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
         }
       }
     } else if(auto atomic_scr_stream = dynamic_cast<atomic_scr_stream_t*>(ip)) {
@@ -1749,7 +1770,7 @@ void accel_t::schedule_streams() {
     if(in_vp) blocked_ivp[in_vp->port()] = true; //prevent OOO access
     if(out_vp) blocked_ovp[out_vp->port()] = true;
     if(out_vp2) blocked_ovp[out_vp2->port()] = true;
-    if(out_ind_vp) blocked_ovp[out_ind_vp->port()] = true;
+    if(ind_vp) blocked_ovp[ind_vp->port()] = true;
 
     prior_scratch_read  |= ((ip->src()  & LOC::SCR) != LOC::NONE);
     prior_scratch_write |= ((ip->dest() & LOC::SCR) != LOC::NONE);
@@ -2348,10 +2369,10 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
       int which_indirect = which - (_dma_port_streams.size()+1);
       indirect_stream_t& ind_s = _indirect_streams[which_indirect];
 
-      auto& in_ind_vp = _accel->port_interf().in_port(ind_s._ind_port);
+      auto& ind_vp = _accel->port_interf().out_port(ind_s._ind_port);
 
       if(ind_s.stream_active()) {
-        if(in_ind_vp.mem_size()>0 &&
+        if(ind_vp.mem_size()>0 &&
           _accel->_lsq->sd_transfers[ind_s.in_port()].unreservedRemainingSpace()>0
                     && _accel->_lsq->canRequest()) {
 
@@ -2369,9 +2390,8 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
               in_vp.set_status(port_data_t::STATUS::COMPLETE, LOC::DMA);
 
               //out_ind_vp is where we keep track of the resource
-              auto& out_ind_vp = _accel->port_interf().out_port(ind_s._ind_port);
               if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect DMA->PORT \n";}
-              out_ind_vp.set_status(port_data_t::STATUS::FREE);
+              ind_vp.set_status(port_data_t::STATUS::FREE);
             }
 
             return;
@@ -2451,7 +2471,7 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
           _accel->_lsq->sd_transfers[MEM_WR_STREAM].canReserve()) {
 
         port_data_t& out_port = _accel->port_interf().out_port(ind_s._out_port);
-        port_data_t& ind_port = _accel->port_interf().in_port(ind_s._ind_port);
+        port_data_t& ind_port = _accel->port_interf().out_port(ind_s._ind_port);
 
         if(out_port.mem_size()>0 && ind_port.mem_size()>0) { 
           _accel->_lsq->sd_transfers[MEM_WR_STREAM].reserve();
@@ -2528,7 +2548,7 @@ int dma_controller_t::req_read(mem_stream_base_t& stream,
 
 void scratch_write_controller_t::write_scratch_ind(indirect_wr_stream_t& stream) {
   port_data_t& out_vp = _accel->port_interf().out_port(stream._out_port);
-  port_data_t& ind_vp = _accel->port_interf().in_port(stream._ind_port);
+  port_data_t& ind_vp = _accel->port_interf().out_port(stream._ind_port);
 
   int bytes_written=0;
 
@@ -2538,7 +2558,7 @@ void scratch_write_controller_t::write_scratch_ind(indirect_wr_stream_t& stream)
 
     bool pop_ind_vp = stream.pop_elem(); 
     if(pop_ind_vp) { //this is for sub-word granularity reads
-      ind_vp.pop_in_data(); 
+      ind_vp.pop_out_data(); 
     }
 
     uint64_t val = stream.cur_value(out_vp.peek_out_data());
@@ -2560,8 +2580,7 @@ void scratch_write_controller_t::write_scratch_ind(indirect_wr_stream_t& stream)
 
     if(SB_DEBUG::VP_SCORE2) {cout << "SOURCE: INDIRECT PORT -> SCR\n";}
     out_vp.set_status(port_data_t::STATUS::FREE);
-    port_data_t& out_ind_vp = _accel->port_interf().out_port(stream._ind_port);
-    out_ind_vp.set_status(port_data_t::STATUS::FREE);
+    ind_vp.set_status(port_data_t::STATUS::FREE);
   }
 
   if(_accel->_ssim->in_roi()) {
@@ -2578,7 +2597,7 @@ void scratch_write_controller_t::write_scratch_ind(indirect_wr_stream_t& stream)
 void scratch_read_controller_t::read_scratch_ind(indirect_stream_t& stream, 
                            uint64_t scr_addr/*if scr is dest, also todo*/) {  
   
-  port_data_t& ind_vp = _accel->port_interf().in_port(stream._ind_port);
+  port_data_t& ind_vp = _accel->port_interf().out_port(stream._ind_port);
   port_data_t& in_vp = _accel->port_interf().in_port(stream._in_port);
 
   uint8_t* raw_ptr = (uint8_t*)&stream._cur_ind_val;
@@ -2592,7 +2611,7 @@ void scratch_read_controller_t::read_scratch_ind(indirect_stream_t& stream,
 
     bool pop_ind_vp = stream.pop_elem(); 
     if(pop_ind_vp) { //this is for sub-word granularity reads
-      ind_vp.pop_in_data(); 
+      ind_vp.pop_out_data(); 
     }
 
     _accel->read_scratchpad(raw_ptr+stream._ind_bytes_complete, addr, 
@@ -2613,10 +2632,8 @@ void scratch_read_controller_t::read_scratch_ind(indirect_stream_t& stream,
     if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT \n";}
     in_vp.set_status(port_data_t::STATUS::FREE);
 
-    //out_ind_vp is where we keep track of the resource
-    auto& out_ind_vp = _accel->port_interf().out_port(stream._ind_port);
     if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT \n";}
-    out_ind_vp.set_status(port_data_t::STATUS::FREE);
+    ind_vp.set_status(port_data_t::STATUS::FREE);
   }
 
   _accel->_stat_scr_bytes_rd+=bytes_read;
@@ -2632,7 +2649,7 @@ void scratch_read_controller_t::read_scratch_ind(indirect_stream_t& stream,
 
 void dma_controller_t::ind_read_req(indirect_stream_t& stream, 
                                     uint64_t scr_addr) {  
-  port_data_t& ind_vp = _accel->port_interf().in_port(stream._ind_port);
+  port_data_t& ind_vp = _accel->port_interf().out_port(stream._ind_port);
 
   bool first=true;
   addr_t base_addr=0;
@@ -2669,7 +2686,7 @@ void dma_controller_t::ind_read_req(indirect_stream_t& stream,
 
     bool pop_ind_vp = stream.pop_elem();
     if(pop_ind_vp) {
-      ind_vp.pop_in_data();
+      ind_vp.pop_out_data();
     }
   }
   bool last = stream.check_set_empty();
@@ -2708,7 +2725,7 @@ void dma_controller_t::ind_read_req(indirect_stream_t& stream,
 
 void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
   port_data_t& out_vp = _accel->port_interf().out_port(stream._out_port);
-  port_data_t& ind_vp = _accel->port_interf().in_port(stream._ind_port);
+  port_data_t& ind_vp = _accel->port_interf().out_port(stream._ind_port);
 
   bool first=true;
   addr_t init_addr=0;
@@ -2756,7 +2773,7 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
 
     bool pop_ind_vp = stream.pop_elem();
     if(pop_ind_vp) {
-      ind_vp.pop_in_data();
+      ind_vp.pop_out_data();
     }
   }
 
@@ -2788,8 +2805,7 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
     //if((stream._ind_port==26&&!DOUBLE_PORT) || stream._ind_port==27 ) {
 
     //} else {
-    port_data_t& out_ind_vp = _accel->port_interf().out_port(stream._ind_port);
-    out_ind_vp.set_status(port_data_t::STATUS::FREE);
+    ind_vp.set_status(port_data_t::STATUS::FREE);
     //}
   }
 
@@ -3048,8 +3064,7 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
     } else if (_which<_scr_port_streams.size() + _ind_port_streams.size()) {
       int ind = _which-_scr_port_streams.size();
       auto& stream = _ind_port_streams[ind];
-      port_data_t& ind_vp = 
-        _accel->port_interf().in_port(stream._ind_port);
+      port_data_t& ind_vp = _accel->port_interf().out_port(stream._ind_port);
 
       if(ind_vp.mem_size() && stream.stream_active()) {
         read_scratch_ind(stream,-1/*scratch*/);
@@ -3261,10 +3276,11 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr, bool &perfor
       if(stream.stream_active()) {
 
         port_data_t& out_port = _accel->port_interf().out_port(stream._out_port);
-        port_data_t& ind_port = _accel->port_interf().in_port(stream._ind_port);
+        port_data_t& ind_port = _accel->port_interf().out_port(stream._ind_port);
 
         if(out_port.mem_size()>0 && ind_port.mem_size()>0) { 
           write_scratch_ind(stream);
+          break;
         }
 		break;
       }
@@ -4124,6 +4140,10 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
   _soft_config.output_pdg_node.resize(NUM_GROUPS);
   _soft_config.group_thr.resize(NUM_GROUPS);
 
+  _soft_config.in_ports_name.resize(64);
+  _soft_config.out_ports_name.resize(64);
+
+
   for(int ind = 0; ind < _pdg->num_vec_input(); ++ind) {
       SbPDG_Vec* vec_in = _pdg->vec_in(ind);
       int i = _sched->vecPortOf(vec_in).second;
@@ -4132,6 +4152,8 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
 
       SbPDG_VecInput* vec_input = dynamic_cast<SbPDG_VecInput*>(vec_in);
       assert(vec_input);
+
+      _soft_config.in_ports_name[i]=vec_input->name(); 
 
       int group_ind = _pdg->find_group_for_vec(vec_input);
       _soft_config.in_ports_active_group[group_ind].push_back(i);
@@ -4178,6 +4200,8 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
 
       SbPDG_VecOutput* vec_output = dynamic_cast<SbPDG_VecOutput*>(vec_out);
       assert(vec_output);
+
+      _soft_config.out_ports_name[i]=vec_output->name(); 
 
       int group_ind = _pdg->find_group_for_vec(vec_output);
       _soft_config.out_ports_active_group[group_ind].push_back(i); 

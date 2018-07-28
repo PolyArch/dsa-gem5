@@ -51,6 +51,9 @@ class soft_config_t {
 public:
   uint64_t cur_config_addr;
 
+  std::vector<std::string> in_ports_name;
+  std::vector<std::string> out_ports_name;
+
   std::vector<int> in_ports_active;
   std::vector<int> in_ports_active_backcgra; // which inputs triggered by backcgra
 
@@ -1200,6 +1203,7 @@ private:
 
   void cycle_in_interf();
   void cycle_out_interf();
+  void cycle_indirect_interf(); //forward from indirect inputs to indirect outputs
   void schedule_streams();
 
   bool cgra_done(bool, int mask);
