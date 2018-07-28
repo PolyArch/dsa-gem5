@@ -758,7 +758,7 @@ class scratch_write_controller_t : public data_controller_t {
     _atomic_scr_streams.resize(1);
 
     max_src = _port_scr_streams.size() + _ind_wr_streams.size() + 
-      _bufs.size() + _atomic_scr_streams.size();
+      _bufs.size() + _atomic_scr_streams.size() + 1;
 
     reset_stream_engines();
   }
@@ -1434,6 +1434,7 @@ private:
   int _cgra_issued;
   int _dedicated_cgra_issued;
   int _backcgra_issued;
+  int _scr_ctrl_turn = 0;
 
   std::vector<bool> _cgra_prev_issued_group[NUM_GROUPS];
   //uint64_t _delay_group_until[NUM_GROUPS]={0,0,0,0,0,0};

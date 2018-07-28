@@ -679,19 +679,18 @@ void accel_t::tick() {
   // HACK: logic such that only atomic or rd/wr occurs in 1 cycle
   bool performed_atomic_scr = false;
   bool performed_read = false;
-  int turn = 0;
 
-  if(turn==0){
+  if(_scr_ctrl_turn==0){
     _scr_w_c.cycle(true, performed_atomic_scr);
     if(!performed_atomic_scr){
       _scr_r_c.cycle(performed_read);
     }
   }
-  if(turn==1){
+  if(_scr_ctrl_turn==1){
     _scr_r_c.cycle(performed_read);
 	_scr_w_c.cycle(!performed_read, performed_atomic_scr);
   }
-  turn = (turn+1)%2;
+  _scr_ctrl_turn = (_scr_ctrl_turn+1)%2;
 
 
 
@@ -2543,7 +2542,7 @@ void scratch_write_controller_t::write_scratch_ind(indirect_wr_stream_t& stream)
     }
 
     uint64_t val = stream.cur_value(out_vp.peek_out_data());
-
+	
     _accel->write_scratchpad(addr, &val, stream._data_bytes,stream.id());
 
     bytes_written += stream._data_bytes;
@@ -3139,7 +3138,8 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr, bool &perfor
   
 // std::cout << " and s1: " << _port_scr_streams.size() << " and s2: " << _scr_scr_streams.size() << "max_scr: " << max_src << "\n";
   // maybe it is like it will always be 1: always increasing????
-  max_src += _accel->_const_scr_queue.size() + const_scr_streams_active();
+  // max_src += _accel->_const_scr_queue.size() + const_scr_streams_active();
+  // max_src += _accel->_const_scr_queue.size();
   for(int i=0; i < max_src; ++i) {
       // shouldn't this be a last?
       _which=(_which+1==max_src)?0:_which+1;
@@ -3209,9 +3209,8 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr, bool &perfor
         }
         break;
       }
-    // } else if(_which<(_port_scr_streams.size()+_bufs.size())+_atomic_scr_streams.size()) {
+    // } else if(_which<(_port_scr_streams.size()+_bufs.size()+_accel->_const_scr_queue.size())){ 
     } else if(_which<(_port_scr_streams.size()+_bufs.size()+1)){ // for const->scr stream
-      // std::cout << _accel->now() << " came in else condition for const_scr_stream_t\n";
       auto& stream=_const_scr_stream;
       if(stream.stream_active()) {
         // std::cout << "const_scr_stream active\n";
@@ -3255,7 +3254,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr, bool &perfor
             cout << "SOURCE: CONST->SCR\n";
           }
         }
-         break;
+        break;
       }
     } else if(_which<(_port_scr_streams.size()+_bufs.size()+1+_ind_wr_streams.size())) {
       //Indirect write streams
@@ -3270,6 +3269,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr, bool &perfor
         if(out_port.mem_size()>0 && ind_port.mem_size()>0) { 
           write_scratch_ind(stream);
         }
+		break;
       }
 
     } else { 
@@ -3296,7 +3296,6 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr, bool &perfor
 
 
          if(out_addr.mem_size() > 0 && out_val.mem_size() > 0 && !crossbar_backpressureOn()) { // enough in src and dest
-
 
            // hopefully it pushes data here
 		   if(_accel->_ssim->in_roi()){
