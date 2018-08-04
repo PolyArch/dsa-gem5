@@ -868,6 +868,7 @@ struct indirect_base_stream_t : public base_stream_t {
 
   addr_t cur_addr(SBDT val) {    
     uint64_t index =  (val >> (_index_in_word * _index_bytes * 8)) & _index_mask;
+	// std::cout << "index: " << index << " mult: " << _ind_mult << "\n"; 
     return   _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes;
   }  
 

@@ -882,7 +882,7 @@ void accel_t::cycle_cgra_backpressure() {
         }
         // cout << "Allowed to push input: " << data[0] << " and next input: " << data[1] << "\n";
         // cout << "Port name: " << vec_in->gamsName() << " ";
-        // cout << "Allowed to push input: " << data[0] << "\n";
+        // cout << "Allowed to push input: " << std::hex << data[0] << "\n";
 
         // this is supposed to be a flag, correct it later!
         num_computed = _pdg->push_vector(vec_in, data, data_valid, print, true); 
@@ -2563,6 +2563,7 @@ void scratch_write_controller_t::write_scratch_ind(indirect_wr_stream_t& stream)
 
     uint64_t val = stream.cur_value(out_vp.peek_out_data());
 	
+	// push the entry into the write bank queues
     _accel->write_scratchpad(addr, &val, stream._data_bytes,stream.id());
 
     bytes_written += stream._data_bytes;
@@ -2583,6 +2584,7 @@ void scratch_write_controller_t::write_scratch_ind(indirect_wr_stream_t& stream)
     ind_vp.set_status(port_data_t::STATUS::FREE);
   }
 
+  // have the same bank queues thing here
   if(_accel->_ssim->in_roi()) {
     add_bw(LOC::PORT, LOC::SCR, 1, bytes_written);
     _accel->_stat_scratch_writes++;
@@ -2603,10 +2605,12 @@ void scratch_read_controller_t::read_scratch_ind(indirect_stream_t& stream,
   uint8_t* raw_ptr = (uint8_t*)&stream._cur_ind_val;
 
   int bytes_read = 0;
+  int logical_banks = NUM_SCRATCH_BANKS;
 
   while(ind_vp.mem_size() && stream.stream_active() && 
-      bytes_read < 64 //Todo: this is very agresive : ) : )
-      ) {
+      bytes_read < 64) {
+    
+    logical_banks = NUM_SCRATCH_BANKS/stream._data_bytes;
     addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
 
     bool pop_ind_vp = stream.pop_elem(); 
@@ -2614,10 +2618,29 @@ void scratch_read_controller_t::read_scratch_ind(indirect_stream_t& stream,
       ind_vp.pop_out_data(); 
     }
 
-    _accel->read_scratchpad(raw_ptr+stream._ind_bytes_complete, addr, 
-                            stream._data_bytes, stream.id());
+    // push the entry into the read bank queues
+    // _accel->read_scratchpad(raw_ptr+stream._ind_bytes_complete, addr, stream._data_bytes, stream.id());
+    indirect_scr_read_req request;
+    request.ptr = raw_ptr+stream._ind_bytes_complete;
+    request.addr = addr;
+    request.bytes = stream._data_bytes;
+    request.stream_id = stream.id();
+
+    // Assuming linear mapping by default
+    int bank_id = addr & (logical_banks-1);
+
+	// if(strcmp(_accel->_banked_spad_mapping_strategy,"COL")==0){
+    //   bank_id = (addr >> 9) & (logical_banks-1);
+	// } else if(strcmp(_accel->_banked_spad_mapping_strategy,"ROW")==0){
+	//   bank_id = addr & (logical_banks-1);
+    // } else {
+    //   bank_id = (addr >> 5) & (logical_banks-1);
+    // }
+    // std::cout << "addr: " << addr << " bank id to access for indirect scr read is: " << bank_id << " stream id: " << stream.id() << "\n";
+
+    _indirect_scr_read_requests[bank_id].push(request);
    
-    bytes_read += stream._data_bytes;
+    // bytes_read += stream._data_bytes;
     stream._ind_bytes_complete += stream._data_bytes;
 
     if(stream._ind_bytes_complete==8) { //more 64-bit adaptor crap!
@@ -2625,8 +2648,19 @@ void scratch_read_controller_t::read_scratch_ind(indirect_stream_t& stream,
       stream._ind_bytes_complete=0;
       stream._cur_ind_val=0;
     }
+
+    // FIXME: not sure if this is a good idea
+	if(stream.check_set_empty()) {
+      _accel->process_stream_stats(stream);
+      if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT \n";}
+      in_vp.set_status(port_data_t::STATUS::FREE);
+
+      if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT \n";}
+      ind_vp.set_status(port_data_t::STATUS::FREE);
+    }
   }
 
+  /*
   if(stream.check_set_empty()) {
     _accel->process_stream_stats(stream);
     if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT \n";}
@@ -2635,7 +2669,19 @@ void scratch_read_controller_t::read_scratch_ind(indirect_stream_t& stream,
     if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT \n";}
     ind_vp.set_status(port_data_t::STATUS::FREE);
   }
+  */
 
+  // have the same read bank queues thing here
+  for(int i=0; i<logical_banks; ++i){
+    if(!_indirect_scr_read_requests[i].empty()){
+      indirect_scr_read_req request = _indirect_scr_read_requests[i].front();
+
+      _accel->read_scratchpad(request.ptr, request.addr, request.bytes, request.stream_id);
+      bytes_read += stream._data_bytes;
+
+      _indirect_scr_read_requests[i].pop();
+    }
+  }
   _accel->_stat_scr_bytes_rd+=bytes_read;
   _accel->_stat_scratch_read_bytes+=bytes_read;
 
@@ -2644,7 +2690,6 @@ void scratch_read_controller_t::read_scratch_ind(indirect_stream_t& stream,
     _accel->_stat_scratch_reads++;
   }
 }
-
 
 
 void dma_controller_t::ind_read_req(indirect_stream_t& stream, 
@@ -3066,7 +3111,8 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
       auto& stream = _ind_port_streams[ind];
       port_data_t& ind_vp = _accel->port_interf().out_port(stream._ind_port);
 
-      if(ind_vp.mem_size() && stream.stream_active()) {
+      // if(ind_vp.mem_size() && stream.stream_active()) {
+      if((ind_vp.mem_size() && stream.stream_active()) || indirect_scr_read_requests_active()) {
         read_scratch_ind(stream,-1/*scratch*/);
         break;
       }
@@ -3335,8 +3381,10 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr, bool &perfor
            // number of iterations of this loop cannot be more than 8*64-bits
            // => cannot pop more than 8 values from the port
           
+		   // num_value_pops should be less than 64 bytes?
            while(scr_addr < max_addr && stream._num_strides>0 
-                       && out_addr.mem_size()  && out_val.mem_size() && num_addr_pops < (64/stream._addr_bytes)) {  //enough in source
+                       && out_addr.mem_size()  && out_val.mem_size() && num_addr_pops < 64) {  //enough in source
+                       // && out_addr.mem_size()  && out_val.mem_size() && num_addr_pops < (64/stream._addr_bytes)) {  //enough in source
                        // && count_ops_val<no_scr_banks && count_ops_addr<no_scr_banks) { // opns in 1 cycle cannot be more than the number of banks
                        
              if(SB_DEBUG::SB_COMP) {
@@ -3450,8 +3498,13 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr, bool &perfor
             // break; // this is just pulling data not serving it
          }
        }
+	   /*
+	   if(!can_perform_atomic_scr){
+		 std::cout << "COULD NOT PERFORM ATOMIC SCR\n";
+	   }
+	   */
        // if requests are available in the bank queues
-       if(atomic_scr_issued_requests_active() && can_perform_atomic_scr){
+	   if(atomic_scr_issued_requests_active() && can_perform_atomic_scr){
         for(int i=0; i<logical_banks; ++i){
           if(!_atomic_scr_issued_requests[i].empty()){
             atomic_scr_op_req request = _atomic_scr_issued_requests[i].front();
@@ -3494,9 +3547,6 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr, bool &perfor
         if(_accel->_ssim->in_roi()) {
           add_bw(stream.src(), stream.dest(), 1, bytes_written);
           _accel->_stat_scratch_writes+=1;
-        }
-
-		if(_accel->_ssim->in_roi()){
 		  _accel->_stat_cycles_atomic_scr_executed++;
 		}
 
@@ -3930,6 +3980,14 @@ bool scratch_write_controller_t::atomic_scr_issued_requests_active() {
   return false;
 }
 
+bool scratch_read_controller_t::indirect_scr_read_requests_active() {
+  for(int i=0; i<NUM_SCRATCH_BANKS; ++i){
+    if(!_indirect_scr_read_requests[i].empty()){
+      return true;
+    }
+  }
+  return false;
+}
 bool scratch_write_controller_t::const_scr_streams_active() {
   // cout << "Was it active? " << !_const_scr_stream.empty() << endl;
   return !_const_scr_stream.empty();
@@ -4012,6 +4070,10 @@ bool scratch_read_controller_t::done(bool show, int mask) {
     if(scr_scr_streams_active()) {
       if(show) cout << "SCR -> SCR Streams Not Empty\n";
       return false;
+    }
+    if(indirect_scr_read_requests_active()) {
+      if(show) cout << "Banked scratchpad queues Not Empty\n";
+        return false;
     }
   }
   return true;

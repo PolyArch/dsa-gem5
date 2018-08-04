@@ -659,6 +659,7 @@ class scratch_read_controller_t : public data_controller_t {
     }
     _scr_port_streams.resize(8);
     _ind_port_streams.resize(8);
+    _indirect_scr_read_requests.resize(NUM_SCRATCH_BANKS);
 
 
     max_src=1+_scr_port_streams.size() + _ind_port_streams.size() +
@@ -688,6 +689,8 @@ class scratch_read_controller_t : public data_controller_t {
   float calc_min_port_ready();
   // void cycle();
   void cycle(bool &performed_read);
+  // banked scratchpad read buffers
+  bool indirect_scr_read_requests_active();
 
   void finish_cycle();
   bool done(bool,int);
@@ -730,10 +733,19 @@ class scratch_read_controller_t : public data_controller_t {
   int _which=0;
   int max_src=0;
 
+  struct indirect_scr_read_req{
+    void *ptr;
+    uint64_t addr;
+    size_t bytes;
+    int stream_id;
+  };
+
+
   scr_dma_stream_t _scr_dma_stream;
   std::vector<scr_port_stream_t> _scr_port_streams;
   std::vector<scr_scr_stream_t> _scr_scr_streams;
   std::vector<indirect_stream_t> _ind_port_streams;
+  std::vector<std::queue<indirect_scr_read_req>> _indirect_scr_read_requests;
 
   dma_controller_t* _dma_c;  
 };
