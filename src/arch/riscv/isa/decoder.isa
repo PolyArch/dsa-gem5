@@ -953,9 +953,9 @@ decode QUADRANT default Unknown::unknown() {
                 }}, IsSDStream, IsNonSpeculative, No_OpClass);
                 0x7: sb_cfg_ind({{
                     xc->setSDReg(Rs1,SD_OFFSET_LIST);
+                    xc->setSDReg(Rs2, SD_IND_MULT); 
                     xc->setSDReg((imm>>2)&0x3, SD_IND_TYPE); 
                     xc->setSDReg((imm>>0)&0x3, SD_DTYPE); 
-                    xc->setSDReg((imm>>4)&0xFF, SD_IND_MULT); 
                 }}, No_OpClass);
             }
         }
