@@ -395,24 +395,24 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
   }
 
   const char* fifo_len_str = std::getenv("FU_FIFO_LEN");
-
   if (fifo_len_str != nullptr) {
     _fu_fifo_len = atoi(fifo_len_str);
+  }
+
+  const char* ind_rob_size = std::getenv("IND_ROB_SIZE");
+  if (ind_rob_size != nullptr) {
+    _ind_rob_size = atoi(ind_rob_size);
   }
 
   const char* sbconfig_file = std::getenv("SBCONFIG");
 
   if(!SB_DEBUG::SUPRESS_SB_STATS) {
-    static bool printed_fifo_before=false;
-    if(!printed_fifo_before) {
-      std::cout << "FIFO_LEN:" << _fu_fifo_len << "\n";
-      printed_fifo_before=true;
-    }
-
     static bool printed_this_before=false;
     if(!printed_this_before) {
       std::cout << "Loading SB Config (env SBCONFIG): \"" 
                 << sbconfig_file <<"\"\n";
+      std::cout << "FU_FIFO_LEN:" << _fu_fifo_len << "\n";
+      std::cout << "IND_ROB_SIZE:" << _ind_rob_size << "\n";
       printed_this_before=true;
     }
   }
@@ -2598,97 +2598,141 @@ void scratch_write_controller_t::write_scratch_ind(indirect_wr_stream_t& stream)
 
 void scratch_read_controller_t::read_scratch_ind(indirect_stream_t& stream, 
                            uint64_t scr_addr/*if scr is dest, also todo*/) {  
-  
+
   port_data_t& ind_vp = _accel->port_interf().out_port(stream._ind_port);
-  port_data_t& in_vp = _accel->port_interf().in_port(stream._in_port);
 
-  uint8_t* raw_ptr = (uint8_t*)&stream._cur_ind_val;
+  // STAGE 1: Push the requests to ports
+  if(stream.stream_active() && ind_vp.mem_size() && 
+      _ind_ROB.size() < _accel->_ind_rob_size) {  
+    //don't use this anymore because data goes into the request instead
+    //uint8_t* raw_ptr = (uint8_t*)&stream._cur_ind_val;
+  
+    int logical_banks = NUM_SCRATCH_BANKS/stream._data_bytes;
 
-  int bytes_read = 0;
-  int logical_banks = NUM_SCRATCH_BANKS;
 
-  while(ind_vp.mem_size() && stream.stream_active() && 
-      bytes_read < 64) {
-    
-    logical_banks = NUM_SCRATCH_BANKS/stream._data_bytes;
-    addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
+    ind_reorder_entry_t* reorder_entry = new ind_reorder_entry_t();
+    _ind_ROB.push(reorder_entry);
+    reorder_entry->stream=&stream;
+    reorder_entry->data_bytes=stream._data_bytes;
+    reorder_entry->size=0;
 
-    bool pop_ind_vp = stream.pop_elem(); 
-    if(pop_ind_vp) { //this is for sub-word granularity reads
-      ind_vp.pop_out_data(); 
+  
+    //just distribute the elements to the queues
+    while(ind_vp.mem_size() && stream.stream_active() && 
+        reorder_entry->size <64) {
+
+      addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
+  
+      bool pop_ind_vp = stream.pop_elem(); 
+      if(pop_ind_vp) { //this is for sub-word granularity reads
+        ind_vp.pop_out_data(); 
+      }
+  
+      // push the entry into the read bank queues
+      // _accel->read_scratchpad(raw_ptr+stream._ind_bytes_complete, addr, stream._data_bytes, stream.id());
+      indirect_scr_read_req request;
+      request.ptr = reorder_entry->data+reorder_entry->size;
+      // +stream._ind_bytes_complete;
+      request.addr = addr;
+      request.bytes = stream._data_bytes;
+      request.reorder_entry = reorder_entry;
+  
+      reorder_entry->size+=stream._data_bytes; //increment size of request
+  
+  
+      // Assuming linear mapping by default
+      int bank_id = addr & (logical_banks-1);
+  
+      _indirect_scr_read_requests[bank_id].push(request);
+
+      assert(reorder_entry->size > 0 && reorder_entry->size <= 64);
+
     }
 
-    // push the entry into the read bank queues
-    // _accel->read_scratchpad(raw_ptr+stream._ind_bytes_complete, addr, stream._data_bytes, stream.id());
-    indirect_scr_read_req request;
-    request.ptr = raw_ptr+stream._ind_bytes_complete;
-    request.addr = addr;
-    request.bytes = stream._data_bytes;
-    request.stream_id = stream.id();
-
-    // Assuming linear mapping by default
-    int bank_id = addr & (logical_banks-1);
-
-	// if(strcmp(_accel->_banked_spad_mapping_strategy,"COL")==0){
-    //   bank_id = (addr >> 9) & (logical_banks-1);
-	// } else if(strcmp(_accel->_banked_spad_mapping_strategy,"ROW")==0){
-	//   bank_id = addr & (logical_banks-1);
-    // } else {
-    //   bank_id = (addr >> 5) & (logical_banks-1);
-    // }
-    // std::cout << "addr: " << addr << " bank id to access for indirect scr read is: " << bank_id << " stream id: " << stream.id() << "\n";
-
-    _indirect_scr_read_requests[bank_id].push(request);
-   
-    // bytes_read += stream._data_bytes;
-    stream._ind_bytes_complete += stream._data_bytes;
-
-    if(stream._ind_bytes_complete==8) { //more 64-bit adaptor crap!
-      in_vp.push_data(stream._cur_ind_val);
-      stream._ind_bytes_complete=0;
-      stream._cur_ind_val=0;
-    }
-
-    // FIXME: not sure if this is a good idea
-	if(stream.check_set_empty()) {
+    if(!stream.stream_active()) { // don't set empty yet, even though we free the vps
+      port_data_t& in_vp = _accel->port_interf().in_port(stream.in_port());
+  
       _accel->process_stream_stats(stream);
-      if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT \n";}
-      in_vp.set_status(port_data_t::STATUS::FREE);
-
-      if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT \n";}
+      if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT (queue)\n";}
+  
+      //the in_vp isn't really full yet because we have to wait until
+      //the conflict-free data arrives
+      in_vp.set_status(port_data_t::STATUS::COMPLETE,LOC::SCR);
+  
+      if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT queue)\n";}
       ind_vp.set_status(port_data_t::STATUS::FREE);
     }
   }
 
-  /*
-  if(stream.check_set_empty()) {
-    _accel->process_stream_stats(stream);
-    if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT \n";}
-    in_vp.set_status(port_data_t::STATUS::FREE);
-
-    if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT \n";}
-    ind_vp.set_status(port_data_t::STATUS::FREE);
-  }
-  */
-
-  // have the same read bank queues thing here
-  for(int i=0; i<logical_banks; ++i){
+  //Stage 2: Carry out the reads to ROB
+  int bytes_read=0;
+  for(int i = 0; i< _indirect_scr_read_requests.size();++i){
     if(!_indirect_scr_read_requests[i].empty()){
+
       indirect_scr_read_req request = _indirect_scr_read_requests[i].front();
+      ind_reorder_entry_t& reorder_entry = *request.reorder_entry;
 
-      _accel->read_scratchpad(request.ptr, request.addr, request.bytes, request.stream_id);
-      bytes_read += stream._data_bytes;
-
+      _accel->read_scratchpad(request.ptr, request.addr, request.bytes,
+                              reorder_entry.stream->id());
+      reorder_entry.completed+=reorder_entry.data_bytes;
+      assert(reorder_entry.size > 0 && reorder_entry.size <= 64);
+      assert(reorder_entry.completed <= reorder_entry.size);
+      bytes_read+=reorder_entry.data_bytes;
       _indirect_scr_read_requests[i].pop();
+
+      
     }
   }
-  _accel->_stat_scr_bytes_rd+=bytes_read;
-  _accel->_stat_scratch_read_bytes+=bytes_read;
 
-  if(_accel->_ssim->in_roi()) {
-     add_bw(LOC::SCR, stream.dest(), 1, bytes_read);
-    _accel->_stat_scratch_reads++;
+  if(bytes_read>0) {
+    _accel->_stat_scr_bytes_rd+=bytes_read;
+    _accel->_stat_scratch_read_bytes+=bytes_read;
+    if(_accel->_ssim->in_roi()) {
+       add_bw(LOC::SCR, LOC::PORT, 1, bytes_read);
+      _accel->_stat_scratch_reads++;
+    }
   }
+
+  // STAGE 3
+  //See if we can pop an item from the indirect rob
+  //int bytes_pushed=0;
+  if(_ind_ROB.size() > 0) {
+    ind_reorder_entry_t* reorder_entry = _ind_ROB.front();
+
+    if(reorder_entry->size == reorder_entry->completed) {
+      //The entry is ready for transfer!
+    
+      auto& stream = *reorder_entry->stream;
+      port_data_t& in_vp = _accel->port_interf().in_port(stream.in_port());
+  
+      for(int i = 0; i < reorder_entry->size; ++i) {
+        in_vp.push_data_byte(reorder_entry->data[i]);
+      }
+      //bytes_pushed=reorder_entry.size;
+  
+      if(stream.check_set_empty()) { //finally can free input for reals 
+        if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT \n";}
+        in_vp.set_status(port_data_t::STATUS::FREE,LOC::SCR);
+      }
+      delete reorder_entry;
+      _ind_ROB.pop();
+    }
+  }
+
+
+}
+
+//This function does two things:
+//1. Check the reorder buffer if the top entry is ready to complete
+//2. Carry out the actual reads
+//TODO:FIXME: This function actually can send data on the bus to the 
+//ports... so it should really be arbitrated
+int scratch_read_controller_t::cycle_read_queue() {
+
+  //First, check if we can commit one request from the reorder buffer
+  int bytes_pushed=0;
+
+  return bytes_pushed;
 }
 
 
@@ -3061,6 +3105,8 @@ float scratch_read_controller_t::calc_min_port_ready() {
 
 void scratch_read_controller_t::cycle(bool &performed_read) {
   float min_port_ready=-2;
+
+  cycle_read_queue();
 
   int i=0;
   for(i=0; i < max_src; ++i) {

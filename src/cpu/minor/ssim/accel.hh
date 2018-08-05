@@ -155,11 +155,33 @@ public:
     _mem_data.push_back(data);
   }
 
+  uint8_t _incomplete_word[8]={0};
+  int _bytes_in_word=0;
+  //We need an adaptor so that we can push sub-word size data to the ports
+  //Ideally we'd change all the datastructures so they could work properly
+  //for now I'm implementing a hack
+  
+  void push_data_byte(uint8_t b) {
+     _incomplete_word[_bytes_in_word++]=b;
+     if(_bytes_in_word==8) {
+       _bytes_in_word=0;
+       push_data( *((uint64_t*)_incomplete_word),true);
+      for(int i = 0; i <8; ++i) _incomplete_word[i]=0; 
+     }
+  }
+
   void push_data(SBDT data, bool valid=true) {
+    if(_bytes_in_word!=0) {
+      std::cout << "It's not cool to leave random incomplete words in the port, "
+           << "please be more tidy next time\n";
+      assert(0);
+    }
     _mem_data.push_back(data);
     _valid_data.push_back(valid); 
     _total_pushed+=valid;
   }
+
+
   void push_data(std::vector<SBDT> data, bool valid=true) { 
     for(auto i : data) push_data(i,valid); 
   }
@@ -692,6 +714,8 @@ class scratch_read_controller_t : public data_controller_t {
   // banked scratchpad read buffers
   bool indirect_scr_read_requests_active();
 
+  int cycle_read_queue();
+
   void finish_cycle();
   bool done(bool,int);
 
@@ -733,11 +757,19 @@ class scratch_read_controller_t : public data_controller_t {
   int _which=0;
   int max_src=0;
 
+  struct ind_reorder_entry_t {
+    uint8_t data[64]; //64 bytes per request
+    int size; //number of writes that should be completed
+    int completed=0;
+    int data_bytes;
+    base_stream_t* stream; 
+  };
+
   struct indirect_scr_read_req{
     void *ptr;
     uint64_t addr;
     size_t bytes;
-    int stream_id;
+    ind_reorder_entry_t* reorder_entry=NULL;
   };
 
 
@@ -746,6 +778,8 @@ class scratch_read_controller_t : public data_controller_t {
   std::vector<scr_scr_stream_t> _scr_scr_streams;
   std::vector<indirect_stream_t> _ind_port_streams;
   std::vector<std::queue<indirect_scr_read_req>> _indirect_scr_read_requests;
+  std::queue<ind_reorder_entry_t*> _ind_ROB;
+
 
   dma_controller_t* _dma_c;  
 };
@@ -1415,6 +1449,8 @@ private:
   SbPDG*    _pdg     = NULL;
 
   int _fu_fifo_len=DEFAULT_FIFO_LEN;
+  int _ind_rob_size=DEFAULT_IND_ROB_SIZE;
+
 
   std::vector<uint8_t> scratchpad;    
   std::bitset<SCRATCH_SIZE/SCR_WIDTH> scratch_ready; //TODO: use this

@@ -15,6 +15,8 @@ typedef uint64_t addr_t;
 #define SB_TIMING
 
 #define DEFAULT_FIFO_LEN 15
+#define DEFAULT_IND_ROB_SIZE 8
+
 
 #define NUM_ACCEL 8
 #define NUM_ACCEL_TOTAL (NUM_ACCEL+1)
