@@ -2614,7 +2614,8 @@ void scratch_read_controller_t::read_scratch_ind(indirect_stream_t& stream,
     _ind_ROB.push(reorder_entry);
     reorder_entry->stream=&stream;
     reorder_entry->data_bytes=stream._data_bytes;
-    reorder_entry->size=0;
+    reorder_entry->size=0; //paranoia
+    reorder_entry->last=false;
 
   
     //just distribute the elements to the queues
@@ -2651,7 +2652,8 @@ void scratch_read_controller_t::read_scratch_ind(indirect_stream_t& stream,
 
     if(!stream.stream_active()) { // don't set empty yet, even though we free the vps
       port_data_t& in_vp = _accel->port_interf().in_port(stream.in_port());
-  
+ 
+      reorder_entry->last=true;
       _accel->process_stream_stats(stream);
       if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT (queue)\n";}
   
@@ -2710,7 +2712,7 @@ void scratch_read_controller_t::read_scratch_ind(indirect_stream_t& stream,
       }
       //bytes_pushed=reorder_entry.size;
   
-      if(stream.check_set_empty()) { //finally can free input for reals 
+      if(reorder_entry->last && stream.check_set_empty()) { //finally can free input for reals 
         if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT \n";}
         in_vp.set_status(port_data_t::STATUS::FREE,LOC::SCR);
       }

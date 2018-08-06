@@ -763,6 +763,7 @@ class scratch_read_controller_t : public data_controller_t {
     int completed=0;
     int data_bytes;
     base_stream_t* stream; 
+    bool last = false;
   };
 
   struct indirect_scr_read_req{
