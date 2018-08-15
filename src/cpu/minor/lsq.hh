@@ -177,7 +177,7 @@ class LSQ : public Named
         PacketPtr packet;
 
         /** The underlying request of this LSQRequest */
-        Request request;
+        RequestPtr request;
 
         /** Fault generated performing this request */
         Fault fault;
@@ -306,7 +306,7 @@ class LSQ : public Named
     {
       protected:
         /** TLB interace */
-        void finish(const Fault &fault_, RequestPtr request_,
+        void finish(const Fault &fault_, const RequestPtr &request_,
                     ThreadContext *tc, BaseTLB::Mode mode)
         { }
 
@@ -367,7 +367,7 @@ class LSQ : public Named
     {
       protected:
         /** TLB interace */
-        void finish(const Fault &fault_, RequestPtr request_,
+        void finish(const Fault &fault_, const RequestPtr &request_,
                     ThreadContext *tc, BaseTLB::Mode mode);
 
         /** Has my only packet been sent to the memory system but has not
@@ -436,14 +436,14 @@ class LSQ : public Named
 
         /** Fragment Requests corresponding to the address ranges of
          *  each fragment */
-        std::vector<Request *> fragmentRequests;
+        std::vector<RequestPtr> fragmentRequests;
 
         /** Packets matching fragmentRequests to issue fragments to memory */
         std::vector<Packet *> fragmentPackets;
 
       protected:
         /** TLB response interface */
-        void finish(const Fault &fault_, RequestPtr request_,
+        void finish(const Fault &fault_, const RequestPtr &request_,
                     ThreadContext *tc, BaseTLB::Mode mode);
 
       public:
@@ -772,7 +772,7 @@ class LSQ : public Named
 /** Make a suitable packet for the given request.  If the request is a store,
  *  data will be the payload data.  If sender_state is NULL, it won't be
  *  pushed into the packet as senderState */
-PacketPtr makePacketForRequest(Request &request, bool isLoad,
+PacketPtr makePacketForRequest(const RequestPtr &request, bool isLoad,
     Packet::SenderState *sender_state = NULL, PacketDataPtr data = NULL);
 }
 
