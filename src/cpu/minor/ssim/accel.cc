@@ -4274,7 +4274,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
       port_data_t& cur_in_port = _port_interf.in_port(i);
       if(vec_input->is_temporal()) {
         cur_in_port.set_port_map(_sbconfig->subModel()->io_interf().in_vports[i],
-            mask,vec_input->num_inputs());
+            mask,vec_input->inputs().size());
       } else {
         cur_in_port.set_port_map(_sbconfig->subModel()->io_interf().in_vports[i],
                                   mask,0);
@@ -4287,9 +4287,9 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
       for(unsigned port_idx = 0; port_idx < cur_in_port.port_cgra_elem(); ++port_idx) {
         int cgra_port_num = cur_in_port.cgra_port_for_index(port_idx);
         
-        SbPDG_Node* pdg_node = vec_input->getInput(port_idx);
-        
-        if(pdg_node) {
+        SbPDG_Node* pdg_node = vec_input->inputs()[port_idx];
+
+        if (pdg_node != nullptr) {
           SbPDG_Input* pdg_in = static_cast<SbPDG_Input*>(pdg_node);
           pdg_inputs.push_back(pdg_in);                 //get all the pdg inputs for ports
           if (cgra_port_num >= _soft_config.cgra_in_ports_active.size())
