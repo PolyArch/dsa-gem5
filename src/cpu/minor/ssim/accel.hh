@@ -592,7 +592,8 @@ class dma_controller_t : public data_controller_t {
   void ind_read_req(indirect_stream_t& stream, uint64_t scr_addr);
   void ind_write_req(indirect_wr_stream_t& stream);
 
-  void make_request(unsigned s, unsigned t, unsigned& which);
+  void make_read_request(unsigned s, unsigned t, unsigned& which);
+  void make_write_request(unsigned s, unsigned t, unsigned& which);
 
   void print_status();
   void cycle_status();
@@ -602,20 +603,6 @@ class dma_controller_t : public data_controller_t {
   bool mem_reads_outstanding()  {return _mem_read_reqs;}
   bool mem_writes_outstanding() {return _mem_write_reqs;}
   bool scr_reqs_outstanding()  {return _fake_scratch_reqs;}
-
-  //bool any_stream_active() {
-  //  return comm_streams_active() || read_streams_active() 
-  //    || write_streams_active();
-  //}
-  //bool comm_streams_active() {
-  //  return dma_scr_streams_active();
-  //}
-  //bool read_streams_active() {
-  //  return dma_port_streams_active() || indirect_streams_active();
-  //}
-  //bool write_streams_active() {
-  //  return port_dma_streams_active() || indirect_wr_streams_active();
-  //}
 
   bool dma_port_streams_active();
   bool dma_scr_streams_active();
@@ -645,15 +632,16 @@ class dma_controller_t : public data_controller_t {
   unsigned _which=0;
   unsigned _tq, _tq_read;
 
-//  std::priority_queue<base_stream_t*, std::vector<base_stream_t*>, Compare> pq;
-
   //This ordering defines convention of checking
   std::vector<dma_port_stream_t> _dma_port_streams;  //reads
   dma_scr_stream_t _dma_scr_stream;  
-  std::vector<port_dma_stream_t> _port_dma_streams; //writes
-
   std::vector<indirect_stream_t> _indirect_streams; //indirect reads
-  std::vector<indirect_wr_stream_t> _indirect_wr_streams; //indirect reads
+
+  
+
+
+  std::vector<port_dma_stream_t> _port_dma_streams; //writes
+  std::vector<indirect_wr_stream_t> _indirect_wr_streams; //indirect writes
  
   //address to stream -> [stream_index, data]
   uint64_t _mem_read_reqs=0, _mem_write_reqs=0;

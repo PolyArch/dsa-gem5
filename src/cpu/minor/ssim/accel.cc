@@ -1551,8 +1551,6 @@ void accel_t::print_stats() {
 // --------------------------SCHEDULE STREAMS ONTO CONTROLLERS-----------------------
 // This is essentially the stream dispatcher
 void accel_t::schedule_streams() {
-
-
   // std::cout << "came here to schedule streams\n";
 
   int str_width=_sbconfig->dispatch_width();
@@ -1572,11 +1570,8 @@ void accel_t::schedule_streams() {
     port_data_t* in_vp=NULL;
     port_data_t* out_vp=NULL;
     port_data_t* out_vp2=NULL; // for atomic stream
-    port_data_t* ind_vp=NULL; 
 
-    bool scheduled_in=false;
-    bool scheduled_out=false;
-    bool scheduled_other=false;
+    bool scheduled=false;
     int repeat = ip->repeat_in();
     int repeat_str = ip->repeat_str();
 
@@ -1600,11 +1595,11 @@ void accel_t::schedule_streams() {
     } else if(auto stream = dynamic_cast<scr_scr_stream_t*>(ip)) { 
       if(stream->_is_source) { //do not schedule, but check out port available
         if(stream->_is_ready) {  //writer is ready
-          scheduled_other = _scr_r_c.schedule_scr_scr(*stream); 
+          scheduled = _scr_r_c.schedule_scr_scr(*stream); 
         }
       } else { //destination waits for data 
-        scheduled_other = _scr_w_c.schedule_scr_scr(*stream); 
-        if(scheduled_other) {
+        scheduled = _scr_w_c.schedule_scr_scr(*stream); 
+        if(scheduled) {
           stream->_remote_stream->_is_ready=true; //writer says its okay
         }
       }
@@ -1613,7 +1608,7 @@ void accel_t::schedule_streams() {
                      (stream->bar_scr_wr() && prior_scratch_write);
       blocked |= !done_concurrent(false,stream->_mask);
       if(!blocked) {
-        scheduled_other=true;
+        scheduled=true;
         if(SB_DEBUG::SCR_BARRIER) {
           timestamp();
           std::cout << "BARRIER ISSUED, Scratch Write Complete\n";
@@ -1627,7 +1622,7 @@ void accel_t::schedule_streams() {
       int port = dma_port_stream->_in_port;
       in_vp = &_port_interf.in_port(port);
       if(in_vp->can_take(LOC::DMA,repeat,repeat_str) && !blocked_ivp[port] &&
-        (scheduled_in = _dma_c.schedule_dma_port(*dma_port_stream)) ) {
+        (scheduled = _dma_c.schedule_dma_port(*dma_port_stream)) ) {
         in_vp->set_status(port_data_t::STATUS::BUSY, LOC::DMA);
       }
 
@@ -1635,7 +1630,7 @@ void accel_t::schedule_streams() {
       int port = scr_port_stream->_in_port;
       in_vp = &_port_interf.in_port(port);
       if(in_vp->can_take(LOC::SCR,repeat,repeat_str) && !blocked_ivp[port] &&
-          (scheduled_in = _scr_r_c.schedule_scr_port(*scr_port_stream)) ) {
+          (scheduled = _scr_r_c.schedule_scr_port(*scr_port_stream)) ) {
         in_vp->set_status(port_data_t::STATUS::BUSY, LOC::SCR);
         //_outstanding_scr_read_streams--;
       }      
@@ -1644,7 +1639,7 @@ void accel_t::schedule_streams() {
         int out_port = stream->_out_port;
         out_vp = &_port_interf.out_port(out_port);
     
-        if((scheduled_out = 
+        if((scheduled = 
           (out_vp->can_take(LOC::PORT) && !blocked_ovp[out_port]))) {
           out_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
           stream->_remote_stream->_is_ready =true; //we'll check this in dest.
@@ -1654,7 +1649,7 @@ void accel_t::schedule_streams() {
         in_vp = &_port_interf.in_port(in_port);
         if(in_vp->can_take(LOC::PORT,repeat,repeat_str) && !blocked_ivp[in_port] &&
             stream->_is_ready /*src is ready*/ &&
-            (scheduled_in = _port_c.schedule_remote_port(*stream)) ) {
+            (scheduled = _port_c.schedule_remote_port(*stream)) ) {
           in_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
         }
       }
@@ -1666,8 +1661,8 @@ void accel_t::schedule_streams() {
       if(in_vp->can_take(LOC::PORT,repeat,repeat_str) && 
           out_vp->can_take(LOC::PORT) &&
           !blocked_ivp[in_port] && !blocked_ovp[out_port] && 
-          (scheduled_in = _port_c.schedule_port_port(*port_port_stream)) ) {
-        scheduled_out = true;
+          (scheduled = _port_c.schedule_port_port(*port_port_stream)) ) {
+        scheduled = true;
         in_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
         out_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
       }
@@ -1676,7 +1671,7 @@ void accel_t::schedule_streams() {
       int port = const_port_stream->_in_port;
       in_vp = &_port_interf.in_port(port);
       if(in_vp->can_take(LOC::CONST) && !blocked_ivp[port] && 
-            (scheduled_in = _port_c.schedule_const_port(*const_port_stream) )) {
+            (scheduled = _port_c.schedule_const_port(*const_port_stream) )) {
         in_vp->set_status(port_data_t::STATUS::BUSY, LOC::CONST);
       }
       
@@ -1684,7 +1679,7 @@ void accel_t::schedule_streams() {
       int port = port_dma_stream->_out_port;
       out_vp = &_port_interf.out_port(port);
       if(out_vp->can_take(LOC::DMA) && !blocked_ovp[port] &&
-           (scheduled_out = _dma_c.schedule_port_dma(*port_dma_stream))) {
+           (scheduled = _dma_c.schedule_port_dma(*port_dma_stream))) {
         out_vp->set_status(port_data_t::STATUS::BUSY, LOC::DMA);
       }
 
@@ -1692,15 +1687,16 @@ void accel_t::schedule_streams() {
       int port = port_scr_stream->_out_port;
       out_vp = &_port_interf.out_port(port);
       if(out_vp->can_take(LOC::SCR) && !blocked_ovp[port] &&
-            (scheduled_out = _scr_w_c.schedule_port_scr(*port_scr_stream))) {
+            (scheduled = _scr_w_c.schedule_port_scr(*port_scr_stream))) {
         out_vp->set_status(port_data_t::STATUS::BUSY, LOC::SCR);
       }
 
     } else if(auto ind_stream = dynamic_cast<indirect_stream_t*>(ip)) {
       int ind_port = ind_stream->_ind_port; //grab output res
       int in_port = ind_stream->_in_port;
-      ind_vp = &_port_interf.out_port(ind_port); //indirect output port
+      auto* ind_vp = &_port_interf.out_port(ind_port); //indirect output port
       in_vp = &_port_interf.in_port(in_port);
+      out_vp = ind_vp;
 
       if(in_vp->can_take(LOC::PORT,repeat,repeat_str) && 
           ind_vp->can_take(LOC::PORT)
@@ -1712,8 +1708,8 @@ void accel_t::schedule_streams() {
         else succ = _dma_c.schedule_indirect(*ind_stream);
 
         if(succ) {
-          scheduled_in = true;
-          scheduled_out = true;
+          scheduled = true;
+          scheduled = true;
           in_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
           ind_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
         }
@@ -1721,8 +1717,9 @@ void accel_t::schedule_streams() {
     } else if(auto ind_stream = dynamic_cast<indirect_wr_stream_t*>(ip)) {
       int ind_port = ind_stream->_ind_port; //grab output res
       int out_port = ind_stream->_out_port;
-      ind_vp = &_port_interf.out_port(ind_port); //indirect output port
+      auto* ind_vp = &_port_interf.out_port(ind_port); //indirect output port
       out_vp = &_port_interf.out_port(out_port);
+      out_vp2 = ind_vp;
 
       if(out_vp->can_take(LOC::PORT) && ind_vp->can_take(LOC::PORT)
           && !blocked_ovp[out_port] && !blocked_ovp[ind_port]) {
@@ -1730,7 +1727,7 @@ void accel_t::schedule_streams() {
         if(ind_stream->scratch()) succ = _scr_w_c.schedule_indirect_wr(*ind_stream);
         else succ = _dma_c.schedule_indirect_wr(*ind_stream);
         if(succ) {
-          scheduled_out=true;
+          scheduled=true;
           out_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
           ind_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
         }
@@ -1749,40 +1746,32 @@ void accel_t::schedule_streams() {
 
       if(out_vp->can_take(LOC::PORT) && out_vp2->can_take(LOC::PORT)
           && !blocked_ovp[addr_port] && !blocked_ovp[val_port] &&
-            (scheduled_out = _scr_w_c.schedule_atomic_scr_op(*atomic_scr_stream) )) {
+            (scheduled = _scr_w_c.schedule_atomic_scr_op(*atomic_scr_stream) )) {
           // Any other thing to be set busy: scr, both o/p ports?
           // std::cout << "finally holding resources\n";
         out_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
         out_vp2->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
       }
     } else if(auto dma_scr_stream = dynamic_cast<dma_scr_stream_t*>(ip)) {
-      scheduled_other = _dma_c.schedule_dma_scr(*dma_scr_stream);
+      scheduled = _dma_c.schedule_dma_scr(*dma_scr_stream);
     } else if(auto scr_dma_stream = dynamic_cast<scr_dma_stream_t*>(ip)) {
-      scheduled_other = _scr_r_c.schedule_scr_dma(*scr_dma_stream);
+      scheduled = _scr_r_c.schedule_scr_dma(*scr_dma_stream);
     } else if(auto const_scr_stream = dynamic_cast<const_scr_stream_t*>(ip)) {
-      scheduled_other = _scr_w_c.schedule_const_scr(*const_scr_stream);
+      scheduled = _scr_w_c.schedule_const_scr(*const_scr_stream);
     } 
-
-
-
-
 
     if(in_vp) blocked_ivp[in_vp->port()] = true; //prevent OOO access
     if(out_vp) blocked_ovp[out_vp->port()] = true;
     if(out_vp2) blocked_ovp[out_vp2->port()] = true;
-    if(ind_vp) blocked_ovp[ind_vp->port()] = true;
 
     prior_scratch_read  |= ((ip->src()  & LOC::SCR) != LOC::NONE);
     prior_scratch_write |= ((ip->dest() & LOC::SCR) != LOC::NONE);
 
-    if(scheduled_in) { //inform input port about its new configuration (repeat)
-      in_vp->set_repeat(repeat,repeat_str);
-      //if(repeat==0) {
-      //   cout << "REPEAT IS 0!";
-      //}
-    }
+    if(scheduled) {
+      if(in_vp) { //inform input port about its new configuration (repeat)
+        in_vp->set_repeat(repeat,repeat_str);
+      }
 
-    if(scheduled_in || scheduled_out || scheduled_other) {
       str_issued++;
       if(SB_DEBUG::SB_COMMAND_I) {
         timestamp();
@@ -2279,8 +2268,8 @@ void dma_controller_t::cycle(){
     port_resp(i);
   }
 
-  make_request(0,_tq_read,_which_read); //read request
-  make_request(_tq_read,_tq,_which); //write request
+  make_read_request(0,_tq_read,_which_read); //read request
+  make_write_request(_tq_read,_tq,_which); //write request
 }
 
 void dma_controller_t::print_status() {
@@ -2301,106 +2290,16 @@ void dma_controller_t::finish_cycle() {
 //  for(auto& i : _port_dma_streams) {i.finish_cycle();}
 }
 
-
-void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
+void dma_controller_t::make_write_request(unsigned s, unsigned t, unsigned& which) {
   if(which < s) {
     which=s;
   } 
 
-  //find minimum balance -- this is horribly inneficient.  
-  //                           need to redo eventually
-  //uint64_t min_balance=-1;
-  //if(which < _tq_read) {
-  //  for(unsigned i = s; i < t; ++i) {
-
-  //  }
-
-  //  if(_dma_port_streams.size()) { //DMA READ (addr)
-  //    
-  //  }
-  //
-
   for(unsigned i = s; i < t; ++i) {
     which=(which+1)==t ? s:which+1; //rolling increment
     std::vector<SBDT> data;
-
-    if(which<_dma_port_streams.size()) { //DMA READ (addr)
-
-      dma_port_stream_t& dma_s = _dma_port_streams[which];
-
-      if(dma_s.stream_active()) {
-//        cout << "stream active" << which << " unres remaining " 
-//             << _accel->_lsq->sd_transfers[dma_s._in_port].unreservedRemainingSpace()
-//             << " can req: " << _accel->_lsq->canRequest() << "\n";
-
-        auto& in_vp = _accel->port_interf().in_port(dma_s._in_port);
-
-        if(_accel->_lsq->sd_transfers[dma_s._in_port].unreservedRemainingSpace()>0 
-           && _accel->_lsq->canRequest()) {
-    
-          _accel->_lsq->sd_transfers[dma_s._in_port].reserve();
-
-          req_read(dma_s,-1/*scratch_addr*/);
-          if(dma_s.empty()) {
-            if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: DMA->PORT \n";}
-            in_vp.set_status(port_data_t::STATUS::COMPLETE, LOC::DMA);
-          }
-          return;
-        }
-      }
-    } else if(which==_dma_port_streams.size()) {
-      //READ TO SCRATCH
-      if(_dma_scr_stream.stream_active()) {
-        if(_accel->_lsq->sd_transfers[SCR_STREAM].unreservedRemainingSpace()>0
-                    && _accel->_lsq->canRequest()) {
-          _accel->_lsq->sd_transfers[SCR_STREAM].reserve();
-          int words_read = req_read(_dma_scr_stream,
-                                    _dma_scr_stream._scratch_addr);
-
-          //need to update scratch address for next time
-          _dma_scr_stream._scratch_addr+= words_read * DATA_WIDTH;
-
-          _fake_scratch_reqs++;
-
-          return;
-        }
-      }
-    } else if(which < _dma_port_streams.size()+1+_indirect_streams.size()) {
-      int which_indirect = which - (_dma_port_streams.size()+1);
-      indirect_stream_t& ind_s = _indirect_streams[which_indirect];
-
-      auto& ind_vp = _accel->port_interf().out_port(ind_s._ind_port);
-
-      if(ind_s.stream_active()) {
-        if(ind_vp.mem_size()>0 &&
-          _accel->_lsq->sd_transfers[ind_s.in_port()].unreservedRemainingSpace()>0
-                    && _accel->_lsq->canRequest()) {
-
-
-          auto& in_vp = _accel->port_interf().in_port(ind_s._in_port);
-          if(in_vp.num_can_push() > 8) { //make sure vp isn't full
-            _accel->_lsq->sd_transfers[ind_s.in_port()].reserve();
-
-            //pull_data_indirect(ind_s,data,mem_complete_cyc);
-            ind_read_req(ind_s,-1/*for scratch*/);
-
-            if(ind_s.empty()) {
-              //destination ivp
-              if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect DMA->PORT \n";}
-              in_vp.set_status(port_data_t::STATUS::COMPLETE, LOC::DMA);
-
-              //out_ind_vp is where we keep track of the resource
-              if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect DMA->PORT \n";}
-              ind_vp.set_status(port_data_t::STATUS::FREE);
-            }
-
-            return;
-          }
-        }
-      }
-
-    //WRITE CASES START HERE
-    } else if(which < _tq_read +_port_dma_streams.size()) {
+    assert(which >= _tq_read);
+    if(which < _tq_read +_port_dma_streams.size()) {
       // PORT->DMA Write
       int which_wr=which-_tq_read;  //TODO: did i f anything up?
       port_dma_stream_t& dma_s = _port_dma_streams[which_wr];
@@ -2480,6 +2379,96 @@ void dma_controller_t::make_request(unsigned s, unsigned t, unsigned& which) {
         }
       }
     }
+  }
+}
+
+void dma_controller_t::make_read_request(unsigned s, unsigned t, unsigned& which) {
+  if(which < s) {
+    which=s;
+  } 
+
+  for(unsigned i = s; i < t; ++i) {
+    which=(which+1)==t ? s:which+1; //rolling increment
+    std::vector<SBDT> data;
+
+    if(which<_dma_port_streams.size()) { //DMA READ (addr)
+
+      dma_port_stream_t& dma_s = _dma_port_streams[which];
+
+      if(dma_s.stream_active()) {
+//        cout << "stream active" << which << " unres remaining " 
+//             << _accel->_lsq->sd_transfers[dma_s._in_port].unreservedRemainingSpace()
+//             << " can req: " << _accel->_lsq->canRequest() << "\n";
+
+        auto& in_vp = _accel->port_interf().in_port(dma_s._in_port);
+
+        if(_accel->_lsq->sd_transfers[dma_s._in_port].unreservedRemainingSpace()>0 
+           && _accel->_lsq->canRequest()) {
+    
+          _accel->_lsq->sd_transfers[dma_s._in_port].reserve();
+
+          req_read(dma_s,-1/*scratch_addr*/);
+          if(dma_s.empty()) {
+            if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: DMA->PORT \n";}
+            in_vp.set_status(port_data_t::STATUS::COMPLETE, LOC::DMA);
+          }
+          return;
+        }
+      }
+    } else if(which==_dma_port_streams.size()) {
+      //READ TO SCRATCH
+      if(_dma_scr_stream.stream_active()) {
+        if(_accel->_lsq->sd_transfers[SCR_STREAM].unreservedRemainingSpace()>0
+                    && _accel->_lsq->canRequest()) {
+          _accel->_lsq->sd_transfers[SCR_STREAM].reserve();
+          int words_read = req_read(_dma_scr_stream,
+                                    _dma_scr_stream._scratch_addr);
+
+          //need to update scratch address for next time
+          _dma_scr_stream._scratch_addr+= words_read * DATA_WIDTH;
+
+          _fake_scratch_reqs++;
+
+          return;
+        }
+      }
+    } else if(which < _dma_port_streams.size()+1+_indirect_streams.size()) {
+      int which_indirect = which - (_dma_port_streams.size()+1);
+      indirect_stream_t& ind_s = _indirect_streams[which_indirect];
+
+      auto& ind_vp = _accel->port_interf().out_port(ind_s._ind_port);
+
+      if(ind_s.stream_active()) {
+        if(ind_vp.mem_size()>0 &&
+          _accel->_lsq->sd_transfers[ind_s.in_port()].unreservedRemainingSpace()>0
+                    && _accel->_lsq->canRequest()) {
+
+
+          auto& in_vp = _accel->port_interf().in_port(ind_s._in_port);
+          if(in_vp.num_can_push() > 8) { //make sure vp isn't full
+            _accel->_lsq->sd_transfers[ind_s.in_port()].reserve();
+
+            //pull_data_indirect(ind_s,data,mem_complete_cyc);
+            ind_read_req(ind_s,-1/*for scratch*/);
+
+            if(ind_s.empty()) {
+              //destination ivp
+              if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect DMA->PORT \n";}
+              in_vp.set_status(port_data_t::STATUS::COMPLETE, LOC::DMA);
+
+              //out_ind_vp is where we keep track of the resource
+              if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect DMA->PORT \n";}
+              ind_vp.set_status(port_data_t::STATUS::FREE);
+            }
+
+            return;
+          }
+        }
+      }
+    } else {
+      assert(0); //old write cases
+    }
+
   }
 }
 
