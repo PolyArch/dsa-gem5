@@ -975,7 +975,7 @@ struct stream_stats_histo_t {
   void add(STR_PAT t, LOC src, LOC dest, uint64_t vol) {
     vol_by_source[std::make_pair((int)src,(int)dest)] += vol;
     vol_by_type[(int)t] += vol;
-    vol_by_len[ilog2(vol)]+=vol;
+    vol_by_len[ilog2(vol)+1]+=vol;
     vol_by_len_map[vol]+=vol;
     total_vol+=vol;
     total++;

@@ -49,15 +49,15 @@
 
 #include "mem/cache/mshr.hh"
 
-#include <algorithm>
 #include <cassert>
 #include <string>
-#include <vector>
 
 #include "base/logging.hh"
+#include "base/trace.hh"
 #include "base/types.hh"
 #include "debug/Cache.hh"
-#include "mem/cache/cache.hh"
+#include "mem/cache/base.hh"
+#include "mem/request.hh"
 #include "sim/core.hh"
 
 MSHR::MSHR() : downstreamPending(false),
@@ -68,7 +68,8 @@ MSHR::MSHR() : downstreamPending(false),
 }
 
 MSHR::TargetList::TargetList()
-    : needsWritable(false), hasUpgrade(false), allocOnFill(false)
+    : needsWritable(false), hasUpgrade(false), allocOnFill(false),
+      hasFromCache(false)
 {}
 
 
@@ -91,6 +92,10 @@ MSHR::TargetList::updateFlags(PacketPtr pkt, Target::Source source,
         // potentially re-evaluate whether we should allocate on a fill or
         // not
         allocOnFill = allocOnFill || alloc_on_fill;
+
+        if (source != Target::FromPrefetcher) {
+            hasFromCache = hasFromCache || pkt->fromCache();
+        }
     }
 }
 
@@ -174,31 +179,38 @@ MSHR::TargetList::replaceUpgrades()
 
 
 void
-MSHR::TargetList::clearDownstreamPending()
+MSHR::TargetList::clearDownstreamPending(MSHR::TargetList::iterator begin,
+                                         MSHR::TargetList::iterator end)
 {
-    for (auto& t : *this) {
-        if (t.markedPending) {
+    for (auto t = begin; t != end; t++) {
+        if (t->markedPending) {
             // Iterate over the SenderState stack and see if we find
             // an MSHR entry. If we find one, clear the
             // downstreamPending flag by calling
             // clearDownstreamPending(). This recursively clears the
             // downstreamPending flag in all caches this packet has
             // passed through.
-            MSHR *mshr = t.pkt->findNextSenderState<MSHR>();
+            MSHR *mshr = t->pkt->findNextSenderState<MSHR>();
             if (mshr != nullptr) {
                 mshr->clearDownstreamPending();
             }
-            t.markedPending = false;
+            t->markedPending = false;
         }
     }
 }
 
+void
+MSHR::TargetList::clearDownstreamPending()
+{
+    clearDownstreamPending(begin(), end());
+}
+
 
 bool
-MSHR::TargetList::checkFunctional(PacketPtr pkt)
+MSHR::TargetList::trySatisfyFunctional(PacketPtr pkt)
 {
     for (auto& t : *this) {
-        if (pkt->checkFunctional(t.pkt)) {
+        if (pkt->trySatisfyFunctional(t.pkt)) {
             return true;
         }
     }
@@ -304,11 +316,6 @@ MSHR::allocateTarget(PacketPtr pkt, Tick whenReady, Counter _order,
     // assume we'd never issue a prefetch when we've got an
     // outstanding miss
     assert(pkt->cmd != MemCmd::HardPFReq);
-
-    // uncacheable accesses always allocate a new MSHR, and cacheable
-    // accesses ignore any uncacheable MSHRs, thus we should never
-    // have targets addded if originally allocated uncacheable
-    assert(!_isUncacheable);
 
     // if there's a request already in service for this MSHR, we will
     // have to defer the new target until after the response if any of
@@ -424,7 +431,8 @@ MSHR::handleSnoop(PacketPtr pkt, Counter _order)
         // the packet and the request as part of handling the deferred
         // snoop.
         PacketPtr cp_pkt = will_respond ? new Packet(pkt, true, true) :
-            new Packet(new Request(*pkt->req), pkt->cmd, blkSize, pkt->id);
+            new Packet(std::make_shared<Request>(*pkt->req), pkt->cmd,
+                       blkSize, pkt->id);
 
         if (will_respond) {
             // we are the ordering point, and will consequently
@@ -540,6 +548,49 @@ MSHR::promoteDeferredTargets()
     return true;
 }
 
+void
+MSHR::promoteIf(const std::function<bool (Target &)>& pred)
+{
+    // if any of the deferred targets were upper-level cache
+    // requests marked downstreamPending, need to clear that
+    assert(!downstreamPending);  // not pending here anymore
+
+    // find the first target does not satisfy the condition
+    auto last_it = std::find_if_not(deferredTargets.begin(),
+                                    deferredTargets.end(),
+                                    pred);
+
+    // for the prefix of the deferredTargets [begin(), last_it) clear
+    // the downstreamPending flag and move them to the target list
+    deferredTargets.clearDownstreamPending(deferredTargets.begin(),
+                                           last_it);
+    targets.splice(targets.end(), deferredTargets,
+                   deferredTargets.begin(), last_it);
+    // We need to update the flags for the target lists after the
+    // modifications
+    deferredTargets.populateFlags();
+}
+
+void
+MSHR::promoteReadable()
+{
+    if (!deferredTargets.empty() && !hasPostInvalidate()) {
+        // We got a non invalidating response, and we have the block
+        // but we have deferred targets which are waiting and they do
+        // not need writable. This can happen if the original request
+        // was for a cache clean operation and we had a copy of the
+        // block. Since we serviced the cache clean operation and we
+        // have the block, there's no need to defer the targets, so
+        // move them up to the regular target list.
+
+        auto pred = [](Target &t) {
+            assert(t.source == Target::FromCPU);
+            return !t.pkt->req->isCacheInvalidate() &&
+                   !t.pkt->needsWritable();
+        };
+        promoteIf(pred);
+    }
+}
 
 void
 MSHR::promoteWritable()
@@ -555,34 +606,34 @@ MSHR::promoteWritable()
         // target list.
         assert(!targets.needsWritable);
         targets.needsWritable = true;
-        // if any of the deferred targets were upper-level cache
-        // requests marked downstreamPending, need to clear that
-        assert(!downstreamPending);  // not pending here anymore
-        deferredTargets.clearDownstreamPending();
-        // this clears out deferredTargets too
-        targets.splice(targets.end(), deferredTargets);
-        deferredTargets.resetFlags();
+
+        auto pred = [](Target &t) {
+            assert(t.source == Target::FromCPU);
+            return !t.pkt->req->isCacheInvalidate();
+        };
+
+        promoteIf(pred);
     }
 }
 
 
 bool
-MSHR::checkFunctional(PacketPtr pkt)
+MSHR::trySatisfyFunctional(PacketPtr pkt)
 {
     // For printing, we treat the MSHR as a whole as single entity.
     // For other requests, we iterate over the individual targets
     // since that's where the actual data lies.
     if (pkt->isPrint()) {
-        pkt->checkFunctional(this, blkAddr, isSecure, blkSize, nullptr);
+        pkt->trySatisfyFunctional(this, blkAddr, isSecure, blkSize, nullptr);
         return false;
     } else {
-        return (targets.checkFunctional(pkt) ||
-                deferredTargets.checkFunctional(pkt));
+        return (targets.trySatisfyFunctional(pkt) ||
+                deferredTargets.trySatisfyFunctional(pkt));
     }
 }
 
 bool
-MSHR::sendPacket(Cache &cache)
+MSHR::sendPacket(BaseCache &cache)
 {
     return cache.sendMSHRQueuePacket(this);
 }
@@ -590,7 +641,7 @@ MSHR::sendPacket(Cache &cache)
 void
 MSHR::print(std::ostream &os, int verbosity, const std::string &prefix) const
 {
-    ccprintf(os, "%s[%#llx:%#llx](%s) %s %s %s state: %s %s %s %s %s\n",
+    ccprintf(os, "%s[%#llx:%#llx](%s) %s %s %s state: %s %s %s %s %s %s\n",
              prefix, blkAddr, blkAddr + blkSize - 1,
              isSecure ? "s" : "ns",
              isForward ? "Forward" : "",
@@ -600,7 +651,8 @@ MSHR::print(std::ostream &os, int verbosity, const std::string &prefix) const
              inService ? "InSvc" : "",
              downstreamPending ? "DwnPend" : "",
              postInvalidate ? "PostInv" : "",
-             postDowngrade ? "PostDowngr" : "");
+             postDowngrade ? "PostDowngr" : "",
+             hasFromCache() ? "HasFromCache" : "");
 
     if (!targets.empty()) {
         ccprintf(os, "%s  Targets:\n", prefix);

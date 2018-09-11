@@ -62,39 +62,6 @@ namespace Minor
  *  The LSQ lives here too. */
 class Execute : public Named
 {
-
-    Request ifetch_req;
-    Request data_read_req;
-    Request data_write_req;
-
-    Fault readMem(Addr addr, uint8_t *data, unsigned size,
-                  Request::Flags flags, ThreadContext* thread);
-
-    Fault writeMem(uint8_t *data, unsigned size, Addr addr,
-                  Request::Flags flags, uint64_t *res, ThreadContext* thread);
-
-  public:
-    uint8_t ld_mem8(addr_t addr,uint64_t& cycle, MinorDynInstPtr inst) {
-        assert(0);
-        return 0;
-    }
-    uint64_t ld_mem(addr_t addr,uint64_t& cycle, MinorDynInstPtr inst) {
-        uint64_t data=0XAABBCCDDDDCCBBAA;
-        ThreadID thread_id = inst->id.threadId;
-        ThreadContext *thread = cpu.getContext(thread_id);
-        readMem(addr,(uint8_t*)&data,8,0,thread);
-        return data;
-    }
-    void st_mem16(addr_t addr, uint16_t val,uint64_t& cycle, MinorDynInstPtr inst) {
-        
-    }
-    void st_mem(addr_t addr, uint64_t val,uint64_t& cycle, MinorDynInstPtr inst) {
-        ThreadID thread_id = inst->id.threadId;
-        ThreadContext *thread = cpu.getContext(thread_id);
-        writeMem((uint8_t*)&val,8,addr,0,0,thread);
-    }
-    void inform_cycle(uint64_t cycle) {}
-
   protected:
     /** Input port carrying instructions from Decode */
     Latch<ForwardInstData>::Output inp;

@@ -134,8 +134,9 @@ protected:
 };
 
 
-
-static inline uint64_t ilog2(const uint64_t x) {
+//return -1 if x == 0
+static inline int ilog2(const uint64_t x) {
+  if(x==0) return -1;
   uint64_t y;
   asm ("\tbsr %1, %0\n" : "=r"(y) : "r" (x));
   return y;

@@ -30,8 +30,11 @@
 
 #include "mem/cache/replacement_policies/random_rp.hh"
 
+#include <cassert>
+#include <memory>
+
 #include "base/random.hh"
-#include "mem/cache/blk.hh"
+#include "params/RandomRP.hh"
 
 RandomRP::RandomRP(const Params *p)
     : BaseReplacementPolicy(p)
@@ -86,7 +89,7 @@ RandomRP::getVictim(const ReplacementCandidates& candidates) const
 std::shared_ptr<ReplacementData>
 RandomRP::instantiateEntry()
 {
-    return std::shared_ptr<ReplacementData>(new ReplacementData());
+    return std::shared_ptr<ReplacementData>(new RandomReplData());
 }
 
 RandomRP*

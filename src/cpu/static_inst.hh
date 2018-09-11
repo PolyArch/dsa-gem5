@@ -44,7 +44,6 @@
 #include "config/the_isa.hh"
 #include "cpu/op_class.hh"
 #include "cpu/reg_class.hh"
-#include "cpu/reg_class_impl.hh"
 #include "cpu/static_inst_fwd.hh"
 #include "cpu/thread_context.hh"
 #include "enums/StaticInstFlags.hh"
@@ -144,6 +143,7 @@ class StaticInst : public RefCounted, public StaticInstFlags
     bool isMemRef()       const { return flags[IsMemRef]; }
     bool isLoad()         const { return flags[IsLoad]; }
     bool isStore()        const { return flags[IsStore]; }
+    bool isAtomic()       const { return flags[IsAtomic]; }
     bool isStoreConditional()     const { return flags[IsStoreConditional]; }
     bool isInstPrefetch() const { return flags[IsInstPrefetch]; }
     bool isDataPrefetch() const { return flags[IsDataPrefetch]; }
