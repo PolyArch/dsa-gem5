@@ -40,7 +40,7 @@ typedef uint64_t addr_t;
 #define NUM_IN_PORTS  (32)
 #define NUM_OUT_PORTS (32)
 
-#define START_IND_PORTS (25)
+#define START_IND_PORTS (23)
 #define STOP_IND_PORTS  (32)
 
 #define REPEAT_FXPNT (3)

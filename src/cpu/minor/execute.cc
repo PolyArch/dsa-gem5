@@ -56,6 +56,8 @@
 #include "debug/MinorTrace.hh"
 #include "debug/PCEvent.hh"
 
+#include "ssim/sim-debug.hh"
+
 namespace Minor
 {
 
@@ -890,12 +892,17 @@ Execute::doInstCommitAccounting(MinorDynInstPtr inst)
     cpu.probeInstCommit(inst->staticInst);
 }
 
+void __attribute__ ((noinline)) breakpoint() {
+  std::cout << "breakpoint";
+}
+
 void Execute::timeout_check(bool should_commit, MinorDynInstPtr inst) {
   uint64_t cyc = cpu.curCycle();
   uint64_t last_event = std::max(last_sd_issue, 
                         ssim.forward_progress_cycle());
   if(!should_commit) {
     if(cyc > 9990 + last_event) {
+      breakpoint();
       DPRINTF(SD,"Almost Aborting because of wait", *inst);
     }
 
@@ -1025,6 +1032,10 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
             //continue;
           } else {
             DPRINTF(SD,"Wait complete, mask: %x\n",inst->staticInst->get_imm());
+            if(SB_DEBUG::SB_COMMAND || SB_DEBUG::SB_WAIT) {
+              std::cout << "Wait complete, mask:" 
+                        << inst->staticInst->get_imm() << "\n";
+            }
           }
         } 
 

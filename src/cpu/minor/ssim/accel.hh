@@ -92,7 +92,10 @@ public:
 
   void initialize(SbModel* sbconfig, int port, bool isInput);
   void reset(); //reset if configuration happens
-  unsigned port_cgra_elem() {return _port_map.size();} //num of pairs in mapping 
+  unsigned port_cgra_elem() {
+    int pm_size = _port_map.size();
+    return std::max(pm_size,1);
+  } //num of pairs in mapping 
   
   unsigned port_vec_elem(); //total size elements of the std::vector port 
   unsigned port_depth() { return port_vec_elem() / port_cgra_elem();} //depth of queue
@@ -552,27 +555,19 @@ class dma_controller_t : public data_controller_t {
       scratch_read_controller_t* scr_r_c,
       scratch_write_controller_t* scr_w_c) : 
     data_controller_t(host), _scr_r_c(scr_r_c), _scr_w_c(scr_w_c) {
-    //Setup DMA Controllers, eventually this should be configurable
-    _dma_port_streams.resize(10); 
-    _indirect_streams.resize(8); //indirect to port
-    _indirect_wr_streams.resize(8); //port to indirect mem
-    _port_dma_streams.resize(8); // IS THIS ENOUGH?
-    _tq_read = _dma_port_streams.size()+1/*dma->scr*/+_indirect_streams.size();
-    _tq = _tq_read + _port_dma_streams.size()+1+_indirect_wr_streams.size();
     
     _prev_port_cycle.resize(64); //resize to maximum conceivable ports
-
-    reset_stream_engines();
     mask.resize(MEM_WIDTH/DATA_WIDTH);
   }
 
 
   void reset_stream_engines() {
-    for(auto& i : _dma_port_streams) {i.reset();}
-    for(auto& i : _indirect_streams) {i.reset();}
-    for(auto& i : _indirect_wr_streams) {i.reset();}
-    for(auto& i : _port_dma_streams) {i.reset();}
-    _dma_scr_stream.reset();
+    _read_streams.clear();
+    _write_streams.clear();
+    _dma_port_streams.clear();
+    _indirect_streams.clear();
+    _port_dma_streams.clear();
+    _indirect_wr_streams.clear();
   }
 
   void reset_data() {
@@ -592,26 +587,22 @@ class dma_controller_t : public data_controller_t {
   void ind_read_req(indirect_stream_t& stream, uint64_t scr_addr);
   void ind_write_req(indirect_wr_stream_t& stream);
 
-  void make_read_request(unsigned s, unsigned t, unsigned& which);
-  void make_write_request(unsigned s, unsigned t, unsigned& which);
+  void make_read_request();
+  void make_write_request();
 
   void print_status();
   void cycle_status();
-
-  dma_scr_stream_t& dma_scr_stream() {return _dma_scr_stream;}
 
   bool mem_reads_outstanding()  {return _mem_read_reqs;}
   bool mem_writes_outstanding() {return _mem_write_reqs;}
   bool scr_reqs_outstanding()  {return _fake_scratch_reqs;}
 
   bool dma_port_streams_active();
-  bool dma_scr_streams_active();
   bool port_dma_streams_active();
   bool indirect_streams_active();
   bool indirect_wr_streams_active();
 
   bool schedule_dma_port(dma_port_stream_t& s);
-  bool schedule_dma_scr(dma_scr_stream_t& s);
   bool schedule_port_dma(port_dma_stream_t& s);
   bool schedule_indirect(indirect_stream_t&s);
   bool schedule_indirect_wr(indirect_wr_stream_t&s);
@@ -628,21 +619,25 @@ class dma_controller_t : public data_controller_t {
 
   void port_resp(unsigned i);
 
-  unsigned _which_read=0;
-  unsigned _which=0;
-  unsigned _tq, _tq_read;
+  unsigned _which_rd=0, _which_wr=0;
+
+  std::vector<base_stream_t*> _read_streams;
+  std::vector<base_stream_t*> _write_streams;
 
   //This ordering defines convention of checking
-  std::vector<dma_port_stream_t> _dma_port_streams;  //reads
-  dma_scr_stream_t _dma_scr_stream;  
-  std::vector<indirect_stream_t> _indirect_streams; //indirect reads
+  std::vector<dma_port_stream_t*> _dma_port_streams;  //reads
+  std::vector<indirect_stream_t*> _indirect_streams; //indirect reads
+  std::vector<port_dma_stream_t*> _port_dma_streams; //writes
+  std::vector<indirect_wr_stream_t*> _indirect_wr_streams; //indirect writes
 
-  
-
-
-  std::vector<port_dma_stream_t> _port_dma_streams; //writes
-  std::vector<indirect_wr_stream_t> _indirect_wr_streams; //indirect writes
+  void delete_stream(int i, dma_port_stream_t* s);
+  void delete_stream(int i, indirect_stream_t* s);
+  void delete_stream(int i, port_dma_stream_t* s);  
+  void delete_stream(int i, indirect_wr_stream_t* s);
  
+
+
+
   //address to stream -> [stream_index, data]
   uint64_t _mem_read_reqs=0, _mem_write_reqs=0;
   std::vector<uint64_t> _prev_port_cycle;
@@ -681,6 +676,7 @@ class scratch_read_controller_t : public data_controller_t {
     for(auto& i : _scr_scr_streams) {i.reset();}
     for(auto& i : _ind_port_streams) {i.reset();}
     for(auto& i : _scr_port_streams) {i.reset();}
+    _scr_dma_stream.reset();
   }
 
   void reset_data() {
@@ -708,7 +704,6 @@ class scratch_read_controller_t : public data_controller_t {
   bool done(bool,int);
 
   bool schedule_scr_port(scr_port_stream_t& s);
-  bool schedule_scr_dma(scr_dma_stream_t& s);
   bool schedule_scr_scr(scr_scr_stream_t& s);
   bool schedule_indirect(indirect_stream_t& s);
 
@@ -1310,71 +1305,6 @@ private:
     verif_cmd(s.get());
   }
 
-  //void add_dma_port_stream(dma_port_stream_t* s)     {add_port_based_stream(s);} 
-  //void add_port_dma_stream(port_dma_stream_t* s)     {add_port_based_stream(s);} 
-  //void add_scr_port_stream(scr_port_stream_t* s)     {add_port_based_stream(s);} 
-  //void add_port_scr_stream(port_scr_stream_t* s)     {add_port_based_stream(s);} 
-  //void add_port_port_stream(port_port_stream_t* s)   {add_port_based_stream(s);} 
-  //void add_indirect_stream(indirect_base_stream_t* s){add_port_based_stream(s);} 
-  //void add_const_port_stream(const_port_stream_t* s) {add_port_based_stream(s);} 
-
-//  void add_dma_scr_stream(dma_scr_stream_t* s) {
-//    if(_sbconfig->dispatch_inorder()) {
-//      add_port_based_stream(s);
-//    } else {
-//      _dma_scr_queue.push_back(s);
-//      s->set_minst(cur_minst());
-//      forward_progress();
-//      verif_cmd(s);
-//    }
-//  }
-//
-//  void add_scr_dma_stream(scr_dma_stream_t* s) {
-//    if(_sbconfig->dispatch_inorder()) {
-//      add_port_based_stream(s);
-//    } else {
-//      _scr_dma_queue.push_back(s);
-//      s->set_minst(cur_minst());
-//      forward_progress();
-//      verif_cmd(s);
-//    }
-//  }
-
-
-  bool can_add_dma_port_stream()   {return _in_port_queue.size()  < _queue_size;} 
-  bool can_add_port_dma_stream()   {return _in_port_queue.size()  < _queue_size;}
-  bool can_add_scr_port_stream()   {return _in_port_queue.size()  < _queue_size;}
-  bool can_add_port_scr_stream()   {return _in_port_queue.size()  < _queue_size;}
-  bool can_add_port_port_stream()  {return _in_port_queue.size()  < _queue_size;}
-  bool can_add_indirect_stream()   {return _in_port_queue.size()  < _queue_size;}
-  bool can_add_const_port_stream() {return _in_port_queue.size()  < _queue_size;}
-
-
-  // used nowhere?
-  bool can_add_const_scr_stream()    {
-    if(_sbconfig->dispatch_inorder()) {
-      return _in_port_queue.size()  < _queue_size;
-    } else {
-      return _const_scr_queue.size()  < _queue_size;
-    }
-  }
-  
-  bool can_add_dma_scr_stream()    {
-    if(_sbconfig->dispatch_inorder()) {
-      return _in_port_queue.size()  < _queue_size;
-    } else {
-      return _dma_scr_queue.size()  < _queue_size;
-    }
-  }
-  bool can_add_scr_dma_stream()    {
-    if(_sbconfig->dispatch_inorder()) {
-
-      return _in_port_queue.size()  < _queue_size;
-    } else {      
-      return _scr_dma_queue.size()  < _queue_size;
-    }
-  }
-
   void do_cgra();
   void execute_pdg(unsigned instance, int group);
 
@@ -1459,9 +1389,7 @@ private:
   port_controller_t _port_c;
 
   std::list<std::shared_ptr<base_stream_t>> _in_port_queue;
-  std::list<dma_scr_stream_t*> _dma_scr_queue;
   std::list<const_scr_stream_t*> _const_scr_queue;
-  std::list<scr_dma_stream_t*> _scr_dma_queue;
 
   std::map<uint64_t,std::vector<int>> _cgra_output_ready;
 
