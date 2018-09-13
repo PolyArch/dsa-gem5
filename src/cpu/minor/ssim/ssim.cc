@@ -85,17 +85,17 @@ bool ssim_t::is_in_config() {
 void ssim_t::cycle_shared_busses() {
   //bring data int o
   //     auto& read_buf = accel_arr[i]->_buf_shs_read;
-  int max_reqs=2;
-  int reqs_made=0;
+  //int max_reqs=2;
+  //int reqs_made=0;
 
-  for(int i = 0; (i < NUM_ACCEL) && (reqs_made < max_reqs); ++i) {
-    rolling_inc(_which_shr,NUM_ACCEL,0);
-    auto& read_buf = accel_arr[i]->_scr_r_c._buf_shs_read;
-    bool didit = shared_acc()->_scr_w_c.accept_buffer(read_buf);
-    if(didit) {
-      reqs_made+=1;
-    }
-  }
+  //for(int i = 0; (i < NUM_ACCEL) && (reqs_made < max_reqs); ++i) {
+  //  rolling_inc(_which_shr,NUM_ACCEL,0);
+  //  auto& read_buf = accel_arr[i]->_scr_r_c._buf_shs_read;
+  //  bool didit = shared_acc()->_scr_w_c.accept_buffer(read_buf);
+  //  if(didit) {
+  //    reqs_made+=1;
+  //  }
+  //}
 }
 
 void ssim_t::step() {
@@ -300,47 +300,47 @@ void ssim_t::set_fill_mode(uint64_t mode) {
   _fill_mode = mode;
 }
 
-void ssim_t::load_dma_to_scratch(addr_t mem_addr, uint64_t stride, 
-    uint64_t access_size, int stretch, uint64_t num_strides, 
-    addr_t scratch_addr, uint64_t flags) {
+//void ssim_t::load_dma_to_scratch(addr_t mem_addr, uint64_t stride, 
+//    uint64_t access_size, int stretch, uint64_t num_strides, 
+//    addr_t scratch_addr, uint64_t flags) {
+//
+//
+//  if(flags) {
+//    auto* S = new scr_scr_stream_t(mem_addr,stride, access_size, stretch,
+//               num_strides, scratch_addr,true);
+//    auto* R = new scr_scr_stream_t(mem_addr,stride, access_size, stretch,
+//               num_strides, scratch_addr, false);
+//    S->set_remote(R, _context_bitmask); // tie together <3
+//    R->set_remote(S, SHARED_MASK);
+//
+//    add_bitmask_stream(S, SHARED_MASK); // send scratch load to shared accel
+//    add_bitmask_stream(R);
+//
+//  } else {
+//    auto* s = new dma_scr_stream_t(mem_addr,stride, access_size, stretch,
+//               num_strides, scratch_addr);
+//    add_bitmask_stream(s);  //load dma to shared proc
+//  }  
+//}
 
-
-  if(flags) {
-    auto* S = new scr_scr_stream_t(mem_addr,stride, access_size, stretch,
-               num_strides, scratch_addr,true);
-    auto* R = new scr_scr_stream_t(mem_addr,stride, access_size, stretch,
-               num_strides, scratch_addr, false);
-    S->set_remote(R, _context_bitmask); // tie together <3
-    R->set_remote(S, SHARED_MASK);
-
-    add_bitmask_stream(S, SHARED_MASK); // send scratch load to shared accel
-    add_bitmask_stream(R);
-
-  } else {
-    auto* s = new dma_scr_stream_t(mem_addr,stride, access_size, stretch,
-               num_strides, scratch_addr);
-    add_bitmask_stream(s);  //load dma to shared proc
-  }  
-}
-
-void ssim_t::write_dma_from_scratch(addr_t scratch_addr, uint64_t stride, 
-      uint64_t access_size, uint64_t num_strides, addr_t mem_addr, uint64_t flags) {
-
-  if(flags) {
-    auto* S = new scr_scr_stream_t(scratch_addr, stride, access_size, 0,
-               num_strides, mem_addr,true);
-    auto* R = new scr_scr_stream_t(scratch_addr, stride, access_size, 0,
-               num_strides, mem_addr, false);
-    S->set_remote(R, SHARED_MASK); // tie together <3
-    R->set_remote(S, _context_bitmask);
-
-    add_bitmask_stream(S); // send scratch load to shared accel
-    add_bitmask_stream(R, SHARED_MASK);
-  } else {scr_dma_stream_t* s = new scr_dma_stream_t(scratch_addr,stride,access_size,
-      num_strides,mem_addr);
-    add_bitmask_stream(s);
-  }
-}
+//void ssim_t::write_dma_from_scratch(addr_t scratch_addr, uint64_t stride, 
+//      uint64_t access_size, uint64_t num_strides, addr_t mem_addr, uint64_t flags) {
+//
+//  if(flags) {
+//    auto* S = new scr_scr_stream_t(scratch_addr, stride, access_size, 0,
+//               num_strides, mem_addr,true);
+//    auto* R = new scr_scr_stream_t(scratch_addr, stride, access_size, 0,
+//               num_strides, mem_addr, false);
+//    S->set_remote(R, SHARED_MASK); // tie together <3
+//    R->set_remote(S, _context_bitmask);
+//
+//    add_bitmask_stream(S); // send scratch load to shared accel
+//    add_bitmask_stream(R, SHARED_MASK);
+//  } else {scr_dma_stream_t* s = new scr_dma_stream_t(scratch_addr,stride,access_size,
+//      num_strides,mem_addr);
+//    add_bitmask_stream(s);
+//  }
+//}
 
 void ssim_t::load_dma_to_port(addr_t mem_addr,
      uint64_t stride, uint64_t access_size, int stretch, uint64_t num_strides,

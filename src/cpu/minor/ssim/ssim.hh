@@ -31,10 +31,10 @@ public:
   void set_context(uint64_t context, uint64_t offset);
   void set_fill_mode(uint64_t mode);
   void req_config(addr_t addr, int size);
-  void load_dma_to_scratch(addr_t mem_addr, uint64_t stride, uint64_t acc_size,
-      int stretch, uint64_t num_strides, addr_t scratch_addr, uint64_t flags);
-  void write_dma_from_scratch(addr_t scratch_addr, uint64_t stride, 
-      uint64_t access_size, uint64_t num_strides, addr_t mem_addr, uint64_t flags); 
+  //void load_dma_to_scratch(addr_t mem_addr, uint64_t stride, uint64_t acc_size,
+  //    int stretch, uint64_t num_strides, addr_t scratch_addr, uint64_t flags);
+  //void write_dma_from_scratch(addr_t scratch_addr, uint64_t stride, 
+  //    uint64_t access_size, uint64_t num_strides, addr_t mem_addr, uint64_t flags); 
   void load_dma_to_port(addr_t mem_addr, uint64_t stride, 
       uint64_t access_size, int stretch, uint64_t num_strides, 
       int port, int repeat_in, int repeat_str);
@@ -175,16 +175,16 @@ public:
 
   accel_t* shared_acc() { return accel_arr[SHARED_SP]; } 
 
-  bool can_push_shs_buf(int size, uint64_t addr, uint64_t bitmask) {  
-    for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
-      if(bitmask & b) {
-        if(!accel_arr[i]->scr_w_c()->_buf_shs_write.can_push_addr(size,addr)) {
-          return false;
-        }
-      }
-    }
-    return true;
-  }
+  //bool can_push_shs_buf(int size, uint64_t addr, uint64_t bitmask) {  
+  //  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
+  //    if(bitmask & b) {
+  //      if(!accel_arr[i]->scr_w_c()->_buf_shs_write.can_push_addr(size,addr)) {
+  //        return false;
+  //      }
+  //    }
+  //  }
+  //  return true;
+  //}
 
 private:
 

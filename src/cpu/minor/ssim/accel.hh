@@ -431,97 +431,6 @@ private:
 
 //.............. Streams and Controllers .................
 
-struct data_buffer_base {
-  static const int length = 128;
-
-  bool can_push(int size) {
-    return size + _data.size() <= length;
-  }
-
-  int data_ready() {
-    return _data.size() - _just_pushed;
-  }
-  int empty_buffer() {
-    return _data.size() ==0;
-  }
-  void push_data(std::vector<SBDT>& in_data) {
-    for(SBDT i : in_data) {
-      _data.push_back(i);
-    }
-    _just_pushed=in_data.size();
-  }
-  SBDT pop_data() {
-    SBDT item = _data[0];
-    _data.pop_front();
-    return item;
-  }
-  void finish_cycle() {
-    _just_pushed=0;
-  }
-
-  int size() {
-    return _data.size();
-  }
-
-  void reset_data() {
-    _data.clear();
-    _just_pushed=0;
-  }
-
-protected:
-  std::deque<SBDT> _data;
-  int _just_pushed=0;
-};
-
-struct data_buffer : public data_buffer_base {
-  bool can_push_addr(int size, addr_t addr) {
-    if(size + _data.size() <= length) {
-      if((_data.size()==0) ||
-         (_dest_addr+DATA_WIDTH*_data.size()==addr)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  bool push_data(addr_t addr, std::vector<SBDT>& in_data) {
-    if(!can_push(in_data.size())) {
-      return false;
-    }
-    if(_data.size()==0) {
-      _dest_addr=addr;
-      data_buffer_base::push_data(in_data);      
-    } else if(_dest_addr+DATA_WIDTH*_data.size()==addr) {
-      data_buffer_base::push_data(in_data);      
-    } else {
-      return false;
-    }
-    return true;
-  }
-
-  SBDT pop_data() {
-    _dest_addr+=DATA_WIDTH;
-    return data_buffer_base::pop_data();
-  }
-
-  addr_t dest_addr() {
-    return _dest_addr;
-  }
-
-  void reset_data() {
-    data_buffer_base::reset_data();
-    _dest_addr=0;
-  }
-
-  void set_last_stream_id(int id) {_last_stream_id=id;}
-  int last_stream_id() {return _last_stream_id;}
-
-protected:
-  uint64_t _dest_addr;
-  int _last_stream_id=-2;
-};
-
-
 // Each controller forwards up to one "block" of data per cycle.
 class data_controller_t {
   public:
@@ -581,10 +490,10 @@ class dma_controller_t : public data_controller_t {
   void finish_cycle();
   bool done(bool show, int mask);
 
-  int req_read(mem_stream_base_t& stream, uint64_t scr_addr);
+  int req_read(mem_stream_base_t& stream);
   void req_write(port_dma_stream_t& stream, port_data_t& vp);
 
-  void ind_read_req(indirect_stream_t& stream, uint64_t scr_addr);
+  void ind_read_req(indirect_stream_t& stream);
   void ind_write_req(indirect_wr_stream_t& stream);
 
   void make_read_request();
@@ -635,9 +544,6 @@ class dma_controller_t : public data_controller_t {
   void delete_stream(int i, port_dma_stream_t* s);  
   void delete_stream(int i, indirect_wr_stream_t* s);
  
-
-
-
   //address to stream -> [stream_index, data]
   uint64_t _mem_read_reqs=0, _mem_write_reqs=0;
   std::vector<uint64_t> _prev_port_cycle;
@@ -654,43 +560,30 @@ class scratch_read_controller_t : public data_controller_t {
   scratch_read_controller_t(accel_t* host, dma_controller_t* d) 
     : data_controller_t(host) {
     _dma_c=d; //save this for later
-    _scr_dma_stream.reset();
+
     mask.resize(SCR_WIDTH/DATA_WIDTH);
 
-    if(is_shared()) {
-      _scr_scr_streams.resize(NUM_ACCEL);
-    } else {
-      _scr_scr_streams.resize(1); 
-    }
-    _scr_port_streams.resize(8);
-    _ind_port_streams.resize(8);
+    //if(is_shared()) {
+    //  _scr_scr_streams.resize(NUM_ACCEL);
+    //} else {
+    //  _scr_scr_streams.resize(1); 
+    //}
     _indirect_scr_read_requests.resize(NUM_SCRATCH_BANKS);
 
-
-    max_src=1+_scr_port_streams.size() + _ind_port_streams.size() +
-      _scr_scr_streams.size();
     reset_stream_engines();
   }
 
   void reset_stream_engines() {
-    for(auto& i : _scr_scr_streams) {i.reset();}
-    for(auto& i : _ind_port_streams) {i.reset();}
-    for(auto& i : _scr_port_streams) {i.reset();}
-    _scr_dma_stream.reset();
+    _ind_port_streams.clear();
+    _scr_port_streams.clear();
   }
 
   void reset_data() {
     reset_stream_engines();
-    _buf_dma_read.reset_data();
-    _buf_shs_read.reset_data();
   }
 
   std::vector<SBDT> read_scratch(mem_stream_base_t& stream);
   void read_scratch_ind(indirect_stream_t& stream, uint64_t scr_addr);
-
-  bool xfer_stream_buf(mem_stream_base_t& stream,data_buffer& buf,
-                       addr_t& addr);
-
 
   float calc_min_port_ready();
   // void cycle();
@@ -704,41 +597,15 @@ class scratch_read_controller_t : public data_controller_t {
   bool done(bool,int);
 
   bool schedule_scr_port(scr_port_stream_t& s);
-  bool schedule_scr_scr(scr_scr_stream_t& s);
   bool schedule_indirect(indirect_stream_t& s);
 
   void print_status();
   void cycle_status();
 
-  bool buf_active() {
-    return  !_buf_shs_read.empty_buffer() || !_buf_dma_read.empty_buffer();
-  }
-
-  //bool any_stream_active() {
-  //  return comm_streams_active() || read_streams_active() 
-  //    || write_streams_active();
-  //}
-  //bool comm_streams_active() {
-  //  return scr_scr_streams_active();
-  //}
-  //bool write_streams_active() {
-  //  return scr_dma_streams_active();
-  //} 
-  //bool read_streams_active() {
-  //  return scr_port_streams_active();
-  //}
-
-  bool scr_dma_streams_active();
   bool scr_port_streams_active();
-  bool scr_scr_streams_active();
-
-  scr_dma_stream_t& scr_dma_stream() {return _scr_dma_stream;}
-  data_buffer _buf_dma_read; 
-  data_buffer _buf_shs_read; 
 
   private:
-  int _which=0;
-  int max_src=0;
+  int _which_rd=0;
 
   struct ind_reorder_entry_t {
     uint8_t data[64]; //64 bytes per request
@@ -756,14 +623,17 @@ class scratch_read_controller_t : public data_controller_t {
     ind_reorder_entry_t* reorder_entry=NULL;
   };
 
+  std::vector<base_stream_t*> _read_streams;
 
-  scr_dma_stream_t _scr_dma_stream;
-  std::vector<scr_port_stream_t> _scr_port_streams;
-  std::vector<scr_scr_stream_t> _scr_scr_streams;
-  std::vector<indirect_stream_t> _ind_port_streams;
+  void delete_stream(int i, scr_port_stream_t* s);
+  void delete_stream(int i, indirect_stream_t* s);
+
+  std::vector<scr_port_stream_t*> _scr_port_streams;
+  //std::vector<scr_scr_stream_t*> _scr_scr_streams;
+  std::vector<indirect_stream_t*> _ind_port_streams;
+
   std::vector<std::queue<indirect_scr_read_req>> _indirect_scr_read_requests;
   std::queue<ind_reorder_entry_t*> _ind_ROB;
-
 
   dma_controller_t* _dma_c;  
 };
@@ -776,43 +646,30 @@ class scratch_write_controller_t : public data_controller_t {
   scratch_write_controller_t(accel_t* host, dma_controller_t* d) 
     : data_controller_t(host) {
     _dma_c=d;
-    _bufs.push_back(&_buf_dma_write);
-    _bufs.push_back(&_buf_shs_write);
     mask.resize(SCR_WIDTH/DATA_WIDTH);
-    _port_scr_streams.resize(8);
-    _ind_wr_streams.resize(4);
+
     _atomic_scr_issued_requests.resize(NUM_SCRATCH_BANKS);
 
-    if(is_shared()) {
-      _scr_scr_streams.resize(NUM_ACCEL); 
-    } else {
-      _scr_scr_streams.resize(1); 
-    }
-    _atomic_scr_streams.resize(1);
-
-    max_src = _port_scr_streams.size() + _ind_wr_streams.size() + 
-      _bufs.size() + _atomic_scr_streams.size() + 1;
-
-    reset_stream_engines();
+    //if(is_shared()) {
+    //  _scr_scr_streams.resize(NUM_ACCEL); 
+    //} else {
+    //  _scr_scr_streams.resize(1); 
+    //}
   }
 
   void write_scratch_ind(indirect_wr_stream_t& stream);
 
   void reset_stream_engines() {
-    for(auto& i : _scr_scr_streams) {i.reset();}
-    for(auto& i : _port_scr_streams) {i.reset();}
-    for(auto& i : _ind_wr_streams) {i.reset();}
-    for(auto& i : _atomic_scr_streams) {i.reset();}
-    _const_scr_stream.reset();
+    _port_scr_streams.clear();
+    _const_scr_streams.clear();
+    _atomic_scr_streams.clear();
+    _ind_wr_streams.clear();
+    _write_streams.clear();
   }
 
   void reset_data() {
     reset_stream_engines();
-    _buf_dma_write.reset_data();
-    _buf_shs_write.reset_data();
   }
-
-  const_scr_stream_t& const_scr_stream() {return _const_scr_stream;}
 
   bool crossbar_backpressureOn();
 
@@ -821,55 +678,25 @@ class scratch_write_controller_t : public data_controller_t {
   void finish_cycle();
   bool done(bool,int);
 
-  bool schedule_scr_scr(scr_scr_stream_t& s);
   bool schedule_atomic_scr_op(atomic_scr_stream_t& s);
   bool schedule_indirect_wr(indirect_wr_stream_t& s);
 
   void print_status();
   void cycle_status();
 
-
-  bool buf_active() {
-    return  !_buf_shs_write.empty_buffer() || !_buf_dma_write.empty_buffer();
-  }
-
-  //bool any_stream_active() {
-  //  return comm_streams_active() || read_streams_active() 
-  //    || write_streams_active()  || atomic_scr_streams_active() || const_scr_streams_active();
-  //}
-  //bool comm_streams_active() {
-  //  return scr_scr_streams_active();
-  //}
-  //bool read_streams_active() {
-  //  return false;
-  //}
-  //bool write_streams_active() {
-  //  return port_scr_streams_active();
-  //} 
-
-  
   // for atomic_stream
   bool atomic_scr_streams_active();
   // streams issued but not executed because of bank conflicts
   bool atomic_scr_issued_requests_active();
 
-  bool scr_scr_streams_active();
   bool port_scr_streams_active();
   bool const_scr_streams_active();
 
   bool schedule_port_scr(port_scr_stream_t& s);
   bool schedule_const_scr(const_scr_stream_t& s);
-  int scr_buf_size() {return _buf_dma_write.size();}
-  bool accept_buffer(data_buffer& buf);
-
-  data_buffer _buf_dma_write;
-  data_buffer _buf_shs_write; //shs: shared scratchpad
-
-  std::vector<data_buffer*> _bufs;
 
   private:
-  int max_src=0;
-  int _which=0;
+  int _which_wr=0;
 
   struct atomic_scr_op_req{
     addr_t _scr_addr;
@@ -878,12 +705,18 @@ class scratch_write_controller_t : public data_controller_t {
     int _value_bytes;
   };
 
-  std::vector<scr_scr_stream_t> _scr_scr_streams; 
-  std::vector<port_scr_stream_t> _port_scr_streams; 
-  // std::vector<const_scr_stream_t> _const_scr_streams; 
-  const_scr_stream_t _const_scr_stream;  
-  std::vector<atomic_scr_stream_t> _atomic_scr_streams; 
-  std::vector<indirect_wr_stream_t> _ind_wr_streams; 
+  void delete_stream(int i, port_scr_stream_t* s);
+  void delete_stream(int i, const_scr_stream_t* s);
+  void delete_stream(int i, atomic_scr_stream_t* s);
+  void delete_stream(int i, indirect_wr_stream_t* s);
+
+  std::vector<base_stream_t*> _write_streams;
+
+  std::vector<port_scr_stream_t*> _port_scr_streams; 
+  std::vector<const_scr_stream_t*> _const_scr_streams;  
+  std::vector<atomic_scr_stream_t*> _atomic_scr_streams; 
+  std::vector<indirect_wr_stream_t*> _ind_wr_streams; 
+
   // TODO: add request queue max size
   std::vector<std::queue<atomic_scr_op_req>> _atomic_scr_issued_requests;
   dma_controller_t* _dma_c;

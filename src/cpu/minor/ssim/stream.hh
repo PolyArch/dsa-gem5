@@ -331,41 +331,6 @@ struct port_dma_stream_t : public mem_stream_base_t {
 
 };
 
-//3. DMA -> Scratch    
-struct dma_scr_stream_t : public mem_stream_base_t {
-  int _scratch_addr; //CURRENT scratch addr
-
-  dma_scr_stream_t() {}
-
-  dma_scr_stream_t(addr_t mem_addr, uint64_t stride, uint64_t access_size, 
-      int stretch, uint64_t num_strides, addr_t scratch_addr) : 
-         mem_stream_base_t(mem_addr,stride,access_size,stretch,
-        num_strides) {
-    _scratch_addr=scratch_addr;
-    set_orig();
-  }
-
-  uint64_t mem_addr()    {return _mem_addr;}  
-  int64_t access_size()  {return _access_size;}  
-  int64_t stride()       {return _stride;} 
-  uint64_t num_strides() {return _num_strides;} 
-  uint64_t shift_bytes() {return _shift_bytes;} 
-  uint64_t scratch_addr(){return _scratch_addr;} 
-
-  virtual LOC src() {return LOC::DMA;}
-  virtual LOC dest() {return LOC::SCR;}  
-
-  virtual void print_status() {  
-    std::cout << "dma->scr" << "\tscr=" << _scratch_addr 
-              << "\tacc_size=" << _access_size 
-              << " stride=" << _stride << " bytes_comp=" << _bytes_in_access 
-              << " mem_addr=" << std::hex << _mem_addr << std::dec 
-              << " strides_left=" << _num_strides;
-    base_stream_t::print_status();
-  }
-
-};
-
 //3. Scratch -> Scratch    
 struct scr_scr_stream_t;
 struct scr_scr_stream_t : public mem_stream_base_t {
@@ -427,42 +392,6 @@ struct scr_scr_stream_t : public mem_stream_base_t {
   }
 
 };
-
-//4.Scratch -> DMA 
-struct scr_dma_stream_t : public mem_stream_base_t {
-  addr_t _dest_addr; //current dest addr
-
-  scr_dma_stream_t() {}
-  scr_dma_stream_t(addr_t scr_addr, uint64_t stride, uint64_t access_size, 
-                  uint64_t num_strides, addr_t mem_addr) :
-       mem_stream_base_t(scr_addr, //don't worry this is correct
-           stride,access_size,0/*stretch*/,num_strides) {
-    _dest_addr  =mem_addr;    //... this too
-    _num_strides=num_strides;
-    set_orig();
-  }
-
-  //NOTE/WEIRD/DONOTCHANGE: 
-  uint64_t mem_addr()    {return _mem_addr;}  //referse to memory addr
-  int64_t  access_size() {return _access_size;}  
-  int64_t  stride()      {return _stride;}
-  uint64_t num_strides() {return _num_strides;} 
-  uint64_t shift_bytes() {return _shift_bytes;} 
-//  uint64_t scratch_addr(){return _mem_addr;} 
-
-  virtual LOC src() {return LOC::SCR;}
-  virtual LOC dest() {return LOC::DMA;}
-
-  virtual void print_status() {  
-    std::cout << "scr->dma" << "\tscr=" << _mem_addr
-              << "\tacc_size=" << _access_size 
-              << " stride=" << _stride << " bytes_comp=" << _bytes_in_access 
-              << " dest_addr=" << std::hex << _dest_addr << std::dec 
-              << " strides_left=" << _num_strides;
-    base_stream_t::print_status();
-  }
-};
-
 
 //4. Scratch->Port     
 struct scr_port_stream_t : public mem_stream_base_t {

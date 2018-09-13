@@ -47,7 +47,6 @@ typedef uint64_t addr_t;
 
 #define MAX_WAIT (1000) //max cycles to wait for forward progress
 
-#define SCR_STREAM (32)
 #define MEM_WR_STREAM (33)
 #define CONFIG_STREAM (34)
 
