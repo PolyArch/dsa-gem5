@@ -333,7 +333,7 @@ LSQ::SplitDataRequest::finish(const Fault &fault_, const RequestPtr &request_,
 
 LSQ::SplitDataRequest::SplitDataRequest(LSQ &port_, MinorDynInstPtr inst_,
     bool isLoad_, PacketDataPtr data_, uint64_t *res_,
-    SDMemReqInfoPtr sdInfo_) :
+    SSMemReqInfoPtr sdInfo_) :
     LSQRequest(port_, inst_, isLoad_, data_, res_),
     translationEvent([this]{ sendNextFragmentToTranslation(); },
                      "translationEvent"),
@@ -1574,7 +1574,7 @@ LSQ::pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
 void
 LSQ::pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
                  unsigned int size, Addr addr, Request::Flags flags,
-                 uint64_t *res,  SDMemReqInfoPtr sdInfo)
+                 uint64_t *res,  SSMemReqInfoPtr sdInfo)
 {
     bool needs_burst = transferNeedsBurst(addr, size, lineWidth);
     LSQRequestPtr request;

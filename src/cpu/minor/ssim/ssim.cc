@@ -16,7 +16,7 @@ using namespace std;
 // Vector-Stream Commands (all of these are context-dependent)
 
 ssim_t::ssim_t(Minor::LSQ* lsq) : _lsq(lsq) {
-  SB_DEBUG::check_env();
+  SS_DEBUG::check_env();
 
   for(int i = 0; i < NUM_ACCEL_TOTAL; ++i) {
     accel_arr[i] = new accel_t(lsq, i, this);
@@ -211,14 +211,14 @@ void ssim_t::add_bitmask_stream(base_stream_t* s, uint64_t ctx) {
   s->set_context_offset(_context_offset);
 
   //Check if not active!
-  if(debug && (SB_DEBUG::SB_COMMAND)  ) {
+  if(debug && (SS_DEBUG::COMMAND)  ) {
     timestamp_context();
     cout << "id:" << s->id() << " ";
     s->print_status(); 
   }
 
   if(!s->stream_active()) {
-    if(debug && (SB_DEBUG::SB_COMMAND)  ) {
+    if(debug && (SS_DEBUG::COMMAND)  ) {
       timestamp_context();
       cout << " ---    and this stream is being deleted for being inactive!\n";
     }
@@ -226,7 +226,7 @@ void ssim_t::add_bitmask_stream(base_stream_t* s, uint64_t ctx) {
     return;
   }
 
-  //if(debug && (SB_DEBUG::SB_COMMAND)  ) {
+  //if(debug && (SS_DEBUG::COMMAND)  ) {
   //  cout << "Sending to Cores: ";
   //}
 
@@ -234,14 +234,14 @@ void ssim_t::add_bitmask_stream(base_stream_t* s, uint64_t ctx) {
 
   for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
     if(ctx & b) {
-      //if(debug && (SB_DEBUG::SB_COMMAND)  ) {
+      //if(debug && (SS_DEBUG::COMMAND)  ) {
       //  cout << i;
       //}
       accel_arr[i]->add_stream(s_shr);
     }
   }
 
-  //if(debug && (SB_DEBUG::SB_COMMAND)  ) {
+  //if(debug && (SS_DEBUG::COMMAND)  ) {
   //  cout << "\n";
   //}
 }
@@ -283,7 +283,7 @@ void ssim_t::timestamp_context() {
 
 // ----------------------- STREAM COMMANDS ------------------------------------
 void ssim_t::set_context(uint64_t context, uint64_t offset) {
-  if(debug && (SB_DEBUG::SB_CONTEXT)  ) {
+  if(debug && (SS_DEBUG::CONTEXT)  ) {
     cout << "Set Context: " << std::hex << context << std::dec << "\n";
   }
 
@@ -293,7 +293,7 @@ void ssim_t::set_context(uint64_t context, uint64_t offset) {
 }
 
 void ssim_t::set_fill_mode(uint64_t mode) {
-  if(debug && (SB_DEBUG::SB_CONTEXT)  ) {
+  if(debug && (SS_DEBUG::CONTEXT)  ) {
     cout << "Set FILL MODE: " << std::hex << mode << std::dec << "\n";
   }
 
@@ -605,7 +605,7 @@ void ssim_t::cleanup_stat_cycle() {
 // ------------------------- TIMING ---------------------------------
 void ssim_t::roi_entry(bool enter) {
   if(enter) {
-    if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SB_ROI)  ) {
+    if(debug && (SS_DEBUG::COMMAND || SS_DEBUG::ROI)  ) {
       timestamp();
       cout << "Entering ROI ------------\n";
     }
@@ -622,7 +622,7 @@ void ssim_t::roi_entry(bool enter) {
     _elapsed_time_in_roi += 1000000000 * (_stop_ts.tv_sec - _start_ts.tv_sec) +
                                           _stop_ts.tv_nsec - _start_ts.tv_nsec;
 
-    if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SB_ROI)  ) {
+    if(debug && (SS_DEBUG::COMMAND || SS_DEBUG::ROI)  ) {
       timestamp();
       cout << "Exiting ROI ------------";
       cout << "(" << _stat_start_cycle << "to" << _stat_stop_cycle << ")\n";

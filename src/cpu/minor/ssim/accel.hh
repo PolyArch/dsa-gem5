@@ -260,7 +260,7 @@ public:
   }
 
   void set_status(STATUS status, LOC loc=LOC::NONE, uint32_t fill_mode=0) {
-    if(SB_DEBUG::VP_SCORE) {
+    if(SS_DEBUG::VP_SCORE) {
       std::cout << (_isInput ? "ip" : "op") << std::dec << _port;
       std::cout << " " << status_string();
       std::cout.flush();
@@ -298,7 +298,7 @@ public:
       }
     }
 
-    if(SB_DEBUG::VP_SCORE) {
+    if(SS_DEBUG::VP_SCORE) {
       std::cout << " -> " << status_string() << "\n";
     }
   }
@@ -329,7 +329,7 @@ public:
   //NOTE:TODO:FIXME: Right now we only support wide maps, so pm is not really
   //necessary -- we construct our own pm from the mask -- maybe fix this later
   //when we are more ambitious
-  void set_port_map(std::vector<std::pair<int, std::vector<int> > > pm, 
+  void set_port_map(std::vector<int> pm, 
                     std::vector<bool> mask, int temporal) {
     assert(mask.size() == pm.size()); //masks should be the same!
     assert(mask.size() != 0);
@@ -341,12 +341,12 @@ public:
              std::vector<int> v;
             v.push_back(total);
              ++total;
-            _port_map.push_back(std::make_pair(pm[i].first,v));
+            _port_map.push_back(std::make_pair(pm[i],v));
            }
         } else {
           std::vector<int> v;
           v.push_back(total);
-          _port_map.push_back(std::make_pair(pm[i].first,v));
+          _port_map.push_back(std::make_pair(pm[i],v));
            ++total;
         }
       }
@@ -1109,7 +1109,7 @@ private:
   uint64_t receive(int out_port);
 
   void verif_cmd(base_stream_t* s) {
-    if(SB_DEBUG::VERIF_CMD) {
+    if(SS_DEBUG::VERIF_CMD) {
       cmd_verif << s->short_name();
       cmd_verif << s->mem_addr()     << " ";   
       cmd_verif << s->access_size()  << " ";   
@@ -1152,7 +1152,7 @@ private:
     assert(scr_addr < SCRATCH_SIZE);
 
     std::memcpy(dest, &scratchpad[scr_addr], count);
-    if(SB_DEBUG::CHECK_SCR_ALIAS) { //TODO: make this check work for unaligned
+    if(SS_DEBUG::CHECK_SCR_ALIAS) { //TODO: make this check work for unaligned
       for(int i = 0; i < count; i+=sizeof(SBDT)) {
         uint64_t running_addr=  scr_addr+i;
         if(scratchpad_writers[running_addr]) {
@@ -1169,7 +1169,7 @@ private:
   void write_scratchpad(uint64_t scr_addr, const void* src, 
       std::size_t count, int id) {
     std::memcpy(&scratchpad[scr_addr], src, count);
-    if(SB_DEBUG::CHECK_SCR_ALIAS) {
+    if(SS_DEBUG::CHECK_SCR_ALIAS) {
       for(int i = 0; i < count; i+=sizeof(SBDT)) {
         uint64_t running_addr = scr_addr+i;
         if(scratchpad_writers[running_addr]) {

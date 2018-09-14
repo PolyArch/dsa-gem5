@@ -102,7 +102,7 @@ DebugFlag('O3PipeView')
 DebugFlag('PCEvent')
 DebugFlag('Quiesce')
 DebugFlag('Mwait')
-DebugFlag('SD')
+DebugFlag('SS')
 
 CompoundFlag('ExecAll', [ 'ExecEnable', 'ExecCPSeq', 'ExecEffAddr',
     'ExecFaulting', 'ExecFetchSeq', 'ExecOpClass', 'ExecRegDelta',

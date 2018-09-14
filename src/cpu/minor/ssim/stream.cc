@@ -8,7 +8,7 @@ void base_stream_t::set_empty(bool b) {
   assert(b && "only goes one way for now");
   assert(!_empty && "can only empty once");
 
-  if(SB_DEBUG::SB_COMMAND_O) {
+  if(SS_DEBUG::COMMAND_O) {
     if(b == true) {
       std::cout << "COMPLETED: "; 
     } 

@@ -114,10 +114,10 @@ class StaticInstFlags(Enum):
         'IsSquashAfter',     # Squash all uncommitted state after executed
 
         
-        'IsSDWait', # Stream Dataflow Wait 
-        'IsSDStream', # Stream Dataflow Stream Push
-        'IsSDParam', 
-        'IsSDRecv', # Stream Dataflow Stream Push
-        'IsSDConfig', # Stream Dataflow Config
+        'IsSSWait', # Stream Dataflow Wait 
+        'IsSSStream', # Stream Dataflow Stream Push
+        'IsSSParam', 
+        'IsSSRecv', # Stream Dataflow Stream Push
+        'IsSSConfig', # Stream Dataflow Config
 
         ]

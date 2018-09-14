@@ -44,12 +44,12 @@ void accel_t::sanity_check_stream(base_stream_t* s) {
 void accel_t::req_config(addr_t addr, int size, uint64_t context) {
   assert(_in_config ==false);
 
-  if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SCR_BARRIER)  ) {
+  if(debug && (SS_DEBUG::COMMAND || SS_DEBUG::SCR_BARRIER)  ) {
     timestamp();
-    cout << "SB_CONFIGURE(request): " << "0x" << std::hex << addr  << " " 
+    cout << "SS_CONFIGURE(request): " << "0x" << std::hex << addr  << " " 
                                       << std::dec << size << "\n";
   }
-  SDMemReqInfoPtr sdInfo = new SDMemReqInfo(context,CONFIG_STREAM);
+  SSMemReqInfoPtr sdInfo = new SSMemReqInfo(context,CONFIG_STREAM);
 
   _lsq->pushRequest(cur_minst(),true/*isLoad*/,NULL/*data*/,
               size*8/*cache line*/, addr, 0/*flags*/, 0 /*res*/,
@@ -62,7 +62,7 @@ void accel_t::request_reset_data() {
 }
 
 void accel_t::reset_data() {
-    if(SB_DEBUG::SB_COMMAND) {
+    if(SS_DEBUG::COMMAND) {
       timestamp();
       std::cout << "RESET_DATA REQUEST INITIALIZED\n";
     }
@@ -360,40 +360,40 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
   ugh += system("mkdir -p viz/");
 
 
-  if(SB_DEBUG::VERIF_MEM || SB_DEBUG::VERIF_PORT || SB_DEBUG::VERIF_CGRA || 
-     SB_DEBUG::VERIF_SCR || SB_DEBUG::VERIF_CMD) {
+  if(SS_DEBUG::VERIF_MEM || SS_DEBUG::VERIF_PORT || SS_DEBUG::VERIF_CGRA || 
+     SS_DEBUG::VERIF_SCR || SS_DEBUG::VERIF_CMD) {
     ugh += system("mkdir -p verif/");
     cout << "DUMPING VERIFICATION OUTPUTS (dir: verif/) ... SIMULATION WILL BE SLOWER\n";
     cout << "ALSO, MEMORY ACCESS STATISTICS MAY DIFFER\n";
   }
-  if(SB_DEBUG::VERIF_PORT) {
-    in_port_verif.open(("verif/" + SB_DEBUG::verif_name + "in_port.txt").c_str(),
+  if(SS_DEBUG::VERIF_PORT) {
+    in_port_verif.open(("verif/" + SS_DEBUG::verif_name + "in_port.txt").c_str(),
                         ofstream::trunc | ofstream::out);
     assert(in_port_verif.is_open());
-    out_port_verif.open(("verif/" + SB_DEBUG::verif_name + "out_port.txt").c_str(),
+    out_port_verif.open(("verif/" + SS_DEBUG::verif_name + "out_port.txt").c_str(),
                         ofstream::trunc | ofstream::out);
     assert(out_port_verif.is_open());
   }
-  if(SB_DEBUG::VERIF_SCR) {
-    scr_rd_verif.open(("verif/" + SB_DEBUG::verif_name + "scr_rd.txt").c_str(),
+  if(SS_DEBUG::VERIF_SCR) {
+    scr_rd_verif.open(("verif/" + SS_DEBUG::verif_name + "scr_rd.txt").c_str(),
                         ofstream::trunc | ofstream::out);
     assert(scr_rd_verif.is_open() && scr_rd_verif.good());
 
-    scr_wr_verif.open(("verif/" + SB_DEBUG::verif_name + "scr_wr.txt").c_str(),
+    scr_wr_verif.open(("verif/" + SS_DEBUG::verif_name + "scr_wr.txt").c_str(),
                         ofstream::trunc | ofstream::out);
     assert(scr_wr_verif.is_open());
   }
-  if(SB_DEBUG::VERIF_CMD) {
-    cmd_verif.open(("verif/" + SB_DEBUG::verif_name + "core_trace.txt").c_str(),
+  if(SS_DEBUG::VERIF_CMD) {
+    cmd_verif.open(("verif/" + SS_DEBUG::verif_name + "core_trace.txt").c_str(),
                         ofstream::trunc | ofstream::out);
     assert(cmd_verif.is_open());
   }
 
   _cgra_dbg_stream = &std::cout;
 
-  if(SB_DEBUG::VERIF_CGRA) {
-    SB_DEBUG::SB_COMP=1;
-    cgra_multi_verif.open(("verif/" + SB_DEBUG::verif_name 
+  if(SS_DEBUG::VERIF_CGRA) {
+    SS_DEBUG::COMP=1;
+    cgra_multi_verif.open(("verif/" + SS_DEBUG::verif_name 
           + "cgra_comp" + std::to_string(_accel_index) + ".txt").c_str(),
                                ofstream::trunc | ofstream::out);
     assert(cgra_multi_verif.is_open());
@@ -412,10 +412,10 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
 
   const char* sbconfig_file = std::getenv("SBCONFIG");
 
-  if(!SB_DEBUG::SUPRESS_SB_STATS) {
+  if(!SS_DEBUG::SUPRESS_STATS) {
     static bool printed_this_before=false;
     if(!printed_this_before) {
-      std::cout << "Loading SB Config (env SBCONFIG): \"" 
+      std::cout << "Loading SS Config (env SBCONFIG): \"" 
                 << sbconfig_file <<"\"\n";
       std::cout << "FU_FIFO_LEN:" << _fu_fifo_len << "\n";
       std::cout << "IND_ROB_SIZE:" << _ind_rob_size << "\n";
@@ -716,7 +716,7 @@ void accel_t::tick() {
   if(in_roi()) {
     get_ssim()->update_stat_cycle();
 
-    if(SB_DEBUG::CYC_STAT && _accel_index==SB_DEBUG::ACC_INDEX) {
+    if(SS_DEBUG::CYC_STAT && _accel_index==SS_DEBUG::ACC_INDEX) {
       cycle_status();
     }
 
@@ -724,7 +724,7 @@ void accel_t::tick() {
     std::vector<pipeline_stats_t::PIPE_STATUS> group_vec;
 
     whos_to_blame(blame_vec,group_vec);
-    if(SB_DEBUG::SB_BLAME && _accel_index==SB_DEBUG::ACC_INDEX && group_vec.size()
+    if(SS_DEBUG::BLAME && _accel_index==SS_DEBUG::ACC_INDEX && group_vec.size()
         && (blame_vec.size() != group_vec.size())) {
       for(int g = 0; g < group_vec.size(); ++g) {
         if(_soft_config.in_ports_active_group[g].size()) {
@@ -736,15 +736,15 @@ void accel_t::tick() {
 
 
     for(auto i : blame_vec) {
-      if(SB_DEBUG::SB_BLAME && _accel_index==SB_DEBUG::ACC_INDEX) {
+      if(SS_DEBUG::BLAME && _accel_index==SS_DEBUG::ACC_INDEX) {
         cout << " " << pipeline_stats_t::name_of(i); 
       }
 
       _pipe_stats.pipe_inc(i,1.0f/(float)blame_vec.size()); 
     }
 
-    if((SB_DEBUG::CYC_STAT || SB_DEBUG::SB_BLAME) 
-        && _accel_index==SB_DEBUG::ACC_INDEX) {
+    if((SS_DEBUG::CYC_STAT || SS_DEBUG::BLAME) 
+        && _accel_index==SS_DEBUG::ACC_INDEX) {
       cout << "\n";
     }
 
@@ -809,8 +809,8 @@ bool accel_t::can_receive(int out_port) {
 uint64_t accel_t::receive(int out_port) {
    port_data_t& out_vp = port_interf().out_port(out_port);
    SBDT val = out_vp.pop_out_data(); 
-   if(SB_DEBUG::SB_COMMAND || SB_DEBUG::SB_COMMAND_I || SB_DEBUG::SB_COMMAND_O) {
-     timestamp(); cout << "SB_RECV  on port" << out_vp.port() <<" " << out_vp.mem_size() <<  "\n";
+   if(SS_DEBUG::COMMAND || SS_DEBUG::COMMAND_I || SS_DEBUG::COMMAND_O) {
+     timestamp(); cout << "SS_RECV  on port" << out_vp.port() <<" " << out_vp.mem_size() <<  "\n";
    }
    return val;
 }
@@ -821,7 +821,7 @@ uint64_t accel_t::receive(int out_port) {
 
 void accel_t::cycle_cgra_backpressure() {
   bool print = false;
-  if(SB_DEBUG::SB_COMP) {
+  if(SS_DEBUG::COMP) {
     print = true;
     // std::cout << "NEW CYCLE: " << now() << "\n";
     // *cgra_dbg_stream  <<"\n";
@@ -1058,7 +1058,7 @@ void accel_t::cycle_cgra() {
 
 
 void accel_t::execute_pdg(unsigned instance, int group) {
-  if(SB_DEBUG::SB_COMP) {
+  if(SS_DEBUG::COMP) {
     *_cgra_dbg_stream << "inputs (group" << group << "):";
   }
   _pdg->set_dbg_stream(_cgra_dbg_stream);
@@ -1085,12 +1085,12 @@ void accel_t::execute_pdg(unsigned instance, int group) {
       //for each cgra port and associated pdg input
       _soft_config.input_pdg_node[group][i][port_idx]->set_value(val,valid);  
       
-      if(SB_DEBUG::SB_COMP) {
+      if(SS_DEBUG::COMP) {
         if(valid) *_cgra_dbg_stream << std::hex << val << ", " << std::dec;
         else      *_cgra_dbg_stream << "inv, ";
       }
 
-      if(SB_DEBUG::VERIF_PORT) {
+      if(SS_DEBUG::VERIF_PORT) {
         in_port_verif << hex << setw(16) << setfill('0') << val << " ";
       }
     }
@@ -1112,17 +1112,17 @@ void accel_t::execute_pdg(unsigned instance, int group) {
 
 
   bool print = false;
-  if(SB_DEBUG::SB_COMP) {
+  if(SS_DEBUG::COMP) {
     print = true;
     *_cgra_dbg_stream  <<"\n";
   }
 
-  if(SB_DEBUG::VERIF_PORT) {
+  if(SS_DEBUG::VERIF_PORT) {
     in_port_verif << "\n";
   }
 
   //perform computation
-  int num_computed = _pdg->compute(print,SB_DEBUG::VERIF_CGRA,group);
+  int num_computed = _pdg->compute(print,SS_DEBUG::VERIF_CGRA,group);
 
   if(in_roi()) {
     _stat_sb_insts+=num_computed;
@@ -1152,12 +1152,12 @@ void accel_t::execute_pdg(unsigned instance, int group) {
       bool valid = !n->parent_invalid();
       cur_out_port.push_cgra_port(port_idx, val, valid);  //retreive from last inst
 
-      if(SB_DEBUG::SB_COMP) {
+      if(SS_DEBUG::COMP) {
         *_cgra_dbg_stream << "output:" << hex << val << ", valid:" << valid 
                          << dec << "\n";
       }
  
-      if(SB_DEBUG::VERIF_PORT) {
+      if(SS_DEBUG::VERIF_PORT) {
         out_port_verif << hex << setw(16) << setfill('0') << val << " ";
       }
       num_discarded+=!valid;
@@ -1169,7 +1169,7 @@ void accel_t::execute_pdg(unsigned instance, int group) {
     _cgra_output_ready[cur_cycle + lat].push_back(pnum);
   }
 
-  if(SB_DEBUG::VERIF_PORT) {
+  if(SS_DEBUG::VERIF_PORT) {
     out_port_verif << "\n";
   }
 
@@ -1382,23 +1382,23 @@ uint64_t accel_t::roi_cycles() {
 }
 
 void accel_t::print_statistics(std::ostream& out) {
-   if(SB_DEBUG::VERIF_PORT) { //flush all the log files
+   if(SS_DEBUG::VERIF_PORT) { //flush all the log files
      in_port_verif.flush();
      out_port_verif.flush();
    }
-   if(SB_DEBUG::VERIF_SCR) {
+   if(SS_DEBUG::VERIF_SCR) {
      scr_rd_verif.flush();
      scr_wr_verif.flush();
    }
-   if(SB_DEBUG::VERIF_CMD) {
+   if(SS_DEBUG::VERIF_CMD) {
      cmd_verif.flush();
    }
-   if(SB_DEBUG::VERIF_CGRA) {
+   if(SS_DEBUG::VERIF_CGRA) {
        cgra_multi_verif.flush();
    }
 
 
-   if(SB_DEBUG::SUPRESS_SB_STATS) {
+   if(SS_DEBUG::SUPRESS_STATS) {
      return;  // If we don't want to print stats
    }
 
@@ -1535,7 +1535,7 @@ void accel_t::print_stats() {
   print_status();
 
    ofstream stat_file;
-   if(char* name = getenv("SB_RUN_NAME")) {
+   if(char* name = getenv("SS_RUN_NAME")) {
      stat_file.open(string("stats/")+name+".sb-stats", ofstream::trunc | ofstream::out);
    } else {
      stat_file.open("stats/default.sb-stats", ofstream::trunc | ofstream::out);
@@ -1607,7 +1607,7 @@ void accel_t::schedule_streams() {
       blocked |= !done_concurrent(false,stream->_mask);
       if(!blocked) {
         scheduled=true;
-        if(SB_DEBUG::SCR_BARRIER) {
+        if(SS_DEBUG::SCR_BARRIER) {
           timestamp();
           std::cout << "BARRIER ISSUED, Scratch Write Complete\n";
         }
@@ -1767,7 +1767,7 @@ void accel_t::schedule_streams() {
       }
 
       str_issued++;
-      if(SB_DEBUG::SB_COMMAND_I) {
+      if(SS_DEBUG::COMMAND_I) {
         timestamp();
         cout << " ISSUED \tid:" << ip->id() << " ";
         ip->print_status();
@@ -1794,7 +1794,7 @@ void accel_t::schedule_streams() {
     // std::cout << "Queue size is more than 1\n";
     bool scheduled_const_scr = _scr_w_c.schedule_const_scr(*_const_scr_queue.front());
     if(scheduled_const_scr) {
-      if(SB_DEBUG::SB_COMMAND_I) {
+      if(SS_DEBUG::COMMAND_I) {
         timestamp();
         cout << " ISSUED:";
         _const_scr_queue.front()->print_status();
@@ -2013,7 +2013,7 @@ void dma_controller_t::port_resp(unsigned cur_port) {
       if(in_vp.can_push_vp(data.size())) {
         bool last = response->sdInfo->last;
 
-        if(SB_DEBUG::MEM_REQ) {
+        if(SS_DEBUG::MEM_REQ) {
           _accel->timestamp();
           std::cout << "response for " << std::hex << packet->getAddr() << std::dec
                     << "for port " << cur_port << ", size: " 
@@ -2046,7 +2046,7 @@ void dma_controller_t::port_resp(unsigned cur_port) {
 
         if(last) {
           auto& in_vp = _accel->port_interf().in_port(cur_port);
-          if(SB_DEBUG::VP_SCORE2) {
+          if(SS_DEBUG::VP_SCORE2) {
             cout << "SOURCE: DMA->PORT2 (port:" << cur_port << ")\n";
           }
 
@@ -2075,7 +2075,7 @@ void dma_controller_t::port_resp(unsigned cur_port) {
         if(_context_bitmask & b) {
 
         if(_scr_w_c->_buf_dma_write.push_data(response->sdInfo->scr_addr, data)) {
-          if(SB_DEBUG::MEM_REQ) {
+          if(SS_DEBUG::MEM_REQ) {
             _accel->timestamp();
             std::cout << "data into scratch " << response->sdInfo->scr_addr 
                       << ":" << data.size() << "elements, ctx=" "\n";
@@ -2200,7 +2200,7 @@ void dma_controller_t::make_write_request() {
           bool is_empty = stream.check_set_empty();
           if(is_empty) {
             _accel->process_stream_stats(stream);
-            if(SB_DEBUG::VP_SCORE2) {cout << "SOURCE: PORT->DMA\n";}
+            if(SS_DEBUG::VP_SCORE2) {cout << "SOURCE: PORT->DMA\n";}
             out_port.set_status(port_data_t::STATUS::FREE);
             delete_stream(_which_wr,sp);
           }
@@ -2250,7 +2250,7 @@ void dma_controller_t::make_read_request() {
 
           req_read(stream);
           if(stream.empty()) {
-            if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: DMA->PORT \n";}
+            if(SS_DEBUG::VP_SCORE2) { cout << "SOURCE: DMA->PORT \n";}
             in_vp.set_status(port_data_t::STATUS::COMPLETE, LOC::DMA);
             delete_stream(_which_rd,sp);
           }
@@ -2277,11 +2277,11 @@ void dma_controller_t::make_read_request() {
 
             if(stream.empty()) {
               //destination ivp
-              if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect DMA->PORT \n";}
+              if(SS_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect DMA->PORT \n";}
               in_vp.set_status(port_data_t::STATUS::COMPLETE, LOC::DMA);
 
               //out_ind_vp is where we keep track of the resource
-              if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect DMA->PORT \n";}
+              if(SS_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect DMA->PORT \n";}
               ind_vp.set_status(port_data_t::STATUS::FREE);
               delete_stream(_which_rd,sp);
             }
@@ -2329,8 +2329,8 @@ int dma_controller_t::req_read(mem_stream_base_t& stream) {
     _accel->process_stream_stats(stream);
   }
 
-  SDMemReqInfoPtr sdInfo = NULL; 
-  sdInfo = new SDMemReqInfo(stream.id(), _accel->_accel_index, 
+  SSMemReqInfoPtr sdInfo = NULL; 
+  sdInfo = new SSMemReqInfo(stream.id(), _accel->_accel_index, 
          stream.in_port(), mask, last, stream.fill_mode(), stream.stride_hit());
 
   //make request
@@ -2338,7 +2338,7 @@ int dma_controller_t::req_read(mem_stream_base_t& stream) {
               MEM_WIDTH/*cache line*/, base_addr, 0/*flags*/, 0 /*res*/,
               sdInfo);
  
-  if(SB_DEBUG::MEM_REQ) {
+  if(SS_DEBUG::MEM_REQ) {
     _accel->timestamp();
       std::cout << "request for " << std::hex << base_addr << std::dec
                     << " for " << words << " needed elements" << "\n";
@@ -2384,7 +2384,7 @@ void scratch_write_controller_t::write_scratch_ind(indirect_wr_stream_t& stream)
   if(is_empty) {
     _accel->process_stream_stats(stream);
 
-    if(SB_DEBUG::VP_SCORE2) {cout << "SOURCE: INDIRECT PORT -> SCR\n";}
+    if(SS_DEBUG::VP_SCORE2) {cout << "SOURCE: INDIRECT PORT -> SCR\n";}
     out_vp.set_status(port_data_t::STATUS::FREE);
     ind_vp.set_status(port_data_t::STATUS::FREE);
   }
@@ -2458,13 +2458,13 @@ void scratch_read_controller_t::read_scratch_ind(indirect_stream_t& stream,
  
       reorder_entry->last=true;
       _accel->process_stream_stats(stream);
-      if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT (queue)\n";}
+      if(SS_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT (queue)\n";}
   
       //the in_vp isn't really full yet because we have to wait until
       //the conflict-free data arrives
       in_vp.set_status(port_data_t::STATUS::COMPLETE,LOC::SCR);
   
-      if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT queue)\n";}
+      if(SS_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT queue)\n";}
       ind_vp.set_status(port_data_t::STATUS::FREE);
     }
   }
@@ -2514,7 +2514,7 @@ void scratch_read_controller_t::read_scratch_ind(indirect_stream_t& stream,
       //bytes_pushed=reorder_entry.size;
   
       if(reorder_entry->last && stream.check_set_empty()) { //finally can free input for reals 
-        if(SB_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT \n";}
+        if(SS_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT \n";}
         in_vp.set_status(port_data_t::STATUS::FREE,LOC::SCR);
       }
       delete reorder_entry;
@@ -2568,7 +2568,7 @@ void dma_controller_t::ind_read_req(indirect_stream_t& stream) {
     int index = (addr - base_addr)     /8; //TODO: configurable data size please!
     imap.push_back(index);
 
-    if(SB_DEBUG::MEM_REQ) {
+    if(SS_DEBUG::MEM_REQ) {
       _accel->timestamp();
       cout << "indirect request for " << std::hex << base_addr << std::dec
            << " for " << imap.size() << " needed elements" << "\n";
@@ -2586,8 +2586,8 @@ void dma_controller_t::ind_read_req(indirect_stream_t& stream) {
   }
 
 
-  SDMemReqInfoPtr sdInfo = NULL; 
-    sdInfo = new SDMemReqInfo(stream.id(),
+  SSMemReqInfoPtr sdInfo = NULL; 
+    sdInfo = new SSMemReqInfo(stream.id(),
                               _accel->_accel_index,  
                  stream.in_port(), imap, last, stream.fill_mode());
 
@@ -2661,7 +2661,7 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
     }
   }
 
-  SDMemReqInfoPtr sdInfo = new SDMemReqInfo(stream.id(),
+  SSMemReqInfoPtr sdInfo = new SSMemReqInfo(stream.id(),
                                             _accel->_accel_index, MEM_WR_STREAM, 
                                             mask /*NA*/, false /*NA*/, 0 /*NA*/);
 
@@ -2682,7 +2682,7 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
   if(is_empty) {
     _accel->process_stream_stats(stream);
 
-    if(SB_DEBUG::VP_SCORE2) {
+    if(SS_DEBUG::VP_SCORE2) {
       cout << "SOURCE: INDIRECT PORT -> DMA\n";
     }
     out_vp.set_status(port_data_t::STATUS::FREE);
@@ -2739,7 +2739,7 @@ void dma_controller_t::req_write(port_dma_stream_t& stream, port_data_t& ovp) {
   }
 
   unsigned bytes_written = elem_written * data_width;
-  SDMemReqInfoPtr sdInfo = new SDMemReqInfo(stream.id(),
+  SSMemReqInfoPtr sdInfo = new SSMemReqInfo(stream.id(),
                                             _accel->_accel_index, MEM_WR_STREAM, 
                                             mask /*NA*/, false /*NA*/, 0 /*NA*/);
 
@@ -2748,7 +2748,7 @@ void dma_controller_t::req_write(port_dma_stream_t& stream, port_data_t& ovp) {
               bytes_written, init_addr, 0/*flags*/, 0 /*res*/, sdInfo);
 
 
-  if(SB_DEBUG::MEM_REQ) {
+  if(SS_DEBUG::MEM_REQ) {
     _accel->timestamp();
     cout << bytes_written << "-byte write request for port->dma, addr:"
          << std::hex << init_addr <<", data:";
@@ -2788,7 +2788,7 @@ vector<SBDT> scratch_read_controller_t::read_scratch(
   addr_t base_addr = addr & SCR_MASK;
   addr_t max_addr = base_addr+SCR_WIDTH;
 
-  if(SB_DEBUG::SCR_BARRIER) {
+  if(SS_DEBUG::SCR_BARRIER) {
     _accel->timestamp();
     cout << "scr_rd " << hex << addr << " -> " << max_addr << "\n";
   }
@@ -2804,7 +2804,7 @@ vector<SBDT> scratch_read_controller_t::read_scratch(
     //std::memcpy(&val, &_accel->scratchpad[addr], DATA_WIDTH);
     _accel->read_scratchpad(&val, addr, DATA_WIDTH,stream.id());
 
-    if(SB_DEBUG::SCR_ACC) {
+    if(SS_DEBUG::SCR_ACC) {
       cout << "scr_addr:" << hex << addr << " read " << val 
            << " to port " << stream.in_port() << "\n";
     }
@@ -2818,7 +2818,7 @@ vector<SBDT> scratch_read_controller_t::read_scratch(
     }
   }
 
-  if(SB_DEBUG::VERIF_SCR) {
+  if(SS_DEBUG::VERIF_SCR) {
     _accel->scr_rd_verif << hex << setw(8) << setfill('0') << base_addr << " ";
     for(uint64_t i = base_addr; i < max_addr; ++i) {
       _accel->scr_rd_verif << setw(2) << setfill('0') << 
@@ -2876,7 +2876,7 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
       auto& stream = *sp;
 
       if(stream.stream_active()) {
-        bool skip_check = SB_DEBUG::UNREAL_INPUTS;
+        bool skip_check = SS_DEBUG::UNREAL_INPUTS;
 
         if(min_port_ready==-2) {
           min_port_ready=calc_min_port_ready();
@@ -2902,7 +2902,7 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
           if(is_empty) {
             _accel->process_stream_stats(stream);
       
-            if(SB_DEBUG::VP_SCORE2) {
+            if(SS_DEBUG::VP_SCORE2) {
               cout << "SOURCE: SCR->PORT\n";
             }
             in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE, stream.fill_mode());
@@ -3032,7 +3032,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
           bool is_empty = stream.check_set_empty();
           if(is_empty) {
             _accel->process_stream_stats(stream);
-            if(SB_DEBUG::VP_SCORE2) {
+            if(SS_DEBUG::VP_SCORE2) {
               cout << "SOURCE: PORT->SCR\n";
             }
             out_vp.set_status(port_data_t::STATUS::FREE);
@@ -3078,7 +3078,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
         bool is_empty = stream.check_set_empty();
         if(is_empty) {
           _accel->process_stream_stats(stream);
-          if(SB_DEBUG::VP_SCORE2) {
+          if(SS_DEBUG::VP_SCORE2) {
             cout << "SOURCE: CONST->SCR\n";
           }
           delete_stream(_which_wr,sp);
@@ -3131,7 +3131,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
 
            num_addr_pops=0;
            loc = out_addr.peek_out_data();
-           if(SB_DEBUG::SB_COMP) {
+           if(SS_DEBUG::COMP) {
              std::cout << "1 cycle execution : " << "\n";
              std::cout << "64-bit value at the addr port is: " << loc;
            }
@@ -3152,7 +3152,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
           // num_value_pops should be less than 64 bytes?
            while(scr_addr < max_addr && stream._num_strides>0 
                        && out_addr.mem_size()  && out_val.mem_size() && num_addr_pops < 64) {                         
-             if(SB_DEBUG::SB_COMP) {
+             if(SS_DEBUG::COMP) {
                std::cout << "\tupdate at index location: " << loc << " and scr_addr: " << scr_addr << " and scr_size is: " << SCRATCH_SIZE;
              }
              
@@ -3201,7 +3201,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
              }
              */
 
-             if(SB_DEBUG::SB_COMP) {
+             if(SS_DEBUG::COMP) {
                std::cout << "\tvalues input: " << inc << "\tbank_id: " << bank_id << "\n";
                std::cout << "stream strides left are: " << stream._num_strides << "\n";
              }
@@ -3213,7 +3213,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
              if(stream.can_pop_val()) {
                stream._cur_val_index=0;
                out_val.pop_out_data();
-               if(SB_DEBUG::SB_COMP) {
+               if(SS_DEBUG::COMP) {
                  std::cout << "\tpopped data from val port";
                }
              }
@@ -3222,18 +3222,18 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
                // for bank conflicts calc purposes
                num_addr_pops++;
                out_addr.pop_out_data();
-               if(SB_DEBUG::SB_COMP) {
+               if(SS_DEBUG::COMP) {
                  std::cout << "\tpopped data from addr port";
                }
              }
-             if(SB_DEBUG::SB_COMP) {
+             if(SS_DEBUG::COMP) {
                std::cout << "\n";
              }
              // should be decremented after every computation
              // new loop added for vector ports
              if(out_addr.mem_size() > 0 && out_val.mem_size() > 0) {
                loc = out_addr.peek_out_data();
-               if(SB_DEBUG::SB_COMP) {
+               if(SS_DEBUG::COMP) {
                  std::cout << "64-bit value at the addr port is: " << loc;
                }
                loc = stream.cur_addr(loc);
@@ -3252,7 +3252,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
             bool is_empty = stream.check_set_empty();
             if(is_empty) {
               _accel->process_stream_stats(stream);
-              if(SB_DEBUG::VP_SCORE2) {
+              if(SS_DEBUG::VP_SCORE2) {
                 cout << "SOURCE: PORT->SCR\n";
               }
               out_addr.set_status(port_data_t::STATUS::FREE);
@@ -3273,7 +3273,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
             opcode = request._opcode;
 
 
-            if(SB_DEBUG::SB_COMP) {
+            if(SS_DEBUG::COMP) {
                std::cout << "REAL EXECUTION, update at scr_addr: " << scr_addr << " at bankid: " << i << " with inc value: " << inc << "\n";
                std::cout << "Available requests at the bank queue are: " << _atomic_scr_issued_requests[i].size() << "\n";
             }
@@ -3358,13 +3358,13 @@ void port_controller_t::cycle() {
       if(is_empty) {
         _accel->process_stream_stats(stream);
 
-        if(SB_DEBUG::VP_SCORE2) {
+        if(SS_DEBUG::VP_SCORE2) {
           cout << "SOURCE: PORT->PORT\n";
         }
         port_data_t& in_vp = _accel->port_interf().in_port(stream._in_port);
         in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE, stream.fill_mode());
 
-        if(SB_DEBUG::VP_SCORE2) {
+        if(SS_DEBUG::VP_SCORE2) {
           cout << "SOURCE: PORT->PORT\n";
         }
         port_data_t& out_vp = _accel->port_interf().out_port(stream._out_port);
@@ -3402,7 +3402,7 @@ void port_controller_t::cycle() {
 
         port_data_t& in_vp = _accel->port_interf().in_port(stream._in_port);
 
-        if(SB_DEBUG::VP_SCORE2) {
+        if(SS_DEBUG::VP_SCORE2) {
           cout << "SOURCE: CONST->PORT\n";
         }
         in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE, stream.fill_mode());
@@ -3454,12 +3454,12 @@ void port_controller_t::cycle() {
       if(is_empty) {
         _accel->process_stream_stats(stream);
 
-        if(SB_DEBUG::VP_SCORE2) {
+        if(SS_DEBUG::VP_SCORE2) {
           cout << "SOURCE: PORT->PORT\n";
         }
         vp_in.set_status(port_data_t::STATUS::FREE, LOC::NONE, stream.fill_mode());
 
-        if(SB_DEBUG::VP_SCORE2) {
+        if(SS_DEBUG::VP_SCORE2) {
           cout << "SOURCE: PORT->PORT\n";
         }
         vp_out.set_status(port_data_t::STATUS::FREE);
@@ -3495,7 +3495,7 @@ bool accel_t::done(bool show,int mask) {
     _cleanup_mode=false;
   }
 
-  if(SB_DEBUG::CHECK_SCR_ALIAS) {
+  if(SS_DEBUG::CHECK_SCR_ALIAS) {
     if(mask==0 && d) {  //WAIT ALL is true
       for(int i = 0; i < SCRATCH_SIZE; i+=1) {
         scratchpad_readers[i]=0;
@@ -3505,7 +3505,7 @@ bool accel_t::done(bool show,int mask) {
   }
 
 
-  if(SB_DEBUG::SB_WAIT) {
+  if(SS_DEBUG::WAIT) {
     timestamp();
     if(d) {
       cout << "Done Check -- Done (" << mask << ")\n";
@@ -3532,7 +3532,7 @@ bool accel_t::done_concurrent(bool show, int mask) {
     done = false;
   }
 
-  if(SB_DEBUG::CHECK_SCR_ALIAS) {
+  if(SS_DEBUG::CHECK_SCR_ALIAS) {
     if(mask&WAIT_SCR_RD && done) {
       for(int i = 0; i < SCRATCH_SIZE; i+=1) {
         scratchpad_readers[i]=0;
@@ -3757,9 +3757,9 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
   //5+: switch/fu configuration
   //size - num of 64bit slices
 
-  if(debug && (SB_DEBUG::SB_COMMAND || SB_DEBUG::SCR_BARRIER)  ) {
+  if(debug && (SS_DEBUG::COMMAND || SS_DEBUG::SCR_BARRIER)  ) {
     timestamp();
-    cout << "SB_CONFIGURE(response): " << "0x" << std::hex << addr << " " 
+    cout << "SS_CONFIGURE(response): " << "0x" << std::hex << addr << " " 
                                        << std::dec << size << "\n";
     //for(int i = 0; i < size/8; ++i) {
     //  cout << "0x" << std::hex << bits[i] << " ";
@@ -3827,10 +3827,12 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
       //port mapping of 1 vector port - cgra_port_num: vector offset elements
       port_data_t& cur_in_port = _port_interf.in_port(i);
       if(vec_input->is_temporal()) {
-        cur_in_port.set_port_map(_sbconfig->subModel()->io_interf().in_vports[i],
+        cur_in_port.set_port_map(
+            _sbconfig->subModel()->io_interf().in_vports[i]->port_vec(),
             mask,vec_input->inputs().size());
       } else {
-        cur_in_port.set_port_map(_sbconfig->subModel()->io_interf().in_vports[i],
+        cur_in_port.set_port_map(
+            _sbconfig->subModel()->io_interf().in_vports[i]->port_vec(),
                                   mask,0);
       }
 
@@ -3875,10 +3877,12 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
       //port mapping of 1 vector port - cgra_port_num: vector offset elements
       auto& cur_out_port = _port_interf.out_port(i);
       if(vec_output->is_temporal()) {
-        cur_out_port.set_port_map(_sbconfig->subModel()->io_interf().out_vports[i],
+        cur_out_port.set_port_map(
+            _sbconfig->subModel()->io_interf().out_vports[i]->port_vec(),
             mask,vec_output->num_outputs());
       } else {
-        cur_out_port.set_port_map(_sbconfig->subModel()->io_interf().out_vports[i],
+        cur_out_port.set_port_map(
+            _sbconfig->subModel()->io_interf().out_vports[i]->port_vec(),
                                   mask,0);
       }
 
@@ -3930,7 +3934,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
         }
       }
 
-      if(SB_DEBUG::SHOW_CONFIG) {
+      if(SS_DEBUG::SHOW_CONFIG) {
         for(int i = 0; i < active_ports.size(); ++i) {
           int p = active_ports[i];
           cout << "in vp" << p << " ";

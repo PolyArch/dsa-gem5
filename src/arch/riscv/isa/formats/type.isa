@@ -186,9 +186,9 @@ output header {{
     };
 
     /**
-     * Base class for SD-type operations
+     * Base class for SS-type operations
      */
-    class SDOp : public RiscvStaticInst
+    class SSOp : public RiscvStaticInst
     {
       public:
         virtual uint64_t imm() { return s_imm; }
@@ -199,7 +199,7 @@ output header {{
         int64_t s_imm;
 
         /// Constructor
-        SDOp(const char *mnem, MachInst _machInst, OpClass __opClass)
+        SSOp(const char *mnem, MachInst _machInst, OpClass __opClass)
             : RiscvStaticInst(mnem, _machInst, __opClass),i_imm(IMM12),s_imm(0)
         {
 
@@ -294,7 +294,7 @@ output decoder {{
     }
 
     std::string
-    SDOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+    SSOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
     {
         std::stringstream ss;
         ss << mnemonic << ' ' << regName(_destRegIdx[0]) << ", "
@@ -360,8 +360,8 @@ def format UJOp(code, *opt_flags) {{
     exec_output = BasicExecute.subst(iop)
 }};
 
-def format SDOp(code, *opt_flags) {{
-    iop = InstObjParams(name, Name, 'SDOp', code, opt_flags)
+def format SSOp(code, *opt_flags) {{
+    iop = InstObjParams(name, Name, 'SSOp', code, opt_flags)
     header_output = BasicDeclare.subst(iop)
     decoder_output = BasicConstructor.subst(iop)
     decode_block = BasicDecode.subst(iop)

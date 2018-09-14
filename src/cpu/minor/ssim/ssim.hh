@@ -77,7 +77,7 @@ public:
 
   void set_in_use() {
     if(!_in_use) {
-      if(SB_DEBUG::SB_COMMAND || SB_DEBUG::SB_ROI) {
+      if(SS_DEBUG::COMMAND || SS_DEBUG::ROI) {
         timestamp();
         std::cout << "SSIM in use\n";
       }
@@ -85,7 +85,7 @@ public:
     _in_use=true;
   }
   void set_not_in_use() {
-    if(SB_DEBUG::SB_COMMAND || SB_DEBUG::SB_ROI) {
+    if(SS_DEBUG::COMMAND || SS_DEBUG::ROI) {
       timestamp();
       std::cout << "SSIM *NOT* in use\n";
     }

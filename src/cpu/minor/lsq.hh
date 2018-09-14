@@ -53,7 +53,7 @@
 #include "cpu/minor/trace.hh"
 
 
-struct SDMemReqInfo {
+struct SSMemReqInfo {
     int stream_id=-3;
     int port=-1;
     uint32_t fill_mode=0;
@@ -63,23 +63,23 @@ struct SDMemReqInfo {
     bool stride_hit=false;
     bool isConfig = 0;
     uint64_t which_accel = 0;
-    SDMemReqInfo(int stream_id_, uint64_t which_accel_, int port_, 
+    SSMemReqInfo(int stream_id_, uint64_t which_accel_, int port_, 
         std::vector<bool>& mask_, bool last_=false, uint32_t fill_=false, 
         bool stride_hit_=false)
         : stream_id(stream_id_), 
         port(port_), fill_mode(fill_), mask(mask_),
         last(last_), stride_hit(stride_hit_), which_accel(which_accel_) {}
-    SDMemReqInfo(int stream_id_, uint64_t which_accel_, int port_, 
+    SSMemReqInfo(int stream_id_, uint64_t which_accel_, int port_, 
                     std::vector<int>& map_, bool last_=0, uint32_t fill_=0,
                     bool stride_hit_=false)
         : stream_id(stream_id_),
          port(port_), fill_mode(fill_), map(map_), 
         last(last_), stride_hit(stride_hit_), which_accel(which_accel_) {}
-    SDMemReqInfo(uint64_t which_accel_, int port_)
+    SSMemReqInfo(uint64_t which_accel_, int port_)
         : port(port_), 
         last(false), stride_hit(false), which_accel(which_accel_) {}
 };
-typedef SDMemReqInfo *SDMemReqInfoPtr;
+typedef SSMemReqInfo *SSMemReqInfoPtr;
 
 namespace Minor
 {
@@ -163,7 +163,7 @@ class LSQ : public Named
 
 
         /** Stream Dataflow Id */
-        SDMemReqInfoPtr sdInfo;
+        SSMemReqInfoPtr sdInfo;
 
         /** Dynamically allocated and populated data carried for
          *  building write packets */
@@ -400,7 +400,7 @@ class LSQ : public Named
       public:
         SingleDataRequest(LSQ &port_, MinorDynInstPtr inst_,
             bool isLoad_,  PacketDataPtr data_ = NULL, 
-            uint64_t *res_ = NULL, SDMemReqInfoPtr sdInfo_=NULL) :
+            uint64_t *res_ = NULL, SSMemReqInfoPtr sdInfo_=NULL) :
             LSQRequest(port_, inst_, isLoad_, data_, res_),
             packetInFlight(false),
             packetSent(false)
@@ -448,7 +448,7 @@ class LSQ : public Named
       public:
         SplitDataRequest(LSQ &port_, MinorDynInstPtr inst_,
             bool isLoad_, PacketDataPtr data_ = NULL,
-            uint64_t *res_ = NULL, SDMemReqInfoPtr sdInfo_=NULL);
+            uint64_t *res_ = NULL, SSMemReqInfoPtr sdInfo_=NULL);
 
         ~SplitDataRequest();
 
@@ -751,7 +751,7 @@ class LSQ : public Named
 
     void pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
                      unsigned int size, Addr addr, Request::Flags flags,
-                     uint64_t *res, SDMemReqInfoPtr sdInfo);
+                     uint64_t *res, SSMemReqInfoPtr sdInfo);
 
     /** Push a predicate failed-representing request into the queues just
      *  to maintain commit order */

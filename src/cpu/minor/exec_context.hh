@@ -60,9 +60,9 @@
 #include "cpu/simple_thread.hh"
 #include "ssim.hh"
 #include "debug/MinorExecute.hh"
-#include "debug/SD.hh"
+#include "debug/SS.hh"
 #include "mem/request.hh"
-#include "cpu/sd_regs.hh"
+#include "cpu/ss_regs.hh"
 
 namespace Minor
 {
@@ -489,130 +489,118 @@ class ExecContext : public ::ExecContext
     { return getCpuPtr()->getCpuAddrMonitor(inst->id.threadId); }
 
 
-#ifdef ISA_HAS_SD
-    uint64_t receiveSD() {
-      DPRINTF(SD, "Do SD_COMMAND RECEIVE\n");
+#ifdef ISA_HAS_SS
+    uint64_t receiveSS() {
+      DPRINTF(SS, "Do SS_COMMAND RECEIVE\n");
       ssim_t& ssim = execute.getSSIM();
-      return ssim.receive(thread.getSDReg(SD_OUT_PORT));
+      return ssim.receive(thread.getSSReg(SS_OUT_PORT));
     }
 
-    void setSDReg(uint64_t val, int sd_idx) {
-        thread.setSDReg(val, sd_idx);
+    void setSSReg(uint64_t val, int ss_idx) {
+        thread.setSSReg(val, ss_idx);
     }
-    void callSDFunc(int sd_func_opcode) {
-        DPRINTF(SD, "Do SD_COMMAND %d.\n", SDCmdNames[sd_func_opcode]);
+    void callSSFunc(int ss_func_opcode) {
+        DPRINTF(SS, "Do SS_COMMAND %d.\n", SSCmdNames[ss_func_opcode]);
         ssim_t& ssim = execute.getSSIM();
         ssim.set_cur_minst(inst);
-        switch(sd_func_opcode) {
-            case SB_BEGIN_ROI: ssim.roi_entry(true); break;
-            case SB_END_ROI: ssim.roi_entry(false); break;
-            case SB_STATS: ssim.print_stats(); break;
-            case SB_CFG: ssim.req_config(
-                thread.getSDReg(SD_MEM_ADDR),      thread.getSDReg(SD_CFG_SIZE)); 
+        switch(ss_func_opcode) {
+            case SS_BEGIN_ROI: ssim.roi_entry(true); break;
+            case SS_END_ROI: ssim.roi_entry(false); break;
+            case SS_STATS: ssim.print_stats(); break;
+            case SS_CFG: ssim.req_config(
+                thread.getSSReg(SS_MEM_ADDR),      thread.getSSReg(SS_CFG_SIZE)); 
             break;
-            //case SB_CFG_PORT: ssim.cfg_port(
-            //    thread.getSDReg(SD_CONSTANT),      thread.getSDReg(SD_IN_PORT)); 
+            //case SS_CFG_PORT: ssim.cfg_port(
+            //    thread.getSSReg(SS_CONSTANT),      thread.getSSReg(SS_IN_PORT)); 
             //break;
-            case SB_CTX: ssim.set_context(thread.getSDReg(SD_CONTEXT),
-                                          thread.getSDReg(SD_OFFSET)); 
+            case SS_CTX: ssim.set_context(thread.getSSReg(SS_CONTEXT),
+                                          thread.getSSReg(SS_OFFSET)); 
             break;
-            case SB_FILL_MODE: ssim.set_fill_mode(thread.getSDReg(SD_CONSTANT)); 
+            case SS_FILL_MODE: ssim.set_fill_mode(thread.getSSReg(SS_CONSTANT)); 
             break;
-//            case SB_MEM_SCR: ssim.load_dma_to_scratch(
-//                thread.getSDReg(SD_MEM_ADDR),      thread.getSDReg(SD_STRIDE),
-//                thread.getSDReg(SD_ACCESS_SIZE),   thread.getSDReg(SD_STRETCH),   
-//                thread.getSDReg(SD_NUM_STRIDES),   thread.getSDReg(SD_SCRATCH_ADDR),
-//                thread.getSDReg(SD_FLAGS)); 
-//            break;
-//            case SB_SCR_MEM: ssim.write_dma_from_scratch(
-//                thread.getSDReg(SD_SCRATCH_ADDR),      thread.getSDReg(SD_STRIDE),
-//                thread.getSDReg(SD_ACCESS_SIZE),   thread.getSDReg(SD_NUM_STRIDES),
-//                thread.getSDReg(SD_MEM_ADDR), thread.getSDReg(SD_FLAGS)); 
-//            break;
-            case SB_MEM_PRT: ssim.load_dma_to_port(
-                thread.getSDReg(SD_MEM_ADDR),      thread.getSDReg(SD_STRIDE),
-                thread.getSDReg(SD_ACCESS_SIZE),   thread.getSDReg(SD_STRETCH), 
-                thread.getSDReg(SD_NUM_STRIDES),   thread.getSDReg(SD_IN_PORT),       
-                thread.getSDReg(SD_REPEAT), thread.getSDReg(SD_REPEAT_STRETCH));      
+            case SS_MEM_PRT: ssim.load_dma_to_port(
+                thread.getSSReg(SS_MEM_ADDR),      thread.getSSReg(SS_STRIDE),
+                thread.getSSReg(SS_ACCESS_SIZE),   thread.getSSReg(SS_STRETCH), 
+                thread.getSSReg(SS_NUM_STRIDES),   thread.getSSReg(SS_IN_PORT),
+                thread.getSSReg(SS_REPEAT), thread.getSSReg(SS_REPEAT_STRETCH));
             break;
-            case SB_SCR_PRT: ssim.load_scratch_to_port(
-                thread.getSDReg(SD_SCRATCH_ADDR), thread.getSDReg(SD_STRIDE),
-                thread.getSDReg(SD_ACCESS_SIZE),  thread.getSDReg(SD_STRETCH),   
-                thread.getSDReg(SD_NUM_STRIDES),  thread.getSDReg(SD_IN_PORT),
-                thread.getSDReg(SD_REPEAT), thread.getSDReg(SD_REPEAT_STRETCH));
+            case SS_SCR_PRT: ssim.load_scratch_to_port(
+                thread.getSSReg(SS_SCRATCH_ADDR), thread.getSSReg(SS_STRIDE),
+                thread.getSSReg(SS_ACCESS_SIZE),  thread.getSSReg(SS_STRETCH),   
+                thread.getSSReg(SS_NUM_STRIDES),  thread.getSSReg(SS_IN_PORT),
+                thread.getSSReg(SS_REPEAT), thread.getSSReg(SS_REPEAT_STRETCH));
             break;
-            case SB_PRT_SCR: ssim.write_scratchpad(
-                thread.getSDReg(SD_OUT_PORT), thread.getSDReg(SD_SCRATCH_ADDR),  
-                thread.getSDReg(SD_NUM_BYTES), thread.getSDReg(SD_SHIFT_BYTES));      
+            case SS_PRT_SCR: ssim.write_scratchpad(
+                thread.getSSReg(SS_OUT_PORT), thread.getSSReg(SS_SCRATCH_ADDR),  
+                thread.getSSReg(SS_NUM_BYTES), thread.getSSReg(SS_SHIFT_BYTES));    
             break;
-            case SB_PRT_MEM: ssim.write_dma(
-                thread.getSDReg(SD_GARB_ELEM),
-                thread.getSDReg(SD_OUT_PORT),      thread.getSDReg(SD_STRIDE),
-                thread.getSDReg(SD_ACCESS_SIZE),   thread.getSDReg(SD_NUM_STRIDES),
-                thread.getSDReg(SD_MEM_ADDR),      thread.getSDReg(SD_SHIFT_BYTES),
-                thread.getSDReg(SD_GARBAGE));
+            case SS_PRT_MEM: ssim.write_dma(
+                thread.getSSReg(SS_GARB_ELEM),
+                thread.getSSReg(SS_OUT_PORT),      thread.getSSReg(SS_STRIDE),
+                thread.getSSReg(SS_ACCESS_SIZE),   thread.getSSReg(SS_NUM_STRIDES),
+                thread.getSSReg(SS_MEM_ADDR),      thread.getSSReg(SS_SHIFT_BYTES),
+                thread.getSSReg(SS_GARBAGE));
             break;
-            case SB_PRT_PRT: ssim.reroute(
-                thread.getSDReg(SD_OUT_PORT),      thread.getSDReg(SD_IN_PORT),
-                thread.getSDReg(SD_NUM_ELEM),      thread.getSDReg(SD_REPEAT), 
-                thread.getSDReg(SD_REPEAT_STRETCH),
-                thread.getSDReg(SD_FLAGS));     
+            case SS_PRT_PRT: ssim.reroute(
+                thread.getSSReg(SS_OUT_PORT),      thread.getSSReg(SS_IN_PORT),
+                thread.getSSReg(SS_NUM_ELEM),      thread.getSSReg(SS_REPEAT), 
+                thread.getSSReg(SS_REPEAT_STRETCH),
+                thread.getSSReg(SS_FLAGS));     
             break;
-            case SB_IND_PRT: ssim.indirect(
-                thread.getSDReg(SD_IND_PORT),      thread.getSDReg(SD_IND_TYPE),
-                thread.getSDReg(SD_IN_PORT),       thread.getSDReg(SD_INDEX_ADDR),
-                thread.getSDReg(SD_NUM_ELEM),      thread.getSDReg(SD_REPEAT),
-                thread.getSDReg(SD_REPEAT_STRETCH),thread.getSDReg(SD_OFFSET_LIST),
-                thread.getSDReg(SD_DTYPE),         thread.getSDReg(SD_IND_MULT),
-                thread.getSDReg(SD_IS_SCRATCH));
+            case SS_IND_PRT: ssim.indirect(
+                thread.getSSReg(SS_IND_PORT),      thread.getSSReg(SS_IND_TYPE),
+                thread.getSSReg(SS_IN_PORT),       thread.getSSReg(SS_INDEX_ADDR),
+                thread.getSSReg(SS_NUM_ELEM),      thread.getSSReg(SS_REPEAT),
+                thread.getSSReg(SS_REPEAT_STRETCH),thread.getSSReg(SS_OFFSET_LIST),
+                thread.getSSReg(SS_DTYPE),         thread.getSSReg(SS_IND_MULT),
+                thread.getSSReg(SS_IS_SCRATCH));
             break;
-            case SB_PRT_IND: ssim.indirect_write(
-                thread.getSDReg(SD_IND_PORT),       thread.getSDReg(SD_IND_TYPE),
-                thread.getSDReg(SD_OUT_PORT),       thread.getSDReg(SD_INDEX_ADDR),
-                thread.getSDReg(SD_NUM_ELEM),       thread.getSDReg(SD_OFFSET_LIST),
-                thread.getSDReg(SD_DTYPE),         thread.getSDReg(SD_IND_MULT),
-                thread.getSDReg(SD_IS_SCRATCH));
+            case SS_PRT_IND: ssim.indirect_write(
+                thread.getSSReg(SS_IND_PORT),       thread.getSSReg(SS_IND_TYPE),
+                thread.getSSReg(SS_OUT_PORT),       thread.getSSReg(SS_INDEX_ADDR),
+                thread.getSSReg(SS_NUM_ELEM),       thread.getSSReg(SS_OFFSET_LIST),
+                thread.getSSReg(SS_DTYPE),         thread.getSSReg(SS_IND_MULT),
+                thread.getSSReg(SS_IS_SCRATCH));
             break;
-            case SB_CNS_PRT: ssim.write_constant(
-                thread.getSDReg(SD_NUM_STRIDES),   thread.getSDReg(SD_IN_PORT),
-                thread.getSDReg(SD_CONSTANT),      thread.getSDReg(SD_NUM_ELEM),     
-                thread.getSDReg(SD_CONSTANT2),     thread.getSDReg(SD_NUM_ELEM2),      
-                thread.getSDReg(SD_FLAGS) );
+            case SS_CNS_PRT: ssim.write_constant(
+                thread.getSSReg(SS_NUM_STRIDES),   thread.getSSReg(SS_IN_PORT),
+                thread.getSSReg(SS_CONSTANT),      thread.getSSReg(SS_NUM_ELEM),     
+                thread.getSSReg(SS_CONSTANT2),     thread.getSSReg(SS_NUM_ELEM2),    
+                thread.getSSReg(SS_FLAGS) );
             break;
-            case SB_ATOMIC_SCR_OP: ssim.atomic_update_scratchpad(
-                thread.getSDReg(SD_OFFSET),        thread.getSDReg(SD_NUM_ELEM),
-                thread.getSDReg(SD_OUT_PORT),      thread.getSDReg(SD_VAL_PORT),
-                thread.getSDReg(SD_IND_TYPE),      thread.getSDReg(SD_DTYPE),
-                thread.getSDReg(SD_ADDR_TYPE),     thread.getSDReg(SD_OPCODE));
+            case SS_ATOMIC_SCR_OP: ssim.atomic_update_scratchpad(
+                thread.getSSReg(SS_OFFSET),        thread.getSSReg(SS_NUM_ELEM),
+                thread.getSSReg(SS_OUT_PORT),      thread.getSSReg(SS_VAL_PORT),
+                thread.getSSReg(SS_IND_TYPE),      thread.getSSReg(SS_DTYPE),
+                thread.getSSReg(SS_ADDR_TYPE),     thread.getSSReg(SS_OPCODE));
             break;
-            case SB_CONST_SCR: ssim.write_constant_scratchpad(
-                thread.getSDReg(SD_SCRATCH_ADDR),  thread.getSDReg(SD_CONSTANT),
-                thread.getSDReg(SD_NUM_STRIDES));
+            case SS_CONST_SCR: ssim.write_constant_scratchpad(
+                thread.getSSReg(SS_SCRATCH_ADDR),  thread.getSSReg(SS_CONSTANT),
+                thread.getSSReg(SS_NUM_STRIDES));
             break;
-
-            case SB_WAIT:
-                if(thread.getSDReg(SD_WAIT_MASK) == 0) {
+            case SS_WAIT:
+                if(thread.getSSReg(SS_WAIT_MASK) == 0) {
                     ssim.set_not_in_use();
-                    DPRINTF(SD, "Set SB Not in Use\n");
-                } else if(thread.getSDReg(SD_WAIT_MASK) == 2) {
-                     DPRINTF(SD, "Wait Compute\n");         
-                } else if(thread.getSDReg(SD_WAIT_MASK) == 16) {
-                     DPRINTF(SD, "Wait mem write\n");
+                    DPRINTF(SS, "Set SS Not in Use\n");
+                } else if(thread.getSSReg(SS_WAIT_MASK) == 2) {
+                     DPRINTF(SS, "Wait Compute\n");         
+                } else if(thread.getSSReg(SS_WAIT_MASK) == 16) {
+                     DPRINTF(SS, "Wait mem write\n");
                 } else {
-                     ssim.insert_barrier(thread.getSDReg(SD_WAIT_MASK));
+                     ssim.insert_barrier(thread.getSSReg(SS_WAIT_MASK));
                 }
             break;
             default:
-                DPRINTF(SD, "UNIMPLEMENTED COMMAND\n");
+                DPRINTF(SS, "UNIMPLEMENTED COMMAND\n");
                 break;
         }
         //RESET REPEAT to 1 -- since this is by far the most common case
-        setSDReg(1,SD_REPEAT);
-        setSDReg(0,SD_REPEAT_STRETCH);
-        setSDReg(0,SD_OFFSET_LIST);
-        setSDReg(0,SD_IND_TYPE);
-        setSDReg(0,SD_DTYPE);
-        setSDReg(1,SD_IND_MULT);
+        setSSReg(1,SS_REPEAT);
+        setSSReg(0,SS_REPEAT_STRETCH);
+        setSSReg(0,SS_OFFSET_LIST);
+        setSSReg(0,SS_IND_TYPE);
+        setSSReg(0,SS_DTYPE);
+        setSSReg(1,SS_IND_MULT);
 
     }
 #endif

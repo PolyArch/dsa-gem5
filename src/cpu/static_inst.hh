@@ -186,13 +186,13 @@ class StaticInst : public RefCounted, public StaticInstFlags
     //This flag doesn't do anything yet
     bool isMicroBranch() const { return flags[IsMicroBranch]; }
     //@}
-    bool isSDRecv() const { return flags[IsSDRecv]; }
-    bool isSDStream() const { return flags[IsSDStream]; }
-    bool isSDWait() const { return flags[IsSDWait]; }
-    bool isSDConfig() const { return flags[IsSDConfig]; }
-    bool isSDParam() const {return flags[IsSDParam];}
-    bool isSD() const {return flags[IsSDStream] || flags[IsSDWait] || 
-                             flags[IsSDConfig] || flags[IsSDParam] || flags[IsSDRecv];}
+    bool isSSRecv() const { return flags[IsSSRecv]; }
+    bool isSSStream() const { return flags[IsSSStream]; }
+    bool isSSWait() const { return flags[IsSSWait]; }
+    bool isSSConfig() const { return flags[IsSSConfig]; }
+    bool isSSParam() const {return flags[IsSSParam];}
+    bool isSS() const {return flags[IsSSStream] || flags[IsSSWait] || 
+                             flags[IsSSConfig] || flags[IsSSParam] || flags[IsSSRecv];}
 
     void setFirstMicroop() { flags[IsFirstMicroop] = true; }
     void setLastMicroop() { flags[IsLastMicroop] = true; }

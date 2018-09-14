@@ -583,7 +583,7 @@ Execute::issue(ThreadID thread_id)
                 " there are too many in flight\n", *inst);
             issued = false;
         } else {
-            if(inst->staticInst->isSD() && ssim.is_in_config()) {
+            if(inst->staticInst->isSS() && ssim.is_in_config()) {
                issued=false;
             }
 
@@ -770,7 +770,7 @@ Execute::issue(ThreadID thread_id)
         }
 
         if (issued) {
-            if(inst->isInst() && inst->staticInst->isSDRecv()) {
+            if(inst->isInst() && inst->staticInst->isSSRecv()) {
                  ssim.forward_progress(cpu.curCycle());
             }
 
@@ -801,7 +801,7 @@ Execute::issue(ThreadID thread_id)
                 num_insts_issued++;
                 ssim.issued_inst();
                 //if(ssim.in_roi()) {
-                //  DPRINTF(SD, "Issued inst: %s\n", *inst);
+                //  DPRINTF(SS, "Issued inst: %s\n", *inst);
                 //}
 
                 if (num_insts_issued == issueLimit)
@@ -903,14 +903,14 @@ void Execute::timeout_check(bool should_commit, MinorDynInstPtr inst) {
   if(!should_commit) {
     if(cyc > 9990 + last_event) {
       breakpoint();
-      DPRINTF(SD,"Almost Aborting because of wait", *inst);
+      DPRINTF(SS,"Almost Aborting because of wait", *inst);
     }
 
     if(cyc > 10000 + last_event) {
-      DPRINTF(SD,"Instruction: %s is stalled for too long!!! ABORTING", *inst);
+      DPRINTF(SS,"Instruction: %s is stalled for too long!!! ABORTING", *inst);
       ssim.print_stats();
       //ssim.done(true,0);
-      assert(0 && "Max SD instruction wait");
+      assert(0 && "Max SS instruction wait");
     }
   } else {
     last_sd_issue = cyc;
@@ -997,17 +997,17 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
         /* This instruction can suspend, need to be able to communicate
          * backwards, so no other branches may evaluate this cycle*/
         completed_inst = false;
-    } else if (inst->staticInst->isSDRecv() &&
+    } else if (inst->staticInst->isSSRecv() &&
                !ssim.can_receive(inst->staticInst->get_imm())) {
         /* Don't commit if you can't receive on output port*/
-        DPRINTF(SD, "Could Not Recv: %s\n", *inst);
+        DPRINTF(SS, "Could Not Recv: %s\n", *inst);
         completed_inst = false;
         timeout_check(false, inst);
-    } else if (inst->staticInst->isSD() &&  ssim.is_in_config()) {
+    } else if (inst->staticInst->isSS() &&  ssim.is_in_config()) {
         completed_inst = false;
         ssim.wait_config();
         /* Don't execute any instructions if ssim is in config mode!*/
-    } else if (inst->staticInst->isSDConfig() && !lsq.canRequest()) {
+    } else if (inst->staticInst->isSSConfig() && !lsq.canRequest()) {
         completed_inst = false;
         ssim.wait_config();
     } else {
@@ -1015,31 +1015,31 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
         bool should_commit = true;
 
         //break down by type
-        if ( (inst->staticInst->isSDStream()  ||   
-              (inst->staticInst->isSDWait() && 
+        if ( (inst->staticInst->isSSStream()  ||   
+              (inst->staticInst->isSSWait() && 
                   ssim_t::stall_core(inst->staticInst->get_imm())) )
               && !ssim.can_add_stream()) {
             should_commit = false;
-            //DPRINTF(SD,"Can't issue stream b/c buffer is full");
+            //DPRINTF(SS,"Can't issue stream b/c buffer is full");
             //continue;
-        } else if(inst->staticInst->isSDWait() && 
+        } else if(inst->staticInst->isSSWait() && 
                   ssim_t::stall_core(inst->staticInst->get_imm())) {
           if(!ssim.done(false,inst->staticInst->get_imm()) ) {
             should_commit = false;
             ssim.wait_inst(inst->staticInst->get_imm()); //track stats
 
-            //DPRINTF(SD,"Wait blocked, mask: %x\n",inst->staticInst->get_imm());
+            //DPRINTF(SS,"Wait blocked, mask: %x\n",inst->staticInst->get_imm());
             //continue;
           } else {
-            DPRINTF(SD,"Wait complete, mask: %x\n",inst->staticInst->get_imm());
-            if(SB_DEBUG::SB_COMMAND || SB_DEBUG::SB_WAIT) {
+            DPRINTF(SS,"Wait complete, mask: %x\n",inst->staticInst->get_imm());
+            if(SS_DEBUG::COMMAND || SS_DEBUG::WAIT) {
               std::cout << "Wait complete, mask:" 
                         << inst->staticInst->get_imm() << "\n";
             }
           }
         } 
 
-        if(inst->staticInst->isSD()) {
+        if(inst->staticInst->isSS()) {
           timeout_check(should_commit, inst);
         }
 

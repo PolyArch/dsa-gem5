@@ -354,7 +354,7 @@ def format JOp(code, *opt_flags) {{
     exec_output = BranchExecute.subst(iop)
 }};
 
-def format SDOp(code, *opt_flags) {{
+def format SSOp(code, *opt_flags) {{
     regs = ['_srcRegIdx[0]','_srcRegIdx[1]']
     iop = InstObjParams(name, Name, 'ImmOp<int64_t>',
         {'code': code, 'imm_code': 'imm = sext<12>(IMM5 | (IMM7 << 5));',

@@ -340,16 +340,16 @@ class ExecContext {
 #endif
 
 
-#ifdef ISA_HAS_SD
+#ifdef ISA_HAS_SS
     /**
      * @{
-     * @name SD-Specific Interfaces
+     * @name SS-Specific Interfaces
      */
 
        /** Reads an integer register. */
-    virtual void setSDReg(uint64_t val, int sd_idx) {}
-    virtual void callSDFunc(int sd_func_opcode) {}
-    virtual uint64_t receiveSD() {return 0;}
+    virtual void setSSReg(uint64_t val, int ss_idx) {}
+    virtual void callSSFunc(int ss_func_opcode) {}
+    virtual uint64_t receiveSS() {return 0;}
 #endif
 
     /** @} */

@@ -47,7 +47,7 @@
 #ifndef __ARCH_RISCV_REGISTERS_HH__
 #define __ARCH_RISCV_REGISTERS_HH__
 
-#define ISA_HAS_SD
+#define ISA_HAS_SS
 
 #include <map>
 #include <string>
@@ -58,7 +58,7 @@
 #include "arch/isa_traits.hh"
 #include "arch/riscv/generated/max_inst_regs.hh"
 #include "base/types.hh"
-#include "cpu/sd_regs.hh"
+#include "cpu/ss_regs.hh"
 
 namespace RiscvISA {
 
