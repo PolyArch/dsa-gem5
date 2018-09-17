@@ -1222,7 +1222,6 @@ private:
   port_controller_t _port_c;
 
   std::list<std::shared_ptr<base_stream_t>> _in_port_queue;
-  std::list<const_scr_stream_t*> _const_scr_queue;
 
   std::map<uint64_t,std::vector<int>> _cgra_output_ready;
 

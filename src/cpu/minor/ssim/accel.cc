@@ -1787,26 +1787,6 @@ void accel_t::schedule_streams() {
       }
     }
   }
-
-  // Const->Scratch
-  // std::cout << "constant scr size is: " << _const_scr_queue.size() << "\n";
-  if(_const_scr_queue.size() > 0 ) {
-    // std::cout << "Queue size is more than 1\n";
-    bool scheduled_const_scr = _scr_w_c.schedule_const_scr(*_const_scr_queue.front());
-    if(scheduled_const_scr) {
-      if(SS_DEBUG::COMMAND_I) {
-        timestamp();
-        cout << " ISSUED:";
-        _const_scr_queue.front()->print_status();
-      }
-      if(_ssim->in_roi()) {
-        _stat_commands_issued++;
-      }
-
-      delete _const_scr_queue.front();
-      _const_scr_queue.pop_front();
-    }
-  }
 }
 
 void data_controller_t::add_bw(LOC l1, LOC l2, uint64_t times, uint64_t bytes){
