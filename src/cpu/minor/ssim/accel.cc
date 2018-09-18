@@ -2974,18 +2974,18 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
         port_data_t& out_vp = _accel->port_interf().out_port(stream._out_port);
 
         if(out_vp.mem_size() > 0) {
-          addr_t addr = stream._scratch_addr;
+          addr_t addr = stream.cur_addr();
           addr_t base_addr = addr & SCR_MASK;
           addr_t max_addr = base_addr+SCR_WIDTH;
 
           //go while stream and port does not run out
           uint64_t bytes_written=0;
-          while(addr < max_addr && stream._num_bytes>0 //enough in dest
+          while(addr < max_addr && stream.stream_active() //enough in dest
                                 && out_vp.mem_size()) { //enough in source
             SBDT val = out_vp.pop_out_data(); 
             // timestamp(); cout << "POPPED b/c port->scratch WRITE: " << out_vp.port() << " " << out_vp.mem_size() << "\n";
 
-            assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
+            assert( ((int)addr >= 0) && (addr + DATA_WIDTH <= SCRATCH_SIZE));
             //std::memcpy(&_accel->scratchpad[addr], &val, sizeof(SBDT));
             _accel->write_scratchpad(addr, &val, sizeof(SBDT),stream.id());
 

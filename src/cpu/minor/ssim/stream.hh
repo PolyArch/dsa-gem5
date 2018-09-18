@@ -434,61 +434,85 @@ struct scr_port_stream_t : public mem_stream_base_t {
 };
 
 
-struct scr_port_base_t : public base_stream_t {
-  addr_t _scratch_addr; // CURRENT address
-  addr_t _num_bytes=0;  // CURRENT bytes left
-  addr_t _orig_bytes=0;  // bytes left
-  int _repeat_in=1, _repeat_str=0;
+//struct scr_port_base_t : public base_stream_t {
+//  addr_t _scratch_addr; // CURRENT address
+//  addr_t _num_bytes=0;  // CURRENT bytes left
+//  addr_t _orig_bytes=0;  // bytes left
+//  int _repeat_in=1, _repeat_str=0;
+//
+//  virtual int repeat_in() {return _repeat_in;}
+//  virtual int repeat_str() {return _repeat_str;}
+//
+//
+//  virtual uint64_t scratch_addr(){return _scratch_addr;} 
+//  virtual uint64_t num_bytes()   {return _num_bytes;} 
+//
+//  virtual uint64_t data_volume() {return _orig_bytes;}
+//  virtual STR_PAT stream_pattern() {return STR_PAT::PURE_CONTIG;}
+//
+//  virtual void set_orig() {
+//    _orig_bytes = _num_bytes;
+//  }
+//
+//  //Return next address
+//  addr_t pop_addr() {
+//    _scratch_addr+=DATA_WIDTH; 
+//    _num_bytes-=DATA_WIDTH;
+//    return _scratch_addr;
+//  }
+//
+//  virtual bool stream_active() {
+//    return _num_bytes>0;
+//  }  
+//
+//};
+//
+//
+//// 5. Port -> Scratch -- TODO -- NEW -- CHECK
+//struct port_scr_stream_t : public scr_port_base_t {
+//  int _out_port;
+//  uint64_t _shift_bytes; //new unimplemented
+//
+//  uint64_t scratch_addr(){return _scratch_addr;} 
+//  uint64_t num_bytes()   {return _num_bytes;} 
+//  int64_t  out_port()    {return _out_port;} 
+//  uint64_t shift_bytes()    {return _shift_bytes;} 
+//
+//  virtual LOC src() {return LOC::PORT;}
+//  virtual LOC dest() {return LOC::SCR;}
+//
+//  virtual void print_status() {  
+//    std::cout << "port->scr" << "\tport=" << _out_port
+//              << "\tscr_addr=" << _scratch_addr 
+//              << " bytes_left=" << _num_bytes << " shift_bytes=" << _shift_bytes;
+//    base_stream_t::print_status();
+//  }
+//
+//};
 
-  virtual int repeat_in() {return _repeat_in;}
-  virtual int repeat_str() {return _repeat_str;}
-
-
-  virtual uint64_t scratch_addr(){return _scratch_addr;} 
-  virtual uint64_t num_bytes()   {return _num_bytes;} 
-
-  virtual uint64_t data_volume() {return _orig_bytes;}
-  virtual STR_PAT stream_pattern() {return STR_PAT::PURE_CONTIG;}
-
-  virtual void set_orig() {
-    _orig_bytes = _num_bytes;
-  }
-
-  //Return next address
-  addr_t pop_addr() {
-    _scratch_addr+=DATA_WIDTH; 
-    _num_bytes-=DATA_WIDTH;
-    return _scratch_addr;
-  }
-
-  virtual bool stream_active() {
-    return _num_bytes>0;
-  }  
-
-};
-
-
-// 5. Port -> Scratch -- TODO -- NEW -- CHECK
-struct port_scr_stream_t : public scr_port_base_t {
+struct port_scr_stream_t : public mem_stream_base_t {
   int _out_port;
-  uint64_t _shift_bytes; //new unimplemented
 
-  uint64_t scratch_addr(){return _scratch_addr;} 
-  uint64_t num_bytes()   {return _num_bytes;} 
-  int64_t  out_port()    {return _out_port;} 
-  uint64_t shift_bytes()    {return _shift_bytes;} 
+  uint64_t mem_addr()    {return _mem_addr;}  
+  int64_t access_size()  {return _access_size;}  
+  int64_t stride()       {return _stride;} 
+  uint64_t num_strides() {return _num_strides;} 
+  uint64_t shift_bytes() {return _shift_bytes;} 
+  int64_t out_port()    {return _out_port;} 
 
   virtual LOC src() {return LOC::PORT;}
-  virtual LOC dest() {return LOC::SCR;}
+  virtual LOC dest() {return LOC::DMA;}
 
   virtual void print_status() {  
-    std::cout << "port->scr" << "\tport=" << _out_port
-              << "\tscr_addr=" << _scratch_addr 
-              << " bytes_left=" << _num_bytes << " shift_bytes=" << _shift_bytes;
+     std::cout << "port->scr" << "\tport=" << _out_port << "\tacc_size=" << _access_size 
+              << " stride=" << _stride << " bytes_comp=" << _bytes_in_access 
+              << " mem_addr=" << std::hex << _mem_addr << std::dec 
+              << " strides_left=" << _num_strides;
     base_stream_t::print_status();
   }
 
 };
+
 
 //Constant -> Port
 struct const_port_stream_t : public base_stream_t {

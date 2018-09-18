@@ -401,16 +401,30 @@ void ssim_t::load_scratch_to_port(addr_t scratch_addr,
 
 void ssim_t::write_scratchpad(int out_port, 
     addr_t scratch_addr, uint64_t num_bytes, uint64_t shift_bytes) {
-  
+
+
   port_scr_stream_t* s = new port_scr_stream_t();
+  s->_mem_addr=scratch_addr;
+  s->_num_strides=num_bytes/8;
+  s->_stride=8;
+  s->_access_size=8;
   s->_out_port=out_port;
-  s->_scratch_addr=scratch_addr;
-  s->_num_bytes=num_bytes;
   s->_shift_bytes=shift_bytes;
   s->_unit=LOC::SCR;
   s->set_orig();
 
   add_bitmask_stream(s);
+
+  
+  //port_scr_stream_t* s = new port_scr_stream_t();
+  //s->_out_port=out_port;
+  //s->_scratch_addr=scratch_addr;
+  //s->_num_bytes=num_bytes;
+  //s->_shift_bytes=shift_bytes;
+  //s->_unit=LOC::SCR;
+  //s->set_orig();
+
+  //add_bitmask_stream(s);
 }
 
 
