@@ -61,8 +61,10 @@ Network::Network(const Params *p)
     assert(m_nodes != 0);
     assert(m_virtual_networks != 0);
 
+    // m_topology_ptr = new Topology(p->routers.size(), p->ext_links,
+	// spu modifications
     m_topology_ptr = new Topology(p->routers.size(), p->ext_links,
-                                  p->int_links);
+                                  p-> spu_ext_links, p->int_links);
 
     // Allocate to and from queues
     // Queues that are getting messages from protocol
@@ -96,6 +98,9 @@ Network::Network(const Params *p)
             addrMap.emplace(mid.getType(), addr_map_node);
         }
     }
+
+	
+    // TODO: Initialize the ruby spu port's network pointers
 
     // Register a callback function for combining the statistics
     Stats::registerDumpCallback(new StatsCallback(this));

@@ -50,6 +50,7 @@ class RubyNetwork(ClockedObject):
     routers = VectorParam.BasicRouter("Network routers")
     netifs = VectorParam.ClockedObject("Network Interfaces")
     ext_links = VectorParam.BasicExtLink("Links to external nodes")
+    spu_ext_links = VectorParam.SpuExtLink("Links to SPU nodes")
     int_links = VectorParam.BasicIntLink("Links between internal nodes")
 
     slave = VectorSlavePort("CPU slave port")

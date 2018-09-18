@@ -30,10 +30,14 @@
 from m5.params import *
 from m5.proxy import *
 from m5.SimObject import SimObject
-from BasicLink import BasicIntLink, BasicExtLink
+from BasicLink import BasicIntLink, BasicExtLink, SpuExtLink
 
 class SimpleExtLink(BasicExtLink):
     type = 'SimpleExtLink'
+    cxx_header = "mem/ruby/network/simple/SimpleLink.hh"
+
+class SimpleSpuExtLink(SpuExtLink):
+    type = 'SimpleSpuExtLink'
     cxx_header = "mem/ruby/network/simple/SimpleLink.hh"
 
 class SimpleIntLink(BasicIntLink):

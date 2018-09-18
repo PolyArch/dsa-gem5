@@ -50,6 +50,7 @@ const int INFINITE_LATENCY = 10000; // Yes, this is a big hack
 
 Topology::Topology(uint32_t num_routers,
                    const vector<BasicExtLink *> &ext_links,
+                   const vector<SpuExtLink *> &spu_ext_links,
                    const vector<BasicIntLink *> &int_links)
     : m_nodes(ext_links.size()), m_number_of_switches(num_routers),
       m_ext_link_vector(ext_links), m_int_link_vector(int_links)
@@ -81,6 +82,28 @@ Topology::Topology(uint32_t num_routers,
         addLink(ext_idx1, int_idx, ext_link);
         // int to ext
         addLink(int_idx, ext_idx2, ext_link);
+    }
+
+
+    // External Links from SPU
+    for (vector<SpuExtLink*>::const_iterator i = spu_ext_links.begin();
+         i != spu_ext_links.end(); ++i) {
+        SpuExtLink *spu_ext_link = (*i);
+		// TODO: use it to get the coreid later on
+        // RubyPort *nse_port = spu_ext_link->params()->ext_node;
+        BasicRouter *router = spu_ext_link->params()->int_node;
+
+		// TODO: Correct this!
+        int machine_base_idx = 0; // MachineType_base_number(abs_cntrl->getType());
+        int ext_idx1 = machine_base_idx; // + abs_cntrl->getVersion();
+        int ext_idx2 = ext_idx1 + m_nodes;
+        int int_idx = router->params()->router_id + 2*m_nodes;
+
+        // create the internal uni-directional links in both directions
+        // ext to int
+        addLink(ext_idx1, int_idx, spu_ext_link);
+        // int to ext
+        addLink(int_idx, ext_idx2, spu_ext_link);
     }
 
     // Internal Links

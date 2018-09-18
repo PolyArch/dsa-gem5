@@ -34,6 +34,7 @@
 #include <vector>
 
 #include "params/SimpleExtLink.hh"
+#include "params/SimpleSpuExtLink.hh"
 #include "params/SimpleIntLink.hh"
 #include "mem/ruby/network/BasicLink.hh"
 
@@ -50,8 +51,30 @@ class SimpleExtLink : public BasicExtLink
     int m_bw_multiplier;
 };
 
+
 inline std::ostream&
 operator<<(std::ostream& out, const SimpleExtLink& obj)
+{
+    obj.print(out);
+    out << std::flush;
+    return out;
+}
+
+class SimpleSpuExtLink : public SpuExtLink
+{
+  public:
+    typedef SimpleSpuExtLinkParams Params;
+    SimpleSpuExtLink(const Params *p);
+    const Params *params() const { return (const Params *)_params; }
+
+    friend class Topology;
+    void print(std::ostream& out) const;
+
+    int m_bw_multiplier;
+};
+
+inline std::ostream&
+operator<<(std::ostream& out, const SimpleSpuExtLink& obj)
 {
     obj.print(out);
     out << std::flush;
