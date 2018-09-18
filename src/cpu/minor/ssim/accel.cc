@@ -3078,13 +3078,14 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
       // added to correct bank conflict calculation
       int num_addr_pops = 0;
 
+      port_data_t& out_addr = _accel->port_interf().out_port(stream._out_port);
+      port_data_t& out_val = _accel->port_interf().out_port(stream._val_port);
+
       // strides left in the stream or requests left in the queue
       // if(stream.stream_active() || atomic_scr_issued_requests_active()) {
       if(stream.stream_active()) {
          logical_banks = NUM_SCRATCH_BANKS/stream._value_bytes;
          
-         port_data_t& out_addr = _accel->port_interf().out_port(stream._out_port);
-         port_data_t& out_val = _accel->port_interf().out_port(stream._val_port);
          addr_t base_addr = stream._mem_addr; // this is like offset
 
          if(out_addr.mem_size() > 0 && out_val.mem_size() > 0 
@@ -3145,12 +3146,12 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
              
              // by default is row interleaving for now
              
-             if(strcmp(_accel->_banked_spad_mapping_strategy,"COL")==0){
+             if(_accel->_banked_spad_mapping_strategy &&
+                ( strcmp(_accel->_banked_spad_mapping_strategy,"COL")==0)){
                bank_id = (scr_addr >> 9) & (logical_banks-1);
              } else {
                bank_id = (scr_addr >> 1) & (logical_banks-1);
              }
-             // if(strcmp(_accel->_banked_spad_mapping_strategy,"ROW")){
 
              assert(bank_id<logical_banks);
              _atomic_scr_issued_requests[bank_id].push(temp_req);
@@ -3214,18 +3215,20 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
                max_addr = (scr_addr & stream._value_mask)+stream._value_bytes;
              }
            }
+         }
+       }
 
-            bool is_empty = stream.check_set_empty();
-            if(is_empty) {
-              _accel->process_stream_stats(stream);
-              if(SS_DEBUG::VP_SCORE2) {
-                cout << "SOURCE: PORT->SCR\n";
-              }
-              out_addr.set_status(port_data_t::STATUS::FREE);
-              out_val.set_status(port_data_t::STATUS::FREE);
-              delete_stream(_which_wr,sp);
-            }
-            // break; // this is just pulling data not serving it
+       //Don't release steam until all requests are served
+       if(!atomic_scr_issued_requests_active()) {      
+         bool is_empty = stream.check_set_empty();
+         if(is_empty) {
+           _accel->process_stream_stats(stream);
+           if(SS_DEBUG::VP_SCORE2) {
+             cout << "SOURCE: PORT->SCR\n";
+           }
+           out_addr.set_status(port_data_t::STATUS::FREE);
+           out_val.set_status(port_data_t::STATUS::FREE);
+           delete_stream(_which_wr,sp);
          }
        }
 
