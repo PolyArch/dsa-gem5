@@ -848,6 +848,10 @@ decode QUADRANT default Unknown::unknown() {
                 }}, IsSSParam, IsNonSpeculative, No_OpClass);
             }
             0xa: decode FUNCT3 {
+                0x0: ss_add_port({{
+                    xc->setSSReg(imm,SS_IN_PORT);
+                    xc->callSSFunc(SS_ADD_PRT);
+                }}, IsNonSpeculative, No_OpClass);
                 0x1: ss_scr_rd({{
                     xc->setSSReg(Rs1,SS_SCRATCH_ADDR);
                     xc->setSSReg(Rs2,SS_NUM_STRIDES);

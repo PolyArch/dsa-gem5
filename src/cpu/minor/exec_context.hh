@@ -524,6 +524,9 @@ class ExecContext : public ::ExecContext
                 thread.getSSReg(SS_NUM_STRIDES),   thread.getSSReg(SS_IN_PORT),
                 thread.getSSReg(SS_REPEAT), thread.getSSReg(SS_REPEAT_STRETCH));
             break;
+            case SS_ADD_PRT: ssim.add_port(thread.getSSReg(SS_IN_PORT));
+                return; //don't clear other vars
+            break;
             case SS_SCR_PRT: ssim.load_scratch_to_port(
                 thread.getSSReg(SS_SCRATCH_ADDR), thread.getSSReg(SS_STRIDE),
                 thread.getSSReg(SS_ACCESS_SIZE),  thread.getSSReg(SS_STRETCH),   

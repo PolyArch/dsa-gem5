@@ -209,6 +209,10 @@ void ssim_t::add_bitmask_stream(base_stream_t* s, uint64_t ctx) {
   s->set_fill_mode(_fill_mode);
   s->set_id();
   s->set_context_offset(_context_offset);
+  for(int in_port : extra_in_ports) {
+    assert(s->in_ports().size()); //there should be some already...
+    s->in_ports().push_back(in_port);
+  }
 
   //Check if not active!
   if(debug && (SS_DEBUG::COMMAND)  ) {
@@ -244,6 +248,8 @@ void ssim_t::add_bitmask_stream(base_stream_t* s, uint64_t ctx) {
   //if(debug && (SS_DEBUG::COMMAND)  ) {
   //  cout << "\n";
   //}
+  
+  extra_in_ports.clear(); //reset this
 }
 
 void ssim_t::add_bitmask_stream(base_stream_t* s) {
@@ -341,6 +347,10 @@ void ssim_t::set_fill_mode(uint64_t mode) {
 //    add_bitmask_stream(s);
 //  }
 //}
+
+void ssim_t::add_port(int in_port) {
+  extra_in_ports.push_back(in_port);
+}
 
 void ssim_t::load_dma_to_port(addr_t mem_addr,
      uint64_t stride, uint64_t access_size, int stretch, uint64_t num_strides,

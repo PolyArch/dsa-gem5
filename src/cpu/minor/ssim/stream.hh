@@ -8,8 +8,7 @@
 
 #include "cpu/minor/dyn_inst.hh" //don't like this, workaround later (TODO)
 
-
-
+class soft_config_t;
 
 //This is a hierarchical classification of access types
 enum class STR_PAT {PURE_CONTIG, SIMPLE_REPEATED, 
@@ -32,29 +31,33 @@ struct base_stream_t {
   virtual LOC src() {return LOC::NONE;}
   virtual LOC dest() {return LOC::NONE;}
 
+  static void sep(std::string &s) {
+    if(s.length()!=0) s+="|";
+  }
+
   static std::string loc_name(LOC loc) {
     std::string a;
-    if(loc==LOC::NONE)                     
-    if((loc&LOC::DMA)!=LOC::NONE)         return a+="DMA";
-    if((loc&LOC::SCR)!=LOC::NONE)         return a+="SCR";
-    if((loc&LOC::PORT)!=LOC::NONE)        return a+="PORT";
-    if((loc&LOC::CONST)!=LOC::NONE)       return a+="CONST";
-    if((loc&LOC::REMOTE_PORT)!=LOC::NONE) return a+="REM_PORT";
-    if((loc&LOC::REMOTE_SCR)!=LOC::NONE)  return a+="REM_SCR";
-    if((loc&LOC::REC_BUS)!=LOC::NONE)     return a+="REC_BUS";
-    return "NONE";
+    if(loc==LOC::NONE)                    return "???";
+    if((loc&LOC::DMA)!=LOC::NONE)         {sep(a); a+="dma";}
+    if((loc&LOC::SCR)!=LOC::NONE)         {sep(a); a+="scr";}
+    if((loc&LOC::PORT)!=LOC::NONE)        {sep(a); a+="port";}
+    if((loc&LOC::CONST)!=LOC::NONE)       {sep(a); a+="const";}
+    if((loc&LOC::REMOTE_PORT)!=LOC::NONE) {sep(a); a+="rem_port";}
+    if((loc&LOC::REMOTE_SCR)!=LOC::NONE)  {sep(a); a+="rem_scr";}
+    if((loc&LOC::REC_BUS)!=LOC::NONE)     {sep(a); a+="rec_bus";}
+    return a;
   }
 
   static std::string loc_short_name(LOC loc) {
     std::string a;
     if(loc==LOC::NONE)                     
-    if((loc&LOC::DMA)!=LOC::NONE)         return a+="D";
-    if((loc&LOC::SCR)!=LOC::NONE)         return a+="S";
-    if((loc&LOC::PORT)!=LOC::NONE)        return a+="P";
-    if((loc&LOC::CONST)!=LOC::NONE)       return a+="C";
-    if((loc&LOC::REMOTE_PORT)!=LOC::NONE) return a+="R";
-    if((loc&LOC::REMOTE_SCR)!=LOC::NONE)  return a+="Q";
-    if((loc&LOC::REC_BUS)!=LOC::NONE)     return a+="B";
+    if((loc&LOC::DMA)!=LOC::NONE)         {sep(a); return a+="D";}
+    if((loc&LOC::SCR)!=LOC::NONE)         {sep(a); return a+="S";}
+    if((loc&LOC::PORT)!=LOC::NONE)        {sep(a); return a+="P";}
+    if((loc&LOC::CONST)!=LOC::NONE)       {sep(a); return a+="C";}
+    if((loc&LOC::REMOTE_PORT)!=LOC::NONE) {sep(a); return a+="R";}
+    if((loc&LOC::REMOTE_SCR)!=LOC::NONE)  {sep(a); return a+="Q";}
+    if((loc&LOC::REC_BUS)!=LOC::NONE)     {sep(a); return a+="B";}
     return "?";
   }
 
@@ -128,12 +131,8 @@ struct base_stream_t {
   void set_fill_mode(uint32_t mode) {_fill_mode = mode;}
   void set_context_offset(uint64_t offset) {_ctx_offset = offset;}
 
-  void print_in_ports() {
-    for(int i = 0; i < _in_ports.size();++i) {
-      std::cout << _in_ports[i] << " ";
-    }
-  }
-
+  void print_in_ports();
+  void set_soft_config(soft_config_t* s) {_soft_config=s;}
   LOC unit() {return _unit;}
   LOC _unit = LOC::PORT;
 
@@ -145,6 +144,7 @@ protected:
   uint64_t _reqs=0;
   uint64_t _ctx_offset=0;
   std::vector<int> _in_ports;
+  soft_config_t* _soft_config;
 };
 
 

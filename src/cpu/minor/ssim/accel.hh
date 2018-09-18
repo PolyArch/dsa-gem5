@@ -1132,8 +1132,9 @@ private:
   void add_port_based_stream(std::shared_ptr<base_stream_t> s) {
     sanity_check_stream(s.get());
     assert(cur_minst());
+    s->set_soft_config(&_soft_config);
     s->set_minst(cur_minst());
-    _in_port_queue.push_back(s);
+    _cmd_queue.push_back(s);
     forward_progress();
     verif_cmd(s.get());
   }
@@ -1221,7 +1222,7 @@ private:
   scratch_write_controller_t _scr_w_c;
   port_controller_t _port_c;
 
-  std::list<std::shared_ptr<base_stream_t>> _in_port_queue;
+  std::list<std::shared_ptr<base_stream_t>> _cmd_queue;
 
   std::map<uint64_t,std::vector<int>> _cgra_output_ready;
 

@@ -452,7 +452,7 @@ void accel_t::timestamp() {
 bool accel_t::in_use() { return _ssim->in_use();}
 bool accel_t::can_add_stream() {
    _ssim->set_in_use();
-   return _in_port_queue.size() < _queue_size;
+   return _cmd_queue.size() < _queue_size;
 }
 
 bool accel_t::in_roi() {
@@ -522,7 +522,7 @@ pipeline_stats_t::PIPE_STATUS accel_t::whos_to_blame(int group) {
   bool bar_scratch_write = false;
   std::set<int> scratch_waiters;
   std::set<int> waiters;
-  for(auto i = _in_port_queue.begin(); i!=_in_port_queue.end(); ++i) {
+  for(auto i = _cmd_queue.begin(); i!=_cmd_queue.end(); ++i) {
     base_stream_t* ip = i->get();
     if(auto stream = dynamic_cast<stream_barrier_t*>(ip)) {
       bar_scratch_read  |= stream->bar_scr_rd();
@@ -552,7 +552,7 @@ pipeline_stats_t::PIPE_STATUS accel_t::whos_to_blame(int group) {
     } 
     return pipeline_stats_t::CMD_QUEUE;
   }
-  if(scratch_waiters.size() &&  _in_port_queue.size() >= _queue_size) {
+  if(scratch_waiters.size() &&  _cmd_queue.size() >= _queue_size) {
     return pipeline_stats_t::SCR_BAR_WAIT;
   }
 
@@ -661,7 +661,7 @@ void accel_t::whos_to_blame(std::vector<pipeline_stats_t::PIPE_STATUS>& blame_ve
   //bool cgra_output = cgra_output_active();
   //bool cgra_active = cgra_input || cgra_compute || cgra_output;
 
-  //bool queue = _in_port_queue.size();
+  //bool queue = _cmd_queue.size();
 
   //bool busy = any_stream_active || any_buf_active || cgra_active ||
   //               mem_wrs || mem_rds || scr_req || queue;
@@ -1192,7 +1192,7 @@ void accel_t::cycle_status() {
   }
 
   timestamp();
-  cout << "cq" << _in_port_queue.size();
+  cout << "cq" << _cmd_queue.size();
 
   for(int group = 0; group < NUM_GROUPS; ++group) {
     auto& active_ports=_soft_config.in_ports_active_group[group];
@@ -1305,8 +1305,8 @@ void accel_t::print_status() {
    _scr_w_c.print_status();
    _port_c.print_status();
 
-   cout << "Waiting SEs: (" << _in_port_queue.size() << ")\n";
-   for(auto i : _in_port_queue) {i->print_status();}
+   cout << "Waiting SEs: (" << _cmd_queue.size() << ")\n";
+   for(auto i : _cmd_queue) {i->print_status();}
 
    cout << "Ports:\n";
    for(unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
@@ -1564,8 +1564,8 @@ void accel_t::schedule_streams() {
   bool bar_scratch_write = false;
 
   //schedule for ports (these need to go in program order per-vp)
-  for(auto i = _in_port_queue.begin(); 
-      i!=_in_port_queue.end() && str_issued<str_width;){
+  for(auto i = _cmd_queue.begin(); 
+      i!=_cmd_queue.end() && str_issued<str_width;){
     base_stream_t* ip = i->get();
     port_data_t* out_vp=NULL;
     port_data_t* out_vp2=NULL; // for atomic stream
@@ -1758,7 +1758,7 @@ void accel_t::schedule_streams() {
       }
 
       //delete ip; this is a std::shared_ptr now
-      i=_in_port_queue.erase(i);
+      i=_cmd_queue.erase(i);
       if(_ssim->in_roi()) {
         _stat_commands_issued++;
       }
@@ -3552,7 +3552,7 @@ bool accel_t::done_internal(bool show, int mask) {
 
  //TODO: FIX  -- this can be optimized!
   //if(_sbconfig->dispatch_inorder() || mask==0 || mask&WAIT_CMP) {
-    if(_in_port_queue.size()) {
+    if(_cmd_queue.size()) {
       if(show) {
         cout << "Main Queue Not Empty\n";
       }   
