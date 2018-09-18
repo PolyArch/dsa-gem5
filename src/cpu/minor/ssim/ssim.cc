@@ -345,18 +345,11 @@ void ssim_t::set_fill_mode(uint64_t mode) {
 void ssim_t::load_dma_to_port(addr_t mem_addr,
      uint64_t stride, uint64_t access_size, int stretch, uint64_t num_strides,
      int in_port, int repeat, int repeat_str) {
-  dma_port_stream_t* s = new dma_port_stream_t();
-  s->_mem_addr=mem_addr;
-  s->_num_strides=num_strides;
-  s->_stride=stride;
-  s->_access_size=access_size;
-  s->_stretch=stretch;
-  s->add_in_port(in_port);
-  s->_repeat_in=repeat;
-  s->_repeat_str=repeat_str;
 
-  s->_unit=LOC::DMA;
-  s->set_orig();
+  std::vector<int> in_ports;
+  in_ports.push_back(in_port);
+  affine_read_stream_t* s = new affine_read_stream_t(LOC::DMA, mem_addr, stride,
+      access_size, stretch, num_strides, in_ports, repeat, repeat_str);
 
   add_bitmask_stream(s);
 }
@@ -364,17 +357,9 @@ void ssim_t::load_dma_to_port(addr_t mem_addr,
 void ssim_t::write_dma(uint64_t garb_elem, int out_port,
     uint64_t stride, uint64_t access_size, uint64_t num_strides,
     addr_t mem_addr, int shift_bytes, int garbage) {
-  port_dma_stream_t* s = new port_dma_stream_t();
-  s->_mem_addr=mem_addr;
-  s->_num_strides=num_strides;
-  s->_stride=stride;
-  s->_access_size=access_size;
-  s->_out_port=out_port;
-  s->_shift_bytes=shift_bytes;
-  s->_garbage=garbage;
 
-  s->_unit=LOC::DMA;
-  s->set_orig();
+  affine_write_stream_t* s = new affine_write_stream_t(LOC::DMA, mem_addr, stride,
+      access_size, 0, num_strides, out_port, shift_bytes, garbage);
 
   add_bitmask_stream(s);
 }
@@ -382,49 +367,22 @@ void ssim_t::write_dma(uint64_t garb_elem, int out_port,
 void ssim_t::load_scratch_to_port(addr_t scratch_addr,
   uint64_t stride, uint64_t access_size, int stretch, uint64_t num_strides,
   int in_port, int repeat, int repeat_str) {
-  scr_port_stream_t* s = new scr_port_stream_t();
-  s->_mem_addr=scratch_addr; //NOTE: Here _mem_addr *is* the scratchpad address
-  s->_num_strides=num_strides;
-  s->_stride=stride;
-  s->_access_size=access_size;
-  s->_stretch=stretch;
-  s->add_in_port(in_port);
-  s->_repeat_in=repeat;
-  s->_repeat_str=repeat_str;
 
-  s->_unit=LOC::SCR;
-  s->set_orig();
+  std::vector<int> in_ports;
+  in_ports.push_back(in_port);
+  affine_read_stream_t* s = new affine_read_stream_t(LOC::SCR, scratch_addr, stride,
+      access_size, stretch, num_strides, in_ports, repeat, repeat_str);
 
-  //_outstanding_scr_read_streams++;
   add_bitmask_stream(s);
 }
 
 void ssim_t::write_scratchpad(int out_port, 
     addr_t scratch_addr, uint64_t num_bytes, uint64_t shift_bytes) {
 
-
-  port_scr_stream_t* s = new port_scr_stream_t();
-  s->_mem_addr=scratch_addr;
-  s->_num_strides=num_bytes/8;
-  s->_stride=8;
-  s->_access_size=8;
-  s->_out_port=out_port;
-  s->_shift_bytes=shift_bytes;
-  s->_unit=LOC::SCR;
-  s->set_orig();
+  affine_write_stream_t* s = new affine_write_stream_t(LOC::SCR, 
+      scratch_addr, 8, 8, 0, num_bytes/8, out_port, shift_bytes, 0);
 
   add_bitmask_stream(s);
-
-  
-  //port_scr_stream_t* s = new port_scr_stream_t();
-  //s->_out_port=out_port;
-  //s->_scratch_addr=scratch_addr;
-  //s->_num_bytes=num_bytes;
-  //s->_shift_bytes=shift_bytes;
-  //s->_unit=LOC::SCR;
-  //s->set_orig();
-
-  //add_bitmask_stream(s);
 }
 
 

@@ -73,12 +73,15 @@ struct base_stream_t {
   }
 
   virtual ~base_stream_t() { }
-  virtual void print_status() {
+  void print_empty() {
     if(stream_active())  std::cout << "               ACTIVE";
     else                 std::cout << "             inactive";
  
     if(empty())          std::cout << "EMPTY!\n";
     else                 std::cout << "\n";
+  }
+  virtual void print_status() {
+    print_empty();
   }
 
   void set_id() {_id=++ID_SOURCE;}
@@ -174,7 +177,7 @@ struct stream_barrier_t : public base_stream_t {
 
 };
 
-struct mem_stream_base_t : public base_stream_t {
+struct affine_base_stream_t : public base_stream_t {
   uint64_t _context_bitmask=0; //
   int64_t _access_size;    // length of smallest access
   int64_t _stride;         // length of entire slide
@@ -189,10 +192,13 @@ struct mem_stream_base_t : public base_stream_t {
   addr_t _num_strides=0;  // CURRENT strides left
   addr_t _orig_strides=0;
 
-  mem_stream_base_t() {}
+  affine_base_stream_t() {}
 
-  mem_stream_base_t(addr_t mem_addr, uint64_t stride, 
+  int _shift_bytes=0;
+
+  affine_base_stream_t(LOC unit, addr_t mem_addr, uint64_t stride, 
     uint64_t access_size, int stretch, uint64_t num_strides) {
+    _unit=unit;
     _mem_addr=mem_addr;
     _stride=stride;
     _access_size=access_size;
@@ -203,8 +209,6 @@ struct mem_stream_base_t : public base_stream_t {
   virtual void set_orig() {
     _orig_strides = _num_strides;
   }
-
-  int _shift_bytes=0;
 
   virtual uint64_t mem_addr()    {return _mem_addr;}  
   virtual int64_t  access_size() {return _access_size;}  
@@ -280,238 +284,138 @@ struct mem_stream_base_t : public base_stream_t {
   virtual bool stream_active() {
     return _num_strides!=0 && _access_size !=0;
   } 
+
+  virtual void print_status() {  
+    std::cout << short_name();
+    std::cout << " acc_size=" << _access_size 
+              << " stride=" << _stride << " bytes_comp=" << _bytes_in_access 
+              << " addr=" << std::hex << _mem_addr << std::dec 
+              << " strides_left=" << _num_strides;
+  }
+
+
 };
 
 //.........STREAM DEFINITION.........
-struct dma_port_stream_t : public mem_stream_base_t {
+struct affine_read_stream_t : public affine_base_stream_t {
   int _repeat_in=1, _repeat_str=0;
+
+  affine_read_stream_t(LOC unit, addr_t mem_addr, uint64_t stride, 
+    uint64_t acc_size, int stretch, uint64_t num_strides,
+    std::vector<int> in_ports, int repeat_in, int repeat_str) :
+    affine_base_stream_t(unit,mem_addr,stride,acc_size,stretch,num_strides) {
+    _in_ports=in_ports;
+    _repeat_in=repeat_in;
+    _repeat_str=repeat_str;
+    set_orig();
+  }
+
 
   virtual int repeat_in() {return _repeat_in;}
   virtual int repeat_str() {return _repeat_str;}
 
-  uint64_t mem_addr()    {return _mem_addr;}  
-  int64_t access_size()  {return _access_size;}  
-  int64_t stride()       {return _stride;} 
-  uint64_t num_strides() {return _num_strides;} 
-  uint64_t shift_bytes() {return _shift_bytes;} 
-
-  virtual LOC src() {return LOC::DMA;}
+  virtual LOC src() {return _unit;}
   virtual LOC dest() {return LOC::PORT;}
 
-  virtual bool stream_active() {
-    return mem_stream_base_t::stream_active();
-  }
-
-  virtual void print_status() {  
-    std::cout << "dma->port" << "\tport=";
+  virtual void print_status() { 
+    affine_base_stream_t::print_status();
+    std::cout << " in_port=";
     print_in_ports();
-    std::cout << " acc_size=" << _access_size 
-              << " stride=" << _stride << " bytes_comp=" << _bytes_in_access 
-              << " mem_addr=" << std::hex << _mem_addr << std::dec 
-              << " strides_left=" << _num_strides 
-              << " repeat_in=" << _repeat_in << " stretch=" << _stretch;
-    base_stream_t::print_status();
+    std::cout << " repeat_in=" << _repeat_in << " stretch=" << _stretch;
+    print_empty();
   }
 
 };
 
-struct port_dma_stream_t : public mem_stream_base_t {
+struct affine_write_stream_t : public affine_base_stream_t {
   int _out_port;           //source or destination port
   int _garbage;
 
-  uint64_t mem_addr()    {return _mem_addr;}  
-  int64_t access_size()  {return _access_size;}  
-  int64_t stride()       {return _stride;} 
-  uint64_t num_strides() {return _num_strides;} 
-  uint64_t shift_bytes() {return _shift_bytes;} 
+  affine_write_stream_t(LOC unit, addr_t mem_addr, uint64_t stride, 
+    uint64_t acc_size, int stretch, uint64_t num_strides,
+    int out_port, int shift_bytes, int garbage) :
+    affine_base_stream_t(unit,mem_addr,stride,acc_size,stretch,num_strides) {
+    _out_port=out_port;
+    _shift_bytes=shift_bytes;
+    _garbage=garbage;
+    set_orig();
+  }
+
   int64_t out_port()    {return _out_port;} 
   uint64_t garbage()     {return _garbage;} 
 
   virtual LOC src() {return LOC::PORT;}
-  virtual LOC dest() {return LOC::DMA;}
+  virtual LOC dest() {return _unit;}
 
-  virtual void print_status() {  
-    std::cout << "port->dma" << "\tport=" << _out_port << "\tacc_size=" << _access_size 
-              << " stride=" << _stride << " bytes_comp=" << _bytes_in_access 
-              << " mem_addr=" << std::hex << _mem_addr << std::dec 
-              << " strides_left=" << _num_strides;
-    base_stream_t::print_status();
+  virtual void print_status() { 
+    affine_base_stream_t::print_status();
+    std::cout << " out_port=" << _out_port << " garbage=" << _garbage;
+    print_empty();
   }
 
 };
 
 //3. Scratch -> Scratch    
-struct scr_scr_stream_t;
-struct scr_scr_stream_t : public mem_stream_base_t {
-  uint64_t _scratch_addr; //CURRENT scratch addr
-  bool _is_source;
-  bool _is_ready;
-
-  scr_scr_stream_t* _remote_stream;
-  uint64_t          _remote_bitmask;
-
-  scr_scr_stream_t() {}
-
-  scr_scr_stream_t(addr_t mem_addr, uint64_t stride, uint64_t access_size, 
-      int stretch, uint64_t num_strides, addr_t scratch_addr, bool is_src) : 
-         mem_stream_base_t(mem_addr,stride,access_size,stretch,
-        num_strides) {
-    _scratch_addr=scratch_addr;
-
-    _is_source = is_src;
-    _is_ready=false;
-
-    set_orig();
-  }
-
-  uint64_t mem_addr()    {return _mem_addr;}  
-  int64_t  access_size() {return _access_size;}  
-  int64_t  stride()      {return _stride;} 
-  uint64_t num_strides() {return _num_strides;} 
-  uint64_t shift_bytes() {return _shift_bytes;} 
-  uint64_t scratch_addr(){return _scratch_addr;} 
-
-  void set_remote(scr_scr_stream_t* r, uint64_t r_bitmask) {
-    _remote_bitmask=r_bitmask;
-    _remote_stream=r;
-  }
-  virtual LOC src() {
-    if(_is_source) return LOC::SCR;
-    else          return LOC::REMOTE_SCR;
-  }
-  virtual LOC dest() {
-    if(_is_source) return LOC::REMOTE_SCR;
-    else          return LOC::SCR;
-  }
-
-  virtual void print_status() {  
-    if(_is_source) {
-      std::cout << "scr->remote_scr";
-    } else {
-      std::cout << "remote_scr->scr";
-    }
-
-    std::cout << "\tscr_addr=" << _scratch_addr 
-              << "\tacc_size=" << _access_size 
-              << " stride=" << _stride << " bytes_comp=" << _bytes_in_access 
-              << " mem_addr=" << std::hex << _mem_addr << std::dec 
-              << " strides_left=" << _num_strides;
-
-    base_stream_t::print_status();
-  }
-
-};
-
-//4. Scratch->Port     
-struct scr_port_stream_t : public mem_stream_base_t {
-  int _repeat_in=1, _repeat_str=0;
-
-  virtual int repeat_in() {return _repeat_in;}
-  virtual int repeat_str() {return _repeat_str;}
-
-  uint64_t mem_addr()    {return _mem_addr;}  
-  int64_t access_size() {return _access_size;}  
-  int64_t stride()      {return _stride;} 
-  uint64_t num_strides() {return _num_strides;} 
-  uint64_t shift_bytes() {return _shift_bytes;} 
-
-  virtual LOC src() {return LOC::SCR;}
-  virtual LOC dest() {return LOC::PORT;}
-
-  virtual bool stream_active() {
-    return mem_stream_base_t::stream_active();
-  }
-
-  virtual void print_status() {  
-    std::cout << "scr->port" << "\tport=";
-    print_in_ports();
-    std::cout <<  "\tacc_size=" << _access_size 
-              << " stride=" << _stride << " bytes_comp=" << _bytes_in_access 
-              << " scr_addr=" << std::hex << _mem_addr << std::dec 
-              << " strides_left=" << _num_strides;
-    base_stream_t::print_status();
-  }
-};
-
-
-//struct scr_port_base_t : public base_stream_t {
-//  addr_t _scratch_addr; // CURRENT address
-//  addr_t _num_bytes=0;  // CURRENT bytes left
-//  addr_t _orig_bytes=0;  // bytes left
-//  int _repeat_in=1, _repeat_str=0;
+//struct scr_scr_stream_t;
+//struct scr_scr_stream_t : public mem_stream_base_t {
+//  uint64_t _scratch_addr; //CURRENT scratch addr
+//  bool _is_source;
+//  bool _is_ready;
 //
-//  virtual int repeat_in() {return _repeat_in;}
-//  virtual int repeat_str() {return _repeat_str;}
+//  scr_scr_stream_t* _remote_stream;
+//  uint64_t          _remote_bitmask;
 //
+//  scr_scr_stream_t() {}
 //
-//  virtual uint64_t scratch_addr(){return _scratch_addr;} 
-//  virtual uint64_t num_bytes()   {return _num_bytes;} 
+//  scr_scr_stream_t(addr_t mem_addr, uint64_t stride, uint64_t access_size, 
+//      int stretch, uint64_t num_strides, addr_t scratch_addr, bool is_src) : 
+//         mem_stream_base_t(mem_addr,stride,access_size,stretch,
+//        num_strides) {
+//    _scratch_addr=scratch_addr;
 //
-//  virtual uint64_t data_volume() {return _orig_bytes;}
-//  virtual STR_PAT stream_pattern() {return STR_PAT::PURE_CONTIG;}
+//    _is_source = is_src;
+//    _is_ready=false;
 //
-//  virtual void set_orig() {
-//    _orig_bytes = _num_bytes;
+//    set_orig();
 //  }
 //
-//  //Return next address
-//  addr_t pop_addr() {
-//    _scratch_addr+=DATA_WIDTH; 
-//    _num_bytes-=DATA_WIDTH;
-//    return _scratch_addr;
-//  }
-//
-//  virtual bool stream_active() {
-//    return _num_bytes>0;
-//  }  
-//
-//};
-//
-//
-//// 5. Port -> Scratch -- TODO -- NEW -- CHECK
-//struct port_scr_stream_t : public scr_port_base_t {
-//  int _out_port;
-//  uint64_t _shift_bytes; //new unimplemented
-//
+//  uint64_t mem_addr()    {return _mem_addr;}  
+//  int64_t  access_size() {return _access_size;}  
+//  int64_t  stride()      {return _stride;} 
+//  uint64_t num_strides() {return _num_strides;} 
+//  uint64_t shift_bytes() {return _shift_bytes;} 
 //  uint64_t scratch_addr(){return _scratch_addr;} 
-//  uint64_t num_bytes()   {return _num_bytes;} 
-//  int64_t  out_port()    {return _out_port;} 
-//  uint64_t shift_bytes()    {return _shift_bytes;} 
 //
-//  virtual LOC src() {return LOC::PORT;}
-//  virtual LOC dest() {return LOC::SCR;}
+//  void set_remote(scr_scr_stream_t* r, uint64_t r_bitmask) {
+//    _remote_bitmask=r_bitmask;
+//    _remote_stream=r;
+//  }
+//  virtual LOC src() {
+//    if(_is_source) return LOC::SCR;
+//    else          return LOC::REMOTE_SCR;
+//  }
+//  virtual LOC dest() {
+//    if(_is_source) return LOC::REMOTE_SCR;
+//    else          return LOC::SCR;
+//  }
 //
 //  virtual void print_status() {  
-//    std::cout << "port->scr" << "\tport=" << _out_port
-//              << "\tscr_addr=" << _scratch_addr 
-//              << " bytes_left=" << _num_bytes << " shift_bytes=" << _shift_bytes;
+//    if(_is_source) {
+//      std::cout << "scr->remote_scr";
+//    } else {
+//      std::cout << "remote_scr->scr";
+//    }
+//
+//    std::cout << "\tscr_addr=" << _scratch_addr 
+//              << "\tacc_size=" << _access_size 
+//              << " stride=" << _stride << " bytes_comp=" << _bytes_in_access 
+//              << " mem_addr=" << std::hex << _mem_addr << std::dec 
+//              << " strides_left=" << _num_strides;
+//
 //    base_stream_t::print_status();
 //  }
 //
 //};
-
-struct port_scr_stream_t : public mem_stream_base_t {
-  int _out_port;
-
-  uint64_t mem_addr()    {return _mem_addr;}  
-  int64_t access_size()  {return _access_size;}  
-  int64_t stride()       {return _stride;} 
-  uint64_t num_strides() {return _num_strides;} 
-  uint64_t shift_bytes() {return _shift_bytes;} 
-  int64_t out_port()    {return _out_port;} 
-
-  virtual LOC src() {return LOC::PORT;}
-  virtual LOC dest() {return LOC::DMA;}
-
-  virtual void print_status() {  
-     std::cout << "port->scr" << "\tport=" << _out_port << "\tacc_size=" << _access_size 
-              << " stride=" << _stride << " bytes_comp=" << _bytes_in_access 
-              << " mem_addr=" << std::hex << _mem_addr << std::dec 
-              << " strides_left=" << _num_strides;
-    base_stream_t::print_status();
-  }
-
-};
 
 
 //Constant -> Port

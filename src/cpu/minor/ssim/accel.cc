@@ -1625,14 +1625,14 @@ void accel_t::schedule_streams() {
         bar_scratch_read  |= stream->bar_scr_rd();
         bar_scratch_write |= stream->bar_scr_wr();
       }
-    } else if(auto dma_port_stream = dynamic_cast<dma_port_stream_t*>(ip)) {
-      if(ivps_can_take) { 
-        scheduled = _dma_c.schedule_dma_port(*dma_port_stream);
+    } else if(auto stream = dynamic_cast<affine_read_stream_t*>(ip)) {
+      if(ivps_can_take) {
+        if(unit == LOC::DMA) { 
+          scheduled = _dma_c.schedule_dma_port(*stream);
+        } else {
+          scheduled = _scr_r_c.schedule_scr_port(*stream);
+        }
       }
-    } else if(auto scr_port_stream = dynamic_cast<scr_port_stream_t*>(ip)) {
-      if(ivps_can_take) { 
-        scheduled = _scr_r_c.schedule_scr_port(*scr_port_stream);
-      }      
     } else if(auto stream = dynamic_cast<remote_port_stream_t*>(ip)) {
       if(stream->_is_source) { //do not schedule, but check out port available
         int out_port = stream->_out_port;
@@ -1662,22 +1662,17 @@ void accel_t::schedule_streams() {
       if(ivps_can_take) {
         scheduled = _port_c.schedule_const_port(*const_port_stream);
       }
-    } else if(auto port_dma_stream = dynamic_cast<port_dma_stream_t*>(ip)) {
-      int port = port_dma_stream->_out_port;
+    } else if(auto stream = dynamic_cast<affine_write_stream_t*>(ip)) {
+      int port = stream->_out_port;
       out_vp = &_port_interf.out_port(port);
-      if(out_vp->can_take(LOC::DMA) && !blocked_ovp[port] &&
-           (scheduled = _dma_c.schedule_port_dma(*port_dma_stream))) {
-        out_vp->set_status(port_data_t::STATUS::BUSY, LOC::DMA);
+      if(out_vp->can_take(unit) && !blocked_ovp[port]) {
+        if(unit==LOC::DMA) {
+          scheduled = _dma_c.schedule_port_dma(*stream);
+        } else {
+          scheduled = _scr_w_c.schedule_port_scr(*stream);
+        }
+        if(scheduled) out_vp->set_status(port_data_t::STATUS::BUSY, unit);
       }
-
-    } else if(auto port_scr_stream = dynamic_cast<port_scr_stream_t*>(ip)) {
-      int port = port_scr_stream->_out_port;
-      out_vp = &_port_interf.out_port(port);
-      if(out_vp->can_take(LOC::SCR) && !blocked_ovp[port] &&
-            (scheduled = _scr_w_c.schedule_port_scr(*port_scr_stream))) {
-        out_vp->set_status(port_data_t::STATUS::BUSY, LOC::SCR);
-      }
-
     } else if(auto ind_stream = dynamic_cast<indirect_stream_t*>(ip)) {
       int ind_port = ind_stream->_ind_port; //grab output res
       auto* ind_vp = &_port_interf.out_port(ind_port); //indirect output port
@@ -1795,8 +1790,8 @@ void data_controller_t::timestamp() {
 }
 
 
-bool dma_controller_t::schedule_dma_port(dma_port_stream_t& new_s) {
-  auto* s = new dma_port_stream_t(new_s);
+bool dma_controller_t::schedule_dma_port(affine_read_stream_t& new_s) {
+  auto* s = new affine_read_stream_t(new_s);
   //UPDATE CONTEXT ADDRESS FOR SIMT-STYLE DMA INTERACTIONS
   s->_mem_addr += _accel->accel_index() * new_s.ctx_offset();
 
@@ -1812,8 +1807,8 @@ bool dma_controller_t::schedule_indirect(indirect_stream_t& new_s) {
   return true; 
 }
 
-bool dma_controller_t::schedule_port_dma(port_dma_stream_t& new_s) {
-  auto* s = new port_dma_stream_t(new_s);
+bool dma_controller_t::schedule_port_dma(affine_write_stream_t& new_s) {
+  auto* s = new affine_write_stream_t(new_s);
   s->_mem_addr += _accel->accel_index() * new_s.ctx_offset();
   _port_dma_streams.push_back(s);
   _write_streams.push_back(s);
@@ -1842,8 +1837,8 @@ bool dma_controller_t::schedule_indirect_wr(indirect_wr_stream_t& new_s) {
 //  return false;
 //}
 
-bool scratch_read_controller_t::schedule_scr_port(scr_port_stream_t& new_s) {
-  auto* s = new scr_port_stream_t(new_s);
+bool scratch_read_controller_t::schedule_scr_port(affine_read_stream_t& new_s) {
+  auto* s = new affine_read_stream_t(new_s);
   _scr_port_streams.push_back(s);
   _read_streams.push_back(s);
   return true; 
@@ -1892,8 +1887,8 @@ bool scratch_write_controller_t::schedule_const_scr(const_scr_stream_t& new_s) {
 //  return false;
 //}
 
-bool scratch_write_controller_t::schedule_port_scr(port_scr_stream_t& new_s) {
-  auto* s = new port_scr_stream_t(new_s);
+bool scratch_write_controller_t::schedule_port_scr(affine_write_stream_t& new_s) {
+  auto* s = new affine_write_stream_t(new_s);
   _port_scr_streams.push_back(s);
   _write_streams.push_back(s);
   return true; 
@@ -2099,27 +2094,27 @@ template<typename T> void delete_stream_internal(int i, T* s,
   vec.erase(std::remove(vec.begin(),vec.end(),s),vec.end());
 }
 
-void dma_controller_t::delete_stream(int i, dma_port_stream_t* s) {
+void dma_controller_t::delete_stream(int i, affine_read_stream_t* s) {
   delete_stream_internal(i,s,_dma_port_streams,_read_streams);
 }
 void dma_controller_t::delete_stream(int i, indirect_stream_t* s) {
   delete_stream_internal(i,s,_indirect_streams,_read_streams);
 }
-void dma_controller_t::delete_stream(int i, port_dma_stream_t* s) {
+void dma_controller_t::delete_stream(int i, affine_write_stream_t* s) {
   delete_stream_internal(i,s,_port_dma_streams,_write_streams);
 }
 void dma_controller_t::delete_stream(int i, indirect_wr_stream_t* s) {
   delete_stream_internal(i,s,_indirect_wr_streams,_write_streams);
 }
 
-void scratch_read_controller_t::delete_stream(int i, scr_port_stream_t* s) {
+void scratch_read_controller_t::delete_stream(int i, affine_read_stream_t* s) {
   delete_stream_internal(i,s,_scr_port_streams,_read_streams);
 }
 void scratch_read_controller_t::delete_stream(int i, indirect_stream_t* s) {
   delete_stream_internal(i,s,_ind_port_streams,_read_streams);
 }
 
-void scratch_write_controller_t::delete_stream(int i, port_scr_stream_t* s) {
+void scratch_write_controller_t::delete_stream(int i, affine_write_stream_t* s) {
   delete_stream_internal(i,s,_port_scr_streams,_write_streams);
 }
 void scratch_write_controller_t::delete_stream(int i, const_scr_stream_t* s) {
@@ -2139,7 +2134,7 @@ void dma_controller_t::make_write_request() {
     _which_wr=(_which_wr+1)>=_write_streams.size() ? 0:_which_wr+1; 
     base_stream_t* s = _write_streams[_which_wr];
 
-    if(auto* sp = dynamic_cast<port_dma_stream_t*>(s)) {
+    if(auto* sp = dynamic_cast<affine_write_stream_t*>(s)) {
       auto& stream = *sp;
       if(stream.stream_active()) {
         port_data_t& out_port = _accel->port_interf().out_port(stream._out_port);
@@ -2199,7 +2194,7 @@ void dma_controller_t::make_read_request() {
     _which_rd=(_which_rd+1)>=_read_streams.size() ? 0:_which_rd+1; 
     base_stream_t* s = _read_streams[_which_rd];
 
-    if(auto* sp = dynamic_cast<dma_port_stream_t*>(s)) {
+    if(auto* sp = dynamic_cast<affine_read_stream_t*>(s)) {
       auto& stream = *sp;
       if(stream.stream_active()) {
         int in_port = stream.first_in_port();
@@ -2258,7 +2253,7 @@ void dma_controller_t::make_read_request() {
   }
 }
 
-int dma_controller_t::req_read(mem_stream_base_t& stream) {
+int dma_controller_t::req_read(affine_read_stream_t& stream) {
   addr_t prev_addr = 0;
   addr_t addr = stream.cur_addr();
   addr_t base_addr = addr & MEM_MASK;  //this is the request address...
@@ -2661,7 +2656,7 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
 }
 
 //Creates a write request for a contiguous chunk of data smaller than one cache line
-void dma_controller_t::req_write(port_dma_stream_t& stream, port_data_t& ovp) {
+void dma_controller_t::req_write(affine_write_stream_t& stream, port_data_t& ovp) {
   addr_t addr = stream.cur_addr();
   addr_t init_addr = addr;
   addr_t base_addr = addr & MEM_MASK;
@@ -2745,7 +2740,7 @@ static bool addr_valid_dir(int64_t acc_size, uint64_t addr,
 }
 
 vector<SBDT> scratch_read_controller_t::read_scratch(
-               mem_stream_base_t& stream) {
+               affine_read_stream_t& stream) {
   vector<SBDT> data;
   addr_t prev_addr = SCRATCH_SIZE;
   addr_t addr = stream.cur_addr(); //this is scratch addr
@@ -2836,7 +2831,7 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
     _which_rd=(_which_rd+1)>=_read_streams.size() ? 0:_which_rd+1; 
     base_stream_t* s = _read_streams[_which_rd];
 
-    if(auto* sp = dynamic_cast<scr_port_stream_t*>(s)) {
+    if(auto* sp = dynamic_cast<affine_read_stream_t*>(s)) {
       auto& stream = *sp;
 
       if(stream.stream_active()) {
@@ -2967,7 +2962,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
     _which_wr=(_which_wr+1)>=_write_streams.size() ? 0:_which_wr+1; 
     base_stream_t* s = _write_streams[_which_wr];
 
-    if(auto* sp = dynamic_cast<port_scr_stream_t*>(s)) { //write from port
+    if(auto* sp = dynamic_cast<affine_write_stream_t*>(s)) { //write from port
       auto& stream = *sp;
       
       if(stream.stream_active()) {

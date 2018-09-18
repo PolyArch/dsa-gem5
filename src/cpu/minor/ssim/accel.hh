@@ -490,8 +490,8 @@ class dma_controller_t : public data_controller_t {
   void finish_cycle();
   bool done(bool show, int mask);
 
-  int req_read(mem_stream_base_t& stream);
-  void req_write(port_dma_stream_t& stream, port_data_t& vp);
+  int req_read(affine_read_stream_t& stream);
+  void req_write(affine_write_stream_t& stream, port_data_t& vp);
 
   void ind_read_req(indirect_stream_t& stream);
   void ind_write_req(indirect_wr_stream_t& stream);
@@ -511,8 +511,8 @@ class dma_controller_t : public data_controller_t {
   bool indirect_streams_active();
   bool indirect_wr_streams_active();
 
-  bool schedule_dma_port(dma_port_stream_t& s);
-  bool schedule_port_dma(port_dma_stream_t& s);
+  bool schedule_dma_port(affine_read_stream_t& s);
+  bool schedule_port_dma(affine_write_stream_t& s);
   bool schedule_indirect(indirect_stream_t&s);
   bool schedule_indirect_wr(indirect_wr_stream_t&s);
 
@@ -534,14 +534,14 @@ class dma_controller_t : public data_controller_t {
   std::vector<base_stream_t*> _write_streams;
 
   //This ordering defines convention of checking
-  std::vector<dma_port_stream_t*> _dma_port_streams;  //reads
+  std::vector<affine_read_stream_t*> _dma_port_streams;  //reads
   std::vector<indirect_stream_t*> _indirect_streams; //indirect reads
-  std::vector<port_dma_stream_t*> _port_dma_streams; //writes
+  std::vector<affine_write_stream_t*> _port_dma_streams; //writes
   std::vector<indirect_wr_stream_t*> _indirect_wr_streams; //indirect writes
 
-  void delete_stream(int i, dma_port_stream_t* s);
+  void delete_stream(int i, affine_read_stream_t* s);
   void delete_stream(int i, indirect_stream_t* s);
-  void delete_stream(int i, port_dma_stream_t* s);  
+  void delete_stream(int i, affine_write_stream_t* s);  
   void delete_stream(int i, indirect_wr_stream_t* s);
  
   //address to stream -> [stream_index, data]
@@ -582,7 +582,7 @@ class scratch_read_controller_t : public data_controller_t {
     reset_stream_engines();
   }
 
-  std::vector<SBDT> read_scratch(mem_stream_base_t& stream);
+  std::vector<SBDT> read_scratch(affine_read_stream_t& stream);
   void read_scratch_ind(indirect_stream_t& stream, uint64_t scr_addr);
 
   float calc_min_port_ready();
@@ -596,7 +596,7 @@ class scratch_read_controller_t : public data_controller_t {
   void finish_cycle();
   bool done(bool,int);
 
-  bool schedule_scr_port(scr_port_stream_t& s);
+  bool schedule_scr_port(affine_read_stream_t& s);
   bool schedule_indirect(indirect_stream_t& s);
 
   void print_status();
@@ -625,10 +625,10 @@ class scratch_read_controller_t : public data_controller_t {
 
   std::vector<base_stream_t*> _read_streams;
 
-  void delete_stream(int i, scr_port_stream_t* s);
+  void delete_stream(int i, affine_read_stream_t* s);
   void delete_stream(int i, indirect_stream_t* s);
 
-  std::vector<scr_port_stream_t*> _scr_port_streams;
+  std::vector<affine_read_stream_t*> _scr_port_streams;
   //std::vector<scr_scr_stream_t*> _scr_scr_streams;
   std::vector<indirect_stream_t*> _ind_port_streams;
 
@@ -692,7 +692,7 @@ class scratch_write_controller_t : public data_controller_t {
   bool port_scr_streams_active();
   bool const_scr_streams_active();
 
-  bool schedule_port_scr(port_scr_stream_t& s);
+  bool schedule_port_scr(affine_write_stream_t& s);
   bool schedule_const_scr(const_scr_stream_t& s);
 
   private:
@@ -705,14 +705,14 @@ class scratch_write_controller_t : public data_controller_t {
     int _value_bytes;
   };
 
-  void delete_stream(int i, port_scr_stream_t* s);
+  void delete_stream(int i, affine_write_stream_t* s);
   void delete_stream(int i, const_scr_stream_t* s);
   void delete_stream(int i, atomic_scr_stream_t* s);
   void delete_stream(int i, indirect_wr_stream_t* s);
 
   std::vector<base_stream_t*> _write_streams;
 
-  std::vector<port_scr_stream_t*> _port_scr_streams; 
+  std::vector<affine_write_stream_t*> _port_scr_streams; 
   std::vector<const_scr_stream_t*> _const_scr_streams;  
   std::vector<atomic_scr_stream_t*> _atomic_scr_streams; 
   std::vector<indirect_wr_stream_t*> _ind_wr_streams; 
