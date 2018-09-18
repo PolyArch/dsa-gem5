@@ -120,7 +120,7 @@ class Execute : public Named
     /* StreamSim unit */
     ssim_t ssim;
 	/* Network stream engine unit */
-    nse_t nse;
+    // nse_t nse;
 
     // spu: Exposable nse port (on patterns of ifetch)
     class NsePort : public MinorCPU::MinorCPUPort
@@ -381,7 +381,7 @@ class Execute : public Named
     /** To allow ExecContext to find the LSQ */
     LSQ &getLSQ() { return lsq; }
     ssim_t &getSSIM() { return ssim;}
-    nse_t &getNSE() { return nse;}
+    // nse_t &getNSE() { return nse;}
 
     /** Does the given instruction have the right stream sequence number
      *  to be committed? */
