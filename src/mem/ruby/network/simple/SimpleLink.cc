@@ -50,6 +50,30 @@ SimpleExtLinkParams::create()
     return new SimpleExtLink(this);
 }
 
+
+SimpleSpuExtLink::SimpleSpuExtLink(const Params *p)
+    : SpuExtLink(p)
+{
+    // For the simple links, the bandwidth factor translates to the
+    // bandwidth multiplier.  The multipiler, in combination with the
+    // endpoint bandwidth multiplier - message size multiplier ratio,
+    // determines the link bandwidth in bytes
+    m_bw_multiplier = p->bandwidth_factor;
+}
+
+void
+SimpleSpuExtLink::print(std::ostream& out) const
+{
+    out << name();
+}
+
+SimpleSpuExtLink *
+SimpleSpuExtLinkParams::create()
+{
+    return new SimpleSpuExtLink(this);
+}
+
+
 SimpleIntLink::SimpleIntLink(const Params *p)
     : BasicIntLink(p)
 {

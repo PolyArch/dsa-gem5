@@ -227,6 +227,7 @@ class BaseCPU(MemObject):
 
     icache_port = MasterPort("Instruction Port")
     dcache_port = MasterPort("Data Port")
+    nse_port = MasterPort("Network stream engine Port")
     _cached_ports = ['icache_port', 'dcache_port']
 
     if buildEnv['TARGET_ISA'] in ['x86', 'arm']:
@@ -234,6 +235,7 @@ class BaseCPU(MemObject):
 
     _uncached_slave_ports = []
     _uncached_master_ports = []
+    _uncached_master_ports += ['nse_port']
     if buildEnv['TARGET_ISA'] == 'x86':
         _uncached_slave_ports += ["interrupts[0].pio",
                                   "interrupts[0].int_slave"]

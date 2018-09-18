@@ -48,6 +48,13 @@ class BasicExtLink(BasicLink):
     int_node = Param.BasicRouter("ID of internal node")
     bandwidth_factor = 16 # only used by simple network
 
+class SpuExtLink(BasicLink):
+    type = 'SpuExtLink'
+    cxx_header = "mem/ruby/network/BasicLink.hh"
+    ext_node = Param.RubyPort("External SPU node")  
+    int_node = Param.BasicRouter("ID of internal node")
+    bandwidth_factor = 16 # only used by simple network
+
 class BasicIntLink(BasicLink):
     type = 'BasicIntLink'
     cxx_header = "mem/ruby/network/BasicLink.hh"

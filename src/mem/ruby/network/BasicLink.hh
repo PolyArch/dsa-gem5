@@ -34,6 +34,7 @@
 #include <vector>
 
 #include "params/BasicExtLink.hh"
+#include "params/SpuExtLink.hh"
 #include "params/BasicIntLink.hh"
 #include "params/BasicLink.hh"
 #include "mem/ruby/network/BasicRouter.hh"
@@ -70,6 +71,16 @@ class BasicExtLink : public BasicLink
   public:
     typedef BasicExtLinkParams Params;
     BasicExtLink(const Params *p);
+    const Params *params() const { return (const Params *)_params; }
+
+    friend class Topology;
+};
+
+class SpuExtLink : public BasicLink
+{
+  public:
+    typedef SpuExtLinkParams Params;
+    SpuExtLink(const Params *p);
     const Params *params() const { return (const Params *)_params; }
 
     friend class Topology;

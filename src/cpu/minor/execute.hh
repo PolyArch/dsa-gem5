@@ -54,6 +54,7 @@
 #include "cpu/minor/pipe_data.hh"
 #include "cpu/minor/scoreboard.hh"
 #include "ssim/ssim.hh"
+#include "nse/nse.hh"
 
 namespace Minor
 {
@@ -118,6 +119,45 @@ class Execute : public Named
 
     /* StreamSim unit */
     ssim_t ssim;
+	/* Network stream engine unit */
+    nse_t nse;
+
+    // spu: Exposable nse port (on patterns of ifetch)
+    class NsePort : public MinorCPU::MinorCPUPort
+    {
+      protected:
+        // My owner: execute
+		Execute &execute1;
+
+      public:
+        NsePort(std::string name, Execute &execute_, MinorCPU &cpu) :
+            MinorCPU::MinorCPUPort(name, cpu), execute1(execute_)
+        { }
+
+      protected:
+		// write this function
+        bool recvTimingResp(PacketPtr pkt) override
+        { 
+		  return false;
+		  // return nse.recvTimingResp(pkt); 
+		}
+
+        void recvReqRetry() override { // nse.recvReqRetry(); 
+		}
+
+        bool isSnooping() const override { return true; }
+
+        void recvTimingSnoopReq(PacketPtr pkt) override
+        { // return nse.recvTimingSnoopReq(pkt); 
+		}
+
+        void recvFunctionalSnoop(PacketPtr pkt) override { }
+    };
+
+    NsePort nsePort;
+
+	// spu---------------------------------------------
+
 
     /** cycle wait was initiated **/
     uint64_t last_sd_issue;
@@ -336,10 +376,12 @@ class Execute : public Named
 
     /** Returns the DcachePort owned by this Execute to pass upwards */
     MinorCPU::MinorCPUPort &getDcachePort();
+    MinorCPU::MinorCPUPort &getNsePort() { return nsePort; }
 
     /** To allow ExecContext to find the LSQ */
     LSQ &getLSQ() { return lsq; }
     ssim_t &getSSIM() { return ssim;}
+    nse_t &getNSE() { return nse;}
 
     /** Does the given instruction have the right stream sequence number
      *  to be committed? */

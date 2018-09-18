@@ -64,6 +64,17 @@ BasicExtLinkParams::create()
     return new BasicExtLink(this);
 }
 
+SpuExtLink::SpuExtLink(const Params *p)
+    : BasicLink(p)
+{
+}
+
+SpuExtLink *
+SpuExtLinkParams::create()
+{
+    return new SpuExtLink(this);
+}
+
 BasicIntLink::BasicIntLink(const Params *p)
     : BasicLink(p)
 {
