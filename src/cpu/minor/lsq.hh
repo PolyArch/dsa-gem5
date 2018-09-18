@@ -55,7 +55,8 @@
 
 struct SSMemReqInfo {
     int stream_id=-3;
-    int port=-1;
+    int trans_idx=0;
+    std::vector<int> ports;
     uint32_t fill_mode=0;
     std::vector <bool> mask;
     std::vector <int> map;
@@ -63,20 +64,20 @@ struct SSMemReqInfo {
     bool stride_hit=false;
     bool isConfig = 0;
     uint64_t which_accel = 0;
-    SSMemReqInfo(int stream_id_, uint64_t which_accel_, int port_, 
+    SSMemReqInfo(int stream_id_, uint64_t which_accel_, std::vector<int> ports_, 
         std::vector<bool>& mask_, bool last_=false, uint32_t fill_=false, 
         bool stride_hit_=false)
-        : stream_id(stream_id_), 
-        port(port_), fill_mode(fill_), mask(mask_),
+        : stream_id(stream_id_), trans_idx(ports_[0]),
+        ports(ports_), fill_mode(fill_), mask(mask_),
         last(last_), stride_hit(stride_hit_), which_accel(which_accel_) {}
-    SSMemReqInfo(int stream_id_, uint64_t which_accel_, int port_, 
+    SSMemReqInfo(int stream_id_, uint64_t which_accel_, std::vector<int> ports_, 
                     std::vector<int>& map_, bool last_=0, uint32_t fill_=0,
                     bool stride_hit_=false)
-        : stream_id(stream_id_),
-         port(port_), fill_mode(fill_), map(map_), 
+        : stream_id(stream_id_), trans_idx(ports_[0]),
+         ports(ports_), fill_mode(fill_), map(map_), 
         last(last_), stride_hit(stride_hit_), which_accel(which_accel_) {}
-    SSMemReqInfo(uint64_t which_accel_, int port_)
-        : port(port_), 
+    SSMemReqInfo(int stream_id_, uint64_t which_accel_, int trans_idx_)
+        : stream_id(stream_id_), trans_idx(trans_idx_), 
         last(false), stride_hit(false), which_accel(which_accel_) {}
 };
 typedef SSMemReqInfo *SSMemReqInfoPtr;

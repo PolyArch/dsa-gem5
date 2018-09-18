@@ -245,7 +245,7 @@ LSQ::SingleDataRequest::finish(const Fault &fault_, const RequestPtr &request_,
       fault->invoke(thread, StaticInst::nullStaticInstPtr);
     }
 
-
+ 
     port.numAccessesInDTLB--;
 
     DPRINTFS(MinorMem, (&port), "Received translation response for"
@@ -906,7 +906,7 @@ LSQ::tryToSendToTransfers(LSQRequestPtr request)
         }
     } else {
         //We should have checked from the accelerator side if there was space
-        assert(sd_transfers[request->sdInfo->port].remainingSpace()>0);
+        assert(sd_transfers[request->sdInfo->trans_idx].remainingSpace()>0);
     }
 
     if (request->isComplete() || request->state == LSQRequest::Failed) {
@@ -1193,7 +1193,7 @@ LSQ::moveFromRequestsToTransfers(LSQRequestPtr request)
         requests.pop();
         transfers.push(request);
     } else { //Stream-dataflow requests
-        int streamId = request->sdInfo->port;
+        int streamId = request->sdInfo->trans_idx;
         assert(sd_transfers[streamId].remainingSpace() != 0);
         requests.pop();
         sd_transfers[streamId].push(request);

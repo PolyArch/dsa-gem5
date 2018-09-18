@@ -1118,7 +1118,7 @@ private:
       cmd_verif << s->num_strides()  << " ";   
       cmd_verif << s->num_bytes()    << " ";   
       cmd_verif << s->constant()     << " ";   
-      cmd_verif << s->in_port()      << " ";   
+      cmd_verif << s->first_in_port()      << " ";   
       cmd_verif << s->out_port()     << " ";   
       cmd_verif << s->wait_mask()    << " ";   
       cmd_verif << s->shift_bytes()  << "\n";

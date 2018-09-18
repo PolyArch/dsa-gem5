@@ -17,14 +17,16 @@ Minor::MinorDynInstPtr accel_t::cur_minst() {
 
 void accel_t::sanity_check_stream(base_stream_t* s) {
   //sanity check -- please don't read/write a stream that's not configured!
-  if(s->in_port() != -1 && s->in_port() < START_IND_PORTS) { 
-    vector<int>::iterator it = std::find(_soft_config.in_ports_active.begin(), 
-                 _soft_config.in_ports_active.end(),s->in_port());
-    if(it == _soft_config.in_ports_active.end()) {
-      timestamp();
-      std::cout << "In port " << s->in_port() << " is not active for " 
-                << s->short_name() << ", maybe a configure error!\n";
-
+  for(int in_port : s->in_ports() ){
+    if(in_port != -1 && in_port < START_IND_PORTS) { 
+      vector<int>::iterator it = std::find(_soft_config.in_ports_active.begin(), 
+                   _soft_config.in_ports_active.end(),in_port);
+      if(it == _soft_config.in_ports_active.end()) {
+        timestamp();
+        std::cout << "In port " << in_port << " is not active for " 
+                  << s->short_name() << ", maybe a configure error!\n";
+  
+      }
     }
   }
 
@@ -49,7 +51,7 @@ void accel_t::req_config(addr_t addr, int size, uint64_t context) {
     cout << "SS_CONFIGURE(request): " << "0x" << std::hex << addr  << " " 
                                       << std::dec << size << "\n";
   }
-  SSMemReqInfoPtr sdInfo = new SSMemReqInfo(context,CONFIG_STREAM);
+  SSMemReqInfoPtr sdInfo = new SSMemReqInfo(-4,context,CONFIG_STREAM);
 
   _lsq->pushRequest(cur_minst(),true/*isLoad*/,NULL/*data*/,
               size*8/*cache line*/, addr, 0/*flags*/, 0 /*res*/,
@@ -527,17 +529,17 @@ pipeline_stats_t::PIPE_STATUS accel_t::whos_to_blame(int group) {
       bar_scratch_write |= stream->bar_scr_wr();
     }
 
-    int port= ip->in_port();
-    if(port<0) continue;
-    port_data_t& in_vp=_port_interf.in_port(port);
-    auto it = std::find(active_ports.begin(),active_ports.end(),port);
-    if(it == active_ports.end()) continue;
-
-    if(!(in_vp.in_use() || in_vp.completed() || in_vp.any_data())) {
-      if(bar_scratch_write && ((ip->src() & LOC::SCR) != LOC::NONE)) {
-        scratch_waiters.insert(port);
-      } else {
-        waiters.insert(port);
+    for(int port : ip->in_ports()) {
+      port_data_t& in_vp=_port_interf.in_port(port);
+      auto it = std::find(active_ports.begin(),active_ports.end(),port);
+      if(it == active_ports.end()) continue;
+  
+      if(!(in_vp.in_use() || in_vp.completed() || in_vp.any_data())) {
+        if(bar_scratch_write && ((ip->src() & LOC::SCR) != LOC::NONE)) {
+          scratch_waiters.insert(port);
+        } else {
+          waiters.insert(port);
+        }
       }
     }
   }
@@ -1565,13 +1567,20 @@ void accel_t::schedule_streams() {
   for(auto i = _in_port_queue.begin(); 
       i!=_in_port_queue.end() && str_issued<str_width;){
     base_stream_t* ip = i->get();
-    port_data_t* in_vp=NULL;
     port_data_t* out_vp=NULL;
     port_data_t* out_vp2=NULL; // for atomic stream
 
     bool scheduled=false;
     int repeat = ip->repeat_in();
     int repeat_str = ip->repeat_str();
+    LOC unit = ip->unit();
+
+    bool ivps_can_take = true;
+    for(int in_port : ip->in_ports()) {
+      port_data_t* in_vp = &_port_interf.in_port(in_port);
+      ivps_can_take = ivps_can_take && (!blocked_ivp[in_port]) 
+        && in_vp->can_take(unit,repeat,repeat_str);
+    }
 
     bool blocked_by_barrier=false;
     if((ip->src() & LOC::SCR) != LOC::NONE) { 
@@ -1584,8 +1593,8 @@ void accel_t::schedule_streams() {
     }
 
     if(blocked_by_barrier) { //This handles all barrier insts
-      if(ip->in_port()!=-1) {
-        blocked_ivp[ip->in_port()]=true;
+      for(int in_port : ip->in_ports()) {
+        blocked_ivp[in_port]=true;
       }
       if(ip->out_port()!=-1) {
         blocked_ovp[ip->out_port()]=true;
@@ -1617,20 +1626,12 @@ void accel_t::schedule_streams() {
         bar_scratch_write |= stream->bar_scr_wr();
       }
     } else if(auto dma_port_stream = dynamic_cast<dma_port_stream_t*>(ip)) {
-      int port = dma_port_stream->_in_port;
-      in_vp = &_port_interf.in_port(port);
-      if(in_vp->can_take(LOC::DMA,repeat,repeat_str) && !blocked_ivp[port] &&
-        (scheduled = _dma_c.schedule_dma_port(*dma_port_stream)) ) {
-        in_vp->set_status(port_data_t::STATUS::BUSY, LOC::DMA);
+      if(ivps_can_take) { 
+        scheduled = _dma_c.schedule_dma_port(*dma_port_stream);
       }
-
     } else if(auto scr_port_stream = dynamic_cast<scr_port_stream_t*>(ip)) {
-      int port = scr_port_stream->_in_port;
-      in_vp = &_port_interf.in_port(port);
-      if(in_vp->can_take(LOC::SCR,repeat,repeat_str) && !blocked_ivp[port] &&
-          (scheduled = _scr_r_c.schedule_scr_port(*scr_port_stream)) ) {
-        in_vp->set_status(port_data_t::STATUS::BUSY, LOC::SCR);
-        //_outstanding_scr_read_streams--;
+      if(ivps_can_take) { 
+        scheduled = _scr_r_c.schedule_scr_port(*scr_port_stream);
       }      
     } else if(auto stream = dynamic_cast<remote_port_stream_t*>(ip)) {
       if(stream->_is_source) { //do not schedule, but check out port available
@@ -1643,36 +1644,24 @@ void accel_t::schedule_streams() {
           stream->_remote_stream->_is_ready =true; //we'll check this in dest.
         }
       } else {  //destination, time for action!
-        int in_port = stream->_in_port;
-        in_vp = &_port_interf.in_port(in_port);
-        if(in_vp->can_take(LOC::PORT,repeat,repeat_str) && !blocked_ivp[in_port] &&
-            stream->_is_ready /*src is ready*/ &&
-            (scheduled = _port_c.schedule_remote_port(*stream)) ) {
-          in_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
+        if(ivps_can_take && stream->_is_ready /*src is ready*/) {
+          scheduled = _port_c.schedule_remote_port(*stream);
         }
       }
     } else if(auto port_port_stream = dynamic_cast<port_port_stream_t*>(ip)) {
-      int in_port = port_port_stream->_in_port;
       int out_port = port_port_stream->_out_port;
-      in_vp = &_port_interf.in_port(in_port);
       out_vp = &_port_interf.out_port(out_port);
-      if(in_vp->can_take(LOC::PORT,repeat,repeat_str) && 
-          out_vp->can_take(LOC::PORT) &&
-          !blocked_ivp[in_port] && !blocked_ovp[out_port] && 
+      if(ivps_can_take && out_vp->can_take(LOC::PORT) &&
+          !blocked_ovp[out_port] && 
           (scheduled = _port_c.schedule_port_port(*port_port_stream)) ) {
         scheduled = true;
-        in_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
         out_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
       }
 
     } else if(auto const_port_stream = dynamic_cast<const_port_stream_t*>(ip)) {
-      int port = const_port_stream->_in_port;
-      in_vp = &_port_interf.in_port(port);
-      if(in_vp->can_take(LOC::CONST) && !blocked_ivp[port] && 
-            (scheduled = _port_c.schedule_const_port(*const_port_stream) )) {
-        in_vp->set_status(port_data_t::STATUS::BUSY, LOC::CONST);
+      if(ivps_can_take) {
+        scheduled = _port_c.schedule_const_port(*const_port_stream);
       }
-      
     } else if(auto port_dma_stream = dynamic_cast<port_dma_stream_t*>(ip)) {
       int port = port_dma_stream->_out_port;
       out_vp = &_port_interf.out_port(port);
@@ -1691,14 +1680,11 @@ void accel_t::schedule_streams() {
 
     } else if(auto ind_stream = dynamic_cast<indirect_stream_t*>(ip)) {
       int ind_port = ind_stream->_ind_port; //grab output res
-      int in_port = ind_stream->_in_port;
       auto* ind_vp = &_port_interf.out_port(ind_port); //indirect output port
-      in_vp = &_port_interf.in_port(in_port);
       out_vp = ind_vp;
 
-      if(in_vp->can_take(LOC::PORT,repeat,repeat_str) && 
-          ind_vp->can_take(LOC::PORT)
-          && !blocked_ivp[in_port] && !blocked_ovp[ind_port]) {
+      if(ivps_can_take && ind_vp->can_take(LOC::PORT)
+          && !blocked_ovp[ind_port]) {
 
         //ports okay, schedule to scratch or dma!
         bool succ=false;
@@ -1707,8 +1693,6 @@ void accel_t::schedule_streams() {
 
         if(succ) {
           scheduled = true;
-          scheduled = true;
-          in_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
           ind_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
         }
       }
@@ -1754,7 +1738,8 @@ void accel_t::schedule_streams() {
       scheduled = _scr_w_c.schedule_const_scr(*const_scr_stream);
     } 
 
-    if(in_vp) blocked_ivp[in_vp->port()] = true; //prevent OOO access
+    //prevent out-of-order access
+    for(int in_port : ip->in_ports()) blocked_ivp[in_port] = true;
     if(out_vp) blocked_ovp[out_vp->port()] = true;
     if(out_vp2) blocked_ovp[out_vp2->port()] = true;
 
@@ -1762,9 +1747,13 @@ void accel_t::schedule_streams() {
     prior_scratch_write |= ((ip->dest() & LOC::SCR) != LOC::NONE);
 
     if(scheduled) {
-      if(in_vp) { //inform input port about its new configuration (repeat)
+
+      for(int in_port : ip->in_ports()) {
+        port_data_t* in_vp = &_port_interf.in_port(in_port);
+        in_vp->set_status(port_data_t::STATUS::BUSY, ip->unit());
         in_vp->set_repeat(repeat,repeat_str);
       }
+
 
       str_issued++;
       if(SS_DEBUG::COMMAND_I) {
@@ -1938,9 +1927,6 @@ bool port_controller_t::schedule_const_port(const_port_stream_t& new_s) {
   return false;
 }
 
-//HACK
- static bool DOUBLE_PORT=true;
-
 void apply_mask(uint64_t* raw_data, vector<bool>  mask, std::vector<SBDT>& data) {
   assert(mask.size()==8); 
   SBDT* u64data = (SBDT*)raw_data;
@@ -1976,7 +1962,7 @@ void dma_controller_t::port_resp(unsigned cur_port) {
 
     if(_accel->_accel_index == response->sdInfo->which_accel)  {
 
-      auto& in_vp = _accel->port_interf().in_port(cur_port);
+      auto& pi = _accel->port_interf();
 
       PacketPtr packet = response->packet;
       if(packet->getSize()!=MEM_WIDTH) {
@@ -1990,7 +1976,13 @@ void dma_controller_t::port_resp(unsigned cur_port) {
         apply_map(packet->getPtr<uint64_t>(),  response->sdInfo->map, data);
       }
 
-      if(in_vp.can_push_vp(data.size())) {
+      bool port_in_okay = true;
+      for(int in_port : response->sdInfo->ports) {
+        port_data_t& in_vp = pi.in_port(in_port); 
+        port_in_okay = port_in_okay && (in_vp.can_push_vp(data.size()));
+      }
+
+      if(port_in_okay) {
         bool last = response->sdInfo->last;
 
         if(SS_DEBUG::MEM_REQ) {
@@ -2001,38 +1993,27 @@ void dma_controller_t::port_resp(unsigned cur_port) {
         }
 
         _accel->_stat_mem_bytes_rd+=data.size()*DATA_WIDTH;
-        in_vp.push_data(data);
 
-        //BEGIN HACK
-        if(cur_port==25) { //TRIPPLE PORT : )
-          auto& in_vp1 = _accel->port_interf().in_port(cur_port+1);
-          auto& in_vp2 = _accel->port_interf().in_port(cur_port+2);
-          in_vp1.push_data(data);
-          in_vp2.push_data(data);
-        }
-        if(cur_port==26) { //DOUBLE PORT : )
-          DOUBLE_PORT=true;
-          auto& in_vp1 = _accel->port_interf().in_port(cur_port+1);
-          in_vp1.push_data(data);
-        }
-        //END HACK
+        for(int in_port : response->sdInfo->ports) {
+          port_data_t& in_vp = pi.in_port(in_port); 
+          in_vp.push_data(data);
 
-        if(response->sdInfo->stride_hit) {
-          if(response->sdInfo->fill_mode == STRIDE_ZERO_FILL ||
-             response->sdInfo->fill_mode == STRIDE_DISCARD_FILL) {
-            in_vp.fill(response->sdInfo->fill_mode);
+          if(response->sdInfo->stride_hit) {
+            if(response->sdInfo->fill_mode == STRIDE_ZERO_FILL ||
+               response->sdInfo->fill_mode == STRIDE_DISCARD_FILL) {
+              in_vp.fill(response->sdInfo->fill_mode);
+            }
+          }
+          if(last) {
+            if(SS_DEBUG::VP_SCORE2) {
+              cout << "SOURCE: DMA->PORT2 (port:" << cur_port << ")\n";
+            }
+  
+            in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE, 
+                response->sdInfo->fill_mode);
           }
         }
 
-        if(last) {
-          auto& in_vp = _accel->port_interf().in_port(cur_port);
-          if(SS_DEBUG::VP_SCORE2) {
-            cout << "SOURCE: DMA->PORT2 (port:" << cur_port << ")\n";
-          }
-
-          in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE, 
-              response->sdInfo->fill_mode);
-        }
         _accel->_lsq->popResponse(cur_port);
         _mem_read_reqs--;
         return;
@@ -2221,12 +2202,13 @@ void dma_controller_t::make_read_request() {
     if(auto* sp = dynamic_cast<dma_port_stream_t*>(s)) {
       auto& stream = *sp;
       if(stream.stream_active()) {
-        auto& in_vp = _accel->port_interf().in_port(stream._in_port);
+        int in_port = stream.first_in_port();
+        auto& in_vp = _accel->port_interf().in_port(in_port);
 
-        if(_accel->_lsq->sd_transfers[stream._in_port].unreservedRemainingSpace()>0 
+        if(_accel->_lsq->sd_transfers[in_port].unreservedRemainingSpace()>0 
            && _accel->_lsq->canRequest()) {
     
-          _accel->_lsq->sd_transfers[stream._in_port].reserve();
+          _accel->_lsq->sd_transfers[in_port].reserve();
 
           req_read(stream);
           if(stream.empty()) {
@@ -2241,16 +2223,16 @@ void dma_controller_t::make_read_request() {
       indirect_stream_t& stream = *sp;
 
       auto& ind_vp = _accel->port_interf().out_port(stream._ind_port);
+      int in_port = stream.first_in_port();
 
       if(stream.stream_active()) {
         if(ind_vp.mem_size()>0 &&
-          _accel->_lsq->sd_transfers[stream.in_port()].unreservedRemainingSpace()>0
+          _accel->_lsq->sd_transfers[in_port].unreservedRemainingSpace()>0
                     && _accel->_lsq->canRequest()) {
 
-
-          auto& in_vp = _accel->port_interf().in_port(stream._in_port);
+          auto& in_vp = _accel->port_interf().in_port(in_port);
           if(in_vp.num_can_push() > 8) { //make sure vp isn't full
-            _accel->_lsq->sd_transfers[stream.in_port()].reserve();
+            _accel->_lsq->sd_transfers[in_port].reserve();
 
             //pull_data_indirect(ind_s,data,mem_complete_cyc);
             ind_read_req(stream);
@@ -2311,7 +2293,7 @@ int dma_controller_t::req_read(mem_stream_base_t& stream) {
 
   SSMemReqInfoPtr sdInfo = NULL; 
   sdInfo = new SSMemReqInfo(stream.id(), _accel->_accel_index, 
-         stream.in_port(), mask, last, stream.fill_mode(), stream.stride_hit());
+         stream.in_ports(), mask, last, stream.fill_mode(), stream.stride_hit());
 
   //make request
   _accel->_lsq->pushRequest(_accel->cur_minst(),true/*isLoad*/,NULL/*data*/,
@@ -2433,16 +2415,17 @@ void scratch_read_controller_t::read_scratch_ind(indirect_stream_t& stream,
 
     }
 
-    if(!stream.stream_active()) { // don't set empty yet, even though we free the vps
-      port_data_t& in_vp = _accel->port_interf().in_port(stream.in_port());
- 
+    if(!stream.stream_active()) { //vps -> complete state
       reorder_entry->last=true;
       _accel->process_stream_stats(stream);
       if(SS_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT (queue)\n";}
   
       //the in_vp isn't really full yet because we have to wait until
       //the conflict-free data arrives
-      in_vp.set_status(port_data_t::STATUS::COMPLETE,LOC::SCR);
+      for(int in_port :  stream.in_ports()) { 
+        port_data_t& in_vp = _accel->port_interf().in_port(in_port);
+        in_vp.set_status(port_data_t::STATUS::COMPLETE,LOC::SCR);
+      }
   
       if(SS_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT queue)\n";}
       ind_vp.set_status(port_data_t::STATUS::FREE);
@@ -2486,16 +2469,24 @@ void scratch_read_controller_t::read_scratch_ind(indirect_stream_t& stream,
       //The entry is ready for transfer!
     
       auto& stream = *reorder_entry->stream;
-      port_data_t& in_vp = _accel->port_interf().in_port(stream.in_port());
   
       for(int i = 0; i < reorder_entry->size; ++i) {
-        in_vp.push_data_byte(reorder_entry->data[i]);
+        uint8_t data_byte = reorder_entry->data[i];
+        for(int in_port : stream.in_ports()) {
+          port_data_t& in_vp = _accel->port_interf().in_port(in_port);
+          in_vp.push_data_byte(data_byte);
+        }
       }
-      //bytes_pushed=reorder_entry.size;
-  
-      if(reorder_entry->last && stream.check_set_empty()) { //finally can free input for reals 
+ 
+      //ivp totally free
+      if(reorder_entry->last && stream.check_set_empty()) {  
         if(SS_DEBUG::VP_SCORE2) { cout << "SOURCE: Indirect SCR->PORT \n";}
-        in_vp.set_status(port_data_t::STATUS::FREE,LOC::SCR);
+
+        for(int in_port : stream.in_ports()) {
+          port_data_t& in_vp = _accel->port_interf().in_port(in_port);
+          in_vp.set_status(port_data_t::STATUS::FREE,LOC::SCR);
+        }
+
       }
       delete reorder_entry;
       _ind_ROB.pop();
@@ -2567,9 +2558,8 @@ void dma_controller_t::ind_read_req(indirect_stream_t& stream) {
 
 
   SSMemReqInfoPtr sdInfo = NULL; 
-    sdInfo = new SSMemReqInfo(stream.id(),
-                              _accel->_accel_index,  
-                 stream.in_port(), imap, last, stream.fill_mode());
+    sdInfo = new SSMemReqInfo(stream.id(), _accel->_accel_index,  
+                 stream.in_ports(), imap, last, stream.fill_mode());
 
   //make request
   _accel->_lsq->pushRequest(stream.minst(),true/*isLoad*/,NULL/*data*/,
@@ -2642,8 +2632,7 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
   }
 
   SSMemReqInfoPtr sdInfo = new SSMemReqInfo(stream.id(),
-                                            _accel->_accel_index, MEM_WR_STREAM, 
-                                            mask /*NA*/, false /*NA*/, 0 /*NA*/);
+                                            _accel->_accel_index, MEM_WR_STREAM);
 
   //cout << "bytes written: " << bytes_written << "addr: " << std::hex << init_addr 
   //  << std::dec << " first elem: " << *data64 << "\n";
@@ -2666,11 +2655,7 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t& stream) {
       cout << "SOURCE: INDIRECT PORT -> DMA\n";
     }
     out_vp.set_status(port_data_t::STATUS::FREE);
-    //if((stream._ind_port==26&&!DOUBLE_PORT) || stream._ind_port==27 ) {
-
-    //} else {
     ind_vp.set_status(port_data_t::STATUS::FREE);
-    //}
   }
 
 }
@@ -2720,8 +2705,7 @@ void dma_controller_t::req_write(port_dma_stream_t& stream, port_data_t& ovp) {
 
   unsigned bytes_written = elem_written * data_width;
   SSMemReqInfoPtr sdInfo = new SSMemReqInfo(stream.id(),
-                                            _accel->_accel_index, MEM_WR_STREAM, 
-                                            mask /*NA*/, false /*NA*/, 0 /*NA*/);
+                                            _accel->_accel_index, MEM_WR_STREAM);
 
   //make store request
   _accel->_lsq->pushRequest(stream.minst(),false/*isLoad*/, data8,
@@ -2786,7 +2770,7 @@ vector<SBDT> scratch_read_controller_t::read_scratch(
 
     if(SS_DEBUG::SCR_ACC) {
       cout << "scr_addr:" << hex << addr << " read " << val 
-           << " to port " << stream.in_port() << "\n";
+           << " to port " << stream.first_in_port() << "\n";
     }
     data.push_back(val);
     prev_addr=addr;
@@ -2830,7 +2814,7 @@ float scratch_read_controller_t::calc_min_port_ready() {
   for(int i = 0; i < _scr_port_streams.size();++i) {
     auto& stream = *_scr_port_streams[i];
     if(stream.stream_active()) {
-      auto& in_vp = _accel->port_interf().in_port(stream._in_port);
+      auto& in_vp = _accel->port_interf().in_port(stream.first_in_port());
       if(in_vp.can_push_vp(SCR_WIDTH/DATA_WIDTH)) {
         float num_ready = in_vp.instances_ready();
         if(num_ready < min_port_ready) {
@@ -2863,19 +2847,22 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
         }
         if(!skip_check && min_port_ready>=MAX_PORT_READY) continue;
 
-        auto& in_vp = _accel->port_interf().in_port(stream._in_port);
-        float num_ready = in_vp.instances_ready();
+        auto& first_in_vp = _accel->port_interf().in_port(stream.first_in_port());
+        float num_ready = first_in_vp.instances_ready();
 
-        if(skip_check || (in_vp.can_push_vp(SCR_WIDTH/DATA_WIDTH) 
+        if(skip_check || (first_in_vp.can_push_vp(SCR_WIDTH/DATA_WIDTH) 
               && num_ready == min_port_ready)) {
           vector<SBDT> data = read_scratch(stream);
 
-          for(auto d : data) {
-            in_vp.push_data(d);
-          }
+          for(int in_port : stream.in_ports()) {
+            auto& in_vp = _accel->port_interf().in_port(in_port);
+            for(auto d : data) {
+              in_vp.push_data(d);
+            }
 
-          if(stream.stride_fill() && stream.stride_hit()) {
-            in_vp.fill(true);
+            if(stream.stride_fill() && stream.stride_hit()) {
+              in_vp.fill(true);
+            }
           }
 
           bool is_empty = stream.check_set_empty();
@@ -2885,7 +2872,11 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
             if(SS_DEBUG::VP_SCORE2) {
               cout << "SOURCE: SCR->PORT\n";
             }
-            in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE, stream.fill_mode());
+            for(int in_port : stream.in_ports()) {
+              auto& in_vp = _accel->port_interf().in_port(in_port);
+              in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE, 
+                  stream.fill_mode());
+            }
             delete_stream(_which_rd,sp);
           }
           break;
@@ -3318,16 +3309,26 @@ void port_controller_t::cycle() {
     }
 
     port_data_t& vp_out = pi.out_port(stream._out_port);
-    port_data_t& vp_in = pi.in_port(stream._in_port);
-    if(vp_out.mem_size() && vp_in.mem_size() < VP_LEN ) { // okay go for it
+
+    bool port_in_okay = true;
+    for(int in_port : stream.in_ports()) {
+      port_data_t& vp_in = pi.in_port(in_port); //just wait until 8 items can come
+      port_in_okay = port_in_okay && (vp_in.mem_size() < VP_LEN-8);
+    }
+
+    if(vp_out.mem_size() && port_in_okay ) { // okay go for it
       
       uint64_t total_pushed=0;
-      for(int i = 0; i < PORT_WIDTH && vp_in.mem_size() < VP_LEN && 
-                         vp_out.mem_size() && stream.stream_active(); ++i) {
+      for(int i = 0; i < PORT_WIDTH && 
+            vp_out.mem_size() && stream.stream_active();i+=DATA_WIDTH) {
         SBDT val = vp_out.pop_out_data();
         //timestamp(); cout << "POPPED b/c port->port WRITE: " << vp_out.port() << " " << vp_out.mem_size()  << "\n";
 
-        vp_in.push_data(val);
+        for(int in_port : stream.in_ports()) {
+          port_data_t& vp_in = pi.in_port(in_port);
+          vp_in.push_data(val);
+        }
+
         stream._num_elements--;
         total_pushed++;
       }
@@ -3341,8 +3342,12 @@ void port_controller_t::cycle() {
         if(SS_DEBUG::VP_SCORE2) {
           cout << "SOURCE: PORT->PORT\n";
         }
-        port_data_t& in_vp = _accel->port_interf().in_port(stream._in_port);
-        in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE, stream.fill_mode());
+
+        for(int in_port : stream.in_ports()) {
+          port_data_t& in_vp = pi.in_port(in_port);
+          in_vp.set_status(port_data_t::STATUS::FREE, 
+              LOC::NONE, stream.fill_mode());
+        }
 
         if(SS_DEBUG::VP_SCORE2) {
           cout << "SOURCE: PORT->PORT\n";
@@ -3365,13 +3370,18 @@ void port_controller_t::cycle() {
       continue;
     }
 
-    port_data_t& vp_in = pi.in_port(stream._in_port);
+    port_data_t& first_vp_in = pi.in_port(stream.first_in_port());
 
-    if(vp_in.mem_size() < VP_LEN) { // enough space, so go for it
+    if(first_vp_in.mem_size() < VP_LEN) { // enough space, so go for it
       uint64_t total_pushed=0;
-      for(int i = 0; i < PORT_WIDTH && vp_in.mem_size() < VP_LEN 
-                  && stream.stream_active(); ++i) {
-        vp_in.push_data(stream.pop_item());
+
+      for(int i = 0; i < PORT_WIDTH && first_vp_in.mem_size() < VP_LEN 
+                  && stream.stream_active(); i+=DATA_WIDTH) {
+
+        for(int in_port : stream.in_ports()) {
+          port_data_t& vp_in = pi.in_port(in_port);
+          vp_in.push_data(stream.pop_item());
+        }
         total_pushed++;
       }
       add_bw(stream.src(), stream.dest(), 1, total_pushed*DATA_WIDTH);
@@ -3380,12 +3390,14 @@ void port_controller_t::cycle() {
       if(is_empty) {
         _accel->process_stream_stats(stream);
 
-        port_data_t& in_vp = _accel->port_interf().in_port(stream._in_port);
-
         if(SS_DEBUG::VP_SCORE2) {
           cout << "SOURCE: CONST->PORT\n";
         }
-        in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE, stream.fill_mode());
+
+        for(int in_port : stream.in_ports()) {
+          port_data_t& in_vp = _accel->port_interf().in_port(in_port);
+          in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE, stream.fill_mode());
+        }
       }
     }
   }
@@ -3412,18 +3424,24 @@ void port_controller_t::cycle() {
     auto& rem_pi = rem_acc->port_interf();
     port_data_t& vp_out = rem_pi.out_port(stream._out_port);
 
+    bool port_in_okay = true;
+    for(int in_port : stream.in_ports()) {
+      port_data_t& vp_in = pi.in_port(in_port); //just wait until 8 items can come
+      port_in_okay = port_in_okay && (vp_in.mem_size() < VP_LEN-8);
+    }
 
-    port_data_t& vp_in = pi.in_port(stream._in_port);
-    if(vp_out.mem_size() && vp_in.mem_size() < VP_LEN ) { // okay go for it
-      
+    if(vp_out.mem_size() && port_in_okay ) { // okay go for it
       uint64_t total_pushed=0;
-      for(int i = 0; i < PORT_WIDTH && vp_in.mem_size() < VP_LEN && 
-                         vp_out.mem_size() && stream.stream_active(); ++i) {
+      for(int i = 0; i < PORT_WIDTH && 
+            vp_out.mem_size() && stream.stream_active(); ++i) {
         SBDT val = vp_out.pop_out_data();
         //timestamp(); cout << "POPPED b/c port -> remote_port WRITE: " << vp_out.port() << " " << vp_out.mem_size() <<  "\n";
 
 
-        vp_in.push_data(val);
+        for(int in_port : stream.in_ports()) {
+          port_data_t& in_vp = _accel->port_interf().in_port(in_port);
+          in_vp.push_data(val);
+        }
         stream._num_elements--;
         total_pushed++;
       }
@@ -3437,7 +3455,10 @@ void port_controller_t::cycle() {
         if(SS_DEBUG::VP_SCORE2) {
           cout << "SOURCE: PORT->PORT\n";
         }
-        vp_in.set_status(port_data_t::STATUS::FREE, LOC::NONE, stream.fill_mode());
+        for(int in_port : stream.in_ports()) {
+          port_data_t& in_vp = _accel->port_interf().in_port(in_port);
+          in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE, stream.fill_mode());
+        }
 
         if(SS_DEBUG::VP_SCORE2) {
           cout << "SOURCE: PORT->PORT\n";

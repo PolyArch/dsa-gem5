@@ -351,10 +351,11 @@ void ssim_t::load_dma_to_port(addr_t mem_addr,
   s->_stride=stride;
   s->_access_size=access_size;
   s->_stretch=stretch;
-  s->_in_port=in_port;
+  s->add_in_port(in_port);
   s->_repeat_in=repeat;
   s->_repeat_str=repeat_str;
 
+  s->_unit=LOC::DMA;
   s->set_orig();
 
   add_bitmask_stream(s);
@@ -371,6 +372,8 @@ void ssim_t::write_dma(uint64_t garb_elem, int out_port,
   s->_out_port=out_port;
   s->_shift_bytes=shift_bytes;
   s->_garbage=garbage;
+
+  s->_unit=LOC::DMA;
   s->set_orig();
 
   add_bitmask_stream(s);
@@ -385,9 +388,11 @@ void ssim_t::load_scratch_to_port(addr_t scratch_addr,
   s->_stride=stride;
   s->_access_size=access_size;
   s->_stretch=stretch;
-  s->_in_port=in_port;
+  s->add_in_port(in_port);
   s->_repeat_in=repeat;
   s->_repeat_str=repeat_str;
+
+  s->_unit=LOC::SCR;
   s->set_orig();
 
   //_outstanding_scr_read_streams++;
@@ -402,6 +407,7 @@ void ssim_t::write_scratchpad(int out_port,
   s->_scratch_addr=scratch_addr;
   s->_num_bytes=num_bytes;
   s->_shift_bytes=shift_bytes;
+  s->_unit=LOC::SCR;
   s->set_orig();
 
   add_bitmask_stream(s);
@@ -419,7 +425,7 @@ void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_
     s->_value_type=value_type;
     s->_output_type=output_type;
     s->_addr_type=addr_type;
-   
+    s->_unit=LOC::SCR;
     s->set_orig(); 
 
     add_bitmask_stream(s);
@@ -485,7 +491,7 @@ void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr
   indirect_stream_t* s = new indirect_stream_t();
   s->_ind_port=ind_port;
   s->_ind_type=ind_type;
-  s->_in_port=in_port;
+  s->add_in_port(in_port);;
   s->_index_addr=index_addr;
   s->_num_elements=num_elem;
   s->_repeat_in=repeat;
@@ -493,8 +499,8 @@ void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr
   s->_offset_list=offset_list;
   s->_dtype=dtype;
   s->_ind_mult=ind_mult;
-  s->_scratch=scratch;
-
+  if(scratch) s->_unit=LOC::SCR;
+  else s->_unit=LOC::DMA;
   s->set_orig();
 
   add_bitmask_stream(s);
@@ -512,8 +518,8 @@ void ssim_t::indirect_write(int ind_port, int ind_type, int out_port,
   s->_num_elements=num_elem;
   s->_dtype=dtype;
   s->_ind_mult=ind_mult;
-  s->_scratch=scratch;
-
+  if(scratch) s->_unit=LOC::SCR;
+  else s->_unit=LOC::DMA;
   s->set_orig();
 
   add_bitmask_stream(s);
@@ -557,7 +563,7 @@ void ssim_t::write_constant(int num_strides, int in_port,
                     uint64_t flags) { //new
 
   const_port_stream_t* s = new const_port_stream_t();
-  s->_in_port=in_port;
+  s->add_in_port(in_port);
 
   if((flags&1)==0) {
     s->_constant=0;
