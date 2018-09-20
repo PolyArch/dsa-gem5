@@ -41,13 +41,20 @@ from BaseTopology import SimpleTopology
 class Mesh_XY(SimpleTopology):
     description='Mesh_XY'
 
+    # TODO: can we try this without adding extra parameter in init? or I will
+    # have to do setup
+    # def __init__(self, controllers, spu_ports):
     def __init__(self, controllers):
         self.nodes = controllers
+        # FIXME: actually they are not initialized here
+        # self.spu_ports = VectorParam.RubyPort
+        # self.spu_ports = ruby_ports
+        self.spu_ports = system.cpu_sequencers
 
     # Makes a generic mesh
     # assuming an equal number of cache and directory cntrls
 
-    def makeTopology(self, options, network, IntLink, ExtLink, Router):
+    def makeTopology(self, options, network, IntLink, ExtLink, SpuExtLink, Router):
         nodes = self.nodes
 
         num_routers = options.num_cpus
@@ -97,7 +104,8 @@ class Mesh_XY(SimpleTopology):
         # Connect the remainding nodes to router 0.  These should only be
         # DMA nodes.
         for (i, node) in enumerate(remainder_nodes):
-            assert(node.type == 'DMA_Controller')
+            # print node.type
+            # assert(node.type == 'DMA_Controller')
             assert(i < remainder)
             ext_links.append(ExtLink(link_id=link_count, ext_node=node,
                                     int_node=routers[0],
@@ -105,6 +113,25 @@ class Mesh_XY(SimpleTopology):
             link_count += 1
 
         network.ext_links = ext_links
+
+        # Connect each spu node to the appropriate router (TODO: check, added
+        # in code only)
+        # FIXME: these nodes should not be controllers
+
+        spu_nodes = []
+        for node_index in xrange(len(nodes)):
+            spu_nodes.append(self.spu_ports[node_index])
+
+        spu_ext_links = []
+        # for (i, n) in enumerate(network_nodes):
+        for (i, n) in enumerate(spu_nodes):
+            spu_ext_links.append(SpuExtLink(link_id=link_count, ext_node=n,
+                                    int_node=routers[router_id],
+                                    latency = link_latency))
+            link_count += 1
+        network.spu_ext_links = spu_ext_links
+
+
 
         # Create the mesh links.
         int_links = []

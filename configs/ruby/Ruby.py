@@ -142,7 +142,7 @@ def create_system(options, full_system, system, piobus = None, dma_ports = [],
     ruby = system.ruby
 
     # Create the network object
-    (network, IntLinkClass, ExtLinkClass, RouterClass, InterfaceClass) = \
+    (network, IntLinkClass, ExtLinkClass, SpuExtLinkClass, RouterClass, InterfaceClass) = \
         Network.create_network(options, ruby)
     ruby.network = network
 
@@ -159,6 +159,7 @@ def create_system(options, full_system, system, piobus = None, dma_ports = [],
 
     # Create the network topology
     topology.makeTopology(options, network, IntLinkClass, ExtLinkClass,
+            SpuExtLinkClass,
             RouterClass)
 
     # Initialize network based on topology

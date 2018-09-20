@@ -89,6 +89,7 @@ def create_network(options, ruby):
         NetworkClass = SimpleNetwork
         IntLinkClass = SimpleIntLink
         ExtLinkClass = SimpleExtLink
+        SpuExtLinkClass = SimpleSpuExtLink
         RouterClass = Switch
         InterfaceClass = None
 
@@ -97,7 +98,7 @@ def create_network(options, ruby):
     network = NetworkClass(ruby_system = ruby, topology = options.topology,
             routers = [], ext_links = [], int_links = [], netifs = [])
 
-    return (network, IntLinkClass, ExtLinkClass, RouterClass, InterfaceClass)
+    return (network, IntLinkClass, ExtLinkClass, SpuExtLinkClass, RouterClass, InterfaceClass)
 
 def init_network(options, network, InterfaceClass):
 
