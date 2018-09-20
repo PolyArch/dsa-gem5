@@ -331,6 +331,12 @@ MasterPort &MinorCPU::getDataPort()
     return pipeline->getDataPort();
 }
 
+// FIXME: correct this, may need to add the function in pipeline.cc
+MasterPort &MinorCPU::getSpuPort()
+{
+    return pipeline->getSpuPort();
+}
+
 Counter
 MinorCPU::totalInsts() const
 {

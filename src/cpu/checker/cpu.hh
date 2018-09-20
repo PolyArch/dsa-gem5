@@ -105,9 +105,19 @@ class CheckerCPU : public BaseCPU, public ExecContext
     void setSystem(System *system);
 
     void setIcachePort(MasterPort *icache_port);
-
+    
     void setDcachePort(MasterPort *dcache_port);
+	
+	// spu
+	void setNsePort(MasterPort *nse_port);
 
+    MasterPort &getSpuPort() override
+    {
+        // the checker does not have ports on its own so return the
+        // data port of the actual CPU core
+        assert(nsePort);
+        return *nsePort;
+    }
     MasterPort &getDataPort() override
     {
         // the checker does not have ports on its own so return the
@@ -132,6 +142,7 @@ class CheckerCPU : public BaseCPU, public ExecContext
 
     MasterPort *icachePort;
     MasterPort *dcachePort;
+    MasterPort *nsePort;
 
     ThreadContext *tc;
 

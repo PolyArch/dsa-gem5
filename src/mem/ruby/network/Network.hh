@@ -87,12 +87,18 @@ class Network : public ClockedObject
 
     static uint32_t MessageSizeType_to_int(MessageSizeType size_type);
 
-	// spu: sets both memory and spu to/from net queues
     // returns the queue requested for the given component
     void setToNetQueue(NodeID id, bool ordered, int netNumber,
                                std::string vnet_type, MessageBuffer *b);
     virtual void setFromNetQueue(NodeID id, bool ordered, int netNumber,
                                  std::string vnet_type, MessageBuffer *b);
+
+	// spu: sets spu to/from net queues
+	void setSpuToNetQueue(NodeID id, bool ordered, int netNumber,
+                               std::string vnet_type, MessageBuffer *b);
+    void setSpuFromNetQueue(NodeID id, bool ordered, int netNumber,
+                                 std::string vnet_type, MessageBuffer *b);
+
 
     virtual void checkNetworkAllocation(NodeID id, bool ordered,
         int network_num, std::string vnet_type);

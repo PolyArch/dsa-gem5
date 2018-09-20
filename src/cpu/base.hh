@@ -159,6 +159,7 @@ class BaseCPU : public MemObject
      * @return a reference to the data port
      */
     virtual MasterPort &getDataPort() = 0;
+    virtual MasterPort &getSpuPort() = 0;
 
     /**
      * Purely virtual method that returns a reference to the instruction

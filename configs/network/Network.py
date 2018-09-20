@@ -96,7 +96,7 @@ def create_network(options, ruby):
     # Instantiate the network object
     # so that the controllers can connect to it.
     network = NetworkClass(ruby_system = ruby, topology = options.topology,
-            routers = [], ext_links = [], int_links = [], netifs = [])
+            routers = [], ext_links = [], spu_ext_links = [], int_links = [], netifs = [])
 
     return (network, IntLinkClass, ExtLinkClass, SpuExtLinkClass, RouterClass, InterfaceClass)
 

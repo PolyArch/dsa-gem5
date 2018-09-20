@@ -138,6 +138,11 @@ class Pipeline : public Ticked {
     /** Return the DcachePort belonging to Execute for the CPU */
     MinorCPU::MinorCPUPort &getDataPort();
 
+	/** Return the SPU_Port belonging to Execute for the CPU */
+    MinorCPU::MinorCPUPort &getSpuPort();
+
+
+
     /** To give the activity recorder to the CPU */
     MinorActivityRecorder *getActivityRecorder() { return &activityRecorder; }
 };

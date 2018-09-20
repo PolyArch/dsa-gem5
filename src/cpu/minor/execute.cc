@@ -1977,6 +1977,13 @@ Execute::getDcachePort()
     return lsq.getDcachePort();
 }
 
+
+MinorCPU::MinorCPUPort &
+Execute::getNsePort()
+{
+	return nsePort;
+}
+
 }
 
 

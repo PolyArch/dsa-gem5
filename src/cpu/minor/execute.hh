@@ -376,7 +376,7 @@ class Execute : public Named
 
     /** Returns the DcachePort owned by this Execute to pass upwards */
     MinorCPU::MinorCPUPort &getDcachePort();
-    MinorCPU::MinorCPUPort &getNsePort() { return nsePort; }
+    MinorCPU::MinorCPUPort &getNsePort(); //  { return nsePort; }
 
     /** To allow ExecContext to find the LSQ */
     LSQ &getLSQ() { return lsq; }

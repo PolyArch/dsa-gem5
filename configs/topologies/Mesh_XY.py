@@ -129,8 +129,8 @@ class Mesh_XY(SimpleTopology):
         spu_ext_links = []
         # for (i, n) in enumerate(network_nodes):
         for (i, n) in enumerate(spu_nodes):
-            spu_ext_links.append(SpuExtLink(link_id=link_count, ext_node=n,
-                                    int_node=routers[router_id],
+            spu_ext_links.append(SpuExtLink(link_id=link_count, spu_ext_node=n,
+                                    spu_int_node=routers[router_id],
                                     latency = link_latency))
             link_count += 1
         network.spu_ext_links = spu_ext_links

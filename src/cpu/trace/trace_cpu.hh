@@ -325,6 +325,13 @@ class TraceCPU : public BaseCPU
     /** Port to connect to L1 data cache. */
     DcachePort dcachePort;
 
+
+
+	// /** Port to connect to L1 data cache. */
+    // NsePort dcachePort;
+
+
+
     /** Master id for instruction read requests. */
     const MasterID instMasterID;
 
@@ -1150,6 +1157,16 @@ class TraceCPU : public BaseCPU
 
     /** Used to get a reference to the dcache port. */
     MasterPort &getDataPort() { return dcachePort; }
+
+
+	/** Used to get a reference to the spu port, FIXME: this is wrong, just not
+	 * being used now!*/
+    MasterPort &getSpuPort() { 
+	  return dcachePort;
+	  // return nsePort; 
+	}
+
+
 
     void regStats();
 };

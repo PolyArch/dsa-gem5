@@ -129,6 +129,12 @@ CheckerCPU::setDcachePort(MasterPort *dcache_port)
 }
 
 void
+CheckerCPU::setNsePort(MasterPort *nse_port)
+{
+    nsePort = nse_port;
+}
+
+void
 CheckerCPU::serialize(ostream &os) const
 {
 }

@@ -56,11 +56,14 @@ Sequencer::Sequencer(const Params *p)
     : RubyPort(p), m_IncompleteTimes(MachineType_NUM),
       deadlockCheckEvent([this]{ wakeup(); }, "Sequencer deadlock check")
 {
+    // TODO: how can we access cpu_id? (should be mapped to seq_id)
+    // printf("Sequencer initialized here with core id %d!!!\n",p->coreid);
     m_outstanding_count = 0;
 
     m_instCache_ptr = p->icache;
     m_dataCache_ptr = p->dcache;
-	s_network_q_ptr = s_net_ptr->getSpuQueue(getId());
+	// s_network_q_ptr = s_net_ptr->getSpuQueue(getId());
+	// s_network_q_ptr = s_net_ptr->getSpuQueue(p->coreid);
     m_data_cache_hit_latency = p->dcache_hit_latency;
     m_inst_cache_hit_latency = p->icache_hit_latency;
     m_max_outstanding_requests = p->max_outstanding_requests;
@@ -160,6 +163,15 @@ void Sequencer::resetStats()
         m_IncompleteTimes[i] = 0;
     }
 }
+
+// spu
+void Sequencer::initNetQueues() {
+  // printf("%d\n",m_coreId);
+  s_net_ptr->setSpuToNetQueue(this->seqId(), true, 0, "forward", s_network_q_ptr);
+}
+
+
+
 
 // Insert the request on the correct request table.  Return true if
 // the entry was already present.

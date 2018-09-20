@@ -198,6 +198,12 @@ Pipeline::getDataPort()
     return execute.getDcachePort();
 }
 
+MinorCPU::MinorCPUPort &
+Pipeline::getSpuPort()
+{
+    return execute.getNsePort();
+}
+
 void
 Pipeline::wakeupFetch(ThreadID tid)
 {
