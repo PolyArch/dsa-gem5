@@ -49,13 +49,15 @@ class Mesh_XY(SimpleTopology):
         # FIXME: actually they are not initialized here
         # self.spu_ports = VectorParam.RubyPort
         # self.spu_ports = ruby_ports
-        self.spu_ports = system.cpu_sequencers
+        # self.spu_ports = system.cpu_sequencers
 
     # Makes a generic mesh
     # assuming an equal number of cache and directory cntrls
 
-    def makeTopology(self, options, network, IntLink, ExtLink, SpuExtLink, Router):
+    def makeTopology(self, options, network, IntLink, ExtLink, SpuExtLink,
+            Router, cpu_sequencers):
         nodes = self.nodes
+        self.spu_ports = cpu_sequencers
 
         num_routers = options.num_cpus
         num_rows = options.mesh_rows
@@ -119,7 +121,9 @@ class Mesh_XY(SimpleTopology):
         # FIXME: these nodes should not be controllers
 
         spu_nodes = []
-        for node_index in xrange(len(nodes)):
+        # print len(self.spu_ports)
+        # print options.num_cpus
+        for node_index in xrange(options.num_cpus):
             spu_nodes.append(self.spu_ports[node_index])
 
         spu_ext_links = []
@@ -130,8 +134,6 @@ class Mesh_XY(SimpleTopology):
                                     latency = link_latency))
             link_count += 1
         network.spu_ext_links = spu_ext_links
-
-
 
         # Create the mesh links.
         int_links = []

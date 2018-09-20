@@ -160,7 +160,7 @@ def create_system(options, full_system, system, piobus = None, dma_ports = [],
     # Create the network topology
     topology.makeTopology(options, network, IntLinkClass, ExtLinkClass,
             SpuExtLinkClass,
-            RouterClass)
+            RouterClass, cpu_sequencers)
 
     # Initialize network based on topology
     Network.init_network(options, network, InterfaceClass)
