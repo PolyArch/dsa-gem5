@@ -39,6 +39,9 @@
 #include "mem/ruby/structures/CacheMemory.hh"
 #include "mem/ruby/system/RubyPort.hh"
 #include "params/RubySequencer.hh"
+// added for spu things
+#include "mem/ruby/network/MessageBuffer.hh"
+class Network;
 
 struct SequencerRequest
 {
@@ -147,6 +150,15 @@ class Sequencer : public RubyPort
 
     Stats::Counter getIncompleteTimes(const MachineType t) const
     { return m_IncompleteTimes[t]; }
+
+    // spu
+	MessageBuffer* s_network_q_ptr;
+	Network* s_net_ptr;
+	void initNetworkPtr(Network* net_ptr) { s_net_ptr = net_ptr; }
+	// TODO: write it!
+	void initNetQueues() { };
+
+
 
   private:
     void issueRequest(PacketPtr pkt, RubyRequestType type);

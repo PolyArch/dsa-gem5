@@ -60,6 +60,7 @@ Sequencer::Sequencer(const Params *p)
 
     m_instCache_ptr = p->icache;
     m_dataCache_ptr = p->dcache;
+	s_network_q_ptr = s_net_ptr->getSpuQueue(getId());
     m_data_cache_hit_latency = p->dcache_hit_latency;
     m_inst_cache_hit_latency = p->icache_hit_latency;
     m_max_outstanding_requests = p->max_outstanding_requests;
