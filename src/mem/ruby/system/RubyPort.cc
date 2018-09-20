@@ -55,7 +55,7 @@ RubyPort::RubyPort(const Params *p)
     : MemObject(p), m_ruby_system(p->ruby_system), m_version(p->version),
       m_controller(NULL), m_mandatory_q_ptr(NULL),
 	  // spu
-      s_network_q_ptr(NULL),
+      // s_network_q_ptr(NULL),
       m_usingRubyTester(p->using_ruby_tester), system(p->system),
       pioMasterPort(csprintf("%s.pio-master-port", name()), this),
       pioSlavePort(csprintf("%s.pio-slave-port", name()), this),
@@ -89,7 +89,7 @@ RubyPort::init()
     m_mandatory_q_ptr = m_controller->getMandatoryQueue();
 	// spu, TODO:this mapping will also work, right?
 	// TODO: Also, not sure if this id is correct!
-    s_network_q_ptr = s_net_ptr->getSpuQueue(getId());
+    // s_network_q_ptr = s_net_ptr->getSpuQueue(getId());
 }
 
 BaseMasterPort &

@@ -54,8 +54,6 @@
 #include "params/RubyPort.hh"
 
 class AbstractController;
-// added for spu things
-class Network;
 
 class RubyPort : public MemObject
 {
@@ -187,8 +185,8 @@ class RubyPort : public MemObject
     bool recvTimingResp(PacketPtr pkt, PortID master_port_id);
 
 	// spu
-	Network* s_net_ptr;
-	void initNetworkPtr(Network* net_ptr) { s_net_ptr = net_ptr; }
+	// Network* s_net_ptr;
+	// void initNetworkPtr(Network* net_ptr) { s_net_ptr = net_ptr; }
 	// TODO: write it!
 	// void initNetQueues() { };
 
@@ -198,7 +196,7 @@ class RubyPort : public MemObject
     AbstractController* m_controller;
     MessageBuffer* m_mandatory_q_ptr;
 	// spu: these should point to the network spu queues
-    MessageBuffer* s_network_q_ptr;
+    // MessageBuffer* s_network_q_ptr;
     bool m_usingRubyTester;
     System* system;
 

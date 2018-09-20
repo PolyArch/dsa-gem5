@@ -44,6 +44,8 @@
 #include "mem/ruby/common/MachineID.hh"
 #include "mem/ruby/network/BasicLink.hh"
 #include "mem/ruby/system/RubySystem.hh"
+// for spu
+#include "mem/ruby/system/Sequencer.hh"
 
 uint32_t Network::m_virtual_networks;
 uint32_t Network::m_control_msg_size;
@@ -102,17 +104,18 @@ Network::Network(const Params *p)
     s_toNetQueues.resize(m_nodes);
     s_fromNetQueues.resize(m_nodes);
 	
-    // TODO: Initialize the ruby spu port's network pointers
+    // TODO: Initialize the ruby spu port's (or sequencer) network pointers
 	
-	/*
 	for (std::vector<SpuExtLink*>::const_iterator i = p->spu_ext_links.begin();
          i != p->spu_ext_links.end(); ++i) {
         SpuExtLink *spu_ext_link = (*i);
-		RubyPort *spu_port = spu_ext_link->params()->spu_ext_node;
+		// RubyPort *spu_port = spu_ext_link->params()->spu_ext_node;
 		// RubyPort::RubySequencer *spu_seq = spu_ext_link->params()->spu_ext_node;
-        spu_port->initNetworkPtr(this);
+		// RubySequencer *spu_seq = spu_ext_link->params()->spu_ext_node;
+		Sequencer *spu_seq = spu_ext_link->params()->spu_ext_node;
+        spu_seq->initNetworkPtr(this);
+        // spu_port->initNetworkPtr(this);
     }
-	*/
 	
 
     // Register a callback function for combining the statistics
@@ -126,11 +129,9 @@ Network::Network(const Params *p)
 	// original network queues, TODO:
 	// write this function as well
 	
-	/*
 	for (auto &it : dynamic_cast<Network *>(this)->params()->spu_ext_links) {
         it->params()->spu_ext_node->initNetQueues();
     }
-	*/
 	
 }
 
