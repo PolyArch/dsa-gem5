@@ -64,7 +64,7 @@ Network::Network(const Params *p)
     // m_topology_ptr = new Topology(p->routers.size(), p->ext_links,
 	// spu modifications
     m_topology_ptr = new Topology(p->routers.size(), p->ext_links,
-                                  p-> spu_ext_links, p->int_links);
+                                  p->spu_ext_links, p->int_links);
 
     // Allocate to and from queues
     // Queues that are getting messages from protocol
@@ -99,8 +99,21 @@ Network::Network(const Params *p)
         }
     }
 
+    s_toNetQueues.resize(m_nodes);
+    s_fromNetQueues.resize(m_nodes);
 	
     // TODO: Initialize the ruby spu port's network pointers
+	
+	/*
+	for (std::vector<SpuExtLink*>::const_iterator i = p->spu_ext_links.begin();
+         i != p->spu_ext_links.end(); ++i) {
+        SpuExtLink *spu_ext_link = (*i);
+		RubyPort *spu_port = spu_ext_link->params()->spu_ext_node;
+		// RubyPort::RubySequencer *spu_seq = spu_ext_link->params()->spu_ext_node;
+        spu_port->initNetworkPtr(this);
+    }
+	*/
+	
 
     // Register a callback function for combining the statistics
     Stats::registerDumpCallback(new StatsCallback(this));
@@ -108,6 +121,17 @@ Network::Network(const Params *p)
     for (auto &it : dynamic_cast<Network *>(this)->params()->ext_links) {
         it->params()->ext_node->initNetQueues();
     }
+
+	// init network queues for each ruby port such that they point to the
+	// original network queues, TODO:
+	// write this function as well
+	
+	/*
+	for (auto &it : dynamic_cast<Network *>(this)->params()->spu_ext_links) {
+        it->params()->spu_ext_node->initNetQueues();
+    }
+	*/
+	
 }
 
 Network::~Network()
@@ -124,7 +148,22 @@ Network::~Network()
         }
     }
 
+	// spu
+    for (int node = 0; node < m_nodes; node++) {
+
+        // Delete the Message Buffers
+        for (auto& it : s_toNetQueues[node]) {
+            delete it;
+        }
+
+        for (auto& it : s_fromNetQueues[node]) {
+            delete it;
+        }
+    }
+
+
     delete m_topology_ptr;
+
 }
 
 void
@@ -187,6 +226,13 @@ Network::setToNetQueue(NodeID id, bool ordered, int network_num,
         m_toNetQueues[id].push_back(nullptr);
     }
     m_toNetQueues[id][network_num] = b;
+
+	// spu
+	while (s_toNetQueues[id].size() <= network_num) {
+        s_toNetQueues[id].push_back(nullptr);
+    }
+    s_toNetQueues[id][network_num] = b;
+
 }
 
 void
@@ -198,6 +244,12 @@ Network::setFromNetQueue(NodeID id, bool ordered, int network_num,
         m_fromNetQueues[id].push_back(nullptr);
     }
     m_fromNetQueues[id][network_num] = b;
+	// spu
+    while (s_fromNetQueues[id].size() <= network_num) {
+        s_fromNetQueues[id].push_back(nullptr);
+    }
+    s_fromNetQueues[id][network_num] = b;
+
 }
 
 NodeID

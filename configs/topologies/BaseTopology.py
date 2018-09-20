@@ -38,7 +38,7 @@ class BaseTopology(object):
             all of the controllers created in the above file.
         """
 
-    def makeTopology(self, options, network, IntLink, ExtLink, Router):
+    def makeTopology(self, options, network, IntLink, ExtLink, SpuExtLink, Router):
         """ Called from configs/ruby/Ruby.py
             The return value is ( list(Router), list(IntLink), list(ExtLink))
             The API of this function cannot change when subclassing!!
@@ -56,11 +56,16 @@ class SimpleTopology(BaseTopology):
     """
     description = "SimpleTopology"
 
+    # def __init__(self, controllers, ruby_ports):
     def __init__(self, controllers):
         self.nodes = controllers
+        # self.spu_ports = ruby_ports
 
     def addController(self, controller):
         self.nodes.append(controller)
+
+    # def addSpuPort(self, ruby_port):
+    #     self.spu_ports.append(ruby_port)
 
     def __len__(self):
         return len(self.nodes)

@@ -87,6 +87,7 @@ class Network : public ClockedObject
 
     static uint32_t MessageSizeType_to_int(MessageSizeType size_type);
 
+	// spu: sets both memory and spu to/from net queues
     // returns the queue requested for the given component
     void setToNetQueue(NodeID id, bool ordered, int netNumber,
                                std::string vnet_type, MessageBuffer *b);
@@ -96,6 +97,7 @@ class Network : public ClockedObject
     virtual void checkNetworkAllocation(NodeID id, bool ordered,
         int network_num, std::string vnet_type);
 
+	// make all ext links (to controller + nse)
     virtual void makeExtOutLink(SwitchID src, NodeID dest, BasicLink* link,
                              const NetDest& routing_table_entry) = 0;
     virtual void makeExtInLink(NodeID src, SwitchID dest, BasicLink* link,
@@ -132,6 +134,8 @@ class Network : public ClockedObject
      */
     NodeID addressToNodeID(Addr addr, MachineType mtype);
 
+	MessageBuffer* getSpuQueue(int core_id) { return s_toNetQueues[core_id][0]; }
+
   protected:
     // Private copy constructor and assignment operator
     Network(const Network& obj);
@@ -147,6 +151,8 @@ class Network : public ClockedObject
     // vector of queues from the components
     std::vector<std::vector<MessageBuffer*> > m_toNetQueues;
     std::vector<std::vector<MessageBuffer*> > m_fromNetQueues;
+    std::vector<std::vector<MessageBuffer*> > s_toNetQueues;
+    std::vector<std::vector<MessageBuffer*> > s_fromNetQueues;
     std::vector<bool> m_ordered;
 
   private:

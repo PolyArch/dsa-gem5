@@ -924,7 +924,9 @@ void accel_t::cycle_cgra_backpressure() {
 
   if(in_roi()) {
     _stat_sb_insts+=num_computed;
-    _stat_sb_dfg_util+=(double)num_computed/_pdg->num_insts();
+	// TODO: correct this back again
+    // _stat_sb_dfg_util+=(double)num_computed/_pdg->num_insts();
+    _stat_sb_dfg_util+=(double)num_computed;
   }
 
   // pop the ready outputs

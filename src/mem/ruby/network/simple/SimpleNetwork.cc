@@ -91,6 +91,14 @@ SimpleNetwork::makeExtOutLink(SwitchID src, NodeID dest, BasicLink* link,
     m_switches[src]->addOutPort(m_fromNetQueues[dest], routing_table_entry,
                                 simple_link->m_latency,
                                 simple_link->m_bw_multiplier);
+    
+	// spu: FIXME: should be a new routing table entry? have another
+	// duplicate function, this won't work!
+	SimpleSpuExtLink *simple_spu_link = safe_cast<SimpleSpuExtLink*>(link);
+    m_switches[src]->addOutPort(s_fromNetQueues[dest], routing_table_entry,
+                                simple_spu_link->m_latency,
+                                simple_spu_link->m_bw_multiplier);
+
 }
 
 // From an endpoint node to a switch
@@ -100,6 +108,8 @@ SimpleNetwork::makeExtInLink(NodeID src, SwitchID dest, BasicLink* link,
 {
     assert(src < m_nodes);
     m_switches[dest]->addInPort(m_toNetQueues[src]);
+	// spu: FIXME
+    m_switches[dest]->addInPort(s_toNetQueues[src]);
 }
 
 // From a switch to a switch
