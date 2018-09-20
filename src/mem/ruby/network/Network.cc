@@ -106,6 +106,8 @@ Network::Network(const Params *p)
 	
     // TODO: Initialize the ruby spu port's (or sequencer) network pointers
 	
+	// seq_id as a hack for now
+	int seq_id=0;
 	for (std::vector<SpuExtLink*>::const_iterator i = p->spu_ext_links.begin();
          i != p->spu_ext_links.end(); ++i) {
         SpuExtLink *spu_ext_link = (*i);
@@ -113,7 +115,8 @@ Network::Network(const Params *p)
 		// RubyPort::RubySequencer *spu_seq = spu_ext_link->params()->spu_ext_node;
 		// RubySequencer *spu_seq = spu_ext_link->params()->spu_ext_node;
 		Sequencer *spu_seq = spu_ext_link->params()->spu_ext_node;
-        spu_seq->initNetworkPtr(this);
+        spu_seq->initNetworkPtr(this, seq_id);
+	    seq_id++;
         // spu_port->initNetworkPtr(this);
     }
 	
@@ -217,7 +220,6 @@ Network::checkNetworkAllocation(NodeID id, bool ordered,
     m_vnet_type_names[network_num] = vnet_type;
 }
 
-
 void
 Network::setToNetQueue(NodeID id, bool ordered, int network_num,
                                  std::string vnet_type, MessageBuffer *b)
@@ -227,12 +229,6 @@ Network::setToNetQueue(NodeID id, bool ordered, int network_num,
         m_toNetQueues[id].push_back(nullptr);
     }
     m_toNetQueues[id][network_num] = b;
-
-	// spu
-	while (s_toNetQueues[id].size() <= network_num) {
-        s_toNetQueues[id].push_back(nullptr);
-    }
-    s_toNetQueues[id][network_num] = b;
 
 }
 
@@ -245,12 +241,35 @@ Network::setFromNetQueue(NodeID id, bool ordered, int network_num,
         m_fromNetQueues[id].push_back(nullptr);
     }
     m_fromNetQueues[id][network_num] = b;
-	// spu
+}
+
+// TODO: call this from sequencer and map these queues here
+// initialized with different queues (print this network_num)
+void
+Network::setSpuToNetQueue(NodeID id, bool ordered, int network_num,
+                                 std::string vnet_type, MessageBuffer *b)
+{
+  // 99? check this!
+    // printf("setting spu queue corresponding to node id: %d\n", id);
+    checkNetworkAllocation(id, ordered, network_num, vnet_type);
+   	// spu
+	while (s_toNetQueues[id].size() <= network_num) {
+        s_toNetQueues[id].push_back(nullptr);
+    }
+    s_toNetQueues[id][network_num] = b;
+
+}
+
+void
+Network::setSpuFromNetQueue(NodeID id, bool ordered, int network_num,
+                                   std::string vnet_type, MessageBuffer *b)
+{
+    checkNetworkAllocation(id, ordered, network_num, vnet_type);
+    // spu
     while (s_fromNetQueues[id].size() <= network_num) {
         s_fromNetQueues[id].push_back(nullptr);
     }
     s_fromNetQueues[id][network_num] = b;
-
 }
 
 NodeID

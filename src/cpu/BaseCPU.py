@@ -229,6 +229,7 @@ class BaseCPU(MemObject):
     dcache_port = MasterPort("Data Port")
     nse_port = MasterPort("Network stream engine Port")
     _cached_ports = ['icache_port', 'dcache_port']
+    # _cached_ports += ['nse_port']
 
     if buildEnv['TARGET_ISA'] in ['x86', 'arm']:
         _cached_ports += ["itb.walker.port", "dtb.walker.port"]
@@ -276,9 +277,11 @@ class BaseCPU(MemObject):
         for p in self._uncached_slave_ports:
             exec('self.%s = bus.master' % p)
         for p in self._uncached_master_ports:
+            print(p)
             exec('self.%s = bus.slave' % p)
 
     def connectAllPorts(self, cached_bus, uncached_bus = None):
+        print("came to connect all ports to the bus")
         self.connectCachedPorts(cached_bus)
         if not uncached_bus:
             uncached_bus = cached_bus

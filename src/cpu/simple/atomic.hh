@@ -173,6 +173,9 @@ class AtomicSimpleCPU : public BaseSimpleCPU
 
     /** Return a reference to the data port. */
     MasterPort &getDataPort() override { return dcachePort; }
+    
+	// FIXME: remove later!
+	MasterPort &getSpuPort() override { return dcachePort; }
 
     /** Return a reference to the instruction port. */
     MasterPort &getInstPort() override { return icachePort; }

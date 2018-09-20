@@ -55,6 +55,9 @@ class SimpleNetwork(RubyNetwork):
 
         # Also add buffers for all router-link connections
         for router in self.routers:
+            print(len(self.int_links))
+            print(len(self.ext_links))
+            print(len(self.spu_ext_links))
             router_buffers = []
             # Add message buffers to routers at the end of each
             # unidirectional internal link
@@ -72,13 +75,15 @@ class SimpleNetwork(RubyNetwork):
             # router.port_buffers = router_buffers
             
             # TODO: Add message buffers to routers for each spu external link connection
-            # for link in self.spu_ext_links:
-            #     print('link recognized spu_ext_links')
-            #     # Routers can only be int_nodes on ext_links
-            #     if link.int_node in self.routers:
-            #         for i in xrange(self.number_of_virtual_networks):
-            #             router_buffers.append(MessageBuffer(ordered = True))
+            for link in self.spu_ext_links:
+                # print('link recognized spu_ext_links')
+                # Routers can only be int_nodes on ext_links
+                if link.spu_int_node in self.routers:
+                    for i in xrange(self.number_of_virtual_networks):
+                        router_buffers.append(MessageBuffer(ordered = True))
             router.port_buffers = router_buffers
+            print(self.number_of_virtual_networks)
+            print(len(router_buffers))
 
 # port buffers include all internal and external buffers
 class Switch(BasicRouter):

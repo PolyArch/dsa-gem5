@@ -113,8 +113,14 @@ class MinorCPU : public BaseCPU
     /** Thread Scheduling Policy (RoundRobin, Random, etc) */
     Enums::ThreadPolicy threadPolicy;
   protected:
-     /** Return a reference to the data port. */
+     /** return a reference to the data port. */
     MasterPort &getDataPort() override;
+
+
+	/** return a reference to the spu port. */
+    MasterPort &getSpuPort() override;
+
+
 
     /** Return a reference to the instruction port. */
     MasterPort &getInstPort() override;
