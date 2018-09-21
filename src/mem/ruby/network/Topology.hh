@@ -94,7 +94,10 @@ class Topology
     NetDest shortest_path_to_node(SwitchID src, SwitchID next,
                                   const Matrix &weights, const Matrix &dist);
 
+	// TODO: total nodes, rename
     const uint32_t m_nodes;
+	// just ctrl nodes
+    const uint32_t ctrl_nodes;
     const uint32_t m_number_of_switches;
 
     std::vector<BasicExtLink*> m_ext_link_vector;

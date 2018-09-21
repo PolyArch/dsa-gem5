@@ -69,6 +69,7 @@ Switch::init()
 void
 Switch::addInPort(const vector<MessageBuffer*>& in)
 {
+  printf("came inside addInPort\n");
     m_perfect_switch->addInPort(in);
 }
 

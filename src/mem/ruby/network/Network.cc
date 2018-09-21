@@ -54,12 +54,18 @@ uint32_t Network::m_data_msg_size;
 Network::Network(const Params *p)
     : ClockedObject(p)
 {
+
+    // printf("CAME TO INITIALIZE NETWORK AGAIN\n");
     m_virtual_networks = p->number_of_virtual_networks;
     m_control_msg_size = p->control_msg_size;
 
     // Total nodes/controllers in network
     // Must make sure this is called after the State Machine constructors
-    m_nodes = MachineType_base_number(MachineType_NUM);
+    // m_nodes = MachineType_base_number(MachineType_NUM);
+    m_nodes = p->ext_links.size() + p->spu_ext_links.size();
+    ctrl_nodes = p->ext_links.size();
+	// printf("machine m_nodes %d and links m_nodes%d\n",MachineType_base_number(MachineType_NUM),m_nodes);
+	// printf("In network, m_nodes: %d ctrl_nodes: %d\n",m_nodes,ctrl_nodes);
     assert(m_nodes != 0);
     assert(m_virtual_networks != 0);
 
@@ -70,10 +76,13 @@ Network::Network(const Params *p)
 
     // Allocate to and from queues
     // Queues that are getting messages from protocol
-    m_toNetQueues.resize(m_nodes);
+    // m_toNetQueues.resize(m_nodes);
+	assert(ctrl_nodes>0); //, "Number of external links negative");
 
     // Queues that are feeding the protocol
-    m_fromNetQueues.resize(m_nodes);
+    // m_fromNetQueues.resize(m_nodes);
+    m_toNetQueues.resize(ctrl_nodes);
+    m_fromNetQueues.resize(ctrl_nodes);
 
     m_ordered.resize(m_virtual_networks);
     m_vnet_type_names.resize(m_virtual_networks);
@@ -101,8 +110,11 @@ Network::Network(const Params *p)
         }
     }
 
-    s_toNetQueues.resize(m_nodes);
-    s_fromNetQueues.resize(m_nodes);
+    // s_toNetQueues.resize(m_nodes);
+	int spu_nodes_size = m_nodes-ctrl_nodes;
+	assert(spu_nodes_size>0); // , "Number of external links negative");
+    s_toNetQueues.resize(spu_nodes_size);
+    s_fromNetQueues.resize(spu_nodes_size);
 	
     // TODO: Initialize the ruby spu port's (or sequencer) network pointers
 	
@@ -119,6 +131,7 @@ Network::Network(const Params *p)
 	    seq_id++;
         // spu_port->initNetworkPtr(this);
     }
+	// printf("ALLOCATION INSIDE NETWORK IS SAFELY DONE\n");
 	
 
     // Register a callback function for combining the statistics
@@ -135,12 +148,14 @@ Network::Network(const Params *p)
 	for (auto &it : dynamic_cast<Network *>(this)->params()->spu_ext_links) {
         it->params()->spu_ext_node->initNetQueues();
     }
+	// printf("ALLOCATION INSIDE SEQUENCER IS SAFELY DONE\n");
 	
 }
 
 Network::~Network()
 {
-    for (int node = 0; node < m_nodes; node++) {
+    // for (int node = 0; node < m_nodes; node++) {
+    for (int node = 0; node < ctrl_nodes; node++) {
 
         // Delete the Message Buffers
         for (auto& it : m_toNetQueues[node]) {
@@ -153,7 +168,8 @@ Network::~Network()
     }
 
 	// spu
-    for (int node = 0; node < m_nodes; node++) {
+    // for (int node = 0; node < m_nodes; node++) {
+    for (int node = 0; node < (m_nodes-ctrl_nodes); node++) {
 
         // Delete the Message Buffers
         for (auto& it : s_toNetQueues[node]) {

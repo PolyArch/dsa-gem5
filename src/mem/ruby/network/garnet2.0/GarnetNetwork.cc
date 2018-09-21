@@ -210,6 +210,20 @@ GarnetNetwork::makeExtOutLink(SwitchID src, NodeID dest, BasicLink* link,
     m_nis[dest]->addInPort(net_link, credit_link);
 }
 
+// FIXME: hack, remove later!!
+void
+GarnetNetwork::makeSpuExtInLink(NodeID src, SwitchID dest, BasicLink* link,
+                            const NetDest& routing_table_entry)
+{
+}
+
+void
+GarnetNetwork::makeSpuExtOutLink(SwitchID src, NodeID dest, BasicLink* link,
+                             const NetDest& routing_table_entry)
+{
+}
+
+
 /*
  * This function creates an internal network link between two routers.
  * It adds both the network link and an opposite credit link.

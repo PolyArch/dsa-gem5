@@ -70,16 +70,26 @@ PerfectSwitch::init(SimpleNetwork *network_ptr)
 void
 PerfectSwitch::addInPort(const vector<MessageBuffer*>& in)
 {
+
+  printf("came inside perfect addInPort\n");
     NodeID port = m_in.size();
     m_in.push_back(in);
 
+  printf("pushed in the buffer corresponding to the new spu port with number of virtual channels: %lu\n",in.size());
+  // FIXME: for spu_ports, it is looping in setConsumer and then some deadlock,
+  // is it loop?
     for (int i = 0; i < in.size(); ++i) {
         if (in[i] != nullptr) {
+		  printf("SET CONSUMER CALLED FROM HERE\n");
             in[i]->setConsumer(this);
+			printf("consumer set\n");
             in[i]->setIncomingLink(port);
+			printf("incoming link set\n");
             in[i]->setVnet(i);
+			printf("vnet set\n");
         }
     }
+  printf("came at end of perfect addInPort\n");
 }
 
 void

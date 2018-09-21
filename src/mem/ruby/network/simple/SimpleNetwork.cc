@@ -91,14 +91,6 @@ SimpleNetwork::makeExtOutLink(SwitchID src, NodeID dest, BasicLink* link,
     m_switches[src]->addOutPort(m_fromNetQueues[dest], routing_table_entry,
                                 simple_link->m_latency,
                                 simple_link->m_bw_multiplier);
-    
-	// spu: FIXME: should be a new routing table entry? have another
-	// duplicate function, this won't work!
-	SimpleSpuExtLink *simple_spu_link = safe_cast<SimpleSpuExtLink*>(link);
-    m_switches[src]->addOutPort(s_fromNetQueues[dest], routing_table_entry,
-                                simple_spu_link->m_latency,
-                                simple_spu_link->m_bw_multiplier);
-
 }
 
 // From an endpoint node to a switch
@@ -108,7 +100,35 @@ SimpleNetwork::makeExtInLink(NodeID src, SwitchID dest, BasicLink* link,
 {
     assert(src < m_nodes);
     m_switches[dest]->addInPort(m_toNetQueues[src]);
-	// spu: FIXME
+}
+
+/* functions for new spu links */
+void
+SimpleNetwork::makeSpuExtOutLink(SwitchID src, NodeID dest, BasicLink* link,
+                           const NetDest& routing_table_entry)
+{
+    printf("src: %d dest: %d\n",src,dest);
+	dest = dest - ctrl_nodes;
+    assert(dest < (m_nodes-ctrl_nodes));
+    assert(src < m_switches.size());
+    assert(m_switches[src] != NULL);
+
+	SimpleSpuExtLink *simple_link = safe_cast<SimpleSpuExtLink*>(link);
+    m_switches[src]->addOutPort(s_fromNetQueues[dest], routing_table_entry,
+                                simple_link->m_latency,
+                                simple_link->m_bw_multiplier);
+}
+
+void
+SimpleNetwork::makeSpuExtInLink(NodeID src, SwitchID dest, BasicLink* link,
+                          const NetDest& routing_table_entry)
+{
+  // index into this is different
+    src = src-ctrl_nodes;
+    printf("src: %d dest: %d\n",src,dest);
+    assert(src < (m_nodes-ctrl_nodes));
+    assert(dest < m_switches.size());
+    assert(m_switches[dest] != NULL);
     m_switches[dest]->addInPort(s_toNetQueues[src]);
 }
 

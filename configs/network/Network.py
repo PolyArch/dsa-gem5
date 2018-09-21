@@ -110,7 +110,9 @@ def init_network(options, network, InterfaceClass):
         network.garnet_deadlock_threshold = options.garnet_deadlock_threshold
 
     if options.network == "simple":
+        print("came to setup network buffers")
         network.setup_buffers()
+        print("done setup network buffers")
 
     if InterfaceClass != None:
         netifs = [InterfaceClass(id=i) \

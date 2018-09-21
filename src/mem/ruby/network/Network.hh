@@ -103,11 +103,16 @@ class Network : public ClockedObject
     virtual void checkNetworkAllocation(NodeID id, bool ordered,
         int network_num, std::string vnet_type);
 
-	// make all ext links (to controller + nse)
     virtual void makeExtOutLink(SwitchID src, NodeID dest, BasicLink* link,
                              const NetDest& routing_table_entry) = 0;
     virtual void makeExtInLink(NodeID src, SwitchID dest, BasicLink* link,
                             const NetDest& routing_table_entry) = 0;
+    // spu: functions separated out
+	virtual void makeSpuExtOutLink(SwitchID src, NodeID dest, BasicLink* link,
+                            const NetDest& routing_table_entry) = 0;
+    virtual void makeSpuExtInLink(NodeID src, SwitchID dest, BasicLink* link,
+                            const NetDest& routing_table_entry) = 0;
+
     virtual void makeInternalLink(SwitchID src, SwitchID dest, BasicLink* link,
                                   const NetDest& routing_table_entry,
                                   PortDirection src_outport,
@@ -140,6 +145,7 @@ class Network : public ClockedObject
      */
     NodeID addressToNodeID(Addr addr, MachineType mtype);
 
+	// TODO: Is it being used anywhere?
 	MessageBuffer* getSpuQueue(int core_id) { return s_toNetQueues[core_id][0]; }
 
   protected:
@@ -148,6 +154,7 @@ class Network : public ClockedObject
     Network& operator=(const Network& obj);
 
     uint32_t m_nodes;
+    uint32_t ctrl_nodes;
     static uint32_t m_virtual_networks;
     std::vector<std::string> m_vnet_type_names;
     Topology* m_topology_ptr;

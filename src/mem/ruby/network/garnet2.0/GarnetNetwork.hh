@@ -92,6 +92,12 @@ class GarnetNetwork : public Network
                      const NetDest& routing_table_entry);
     void makeExtInLink(NodeID src, SwitchID dest, BasicLink* link,
                     const NetDest& routing_table_entry);
+    // FIXME: remove later!!
+	void makeSpuExtOutLink(SwitchID src, NodeID dest, BasicLink* link,
+                     const NetDest& routing_table_entry);
+    void makeSpuExtInLink(NodeID src, SwitchID dest, BasicLink* link,
+                    const NetDest& routing_table_entry);
+
     void makeInternalLink(SwitchID src, SwitchID dest, BasicLink* link,
                           const NetDest& routing_table_entry,
                           PortDirection src_outport_dirn,

@@ -52,7 +52,8 @@ Topology::Topology(uint32_t num_routers,
                    const vector<BasicExtLink *> &ext_links,
                    const vector<SpuExtLink *> &spu_ext_links,
                    const vector<BasicIntLink *> &int_links)
-    : m_nodes(ext_links.size()), m_number_of_switches(num_routers),
+    : m_nodes(ext_links.size()+spu_ext_links.size()), ctrl_nodes(ext_links.size()), m_number_of_switches(num_routers),
+    // : m_nodes(ext_links.size()), m_number_of_switches(num_routers),
       m_ext_link_vector(ext_links), spu_ext_link_vector (spu_ext_links), m_int_link_vector(int_links)
 {
     // Total nodes/controllers in network
@@ -73,9 +74,10 @@ Topology::Topology(uint32_t num_routers,
         BasicRouter *router = ext_link->params()->int_node;
 
         int machine_base_idx = MachineType_base_number(abs_cntrl->getType());
-        int ext_idx1 = machine_base_idx + abs_cntrl->getVersion();
-        int ext_idx2 = ext_idx1 + m_nodes;
-        int int_idx = router->params()->router_id + 2*m_nodes;
+        int ext_idx1 = machine_base_idx + abs_cntrl->getVersion(); // input link id
+		// printf("id of the controllers: %d\n",ext_idx1);
+        int ext_idx2 = ext_idx1 + m_nodes; // output link id (different thing taking output?)
+        int int_idx = router->params()->router_id + 2*m_nodes; // router id
 
         // create the internal uni-directional links in both directions
         // ext to int
@@ -85,19 +87,19 @@ Topology::Topology(uint32_t num_routers,
     }
 
 
+	printf("new m_nodes is %d, ctrl_nodes is %d\n",m_nodes,ctrl_nodes);
     // External Links from SPU
-	int temp=0;
+	// printf("Controller nodes: %d\n",ctrl_nodes);
+	// TODO: temp hack for now!
+	int temp=ctrl_nodes;
     for (vector<SpuExtLink*>::const_iterator i = spu_ext_links.begin();
          i != spu_ext_links.end(); ++i) {
         SpuExtLink *spu_ext_link = (*i);
 		// TODO: use it to get the coreid later on
         // RubySequencer *nse_seq = spu_ext_link->params()->spu_ext_node;
         BasicRouter *router = spu_ext_link->params()->spu_int_node;
-
-		// TODO: Correct this!
-        int machine_base_idx = temp; // MachineType_base_number(abs_cntrl->getType());
-		temp++;
-        int ext_idx1 = machine_base_idx; // + abs_cntrl->getVersion();
+        int machine_base_idx = temp;
+        int ext_idx1 = machine_base_idx;
         int ext_idx2 = ext_idx1 + m_nodes;
         int int_idx = router->params()->router_id + 2*m_nodes;
 
@@ -106,6 +108,7 @@ Topology::Topology(uint32_t num_routers,
         addLink(ext_idx1, int_idx, spu_ext_link);
         // int to ext
         addLink(int_idx, ext_idx2, spu_ext_link);
+		temp++;
     }
 
     // Internal Links
@@ -202,31 +205,51 @@ Topology::addLink(SwitchID src, SwitchID dest, BasicLink* link,
 }
 
 // spu: how would we make new links here?
+// spu:if I use this new convention, I wouldn't need diff makeExtInLink
+// FIXME: check if these conditions are correct!
 void
 Topology::makeLink(Network *net, SwitchID src, SwitchID dest,
                    const NetDest& routing_table_entry)
 {
+	printf("START OF MAKE LINK\n");
     // Make sure we're not trying to connect two end-point nodes
     // directly together
+	// printf("m_nodes: %u\n",m_nodes);
+	// printf("src: %d dest: %d\n",src,dest);
     assert(src >= 2 * m_nodes || dest >= 2 * m_nodes);
 
     std::pair<int, int> src_dest;
     LinkEntry link_entry;
 
-    if (src < m_nodes) {
+    if (src < m_nodes) { // dest >= 2 * m_nodes
+	  printf("first condition this time\n");
         src_dest.first = src;
         src_dest.second = dest;
         link_entry = m_link_map[src_dest];
-        net->makeExtInLink(src, dest - (2 * m_nodes), link_entry.link,
+		if(src < ctrl_nodes) {
+          net->makeExtInLink(src, dest - (2 * m_nodes), link_entry.link,
                         routing_table_entry);
-    } else if (dest < 2*m_nodes) {
+		} else {
+	  printf("spu ext in this time\n"); // issue in this function
+		  net->makeSpuExtInLink(src, dest - (2 * m_nodes), link_entry.link,
+                        routing_table_entry);
+		}
+    } else if (dest < 2*m_nodes) { // src >= 2 * m_nodes
+	  printf("second condition this time\n");
         assert(dest >= m_nodes);
         NodeID node = dest - m_nodes;
         src_dest.first = src;
         src_dest.second = dest;
         link_entry = m_link_map[src_dest];
-        net->makeExtOutLink(src - (2 * m_nodes), node, link_entry.link,
+		// FIXME: confirm this!
+		if(src < 2*m_nodes+ctrl_nodes) {
+          net->makeExtOutLink(src - (2 * m_nodes), node, link_entry.link,
                          routing_table_entry);
+		} else {
+	  printf("spu ext out this time\n");
+          net->makeSpuExtOutLink(src - (2 * m_nodes), node, link_entry.link,
+                         routing_table_entry);
+		}
     } else {
         assert((src >= 2 * m_nodes) && (dest >= 2 * m_nodes));
         src_dest.first = src;
@@ -238,6 +261,7 @@ Topology::makeLink(Network *net, SwitchID src, SwitchID dest,
                               link_entry.src_outport_dirn,
                               link_entry.dst_inport_dirn);
     }
+	printf("END OF MAKE LINK\n");
 }
 
 // The following all-pairs shortest path algorithm is based on the
