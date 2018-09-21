@@ -167,7 +167,12 @@ void Sequencer::resetStats()
 // spu
 void Sequencer::initNetQueues() {
   // printf("%d\n",m_coreId);
-  s_net_ptr->setSpuToNetQueue(this->seqId(), true, 0, "forward", s_network_q_ptr);
+  // hack, FIXME! 5 from the directory controller (they have network_num num of
+  // virtual channel in Network.cc)
+  // FIXME: kind may also matter I think!
+  for(int i=0; i<1; ++i) {
+    s_net_ptr->setSpuToNetQueue(this->seqId(), true, i, "forward", s_network_q_ptr);
+  }
 }
 
 

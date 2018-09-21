@@ -76,15 +76,22 @@ class MessageBuffer : public SimObject
     bool areNSlotsAvailable(unsigned int n, Tick curTime);
     int getPriority() { return m_priority_rank; }
     void setPriority(int rank) { m_priority_rank = rank; }
+	// it was checked earlier that the input is not null?
     void setConsumer(Consumer* consumer)
     {
+		printf("came in set consumer\n");
         DPRINTF(RubyQueue, "Setting consumer: %s\n", *consumer);
+		// FIXME: this condition is giving seg fault for spu_ports for some
+		// reason
+		/*
         if (m_consumer != NULL) {
             fatal("Trying to connect %s to MessageBuffer %s. \
                   \n%s already connected. Check the cntrl_id's.\n",
                   *consumer, *this, *m_consumer);
         }
+		*/
         m_consumer = consumer;
+		printf("went back from set consumer\n");
     }
 
     Consumer* getConsumer() { return m_consumer; }
