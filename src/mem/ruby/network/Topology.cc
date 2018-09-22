@@ -211,7 +211,7 @@ void
 Topology::makeLink(Network *net, SwitchID src, SwitchID dest,
                    const NetDest& routing_table_entry)
 {
-	printf("START OF MAKE LINK\n");
+	// printf("START OF MAKE LINK\n");
     // Make sure we're not trying to connect two end-point nodes
     // directly together
 	// printf("m_nodes: %u\n",m_nodes);
@@ -222,7 +222,7 @@ Topology::makeLink(Network *net, SwitchID src, SwitchID dest,
     LinkEntry link_entry;
 
     if (src < m_nodes) { // dest >= 2 * m_nodes
-	  printf("first condition this time\n");
+	  // printf("first condition this time\n");
         src_dest.first = src;
         src_dest.second = dest;
         link_entry = m_link_map[src_dest];
@@ -230,23 +230,22 @@ Topology::makeLink(Network *net, SwitchID src, SwitchID dest,
           net->makeExtInLink(src, dest - (2 * m_nodes), link_entry.link,
                         routing_table_entry);
 		} else {
-	  printf("spu ext in this time\n"); // issue in this function
+	  // printf("spu ext in this time\n"); // issue in this function
 		  net->makeSpuExtInLink(src, dest - (2 * m_nodes), link_entry.link,
                         routing_table_entry);
 		}
     } else if (dest < 2*m_nodes) { // src >= 2 * m_nodes
-	  printf("second condition this time\n");
+	  // printf("second condition this time\n");
         assert(dest >= m_nodes);
         NodeID node = dest - m_nodes;
         src_dest.first = src;
         src_dest.second = dest;
         link_entry = m_link_map[src_dest];
-		// FIXME: confirm this!
 		if(src < 2*m_nodes+ctrl_nodes) {
           net->makeExtOutLink(src - (2 * m_nodes), node, link_entry.link,
                          routing_table_entry);
 		} else {
-	  printf("spu ext out this time\n");
+	  // printf("spu ext out this time\n");
           net->makeSpuExtOutLink(src - (2 * m_nodes), node, link_entry.link,
                          routing_table_entry);
 		}
@@ -261,7 +260,7 @@ Topology::makeLink(Network *net, SwitchID src, SwitchID dest,
                               link_entry.src_outport_dirn,
                               link_entry.dst_inport_dirn);
     }
-	printf("END OF MAKE LINK\n");
+	// printf("END OF MAKE LINK\n");
 }
 
 // The following all-pairs shortest path algorithm is based on the

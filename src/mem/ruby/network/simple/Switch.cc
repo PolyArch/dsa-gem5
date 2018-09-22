@@ -73,6 +73,7 @@ Switch::addInPort(const vector<MessageBuffer*>& in)
     m_perfect_switch->addInPort(in);
 }
 
+// FIXME: check who is calling this!
 void
 Switch::addOutPort(const vector<MessageBuffer*>& out,
                    const NetDest& routing_table_entry,
@@ -100,6 +101,7 @@ Switch::addOutPort(const vector<MessageBuffer*>& out,
     // Hook the queues to the PerfectSwitch
     m_perfect_switch->addOutPort(intermediateBuffers, routing_table_entry);
 
+	// printf("STARTING FROM ADD OUT PORT\n");
     // Hook the queues to the Throttle
     throttle_ptr->addLinks(intermediateBuffers, out);
 }

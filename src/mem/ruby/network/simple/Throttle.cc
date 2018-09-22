@@ -71,7 +71,7 @@ Throttle::addLinks(const vector<MessageBuffer*>& in_vec,
                    const vector<MessageBuffer*>& out_vec)
 {
     assert(in_vec.size() == out_vec.size());
-
+    // printf("size of the input vector: %lu\n", in_vec.size());
     for (int vnet = 0; vnet < in_vec.size(); ++vnet) {
         MessageBuffer *in_ptr = in_vec[vnet];
         MessageBuffer *out_ptr = out_vec[vnet];
@@ -82,6 +82,7 @@ Throttle::addLinks(const vector<MessageBuffer*>& in_vec,
         m_out.push_back(out_ptr);
 
         // Set consumer and description
+		// printf("SET CONSUMER BEING CALLED FOR THROTTLE, OUT LINKS ALSO CALL THIS\n");
         in_ptr->setConsumer(this);
         string desc = "[Queue to Throttle " + to_string(m_switch_id) + " " +
             to_string(m_node) + "]";

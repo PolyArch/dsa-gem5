@@ -87,6 +87,9 @@ class Sequencer : public RubyPort
                       const Cycles firstResponseTime = Cycles(0));
 
     RequestStatus makeRequest(PacketPtr pkt);
+	// don't want this overloading of virtual function, otherwise we would need
+	// to include it everywhere
+    RequestStatus makeSpuRequest(PacketPtr pkt);
     bool empty() const;
     int outstandingCount() const { return m_outstanding_count; }
 
@@ -153,10 +156,10 @@ class Sequencer : public RubyPort
     { return m_IncompleteTimes[t]; }
 
     // spu
-	MessageBuffer* s_network_q_ptr;
-	Network* s_net_ptr;
+	// MessageBuffer* s_network_q_ptr;
+	// Network* s_net_ptr;
 	void initNetworkPtr(Network* net_ptr, int id) { 
-	  s_net_ptr = net_ptr;
+	  s_network_ptr = net_ptr;
 	  seq_id = id;
 	}
 	// TODO: write it!
@@ -181,6 +184,7 @@ class Sequencer : public RubyPort
 
   private:
     void issueRequest(PacketPtr pkt, RubyRequestType type);
+    void issueSpuRequest(PacketPtr pkt);
 
     void hitCallback(SequencerRequest* request, DataBlock& data,
                      bool llscSuccess,

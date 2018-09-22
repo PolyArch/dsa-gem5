@@ -79,7 +79,7 @@ class MessageBuffer : public SimObject
 	// it was checked earlier that the input is not null?
     void setConsumer(Consumer* consumer)
     {
-		printf("came in set consumer\n");
+		// printf("came in set consumer\n");
         DPRINTF(RubyQueue, "Setting consumer: %s\n", *consumer);
 		// FIXME: this condition is giving seg fault for spu_ports for some
 		// reason
@@ -91,7 +91,7 @@ class MessageBuffer : public SimObject
         }
 		*/
         m_consumer = consumer;
-		printf("went back from set consumer\n");
+		// printf("went back from set consumer\n");
     }
 
     Consumer* getConsumer() { return m_consumer; }
