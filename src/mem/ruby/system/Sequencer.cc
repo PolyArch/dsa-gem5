@@ -97,9 +97,13 @@ Sequencer::wakeup()
 
     RequestTable::iterator read = m_readRequestTable.begin();
     RequestTable::iterator read_end = m_readRequestTable.end();
+
+	// Shouldn't this table be empty here?
+    // printf("size of read request table: %lu\n",m_readRequestTable.size());
+
     for (; read != read_end; ++read) {
         SequencerRequest* request = read->second;
-        if (current_time - request->issue_time < m_deadlock_threshold)
+        if ((current_time - request->issue_time) < m_deadlock_threshold)
             continue;
 
         panic("Possible Deadlock detected. Aborting!\n"
@@ -171,7 +175,7 @@ void Sequencer::initNetQueues() {
   // virtual channel in Network.cc)
   // FIXME: kind may also matter I think!
   for(int i=0; i<1; ++i) {
-    s_net_ptr->setSpuToNetQueue(this->seqId(), true, i, "forward", s_network_q_ptr);
+    s_network_ptr->setSpuToNetQueue(this->seqId(), true, i, "forward", m_spu_q_ptr);
   }
 }
 
@@ -551,9 +555,63 @@ Sequencer::empty() const
     return m_writeRequestTable.empty() && m_readRequestTable.empty();
 }
 
+// TODO: check from where can I call this request!
+RequestStatus
+Sequencer::makeSpuRequest(PacketPtr pkt)
+{ 
+  // check space is queue or could issue from there
+  // FIXME: now, always issue the request
+  issueSpuRequest(pkt);
+  return RequestStatus_Issued;
+}
+
+void
+Sequencer::issueSpuRequest(PacketPtr pkt)
+{
+    assert(pkt != NULL);
+    ContextID proc_id = pkt->req->hasContextId() ?
+        pkt->req->contextId() : InvalidContextID;
+
+    ContextID core_id = coreId();
+
+    // If valid, copy the pc to the ruby request
+    Addr pc = 0;
+    if (pkt->req->hasPC()) {
+        pc = pkt->req->getPC();
+    }
+
+	// datatype of the message? (set things to NULL)
+    // the packet would alway has data: 3rd entry
+    std::shared_ptr<RubyRequest> msg =
+        std::make_shared<RubyRequest>(clockEdge(), pkt->getAddr(),
+                                      pkt->getPtr<uint8_t>(),
+                                      pkt->getSize(), pc, RubyRequestType_NULL,
+                                      RubyAccessMode_Supervisor, pkt,
+                                      PrefetchBit_No, proc_id, core_id);
+
+    Cycles latency(0);  // Initialize to zero to catch misconfigured latency
+	// here, the latency could be 0
+
+
+    assert(m_spu_q_ptr != NULL);
+    m_spu_q_ptr->enqueue(msg, clockEdge(), cyclesToTicks(latency));
+}
+
 RequestStatus
 Sequencer::makeRequest(PacketPtr pkt)
 {
+
+  // added a new virtual function, so don't need it!
+  /*
+	// spu: make it neat later
+    if(pkt->isSpuRequest()){
+	  issueSpuRequest(pkt);
+      return RequestStatus_Issued;
+	  // makeSpuRequest(pkt);
+    }
+	*/
+
+
     if (m_outstanding_count >= m_max_outstanding_requests) {
         return RequestStatus_BufferFull;
     }

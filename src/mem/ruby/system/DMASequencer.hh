@@ -62,6 +62,11 @@ class DMASequencer : public RubyPort
 
     /* external interface */
     RequestStatus makeRequest(PacketPtr pkt) override;
+
+	// FIXME: hack for now, remove later!
+    RequestStatus makeSpuRequest(PacketPtr pkt) { return RequestStatus_Issued; }
+
+
     bool busy() { return m_outstanding_count > 0; }
     int outstandingCount() const override { return m_outstanding_count; }
     bool isDeadlockEventScheduled() const override { return false; }

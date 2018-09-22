@@ -62,6 +62,11 @@ class VIPERCoalescer : public GPUCoalescer
     void wbCallback(Addr address);
     void invCallback(Addr address);
     RequestStatus makeRequest(PacketPtr pkt);
+
+	// FIXME: hack for now, remove later!
+    RequestStatus makeSpuRequest(PacketPtr pkt);
+
+
   private:
     void invL1();
     void wbL1();

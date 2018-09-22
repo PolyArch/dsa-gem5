@@ -116,6 +116,58 @@ class RubyPort : public MemObject
         void recvRangeChange();
     };
 
+
+	// spu, TODO: see the useful functions (interface with the CPU)
+	class NseMasterPort : public QueuedMasterPort
+    {
+      private:
+        ReqPacketQueue reqQueue;
+        SnoopRespPacketQueue snoopRespQueue;
+
+      public:
+        NseMasterPort(const std::string &_name, RubyPort *_port);
+
+      protected:
+        bool recvTimingResp(PacketPtr pkt);
+        // void recvRangeChange() {}
+    };
+
+    class NseSlavePort : public QueuedSlavePort
+    {
+      private:
+        RespPacketQueue queue;
+        bool access_backing_store;
+        bool no_retry_on_stall;
+
+      public:
+        NseSlavePort(const std::string &_name, RubyPort *_port);
+        // NseSlavePort(const std::string &_name, RubyPort *_port,
+        //             bool _access_backing_store,
+        //             PortID id, bool _no_retry_on_stall);
+        // void hitCallback(PacketPtr pkt);
+        // void evictionCallback(Addr address);
+
+      protected:
+        bool recvTimingReq(PacketPtr pkt);
+
+        Tick recvAtomic(PacketPtr pkt);
+
+        void recvFunctional(PacketPtr pkt);
+
+        AddrRangeList getAddrRanges() const
+        { AddrRangeList ranges; return ranges; }
+        // void addToRetryList();
+
+      // private:
+      //   bool isPhysMemAddress(Addr addr) const;
+    };
+
+
+	//--------------------------------------------------
+
+
+
+
     class PioSlavePort : public QueuedSlavePort
     {
       private:
@@ -154,6 +206,8 @@ class RubyPort : public MemObject
                                 PortID idx = InvalidPortID) override;
 
     virtual RequestStatus makeRequest(PacketPtr pkt) = 0;
+    virtual RequestStatus makeSpuRequest(PacketPtr pkt) = 0;
+    // RequestStatus makeSpuRequest(PacketPtr pkt);
     virtual int outstandingCount() const = 0;
     virtual bool isDeadlockEventScheduled() const = 0;
     virtual void descheduleDeadlockEvent() = 0;
@@ -196,7 +250,10 @@ class RubyPort : public MemObject
     AbstractController* m_controller;
     MessageBuffer* m_mandatory_q_ptr;
 	// spu: these should point to the network spu queues
-    // MessageBuffer* s_network_q_ptr;
+	// equate to sequencer_q_ptr here or directly network, basically what ctrl
+	// has been doing with the mandatory one?
+    Network* s_network_ptr;
+    MessageBuffer* m_spu_q_ptr;
     bool m_usingRubyTester;
     System* system;
 
@@ -216,6 +273,8 @@ class RubyPort : public MemObject
 
     PioMasterPort pioMasterPort;
     PioSlavePort pioSlavePort;
+	NseMasterPort nseMasterPort;
+    NseSlavePort nseSlavePort;
     MemMasterPort memMasterPort;
     MemSlavePort memSlavePort;
     unsigned int gotAddrRanges;
