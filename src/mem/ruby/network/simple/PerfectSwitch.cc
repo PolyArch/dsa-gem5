@@ -89,14 +89,14 @@ PerfectSwitch::addInPort(const vector<MessageBuffer*>& in)
 			// printf("vnet set\n");
         }
     }
-  printf("came at end of perfect addInPort\n");
+  // printf("came at end of perfect addInPort\n");
 }
 
 void
 PerfectSwitch::addOutPort(const vector<MessageBuffer*>& out,
                           const NetDest& routing_table_entry)
 {
-  printf("CAME in perfect switch out port adds\n");
+  // printf("CAME in perfect switch out port adds\n");
     // Setup link order
     LinkOrder l;
     l.m_value = 0;
