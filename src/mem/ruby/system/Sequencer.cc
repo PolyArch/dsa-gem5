@@ -103,7 +103,8 @@ Sequencer::wakeup()
 
     for (; read != read_end; ++read) {
         SequencerRequest* request = read->second;
-        if ((current_time - request->issue_time) < m_deadlock_threshold)
+        // if ((current_time - request->issue_time) < m_deadlock_threshold)
+        if (current_time - request->issue_time < m_deadlock_threshold)
             continue;
 
         panic("Possible Deadlock detected. Aborting!\n"
@@ -187,6 +188,7 @@ void Sequencer::initNetQueues() {
 RequestStatus
 Sequencer::insertRequest(PacketPtr pkt, RubyRequestType request_type)
 {
+  printf("Comes to insert the packet into the request queue at line 188\n");
     assert(m_outstanding_count ==
         (m_writeRequestTable.size() + m_readRequestTable.size()));
 
@@ -600,6 +602,8 @@ Sequencer::issueSpuRequest(PacketPtr pkt)
 RequestStatus
 Sequencer::makeRequest(PacketPtr pkt)
 {
+
+  printf("CAME HERE TO MAKE REQUEST FOR MEMORY PORTS\n");
 
   // added a new virtual function, so don't need it!
   /*

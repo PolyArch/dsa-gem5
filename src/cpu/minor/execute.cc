@@ -1501,100 +1501,101 @@ Execute::isInbetweenInsts(ThreadID thread_id) const
 // SPU request functions here----------------------
 
 // FIXME: check if there is port in nse request
-NsePort::NseRequest::NseRequest(NsePort &port_, MinorDynInstPtr inst_,
-    PacketDataPtr data_, uint64_t *res_) :
-    SenderState(),
-    // port(port_),
-    inst(inst_),
-    data(data_),
-    packet(NULL),
-    request(),
-    fault(NoFault),
-    res(res_),
-    skipped(false),
-    state(NotIssued)
-{
-    request = std::make_shared<Request>();
-}
+// NsePort::NseRequest::NseRequest(NsePort &port_, MinorDynInstPtr inst_,
+//     PacketDataPtr data_, uint64_t *res_) :
+//     SenderState(),
+//     // port(port_),
+//     inst(inst_),
+//     data(data_),
+//     packet(NULL),
+//     request(),
+//     fault(NoFault),
+//     res(res_),
+//     skipped(false),
+//     state(NotIssued)
+// {
+//     request = std::make_shared<Request>();
+// }
+// 
+// void
+// NsePort::NseRequest::setState(NseRequestState new_state)
+// {
+//     DPRINTFS(MinorMem, (&port), "Setting state from %d to %d for request:"
+//         " %s\n", state, new_state, *inst);
+//     state = new_state;
+// }
+// 
+// bool
+// NsePort::NseRequest::isComplete() const
+// {
+//     /* @todo, There is currently only one 'completed' state.  This
+//      *  may not be a good choice */
+//     return state == Complete;
+// }
+// 
+// void
+// NsePort::NseRequest::reportData(std::ostream &os) const
+// {
+//     os << (isLoad ? 'R' : 'W') << ';';
+//     inst->reportData(os);
+//     os << ';' << state;
+// }
+// 
+// std::ostream &
+// operator <<(std::ostream &os, NsePort::NseRequest::NseRequestState state)
+// {
+//     switch (state) {
+//       case NsePort::NseRequest::NotIssued:
+//         os << "NotIssued";
+//         break;
+//      case NsePort::NseRequest::Failed:
+//         os << "Failed";
+//         break;
+//       case NsePort::NseRequest::RequestIssuing:
+//         os << "RequestIssuing";
+//         break;
+//      case NsePort::NseRequest::RequestNeedsRetry:
+//         os << "RequestNeedsRetry";
+//         break;
+//      case NsePort::NseRequest::Complete:
+//         os << "Complete";
+//         break;
+//       default:
+//         os << "NseRequestState-" << static_cast<int>(state);
+//         break;
+//     }
+//     return os;
+// }
+// 
+// NsePort::NseRequest::~NseRequest()
+// {
+//     if (packet)
+//         delete packet;
+//     if (data)
+//         delete [] data;
+// }
+// 
+// // with isLoad, they call createRead/createWrite
+// void
+// NsePort::NseRequest::makePacket()
+// {
+//     /* Make the function idempotent */
+//     if (packet)
+//         return;
+// 
+//     // if the translation faulted, do not create a packet
+//     if (fault != NoFault) {
+//         assert(packet == NULL);
+//         return;
+//     }
+// 
+//     packet = makePacketForRequest(request, isLoad, this, data);
+//     /* Null the ret data so we know not to deallocate it when the
+//      * ret is destroyed.  The data now belongs to the ret and
+//      * the ret is responsible for its destruction */
+//     data = NULL;
+// }
 
-void
-NsePort::NseRequest::setState(NseRequestState new_state)
-{
-    DPRINTFS(MinorMem, (&port), "Setting state from %d to %d for request:"
-        " %s\n", state, new_state, *inst);
-    state = new_state;
-}
-
-bool
-NsePort::NseRequest::isComplete() const
-{
-    /* @todo, There is currently only one 'completed' state.  This
-     *  may not be a good choice */
-    return state == Complete;
-}
-
-void
-NsePort::NseRequest::reportData(std::ostream &os) const
-{
-    os << (isLoad ? 'R' : 'W') << ';';
-    inst->reportData(os);
-    os << ';' << state;
-}
-
-std::ostream &
-operator <<(std::ostream &os, NsePort::NseRequest::NseRequestState state)
-{
-    switch (state) {
-      case NsePort::NseRequest::NotIssued:
-        os << "NotIssued";
-        break;
-     case NsePort::NseRequest::Failed:
-        os << "Failed";
-        break;
-      case NsePort::NseRequest::RequestIssuing:
-        os << "RequestIssuing";
-        break;
-     case NsePort::NseRequest::RequestNeedsRetry:
-        os << "RequestNeedsRetry";
-        break;
-     case NsePort::NseRequest::Complete:
-        os << "Complete";
-        break;
-      default:
-        os << "NseRequestState-" << static_cast<int>(state);
-        break;
-    }
-    return os;
-}
-
-NsePort::NseRequest::~NseRequest()
-{
-    if (packet)
-        delete packet;
-    if (data)
-        delete [] data;
-}
-
-// with isLoad, they call createRead/createWrite
-void
-NsePort::NseRequest::makePacket()
-{
-    /* Make the function idempotent */
-    if (packet)
-        return;
-
-    // if the translation faulted, do not create a packet
-    if (fault != NoFault) {
-        assert(packet == NULL);
-        return;
-    }
-
-    packet = makePacketForRequest(request, isLoad, this, data);
-    /* Null the ret data so we know not to deallocate it when the
-     * ret is destroyed.  The data now belongs to the ret and
-     * the ret is responsible for its destruction */
-    data = NULL;
-}
 
 void
 Execute::evaluate()
@@ -1605,6 +1606,7 @@ Execute::evaluate()
   // this should pop packet from a queue and send the request
   // TODO: declare a typedef here
   // NseRequestPtr request;
+  /*
   NseRequest *request;
   uint8_t *request_data = NULL;
   uint64_t *res; // res is the field where response is saved
@@ -1613,6 +1615,7 @@ Execute::evaluate()
   if(cpu.curCycle()==2){
 	nsePort.sendTimingReq(request->packet);
    }
+   */
 
     if (!inp.outputWire->isBubble())
         inputBuffer[inp.outputWire->threadId].setTail(*inp.outputWire);

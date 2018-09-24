@@ -265,6 +265,7 @@ RubyPort::PioSlavePort::recvTimingReq(PacketPtr pkt)
 bool
 RubyPort::NseSlavePort::recvTimingReq(PacketPtr pkt)
 {
+  printf("RECV REQUEST FROM CORE AT NSE PORT\n");
     // getAddr() should return the next port address, not any memory address
     DPRINTF(RubyPort, "Timing request for port %#x on port %d\n",
             pkt->getAddr(), id);
@@ -316,6 +317,7 @@ RubyPort::NseSlavePort::recvAtomic(PacketPtr pkt)
 bool
 RubyPort::NseMasterPort::recvTimingResp(PacketPtr pkt)
 {
+  printf("RECV RESPONSE FROM NETWORK AT NSE PORT\n");
     // I might use this information to debug something
     // First we must retrieve the request port from the sender State
     // RubyPort::SenderState *senderState =
@@ -358,6 +360,7 @@ RubyPort::PioSlavePort::recvAtomic(PacketPtr pkt)
 bool
 RubyPort::MemSlavePort::recvTimingReq(PacketPtr pkt)
 {
+  printf("RECV REQUEST FROM LSQ AT DCACHE PORT\n");
     DPRINTF(RubyPort, "Timing request for address %#x on port %d\n",
             pkt->getAddr(), id);
     RubyPort *ruby_port = static_cast<RubyPort *>(&owner);
