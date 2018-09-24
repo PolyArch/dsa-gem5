@@ -122,11 +122,11 @@ class Execute : public Named
 	/* Network stream engine unit */
     // nse_t nse;
 
-    // spu: Exposable nse port (on patterns of ifetch)
+    // spu: Exposable nse port (similar to ifetch)
     class NsePort : public MinorCPU::MinorCPUPort
     {
       protected:
-        // My owner: execute
+        // My owner: execute (not some entity: is that fine?)
 		Execute &execute1;
 
       public:
@@ -156,9 +156,77 @@ class Execute : public Named
 
     NsePort nsePort;
 
-	// spu---------------------------------------------
+
+  public:
+    /** Derived SenderState to carry data access info. through address
+     *  translation, the queues in this port and back from the memory
+     *  system. */
+    class NseRequest :
+        public Packet::SenderState /* For packing into a Packet */
+    {
+      public:
+        /** Owning port */
+        NsePort &port;
+
+        /** Instruction which made this request */
+        MinorDynInstPtr inst;
+
+		// TODO: add this for SPU types!
+        // bool isMulticast;
+		// bool isStreamReq;
 
 
+		// TODO: not needed!
+        /** Load/store indication used for building packet.  This isn't
+         *  carried by Request so we need to keep it here */
+        // bool isLoad;
+
+        /** Dynamically allocated and populated data carried for
+         *  building write packets */
+        PacketDataPtr data;
+
+        /* Requests carry packets on their way to the memory system.
+         *  When a Packet returns from the memory system, its
+         *  request needs to have its packet updated as this
+         *  may have changed in flight */
+        PacketPtr packet;
+
+        /** The underlying request of this NseRequest: default type */
+        RequestPtr request;
+
+		// TODO: check what this does
+        /** Fault generated performing this request */
+        Fault fault;
+
+		// TODO: if we load data from network, might be useful for graph
+		// workloads
+        /** Res from pushRequest */
+        uint64_t *res;
+
+		// TODO: see how to use in the network side
+        /** Was skipped.  Set to indicate any reason (faulted, bad
+         *  stream sequence number, in a fault shadow) that this
+         *  request did not perform a memory transfer */
+        bool skipped;
+
+        /** This in an access other than a normal cacheable load
+         *  that's visited the memory system */
+        // bool issuedToMemory;
+
+        enum NseRequestState
+        {
+            NotIssued, /* Newly created */
+            Failed, /* The starting start of FailedDataRequests */
+            RequestIssuing, /* Load/store issued to memory in the requests
+                queue */
+            RequestNeedsRetry, /* Retry needed for load */
+            Complete
+        };
+
+        NseRequestState state;
+		typedef NseRequestPtr *NseRequest;
+
+  protected:
     /** cycle wait was initiated **/
     uint64_t last_sd_issue;
 
@@ -170,6 +238,16 @@ class Execute : public Named
 
   public: /* Public for Pipeline to be able to pass it to Decode */
     std::vector<InputBuffer<ForwardInstData>> inputBuffer;
+        
+	NseRequest(NsePort &port_, MinorDynInstPtr inst_,
+            PacketDataPtr data_ = NULL, uint64_t *res_ = NULL);
+
+    virtual ~NseRequest();
+
+	/** Make a packet to use with the memory transaction */
+    void makePacket();
+
+	// ----------------------SPU request type
 
   protected:
     /** Stage cycle-by-cycle state */

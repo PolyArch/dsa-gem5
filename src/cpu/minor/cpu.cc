@@ -168,6 +168,7 @@ MinorCPU::dbg_vtophys(Addr addr)
 void
 MinorCPU::wakeup(ThreadID tid)
 {
+  printf("CPU WAKES UP\n");
     DPRINTF(Drain, "[tid:%d] MinorCPU wakeup\n", tid);
     assert(tid < numThreads);
 
@@ -280,6 +281,7 @@ void
 MinorCPU::activateContext(ThreadID thread_id)
 {
     DPRINTF(MinorCPU, "ActivateContext thread: %d\n", thread_id);
+	// std::cout << "MinorCPU: activates context at cycle: " << numCycles << "\n";
 
     /* Do some cycle accounting.  lastStopped is reset to stop the
      *  wakeup call on the pipeline from adding the quiesce period
@@ -312,6 +314,7 @@ MinorCPU::wakeupOnEvent(unsigned int stage_id)
 
     /* Mark that some activity has taken place and start the pipeline */
     activityRecorder->activateStage(stage_id);
+	printf("CPU PIPELINE STARTS\n");
     pipeline->start();
 }
 

@@ -207,6 +207,7 @@ Pipeline::getSpuPort()
 void
 Pipeline::wakeupFetch(ThreadID tid)
 {
+  printf("PIPELINE WAKES UP AND CALL FETCH\n");
     fetch1.wakeupFetch(tid);
 }
 
