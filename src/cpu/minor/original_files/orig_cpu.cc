@@ -330,11 +330,6 @@ MasterPort &MinorCPU::getDataPort()
 {
     return pipeline->getDataPort();
 }
-// TODO: Correct it later!
-MasterPort &MinorCPU::getSpuPort()
-{
-    return pipeline->getDataPort();
-}
 
 Counter
 MinorCPU::totalInsts() const

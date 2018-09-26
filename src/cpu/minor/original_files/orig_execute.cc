@@ -57,6 +57,7 @@
 #include "debug/PCEvent.hh"
 
 #include "ssim/sim-debug.hh"
+
 namespace Minor
 {
 
@@ -89,7 +90,6 @@ Execute::Execute(const std::string &name_,
         params.executeLSQStoreBufferSize,
         params.executeLSQMaxStoreBufferStoresPerCycle),
     ssim(&lsq),
-	nsePort(name_ + "nse_port", *this, cpu_),
     executeInfo(params.numThreads, ExecuteThreadInfo(params.executeCommitLimit)),
     interruptPriority(0),
     issuePriority(0),
@@ -1975,10 +1975,13 @@ Execute::getDcachePort()
     return lsq.getDcachePort();
 }
 
-MinorCPU::MinorCPUPort &
-Execute::getNsePort()
-{
-	return nsePort;
 }
 
-}
+
+
+
+
+
+
+
+

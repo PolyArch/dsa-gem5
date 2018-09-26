@@ -720,7 +720,6 @@ Fetch1::wakeupFetch(ThreadID tid)
     thread.wakeupGuard = true;
     DPRINTF(Fetch, "[tid:%d]: Changing stream wakeup %s\n",
             tid, thread_ctx->pcState());
-	printf("FECTH WAKES UP AND CALLS CPU WAKE UP EVENT\n");
 
     cpu.wakeupOnEvent(Pipeline::Fetch1StageId);
 }

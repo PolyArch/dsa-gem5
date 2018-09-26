@@ -79,6 +79,8 @@ Topology::Topology(uint32_t num_routers,
         int ext_idx2 = ext_idx1 + m_nodes; // output link id (different thing taking output?)
         int int_idx = router->params()->router_id + 2*m_nodes; // router id
 
+		// printf("Controller external node is %d, should be less than %u\n",ext_idx1, ctrl_nodes);
+
         // create the internal uni-directional links in both directions
         // ext to int
         addLink(ext_idx1, int_idx, ext_link);
@@ -87,7 +89,7 @@ Topology::Topology(uint32_t num_routers,
     }
 
 
-	printf("new m_nodes is %d, ctrl_nodes is %d\n",m_nodes,ctrl_nodes);
+	// printf("new m_nodes is %d, ctrl_nodes is %d\n",m_nodes,ctrl_nodes);
     // External Links from SPU
 	// printf("Controller nodes: %d\n",ctrl_nodes);
 	// TODO: temp hack for now!
@@ -97,12 +99,15 @@ Topology::Topology(uint32_t num_routers,
         SpuExtLink *spu_ext_link = (*i);
 		// TODO: use it to get the coreid later on
         // RubySequencer *nse_seq = spu_ext_link->params()->spu_ext_node;
-        BasicRouter *router = spu_ext_link->params()->spu_int_node;
+        // BasicRouter *router = spu_ext_link->params()->spu_int_node;
         int machine_base_idx = temp;
         int ext_idx1 = machine_base_idx;
         int ext_idx2 = ext_idx1 + m_nodes;
-        int int_idx = router->params()->router_id + 2*m_nodes;
+		// HACK!
+        int int_idx = 2*m_nodes + temp - ctrl_nodes;
 
+		// printf("SPu external node is %d, should be greater than %u and less than %u\n",ext_idx1, ctrl_nodes, m_nodes);
+		// printf("SPu int node is %d\n", int_idx);
         // create the internal uni-directional links in both directions
         // ext to int
         addLink(ext_idx1, int_idx, spu_ext_link);
@@ -146,6 +151,11 @@ Topology::createLinks(Network *net)
 
     // Initialize weight, latency, and inter switched vectors
     int num_switches = max_switch_id+1;
+
+	// Ok this is num_switches = (8+4)*2+4
+    // printf("NUM OF SWITCHES IN THE NETWORK: %d\n", num_switches);
+    // printf("NUM OF SWITCHES IN THE NETWORK: %d\n", m_number_of_switches);
+
     Matrix topology_weights(num_switches,
             vector<int>(num_switches, INFINITE_LATENCY));
     Matrix component_latencies(num_switches,
@@ -221,6 +231,8 @@ Topology::makeLink(Network *net, SwitchID src, SwitchID dest,
     std::pair<int, int> src_dest;
     LinkEntry link_entry;
 
+	// printf("This function should be called 24 times, src: %d dest %d\n",src,dest);
+	// printf("m_nodes: %d ctrl_nodes %d\n",m_nodes,ctrl_nodes);
     if (src < m_nodes) { // dest >= 2 * m_nodes
 	  // printf("first condition this time\n");
         src_dest.first = src;
@@ -231,17 +243,18 @@ Topology::makeLink(Network *net, SwitchID src, SwitchID dest,
                         routing_table_entry);
 		} else {
 	  // printf("spu ext in this time\n"); // issue in this function
+	    // printf("src is external node, dest_id should be varying with switches: %d\n", dest);
 		  net->makeSpuExtInLink(src, dest - (2 * m_nodes), link_entry.link,
                         routing_table_entry);
 		}
-    } else if (dest < 2*m_nodes) { // src >= 2 * m_nodes
+    } else if (dest < 2*m_nodes) { // src >= 2 * m_nodes, switch->node
 	  // printf("second condition this time\n");
         assert(dest >= m_nodes);
         NodeID node = dest - m_nodes;
         src_dest.first = src;
         src_dest.second = dest;
         link_entry = m_link_map[src_dest];
-		if(src < 2*m_nodes+ctrl_nodes) {
+		if(dest < m_nodes+ctrl_nodes) { // mem nodes
           net->makeExtOutLink(src - (2 * m_nodes), node, link_entry.link,
                          routing_table_entry);
 		} else {
