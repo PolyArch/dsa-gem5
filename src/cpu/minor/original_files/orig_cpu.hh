@@ -119,11 +119,6 @@ class MinorCPU : public BaseCPU
     /** Return a reference to the instruction port. */
     MasterPort &getInstPort() override;
 
-    /** Return a reference to the spu port. */
-    MasterPort &getSpuPort() override;
-
-
-
   public:
     MinorCPU(MinorCPUParams *params);
 

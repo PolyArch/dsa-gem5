@@ -93,6 +93,9 @@ void
 Throttle::operateVnet(int vnet, int &bw_remaining, bool &schedule_wakeup,
                       MessageBuffer *in, MessageBuffer *out)
 {
+
+  printf("CAME HERE TO OPERATE THE VIRTUAL NETWORK\n");
+  // consumer of in link should be switch and out should be controller
     if (out == nullptr || in == nullptr) {
         return;
     }
@@ -106,6 +109,7 @@ Throttle::operateVnet(int vnet, int &bw_remaining, bool &schedule_wakeup,
         // See if we are done transferring the previous message on
         // this virtual network
         if (m_units_remaining[vnet] == 0 && in->isReady(current_time)) {
+		  printf("SEND A MESSAGE OVER THE LINK\n");
             // Find the size of the message we are moving
             MsgPtr msg_ptr = in->peekMsgPtr();
             Message *net_msg_ptr = msg_ptr.get();
@@ -147,6 +151,7 @@ Throttle::operateVnet(int vnet, int &bw_remaining, bool &schedule_wakeup,
 void
 Throttle::wakeup()
 {
+  printf("THROTTLE WAKEUP\n");
     // Limits the number of message sent to a limited number of bytes/cycle.
     assert(getLinkBandwidth() > 0);
     int bw_remaining = getLinkBandwidth();

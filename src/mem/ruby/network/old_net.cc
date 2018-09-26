@@ -61,7 +61,6 @@ Network::Network(const Params *p)
     // m_nodes = MachineType_base_number(MachineType_NUM);
     // m_nodes = p->ext_links.size();
     m_nodes = p->ext_links.size() + p->spu_ext_links.size();
-    ctrl_nodes = p->ext_links.size();
 
     // printf("m_nodes from machine number is: %d\n",m_nodes);
     // printf("m_nodes from ext links is: %lu\n",p->ext_links.size());
@@ -208,7 +207,6 @@ Network::MessageSizeType_to_int(MessageSizeType size_type)
     }
 }
 
-// It should be different I think!
 void
 Network::checkNetworkAllocation(NodeID id, bool ordered,
                                         int network_num,
@@ -240,8 +238,6 @@ void
 Network::setFromNetQueue(NodeID id, bool ordered, int network_num,
                                    std::string vnet_type, MessageBuffer *b)
 {
-  // printf("CHECK NETWORK NUM AT NETWORK.CC:setNormQueue %d, with node id: %d\n", network_num, id);
-  // it's 3 for some and 4 for some
     checkNetworkAllocation(id, ordered, network_num, vnet_type);
     while (m_fromNetQueues[id].size() <= network_num) {
         m_fromNetQueues[id].push_back(nullptr);
@@ -253,9 +249,8 @@ void
 Network::setSpuToNetQueue(NodeID id, bool ordered, int network_num,
                                  std::string vnet_type, MessageBuffer *b)
 {
-  // printf("CHECK NETWORK NUM AT NETWORK.CC:setSpuQueue %d, IT SHOULD BE 2 FOR 2 virtual networks, with node_id: %d\n", network_num, id);
-  // TODO: create new net allocation check and thus, variables
-    // checkNetworkAllocation(id, ordered, network_num, vnet_type);
+  printf("CHECK NETWORK NUM AT NETWORK.CC:208, IT SHOULD BE 2 FOR 2 virtual networks\n");
+    checkNetworkAllocation(id, ordered, network_num, vnet_type);
     while (s_toNetQueues[id].size() <= network_num) {
         s_toNetQueues[id].push_back(nullptr);
     }
@@ -266,8 +261,7 @@ void
 Network::setSpuFromNetQueue(NodeID id, bool ordered, int network_num,
                                    std::string vnet_type, MessageBuffer *b)
 {
-  // TODO: create new net allocation check and thus, variables
-    // checkNetworkAllocation(id, ordered, network_num, vnet_type);
+    checkNetworkAllocation(id, ordered, network_num, vnet_type);
     while (s_fromNetQueues[id].size() <= network_num) {
         s_fromNetQueues[id].push_back(nullptr);
     }

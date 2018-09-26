@@ -39,8 +39,9 @@
 #include "mem/ruby/structures/CacheMemory.hh"
 #include "mem/ruby/system/RubyPort.hh"
 #include "params/RubySequencer.hh"
-// added for spu things
+
 #include "mem/ruby/network/MessageBuffer.hh"
+
 class Network;
 
 struct SequencerRequest
@@ -87,8 +88,6 @@ class Sequencer : public RubyPort
                       const Cycles firstResponseTime = Cycles(0));
 
     RequestStatus makeRequest(PacketPtr pkt);
-	// don't want this overloading of virtual function, otherwise we would need
-	// to include it everywhere
     RequestStatus makeSpuRequest(PacketPtr pkt);
     bool empty() const;
     int outstandingCount() const { return m_outstanding_count; }
@@ -106,7 +105,7 @@ class Sequencer : public RubyPort
     void evictionCallback(Addr address);
     void invalidateSC(Addr address);
     int coreId() const { return m_coreId; }
-	int seqId() const { return seq_id; }
+    int seqId() const { return seq_id; }
 
     void recordRequestType(SequencerRequestType requestType);
     Stats::Histogram& getOutstandReqHist() { return m_outstandReqHist; }
@@ -155,35 +154,19 @@ class Sequencer : public RubyPort
     Stats::Counter getIncompleteTimes(const MachineType t) const
     { return m_IncompleteTimes[t]; }
 
-    // spu
-	// MessageBuffer* s_network_q_ptr;
-	// Network* s_net_ptr;
-	void initNetworkPtr(Network* net_ptr, int id) { 
+    void initNetworkPtr(Network* net_ptr, int id) {
 	  s_network_ptr = net_ptr;
+	  printf("id send is %d\n",id);
 	  seq_id = id;
 	}
-	// TODO: write it!
-	void initNetQueues();
-/*
-	void initNetQueues() { 
-	  // s_network_q_ptr = s_net_ptr->getSpuQueue(m_coreId);
-	  // printf("corresponding core id here: %d and from the object: %d %d\n",m_coreId,this->coreId(),0); //this->m_coreId());
-	  printf("%d\n",this->coreId());
-	  printf("%d\n",this->m_coreId);
-	  printf("%d\n",m_coreId);
-	  printf("%d\n",p->coreid);
-	  // they used m_version+base
-	  // s_net_ptr->setSpuToNetQueue(this->coreId(), true, 0, "forward", s_network_q_ptr);
-	  s_net_ptr->setSpuToNetQueue(p->coreid, true, 0, "forward", s_network_q_ptr);
-	  // TODO: declare these receiving queues
-	  // s_net_ptr->setSpuFromNetQueue(this->m_coreId, true, 0, "forward", s_network_in_q_ptr);
-	};
-	*/
 
+	void initNetQueues();
 
 
   private:
     void issueRequest(PacketPtr pkt, RubyRequestType type);
+	// TODO: we will need it eventually
+    // void issueSpuRequest(PacketPtr pkt, RubyRequestType type);
     void issueSpuRequest(PacketPtr pkt);
 
     void hitCallback(SequencerRequest* request, DataBlock& data,
@@ -235,9 +218,10 @@ class Sequencer : public RubyPort
     Stats::Scalar m_load_waiting_on_load;
 
     int m_coreId;
+	// Sequencer id--should be between 0 to num_cores
     int seq_id;
 
-	bool m_runningGarnetStandalone;
+    bool m_runningGarnetStandalone;
 
     //! Histogram for number of outstanding requests per cycle.
     Stats::Histogram m_outstandReqHist;

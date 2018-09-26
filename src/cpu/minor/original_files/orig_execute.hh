@@ -128,41 +128,6 @@ class Execute : public Named
     /** The execution functional units */
     std::vector<FUPipeline *> funcUnits;
 
-	// spu: Exposable nse port (similar to ifetch)
-    class NsePort : public MinorCPU::MinorCPUPort
-    {
-      protected:
-        // My owner: execute (not some entity: is that fine?)
-		Execute &execute1;
-
-      public:
-        NsePort(std::string name, Execute &execute_, MinorCPU &cpu) :
-            MinorCPU::MinorCPUPort(name, cpu), execute1(execute_)
-        { }
-
-      protected:
-		// write this function
-        bool recvTimingResp(PacketPtr pkt) override
-        { 
-		  return false;
-		  // return nse.recvTimingResp(pkt); 
-		}
-
-        void recvReqRetry() override { // nse.recvReqRetry(); 
-		}
-
-        bool isSnooping() const override { return true; }
-
-        void recvTimingSnoopReq(PacketPtr pkt) override
-        { // return nse.recvTimingSnoopReq(pkt); 
-		}
-
-        void recvFunctionalSnoop(PacketPtr pkt) override { }
-    };
-
-    NsePort nsePort;
-
-
   public: /* Public for Pipeline to be able to pass it to Decode */
     std::vector<InputBuffer<ForwardInstData>> inputBuffer;
 
@@ -372,9 +337,6 @@ class Execute : public Named
     /** Returns the DcachePort owned by this Execute to pass upwards */
     MinorCPU::MinorCPUPort &getDcachePort();
 
-    /** Returns the DcachePort owned by this Execute */
-    MinorCPU::MinorCPUPort &getNsePort();
-
     /** To allow ExecContext to find the LSQ */
     LSQ &getLSQ() { return lsq; }
     ssim_t &getSSIM() { return ssim;}
@@ -403,4 +365,3 @@ class Execute : public Named
 
 }
 
-#endif /* __CPU_MINOR_EXECUTE_HH__ */

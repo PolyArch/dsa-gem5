@@ -43,7 +43,7 @@
 #include "mem/ruby/system/CacheRecorder.hh"
 #include "params/RubySystem.hh"
 #include "sim/clocked_object.hh"
-// added for spu
+
 #include "mem/ruby/network/Network.hh"
 
 class Network;
@@ -102,8 +102,6 @@ class RubySystem : public ClockedObject
             [this]{ processRubyEvent(); }, "RubyEvent");
         schedule(e, tick);
     }
-	// spu: it is incomplete type
-	// Network* getNetworkPtr() { return m_network; }
 
   private:
     // Private copy constructor and assignment operator
