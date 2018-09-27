@@ -50,6 +50,7 @@
 MinorCPU::MinorCPU(MinorCPUParams *params) :
     BaseCPU(params),
     threadPolicy(params->threadPolicy)
+	// , fromSpu_q_ptr(NULL), toSpu_q_ptr(NULL)
 {
     /* This is only written for one thread at the moment */
     Minor::MinorThread *thread;
@@ -79,6 +80,10 @@ MinorCPU::MinorCPU(MinorCPUParams *params) :
 
     pipeline = new Minor::Pipeline(*this, *params);
     activityRecorder = pipeline->getActivityRecorder();
+
+	// does it work like get()?
+	requestFromSpu = params->requestFromSpu;
+	responseToSpu = params->responseToSpu;
 }
 
 MinorCPU::~MinorCPU()

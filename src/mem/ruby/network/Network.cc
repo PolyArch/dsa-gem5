@@ -255,13 +255,14 @@ void
 Network::setSpuToNetQueue(NodeID id, bool ordered, int network_num,
                                  std::string vnet_type, MessageBuffer *b)
 {
-  // printf("CHECK NETWORK NUM AT NETWORK.CC:setSpuQueue %d, IT SHOULD BE 2 FOR 2 virtual networks, with node_id: %d\n", network_num, id);
+  printf("CHECK NETWORK NUM AT NETWORK.CC:setSpuQueue %d, IT SHOULD BE 2 FOR 2 virtual networks, with node_id: %d\n", network_num, id);
   // TODO: create new net allocation check and thus, variables
     // checkNetworkAllocation(id, ordered, network_num, vnet_type);
     while (s_toNetQueues[id].size() <= network_num) {
         s_toNetQueues[id].push_back(nullptr);
     }
     s_toNetQueues[id][network_num] = b;
+  printf("CHECK NETWORK NUM AT end %d, with node_id: %d\n", network_num, id);
 }
 
 void

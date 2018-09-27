@@ -143,6 +143,9 @@ void
 MessageBuffer::enqueue(MsgPtr message, Tick current_time, Tick delta)
 {
     // record current time incase we have a pop that also adjusts my size
+	// FIXME: remove comments, just to debug
+	// printf("CHECK TIME OF ENQUEUE: %lu\n", current_time);
+	// printf("CHECK TIME OF ENQUEUE: %lu\n",m_time_last_time_enqueue);
     if (m_time_last_time_enqueue < current_time) {
         m_msgs_this_cycle = 0;  // first msg this cycle
         m_time_last_time_enqueue = current_time;
@@ -151,28 +154,33 @@ MessageBuffer::enqueue(MsgPtr message, Tick current_time, Tick delta)
     m_msg_counter++;
     m_msgs_this_cycle++;
 
+	// printf("Updated bookkeeping information\n");
     // Calculate the arrival time of the message, that is, the first
     // cycle the message can be dequeued.
     assert(delta > 0);
     Tick arrival_time = 0;
 
     if (!RubySystem::getRandomization() || !m_randomization) {
+	// printf("randomization should be set to false by default?\n");
         // No randomization
         arrival_time = current_time + delta;
     } else {
         // Randomization - ignore delta
         if (m_strict_fifo) {
+	// printf("m_strict set to true by default?");
             if (m_last_arrival_time < current_time) {
                 m_last_arrival_time = current_time;
             }
             arrival_time = m_last_arrival_time + random_time();
         } else {
+	// printf("m_strict set to false by default?");
             arrival_time = current_time + random_time();
         }
     }
 
     // Check the arrival time
     assert(arrival_time > current_time);
+	// printf("arrival time assert done");
     if (m_strict_fifo) {
         if (arrival_time < m_last_arrival_time) {
             panic("FIFO ordering violated: %s name: %s current time: %d "
@@ -187,6 +195,7 @@ MessageBuffer::enqueue(MsgPtr message, Tick current_time, Tick delta)
         m_last_arrival_time = arrival_time;
     }
 
+	// printf("Now, it will see the original message and check if it is not null\n");
     // compute the delay cycles and set enqueue time
     Message* msg_ptr = message.get();
     assert(msg_ptr != NULL);
@@ -200,6 +209,7 @@ MessageBuffer::enqueue(MsgPtr message, Tick current_time, Tick delta)
 
     // Insert the message into the priority heap
     m_prio_heap.push_back(message);
+	// printf("message pushed into some heap\n");
     push_heap(m_prio_heap.begin(), m_prio_heap.end(), greater<MsgPtr>());
     // Increment the number of messages statistic
     m_buf_msgs++;
@@ -207,10 +217,12 @@ MessageBuffer::enqueue(MsgPtr message, Tick current_time, Tick delta)
     DPRINTF(RubyQueue, "Enqueue arrival_time: %lld, Message: %s\n",
             arrival_time, *(message.get()));
 
+	// printf("Waking up the network\n");
     // Schedule the wakeup
     assert(m_consumer != NULL);
     m_consumer->scheduleEventAbsolute(arrival_time);
     m_consumer->storeEventInfo(m_vnet_id);
+	// printf("DONE WITH ENQUEUE\n");
 }
 
 Tick

@@ -276,6 +276,9 @@ class MinorCPU(BaseCPU):
     branchPred = Param.BranchPredictor(TournamentBP(
         numThreads = Parent.numThreads), "Branch Predictor")
 
+    requestFromSpu = Param.MessageBuffer("SPU->network message buffers")
+    responseToSpu = Param.MessageBuffer("network->SPU message buffers")
+
     def addCheckerCpu(self):
         print("Checker not yet supported by MinorCPU")
         exit(1)

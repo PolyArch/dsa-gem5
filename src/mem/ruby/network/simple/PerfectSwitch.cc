@@ -168,7 +168,9 @@ PerfectSwitch::operateMessageBuffer(MessageBuffer *buffer, int incoming,
 
         output_links.clear();
         output_link_destinations.clear();
+		printf("MESSAGE DETECTED AT THE BUFFER, ready to be routed on the n/w\n");
         NetDest msg_dsts = net_msg_ptr->getDestination();
+		// printf("destination in the network: %lu\n",msg_dsts);
 
         // Unfortunately, the token-protocol sends some
         // zero-destination messages, so this assert isn't valid

@@ -57,6 +57,7 @@
 #include "debug/PCEvent.hh"
 
 #include "mem/protocol/SequencerMsg.hh"
+#include "mem/protocol/RequestMsg.hh"
 // #include "mem/protocol/SequencerRequestType.hh"
 
 #include "ssim/sim-debug.hh"
@@ -1553,15 +1554,22 @@ void
 Execute::evaluate()
 {
   // push values into the nse port if the request is from SPU
-  if(cpu.curCycle()==2){
+  int first=0;
+  if(cpu.curCycle()==2 && first==0){
+	first=1;
 	// ideally we should send a request
 	 printf("Request sent to be pushed into the SPU buffer\n");
 	 // SpuRequestPtr request = new SpuRequestPtr(*this); // , InstId::0); // last are id's
 	 // request->makePacket();
 	 // PacketPtr pkt = request->packet; // TODO: They don't use packet here?
-     std::shared_ptr<SequencerMsg> msg = std::make_shared<SequencerMsg>(cpu.clockEdge());
+     // std::shared_ptr<SequencerMsg> msg = std::make_shared<SequencerMsg>(cpu.clockEdge());
+	 // RequestMsg, ResponseMsg
 	 // I can modify some of the message parameters here!
+	 // (*msg).m_Destination.add(2); // dest m/c id
+	 // (*msg).m_Requestor = 0; // sending core id
 	 
+     std::shared_ptr<RequestMsg> msg = std::make_shared<RequestMsg>(cpu.clockEdge());
+     // std::shared_ptr<SequencerMsg> msg = std::make_shared<SequencerMsg>(cpu.clockEdge());
      cpu.pushReqFromSpu(msg);
 	 printf("Request pushed into the SPU buffer\n");
   }
