@@ -56,7 +56,11 @@
 #include "debug/MinorTrace.hh"
 #include "debug/PCEvent.hh"
 
+#include "mem/protocol/SequencerMsg.hh"
+// #include "mem/protocol/SequencerRequestType.hh"
+
 #include "ssim/sim-debug.hh"
+
 namespace Minor
 {
 
@@ -89,7 +93,6 @@ Execute::Execute(const std::string &name_,
         params.executeLSQStoreBufferSize,
         params.executeLSQMaxStoreBufferStoresPerCycle),
     ssim(&lsq),
-	nsePort(name_ + "nse_port", *this, cpu_),
     executeInfo(params.numThreads, ExecuteThreadInfo(params.executeCommitLimit)),
     interruptPriority(0),
     issuePriority(0),
@@ -192,6 +195,62 @@ Execute::Execute(const std::string &name_,
             name_ + ".inFUMemInsts" + tid_str, "insts", total_slots);
     }
 }
+
+
+
+void
+Execute::SpuRequest::makePacket()
+{
+    /* Make the necessary packet for a memory transaction */
+    packet = new Packet(request, MemCmd::ReadReq);
+    packet->allocate();
+
+    /* This FetchRequest becomes SenderState to allow the response to be
+     *  identified */
+    packet->pushSenderState(this);
+}
+
+/*
+void
+Execute::SpuRequest::finish(const Fault &fault_, const RequestPtr &request_,
+                             ThreadContext *tc, BaseTLB::Mode mode)
+{
+    fault = fault_;
+
+    state = Translated;
+    // fetch.handleTLBResponse(this);
+
+    // Let's try and wake up the processor for the next cycle
+	// FIXME: do I need this?
+    // execute.cpu.wakeupOnEvent(Pipeline::Fetch1StageId);
+}
+*/
+
+Execute::SpuRequest::~SpuRequest()
+{
+    if (packet)
+        delete packet;
+}
+
+void
+Execute::SpuRequest::reportData(std::ostream &os) const
+{
+    ////  os << id;
+}
+
+// TODO: check if this is important
+bool Execute::SpuRequest::isDiscardable() const
+{
+  return false;
+    // Fetch1ThreadInfo &thread = fetch.fetchInfo[id.threadId];
+
+    // /* Can't discard lines in TLB/memory */
+    // return state != InTranslation && state != RequestIssuing &&
+    //     (id.streamSeqNum != thread.streamSeqNum ||
+    //     id.predictionSeqNum != thread.predictionSeqNum);
+}
+
+
 
 const ForwardInstData *
 Execute::getInput(ThreadID tid)
@@ -1493,6 +1552,26 @@ Execute::isInbetweenInsts(ThreadID thread_id) const
 void
 Execute::evaluate()
 {
+  // push values into the nse port if the request is from SPU
+  if(cpu.curCycle()==2){
+	// ideally we should send a request
+	 printf("Request sent to be pushed into the SPU buffer\n");
+	 // SpuRequestPtr request = new SpuRequestPtr(*this); // , InstId::0); // last are id's
+	 // request->makePacket();
+	 // PacketPtr pkt = request->packet; // TODO: They don't use packet here?
+     std::shared_ptr<SequencerMsg> msg = std::make_shared<SequencerMsg>(cpu.clockEdge());
+	 // I can modify some of the message parameters here!
+	 
+     cpu.pushReqFromSpu(msg);
+	 printf("Request pushed into the SPU buffer\n");
+  }
+
+  // if value at nse in port, print success
+  if(cpu.popReqFromSpu()){
+	 printf("Request popped from the SPU buffer, success!!");
+
+  }
+
     if (!inp.outputWire->isBubble())
         inputBuffer[inp.outputWire->threadId].setTail(*inp.outputWire);
 
@@ -1975,10 +2054,13 @@ Execute::getDcachePort()
     return lsq.getDcachePort();
 }
 
-MinorCPU::MinorCPUPort &
-Execute::getNsePort()
-{
-	return nsePort;
 }
 
-}
+
+
+
+
+
+
+
+

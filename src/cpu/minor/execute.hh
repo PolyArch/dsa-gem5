@@ -62,6 +62,96 @@ namespace Minor
  *  The LSQ lives here too. */
 class Execute : public Named
 {
+
+
+  /** Structure to hold SenderState info through
+     *  translation and memory accesses. */
+    class SpuRequest :
+        public Packet::SenderState /* For packing into a Packet */
+    {
+      protected:
+        /** Owning execute unit */
+        Execute &execute;
+
+      public:
+        /** Progress of this request through address translation and
+         *  memory */
+        enum SpuRequestState
+        {
+            NotIssued, /* Just been made */
+            InTranslation, /* Issued to ITLB, must wait for reqply */
+            Translated, /* Translation complete */
+            RequestIssuing, /* Issued to memory, must wait for response */
+            Complete /* Complete.  Either a fault, or a fetched line */
+        };
+
+        SpuRequestState state;
+
+        /** Identity of the line that this request will generate */
+        // InstId id;
+
+        /** FetchRequests carry packets while they're in the requests and
+         * transfers responses queues.  When a Packet returns from the memory
+         * system, its request needs to have its packet updated as this may
+         * have changed in flight */
+        PacketPtr packet;
+
+        /** The underlying request that this fetch represents */
+        RequestPtr request;
+
+        /** PC to fixup with line address */
+        // TheISA::PCState pc;
+
+        /** Fill in a fault if one happens during fetch, check this by
+         *  picking apart the response packet */
+        Fault fault;
+
+        /** Make a packet to use with the memory transaction */
+        void makePacket();
+
+        /** Report interface */
+        void reportData(std::ostream &os) const;
+
+        /** Is this line out of date with the current stream/prediction
+         *  sequence and can it be discarded without orphaning in flight
+         *  TLB lookups/memory accesses? */
+        bool isDiscardable() const;
+
+        /** Is this a complete read line or fault */
+        bool isComplete() const { return state == Complete; }
+
+      protected:
+        /** BaseTLB::Translation interface */
+
+        /** Interface for ITLB responses.  We can handle delay, so don't
+         *  do anything */
+        void markDelayed() { }
+
+        /** Interface for ITLB responses.  Populates self and then passes
+         *  the request on to the ports' handleTLBResponse member
+         *  function */
+        // void finish(const Fault &fault_, const RequestPtr &request_,
+           //         ThreadContext *tc, BaseTLB::Mode mode);
+
+      public:
+        SpuRequest(Execute &execute_): // , InstId id_) :
+            SenderState(),
+            execute(execute_),
+            state(NotIssued),
+            // id(id_),
+            packet(NULL),
+            request(),
+            // pc(pc_),
+            fault(NoFault)
+        {
+            request = std::make_shared<Request>();
+        }
+
+        ~SpuRequest();
+    };
+
+    typedef SpuRequest *SpuRequestPtr;
+
   protected:
     /** Input port carrying instructions from Decode */
     Latch<ForwardInstData>::Output inp;
@@ -127,41 +217,6 @@ class Execute : public Named
 
     /** The execution functional units */
     std::vector<FUPipeline *> funcUnits;
-
-	// spu: Exposable nse port (similar to ifetch)
-    class NsePort : public MinorCPU::MinorCPUPort
-    {
-      protected:
-        // My owner: execute (not some entity: is that fine?)
-		Execute &execute1;
-
-      public:
-        NsePort(std::string name, Execute &execute_, MinorCPU &cpu) :
-            MinorCPU::MinorCPUPort(name, cpu), execute1(execute_)
-        { }
-
-      protected:
-		// write this function
-        bool recvTimingResp(PacketPtr pkt) override
-        { 
-		  return false;
-		  // return nse.recvTimingResp(pkt); 
-		}
-
-        void recvReqRetry() override { // nse.recvReqRetry(); 
-		}
-
-        bool isSnooping() const override { return true; }
-
-        void recvTimingSnoopReq(PacketPtr pkt) override
-        { // return nse.recvTimingSnoopReq(pkt); 
-		}
-
-        void recvFunctionalSnoop(PacketPtr pkt) override { }
-    };
-
-    NsePort nsePort;
-
 
   public: /* Public for Pipeline to be able to pass it to Decode */
     std::vector<InputBuffer<ForwardInstData>> inputBuffer;
@@ -371,9 +426,6 @@ class Execute : public Named
 
     /** Returns the DcachePort owned by this Execute to pass upwards */
     MinorCPU::MinorCPUPort &getDcachePort();
-
-    /** Returns the DcachePort owned by this Execute */
-    MinorCPU::MinorCPUPort &getNsePort();
 
     /** To allow ExecContext to find the LSQ */
     LSQ &getLSQ() { return lsq; }

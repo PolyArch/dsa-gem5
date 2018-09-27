@@ -54,7 +54,6 @@
 RubyPort::RubyPort(const Params *p)
     : MemObject(p), m_ruby_system(p->ruby_system), m_version(p->version),
       m_controller(NULL), m_mandatory_q_ptr(NULL),
-	  s_network_ptr(NULL),
       m_usingRubyTester(p->using_ruby_tester), system(p->system),
       pioMasterPort(csprintf("%s.pio-master-port", name()), this),
       pioSlavePort(csprintf("%s.pio-slave-port", name()), this),
@@ -62,8 +61,6 @@ RubyPort::RubyPort(const Params *p)
       memSlavePort(csprintf("%s-mem-slave-port", name()), this,
                    p->ruby_system->getAccessBackingStore(), -1,
                    p->no_retry_on_stall),
-      nseMasterPort(csprintf("%s.nse-master-port", name()), this),
-      nseSlavePort(csprintf("%s-nse-slave-port", name()), this, p->no_retry_on_stall),
       gotAddrRanges(p->port_master_connection_count),
       m_isCPUSequencer(p->is_cpu_sequencer)
 {
@@ -88,7 +85,6 @@ RubyPort::init()
 {
     assert(m_controller != NULL);
     m_mandatory_q_ptr = m_controller->getMandatoryQueue();
-    m_spu_q_ptr = s_network_ptr->getSpuQueue(getId());
 }
 
 BaseMasterPort &
@@ -100,10 +96,6 @@ RubyPort::getMasterPort(const std::string &if_name, PortID idx)
 
     if (if_name == "pio_master_port") {
         return pioMasterPort;
-    }
-
-	if (if_name == "nse_master_port") {
-        return nseMasterPort;
     }
 
     // used by the x86 CPUs to connect the interrupt PIO and interrupt slave
@@ -129,10 +121,6 @@ RubyPort::getSlavePort(const std::string &if_name, PortID idx)
 
     if (if_name == "pio_slave_port")
         return pioSlavePort;
-
-	if (if_name == "nse_slave_port") {
-        return nseSlavePort;
-    }
 
     // used by the CPUs to connect the caches to the interconnect, and
     // for the x86 case also the interrupt master
@@ -181,23 +169,6 @@ RubyPort::MemSlavePort::MemSlavePort(const std::string &_name, RubyPort *_port,
     DPRINTF(RubyPort, "Created slave memport on ruby sequencer %s\n", _name);
 }
 
-// FIXME: I don't need the last 2 attributes, maybe we can ignore these?
-RubyPort::NseMasterPort::NseMasterPort(const std::string &_name,
-                           RubyPort *_port)
-    : QueuedMasterPort(_name, _port, reqQueue, snoopRespQueue),
-      reqQueue(*_port, *this), snoopRespQueue(*_port, *this)
-{
-    DPRINTF(RubyPort, "Created master nseport on ruby sequencer %s\n", _name);
-}
-
-RubyPort::NseSlavePort:: NseSlavePort(const std::string &_name, RubyPort *_port,
-                                     bool _no_retry_on_stall)
-    : QueuedSlavePort(_name, _port, queue), queue(*_port, *this),
-      no_retry_on_stall(_no_retry_on_stall)
-{
-    DPRINTF(RubyPort, "Created slave nseport on ruby sequencer %s\n", _name);
-}
-
 bool
 RubyPort::PioMasterPort::recvTimingResp(PacketPtr pkt)
 {
@@ -212,8 +183,6 @@ RubyPort::PioMasterPort::recvTimingResp(PacketPtr pkt)
 
 bool RubyPort::MemMasterPort::recvTimingResp(PacketPtr pkt)
 {
-  // never came back
-  printf("GOT THE RESPONSE BACK FROM THE NETWORK AT MEMORY MASTER PORT\n");
     // got a response from a device
     assert(pkt->isResponse());
 
@@ -346,85 +315,6 @@ RubyPort::MemSlavePort::recvTimingReq(PacketPtr pkt)
 
     return false;
 }
-
-bool
-RubyPort::NseSlavePort::recvTimingReq(PacketPtr pkt)
-{
-  printf("RECV REQUEST FROM CORE AT NSE PORT\n");
-    // getAddr() should return the next port address, not any memory address
-    DPRINTF(RubyPort, "Timing request for port %#x on port %d\n",
-            pkt->getAddr(), id);
-    RubyPort *ruby_port = static_cast<RubyPort *>(&owner);
-
-    // Submit the ruby request: specialize this function for nse requests
-    RequestStatus requestStatus = ruby_port->makeSpuRequest(pkt);
-    // RequestStatus requestStatus = ruby_port->makeRequest(pkt);
-
-    // If the request successfully issued then we should return true. (always
-	// true for nse requests)
-    // Otherwise, we need to tell the port to retry at a later point
-    // and return false.
-    if (requestStatus == RequestStatus_Issued) {
-        // Save the port in the sender state object to be used later to
-        // route the response
-		// TODO: add spu sender state struct to receive the response (or some
-		// dynamic cast)
-        // pkt->pushSenderState(new SenderState(this));
-
-        DPRINTF(RubyPort, "Request %s address %#x issued\n", pkt->cmdString(),
-                pkt->getAddr());
-        return true;
-    }
-    panic("Should never reach here!\n");
-	// TODO: we need this for fixed buffer size
-    addToRetryList();
-
-    return false;
-}
-
-// TODO: fix these functions later (need to understand functional and atomic
-// properly)
-void
-RubyPort::NseSlavePort::recvFunctional(PacketPtr pkt)
-{
-
-}
-
-Tick
-RubyPort::NseSlavePort::recvAtomic(PacketPtr pkt)
-{
-  return 0;
-
-}
-
-// just send it to the corresponding nse port
-// TODO: write this function to receive the request at the destination Nse port
-bool
-RubyPort::NseMasterPort::recvTimingResp(PacketPtr pkt)
-{
-  printf("RECV RESPONSE FROM NETWORK AT NSE PORT\n");
-    // I might use this information to debug something
-    // First we must retrieve the request port from the sender State
-    // RubyPort::SenderState *senderState =
-    //     safe_cast<RubyPort::SenderState *>(pkt->popSenderState());
-    // MemSlavePort *port = senderState->port;
-    // assert(port != NULL);
-    // delete senderState;
-
-    RubyPort *rp = static_cast<RubyPort *>(&owner);
-    DPRINTF(RubyPort, "Response for address: 0x%#x\n", pkt->getAddr());
-
-    // send next cycle
-    rp->nseSlavePort.schedTimingResp(
-            pkt, curTick() + rp->m_ruby_system->clockPeriod());
-    return true;
-}
-
-//----------------------------------
-
-
-
-
 
 Tick
 RubyPort::MemSlavePort::recvAtomic(PacketPtr pkt)

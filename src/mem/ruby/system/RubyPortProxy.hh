@@ -83,8 +83,6 @@ class RubyPortProxy : public RubyPort
      * @returns always a NULL status
      */
     RequestStatus makeRequest(PacketPtr pkt);
-	// FIXME: hack for now, remove later!
-    RequestStatus makeSpuRequest(PacketPtr pkt) { return RequestStatus_Issued; }
 
     /**
      * Pure virtual member in the super class that we are forced to

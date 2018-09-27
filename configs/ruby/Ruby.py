@@ -158,9 +158,10 @@ def create_system(options, full_system, system, piobus = None, dma_ports = [],
         raise
 
     # Create the network topology
+    # FIXME: cannot pass cpu, because this has to be from inside ruby system
     topology.makeTopology(options, network, IntLinkClass, ExtLinkClass,
             SpuExtLinkClass,
-            RouterClass, cpu_sequencers)
+            RouterClass, system.cpu)
 
     # Initialize network based on topology
     Network.init_network(options, network, InterfaceClass)

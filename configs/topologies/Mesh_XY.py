@@ -55,9 +55,9 @@ class Mesh_XY(SimpleTopology):
     # assuming an equal number of cache and directory cntrls
 
     def makeTopology(self, options, network, IntLink, ExtLink, SpuExtLink,
-            Router, cpu_sequencers):
+            Router, accel):
         nodes = self.nodes
-        self.spu_ports = cpu_sequencers
+        self.spu_ports = accel
 
         num_routers = options.num_cpus
         print("number of routers instantiated in the topology is ")
@@ -122,6 +122,7 @@ class Mesh_XY(SimpleTopology):
         # in code only)
         # FIXME: these nodes should not be controllers
 
+        print("COMES TO THE CONFIG FILES TO CREATE TOPOLOGY- HOW TO CHANGE?")
         spu_nodes = []
         # print len(self.spu_ports)
         # print options.num_cpus

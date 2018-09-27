@@ -39,7 +39,7 @@ class BaseTopology(object):
         """
 
     def makeTopology(self, options, network, IntLink, ExtLink, SpuExtLink,
-            Router, cpu_sequencers):
+            Router, accel):
         """ Called from configs/ruby/Ruby.py
             The return value is ( list(Router), list(IntLink), list(ExtLink))
             The API of this function cannot change when subclassing!!

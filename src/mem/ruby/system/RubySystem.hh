@@ -44,8 +44,6 @@
 #include "params/RubySystem.hh"
 #include "sim/clocked_object.hh"
 
-#include "mem/ruby/network/Network.hh"
-
 class Network;
 class AbstractController;
 

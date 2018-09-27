@@ -56,7 +56,6 @@ Sequencer::Sequencer(const Params *p)
     : RubyPort(p), m_IncompleteTimes(MachineType_NUM),
       deadlockCheckEvent([this]{ wakeup(); }, "Sequencer deadlock check")
 {
-  printf("COMES TO INITILIZE SEQUENCER, DEADLOCK CHECK SIMULTANEOUSLY\n");
     m_outstanding_count = 0;
 
     m_instCache_ptr = p->icache;
@@ -84,9 +83,6 @@ Sequencer::~Sequencer()
 void
 Sequencer::wakeup()
 {
-  printf("COMES HERE TO WAKE UP THE SEQUENCER and deadlock check at cycle: %d!!\n",0);
-  std::cout << curCycle() << "\n";
-  // return;
     assert(drainState() != DrainState::Draining);
 
     // Check for deadlock of any of the requests
@@ -169,7 +165,6 @@ void Sequencer::resetStats()
 RequestStatus
 Sequencer::insertRequest(PacketPtr pkt, RubyRequestType request_type)
 {
-    // printf("COMES TO INSERT MEMORY REQUEST\n");
     assert(m_outstanding_count ==
         (m_writeRequestTable.size() + m_readRequestTable.size()));
 
@@ -537,56 +532,6 @@ Sequencer::empty() const
 {
     return m_writeRequestTable.empty() && m_readRequestTable.empty();
 }
-
-// TODO: 2 virtual channels for request and response?
-void Sequencer::initNetQueues() {
-	s_network_ptr->setSpuToNetQueue(this->seqId(), true, 0, "forward", m_spu_q_ptr);
-	s_network_ptr->setSpuToNetQueue(this->seqId(), true, 1, "response", m_spu_q_ptr);
-}
-
-RequestStatus
-Sequencer::makeSpuRequest(PacketPtr pkt)
-{
-
-  // check space is queue or could issue from there
-  // FIXME: now, always issue the request
-  issueSpuRequest(pkt);
-  return RequestStatus_Issued;
-}
-
-void
-Sequencer::issueSpuRequest(PacketPtr pkt)
-{
-  printf("COMES HERE TO ISSUE SPU REQUEST\n");
-    assert(pkt != NULL);
-	// check the difference between these things
-    ContextID proc_id = pkt->req->hasContextId() ?
-        pkt->req->contextId() : InvalidContextID;
-
-    ContextID core_id = coreId();
-
-    // If valid, copy the pc to the ruby request
-    Addr pc = 0;
-    if (pkt->req->hasPC()) {
-        pc = pkt->req->getPC();
-    }
-
-	// datatype of the message? (set things to NULL)
-    // the packet would alway has data: 3rd entry
-    std::shared_ptr<RubyRequest> msg =
-        std::make_shared<RubyRequest>(clockEdge(), pkt->getAddr(),
-                                      pkt->getPtr<uint8_t>(),
-                                      pkt->getSize(), pc, RubyRequestType_NULL,
-                                      RubyAccessMode_Supervisor, pkt,
-                                      PrefetchBit_No, proc_id, core_id);
-
-    Cycles latency(0);  // Initialize to zero to catch misconfigured latency
-	// here, the latency could be 0
-
-    assert(m_spu_q_ptr != NULL);
-    m_spu_q_ptr->enqueue(msg, clockEdge(), cyclesToTicks(latency));
-}
-
 
 RequestStatus
 Sequencer::makeRequest(PacketPtr pkt)
