@@ -154,7 +154,7 @@ class MinorCPU : public BaseCPU
 	  // toSpu_q_ptr->create();
 	  // FIXME: CHEck this virtual network num allocation
 	  spu_net_ptr->setSpuToNetQueue(core_id, true, 0, "forward", requestFromSpu);
-	  spu_net_ptr->setSpuFromNetQueue(core_id, true, 0, "response", responseToSpu);
+	  spu_net_ptr->setSpuFromNetQueue(core_id, true, 0, "forward", responseToSpu);
 	}
 
 	// FIXME
@@ -166,7 +166,11 @@ class MinorCPU : public BaseCPU
 
 	// not sure about this now, pass reference to data
 	bool popReqFromSpu() {
-	  return 0;
+	  if(!responseToSpu->isEmpty()){
+		responseToSpu->dequeue(clockEdge());
+		return true;
+	  }
+	  return false;
 	}
 
     /** Starting, waking and initialisation */
