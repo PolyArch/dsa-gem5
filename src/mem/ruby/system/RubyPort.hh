@@ -102,56 +102,6 @@ class RubyPort : public MemObject
         bool isPhysMemAddress(Addr addr) const;
     };
 
-
-	// spu, TODO: see the useful functions (interface with the CPU)
-	class NseMasterPort : public QueuedMasterPort
-    {
-      private:
-        ReqPacketQueue reqQueue;
-        SnoopRespPacketQueue snoopRespQueue;
-
-      public:
-        NseMasterPort(const std::string &_name, RubyPort *_port);
-
-      protected:
-        bool recvTimingResp(PacketPtr pkt);
-        // void recvRangeChange() {}
-    };
-
-    class NseSlavePort : public QueuedSlavePort
-    {
-      private:
-        RespPacketQueue queue;
-        // bool access_backing_store;
-        bool no_retry_on_stall;
-
-      public:
-        // NseSlavePort(const std::string &_name, RubyPort *_port, PORTID id, bool _no_retry_on_stall);
-        NseSlavePort(const std::string &_name, RubyPort *_port, bool _no_retry_on_stall);
-       // void hitCallback(PacketPtr pkt);
-        // void evictionCallback(Addr address);
-
-      protected:
-        bool recvTimingReq(PacketPtr pkt);
-
-        Tick recvAtomic(PacketPtr pkt);
-
-        void recvFunctional(PacketPtr pkt);
-
-		// this is virtual function I think!
-        AddrRangeList getAddrRanges() const
-        { AddrRangeList ranges; return ranges; }
-        void addToRetryList();
-
-      // private:
-      //   bool isPhysMemAddress(Addr addr) const;
-    };
-
-
-	//--------------------------------------------------
-
-
-
     class PioMasterPort : public QueuedMasterPort
     {
       private:
@@ -204,7 +154,6 @@ class RubyPort : public MemObject
                                 PortID idx = InvalidPortID) override;
 
     virtual RequestStatus makeRequest(PacketPtr pkt) = 0;
-    virtual RequestStatus makeSpuRequest(PacketPtr pkt) = 0;
     virtual int outstandingCount() const = 0;
     virtual bool isDeadlockEventScheduled() const = 0;
     virtual void descheduleDeadlockEvent() = 0;
@@ -239,11 +188,6 @@ class RubyPort : public MemObject
     uint32_t m_version;
     AbstractController* m_controller;
     MessageBuffer* m_mandatory_q_ptr;
-	// equate to sequencer_q_ptr here or directly network, basically what ctrl
-	// has been doing with the mandatory one?
-    Network* s_network_ptr;
-    MessageBuffer* m_spu_q_ptr;
- 
     bool m_usingRubyTester;
     System* system;
 
@@ -261,23 +205,10 @@ class RubyPort : public MemObject
         retryList.push_back(port);
     }
 
-    bool onRetryList(NseSlavePort * port)
-    {
-        return (std::find(spu_retryList.begin(), spu_retryList.end(), port) !=
-                spu_retryList.end());
-    }
-	void addToRetryList(NseSlavePort * port)
-    {
-        if (onRetryList(port)) return;
-        spu_retryList.push_back(port);
-    }
-
     PioMasterPort pioMasterPort;
     PioSlavePort pioSlavePort;
     MemMasterPort memMasterPort;
     MemSlavePort memSlavePort;
-	NseMasterPort nseMasterPort;
-    NseSlavePort nseSlavePort;
     unsigned int gotAddrRanges;
 
     /** Vector of M5 Ports attached to this Ruby port. */
@@ -289,7 +220,6 @@ class RubyPort : public MemObject
     // that should be called when the Sequencer becomes available after a stall.
     //
     std::vector<MemSlavePort *> retryList;
-    std::vector<NseSlavePort *> spu_retryList;
 
     bool m_isCPUSequencer;
 };

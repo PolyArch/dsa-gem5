@@ -117,14 +117,6 @@ TraceCPU::takeOverFrom(BaseCPU *oldCPU)
     BaseSlavePort &data_peer_port = oldCPU->getDataPort().getSlavePort();
     oldCPU->getDataPort().unbind();
     getDataPort().bind(data_peer_port);
-
-    // spu
-	assert(!getSpuPort().isConnected());
-    assert(oldCPU->getSpuPort().isConnected());
-    BaseSlavePort &spu_peer_port = oldCPU->getSpuPort().getSlavePort();
-    oldCPU->getSpuPort().unbind();
-    getSpuPort().bind(spu_peer_port);
-
 }
 
 void

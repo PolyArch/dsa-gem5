@@ -765,9 +765,6 @@ class FullO3CPU : public BaseO3CPU
 
     /** Get the dcache port (used to find block size for translations). */
     MasterPort &getDataPort() override { return dcachePort; }
-    
-	// FIXME: remove it later!
-	MasterPort &getSpuPort() override { return dcachePort; }
 
     /** Stat for total number of times the CPU is descheduled. */
     Stats::Scalar timesIdled;

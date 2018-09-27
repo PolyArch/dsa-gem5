@@ -52,6 +52,13 @@
 #include "cpu/simple_thread.hh"
 #include "enums/ThreadPolicy.hh"
 #include "params/MinorCPU.hh"
+#include "mem/ruby/network/Network.hh"
+#include "mem/ruby/slicc_interface/Message.hh"
+
+#include "mem/packet.hh"
+#include "mem/ruby/slicc_interface/RubyRequest.hh"
+// FIXME: check if I need it or not!
+// class Message;
 
 namespace Minor
 {
@@ -82,6 +89,8 @@ class MinorCPU : public BaseCPU
     /** pipeline is a container for the clockable pipeline stage objects.
      *  Elements of pipeline call TheISA to implement the model. */
     Minor::Pipeline *pipeline;
+
+	// pipeline->execute->initNetPtr(); 
 
   public:
     /** Activity recording for pipeline.  This belongs to Pipeline but
@@ -119,8 +128,12 @@ class MinorCPU : public BaseCPU
     /** Return a reference to the instruction port. */
     MasterPort &getInstPort() override;
 
-    /** Return a reference to the spu port. */
-    MasterPort &getSpuPort() override;
+	// FIXME: spu, have to be called using cpu reference, so should be protected?
+	Network *spu_net_ptr;
+	MessageBuffer *toSpu_q_ptr;
+	MessageBuffer *fromSpu_q_ptr;
+	// Core id associated with each core
+	int core_id = 0;
 
 
 
@@ -130,6 +143,30 @@ class MinorCPU : public BaseCPU
     ~MinorCPU();
 
   public:
+
+	// FIXME: spu, have to be called using cpu reference, so should be protected?
+	void initNetworkPtr(Network* net_ptr, int id) {
+	  spu_net_ptr = net_ptr;
+	  core_id = id;
+	}
+	void initNetQueues() {
+	  // TODO: first parameter should be coreid
+	  spu_net_ptr->setSpuToNetQueue(core_id, true, 0, "forward", fromSpu_q_ptr);
+	  spu_net_ptr->setSpuFromNetQueue(core_id, true, 0, "forward", toSpu_q_ptr);
+	}
+
+	// FIXME
+	void pushReqFromSpu(MsgPtr msg) {
+	  // Cycles latency(1);
+	  // fromSpu_q_ptr->enqueue(msg, clockEdge(), cyclesToTick(latency));
+	  fromSpu_q_ptr->enqueue(msg, clockEdge(), 1);
+	}
+
+	// not sure about this now, pass reference to data
+	bool popReqFromSpu() {
+	  return 0;
+	}
+
     /** Starting, waking and initialisation */
     void init() override;
     void startup() override;

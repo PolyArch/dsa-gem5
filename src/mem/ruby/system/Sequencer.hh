@@ -40,10 +40,6 @@
 #include "mem/ruby/system/RubyPort.hh"
 #include "params/RubySequencer.hh"
 
-#include "mem/ruby/network/MessageBuffer.hh"
-
-class Network;
-
 struct SequencerRequest
 {
     PacketPtr pkt;
@@ -88,7 +84,6 @@ class Sequencer : public RubyPort
                       const Cycles firstResponseTime = Cycles(0));
 
     RequestStatus makeRequest(PacketPtr pkt);
-    RequestStatus makeSpuRequest(PacketPtr pkt);
     bool empty() const;
     int outstandingCount() const { return m_outstanding_count; }
 
@@ -105,7 +100,6 @@ class Sequencer : public RubyPort
     void evictionCallback(Addr address);
     void invalidateSC(Addr address);
     int coreId() const { return m_coreId; }
-    int seqId() const { return seq_id; }
 
     void recordRequestType(SequencerRequestType requestType);
     Stats::Histogram& getOutstandReqHist() { return m_outstandReqHist; }
@@ -154,20 +148,8 @@ class Sequencer : public RubyPort
     Stats::Counter getIncompleteTimes(const MachineType t) const
     { return m_IncompleteTimes[t]; }
 
-    void initNetworkPtr(Network* net_ptr, int id) {
-	  s_network_ptr = net_ptr;
-	  printf("id send is %d\n",id);
-	  seq_id = id;
-	}
-
-	void initNetQueues();
-
-
   private:
     void issueRequest(PacketPtr pkt, RubyRequestType type);
-	// TODO: we will need it eventually
-    // void issueSpuRequest(PacketPtr pkt, RubyRequestType type);
-    void issueSpuRequest(PacketPtr pkt);
 
     void hitCallback(SequencerRequest* request, DataBlock& data,
                      bool llscSuccess,
@@ -218,8 +200,6 @@ class Sequencer : public RubyPort
     Stats::Scalar m_load_waiting_on_load;
 
     int m_coreId;
-	// Sequencer id--should be between 0 to num_cores
-    int seq_id;
 
     bool m_runningGarnetStandalone;
 

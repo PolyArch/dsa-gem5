@@ -44,7 +44,8 @@
 #include "mem/ruby/common/MachineID.hh"
 #include "mem/ruby/network/BasicLink.hh"
 #include "mem/ruby/system/RubySystem.hh"
-#include "mem/ruby/system/Sequencer.hh"
+// #include "mem/ruby/system/Sequencer.hh"
+#include "cpu/minor/cpu.hh"
 
 uint32_t Network::m_virtual_networks;
 uint32_t Network::m_control_msg_size;
@@ -126,13 +127,14 @@ Network::Network(const Params *p)
     s_fromNetQueues.resize(n_spu_cores);
 
 	// seq_id as a hack for now
-	int seq_id=0;
+	int core_id=0;
 	for (std::vector<SpuExtLink*>::const_iterator i = p->spu_ext_links.begin();
          i != p->spu_ext_links.end(); ++i) {
         SpuExtLink *spu_ext_link = (*i);
-		Sequencer *spu_seq = spu_ext_link->params()->spu_ext_node;
-        spu_seq->initNetworkPtr(this, seq_id);
-	    seq_id++;
+	    MinorCPU *accel = spu_ext_link->params()->spu_ext_node;
+        accel->initNetworkPtr(this, core_id);
+        // accel->initNetworkPtr(this);
+	    core_id++;
         // spu_port->initNetworkPtr(this);
     }
 
@@ -145,9 +147,9 @@ Network::Network(const Params *p)
 
 Network::~Network()
 {
-  printf("VALUE OF M_NODES HERE IS: %d\n",m_nodes);
+     // printf("VALUE OF M_NODES HERE IS: %d\n",m_nodes);
     // for (int node = 0; node < m_nodes; node++) {
-    for (int node = 0; node < 8; node++) {
+    for (int node = 0; node < ctrl_nodes; node++) {
 
         // Delete the Message Buffers
         for (auto& it : m_toNetQueues[node]) {
@@ -158,7 +160,7 @@ Network::~Network()
             delete it;
         }
     }
-    for (int node = 0; node < 4; node++) {
+    for (int node = 0; node < (m_nodes-ctrl_nodes); node++) {
 
         // Delete the Message Buffers
         for (auto& it : s_toNetQueues[node]) {

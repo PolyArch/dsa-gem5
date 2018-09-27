@@ -460,8 +460,6 @@ BaseCPU::getMasterPort(const string &if_name, PortID idx)
         return getDataPort();
     else if (if_name == "icache_port")
         return getInstPort();
-	else if (if_name == "nse_port")
-        return getSpuPort();
     else
         return MemObject::getMasterPort(if_name, idx);
 }
@@ -716,14 +714,6 @@ BaseCPU::takeOverFrom(BaseCPU *oldCPU)
     BaseSlavePort &data_peer_port = oldCPU->getDataPort().getSlavePort();
     oldCPU->getDataPort().unbind();
     getDataPort().bind(data_peer_port);
-
-    // spu
-	assert(!getSpuPort().isConnected());
-    assert(oldCPU->getSpuPort().isConnected());
-    BaseSlavePort &spu_peer_port = oldCPU->getSpuPort().getSlavePort();
-    oldCPU->getSpuPort().unbind();
-    getSpuPort().bind(spu_peer_port);
-
 }
 
 void
