@@ -233,6 +233,15 @@ if options.simpoint_profile:
     if np > 1:
         fatal("SimPoint generation not supported with more than one CPUs")
 
+# # Initializing message buffers from cpu
+# for cpu in system.cpu:
+#     cpu.toSpu_q = MessageBuffer()
+#     cpu.fromSpu_q = MessageBuffer()
+# 
+# print("Message buffers initialized for each SPU")
+
+
+
 for i in xrange(np):
     system.cpu[i].executeMaxAccessesInMemory = 20
 
@@ -253,6 +262,9 @@ for i in xrange(np):
         system.cpu[i].addCheckerCpu()
 
     system.cpu[i].createThreads()
+    # TODO: Connect the CPUs and the network
+    system.cpu[i].responseToSpu = MessageBuffer()
+    system.cpu[i].requestFromSpu = MessageBuffer()
 
 if options.ruby:
     Ruby.create_system(options, False, system)
