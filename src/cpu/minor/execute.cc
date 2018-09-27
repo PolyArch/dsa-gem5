@@ -1568,9 +1568,10 @@ Execute::evaluate()
 	 // (*msg).m_Destination.add(2); // dest m/c id
 	 // (*msg).m_Requestor = 0; // sending core id
 	 
-     std::shared_ptr<RequestMsg> msg = std::make_shared<RequestMsg>(cpu.clockEdge());
+     // std::shared_ptr<RequestMsg> msg = std::make_shared<RequestMsg>(cpu.clockEdge());
+	 // set the coherence request type
      // std::shared_ptr<SequencerMsg> msg = std::make_shared<SequencerMsg>(cpu.clockEdge());
-     cpu.pushReqFromSpu(msg);
+     // cpu.pushReqFromSpu(msg);
 	 printf("Request pushed into the SPU buffer\n");
   }
 
