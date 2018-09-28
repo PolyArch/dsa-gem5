@@ -94,10 +94,10 @@ class Network : public ClockedObject
                                  std::string vnet_type, MessageBuffer *b);
 
 	// spu: sets spu to/from net queues
-	void setSpuToNetQueue(NodeID id, bool ordered, int netNumber,
-                               std::string vnet_type, MessageBuffer *b);
-    void setSpuFromNetQueue(NodeID id, bool ordered, int netNumber,
-                                 std::string vnet_type, MessageBuffer *b);
+	// void setSpuToNetQueue(NodeID id, bool ordered, int netNumber,
+    //                            std::string vnet_type, MessageBuffer *b);
+    // void setSpuFromNetQueue(NodeID id, bool ordered, int netNumber,
+    //                              std::string vnet_type, MessageBuffer *b);
 
 
     virtual void checkNetworkAllocation(NodeID id, bool ordered,
@@ -145,8 +145,8 @@ class Network : public ClockedObject
      */
     NodeID addressToNodeID(Addr addr, MachineType mtype);
 
-	// TODO: Is it being used anywhere?
-	MessageBuffer* getSpuQueue(int core_id) { return s_toNetQueues[core_id][0]; }
+	// TODO: Is it being used anywhere? No!
+	// MessageBuffer* getSpuQueue(int core_id) { return s_toNetQueues[core_id][0]; }
 
   protected:
     // Private copy constructor and assignment operator
@@ -164,8 +164,8 @@ class Network : public ClockedObject
     // vector of queues from the components
     std::vector<std::vector<MessageBuffer*> > m_toNetQueues;
     std::vector<std::vector<MessageBuffer*> > m_fromNetQueues;
-    std::vector<std::vector<MessageBuffer*> > s_toNetQueues;
-    std::vector<std::vector<MessageBuffer*> > s_fromNetQueues;
+    // std::vector<std::vector<MessageBuffer*> > s_toNetQueues;
+    // std::vector<std::vector<MessageBuffer*> > s_fromNetQueues;
     std::vector<bool> m_ordered;
 
   private:

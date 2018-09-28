@@ -76,8 +76,6 @@ PerfectSwitch::addInPort(const vector<MessageBuffer*>& in)
     m_in.push_back(in);
 
   // printf("pushed in the buffer corresponding to the new spu port with number of virtual channels: %lu\n",in.size());
-  // FIXME: for spu_ports, it is looping in setConsumer and then some deadlock,
-  // is it loop?
     for (int i = 0; i < in.size(); ++i) {
         if (in[i] != nullptr) {
 		  // printf("SET CONSUMER CALLED FROM HERE\n");
