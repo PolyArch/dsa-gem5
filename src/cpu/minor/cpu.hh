@@ -131,6 +131,7 @@ class MinorCPU : public BaseCPU
 	// FIXME: spu, have to be called using cpu reference, so should be protected?
 	Network *spu_net_ptr;
 	MessageBuffer *responseToSpu;
+	MessageBuffer *dummy;
 	MessageBuffer *requestFromSpu;
 	// Core id associated with each core
 	int core_id = 0;
@@ -152,9 +153,17 @@ class MinorCPU : public BaseCPU
 	void initNetQueues() {
 	  // fromSpu_q_ptr->create();
 	  // toSpu_q_ptr->create();
-	  // FIXME: CHEck this virtual network num allocation
-	  spu_net_ptr->setSpuToNetQueue(core_id, true, 0, "forward", requestFromSpu);
-	  spu_net_ptr->setSpuFromNetQueue(core_id, true, 0, "forward", responseToSpu);
+	  // FIXME: CHEck this virtual network num allocation, I have used dummy
+
+	  // spu_net_ptr->setToNetQueue(core_id, true, 4, "response", requestFromSpu);
+	  spu_net_ptr->setToNetQueue(core_id, true, 1, "response", requestFromSpu);
+	  // spu_net_ptr->setToNetQueue(core_id, true, 3, "forward", dummy);
+	  // spu_net_ptr->setToNetQueue(core_id, true, 1, "response", dummy);
+	  
+	  // spu_net_ptr->setFromNetQueue(core_id, true, 2, "request", responseToSpu);
+	  spu_net_ptr->setFromNetQueue(core_id, true, 0, "request", responseToSpu);
+	  // spu_net_ptr->setFromNetQueue(core_id, true, 0, "response", dummy);
+
 	}
 
 	// FIXME

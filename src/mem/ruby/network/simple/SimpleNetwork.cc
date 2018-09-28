@@ -114,7 +114,7 @@ SimpleNetwork::makeSpuExtOutLink(SwitchID src, NodeID dest, BasicLink* link,
     // printf("for links to SPU, src: %d dest: %d, dest should be less than 4, src should be less than num of switches\n",src,dest);
 
 	SimpleSpuExtLink *simple_link = safe_cast<SimpleSpuExtLink*>(link);
-    m_switches[src]->addOutPort(s_fromNetQueues[dest], routing_table_entry,
+    m_switches[src]->addOutPort(m_fromNetQueues[dest+ctrl_nodes], routing_table_entry,
                                 simple_link->m_latency,
                                 simple_link->m_bw_multiplier);
 }
@@ -130,7 +130,7 @@ SimpleNetwork::makeSpuExtInLink(NodeID src, SwitchID dest, BasicLink* link,
     assert(dest < m_switches.size());
     assert(m_switches[dest] != NULL);
     // printf("for links to switches, src: %d dest: %d, src should be less than 4, dest should be less than num of switches\n",src,dest);
-    m_switches[dest]->addInPort(s_toNetQueues[src]);
+    m_switches[dest]->addInPort(m_toNetQueues[src+ctrl_nodes]);
 }
 
 // From a switch to a switch

@@ -1553,6 +1553,7 @@ Execute::isInbetweenInsts(ThreadID thread_id) const
 void
 Execute::evaluate()
 {
+/*
   // push values into the nse port if the request is from SPU
   int first=0;
   if(cpu.curCycle()==2 && first==0){
@@ -1580,6 +1581,7 @@ Execute::evaluate()
 	 printf("Request popped from the SPU buffer, success!!");
 
   }
+  */
 
     if (!inp.outputWire->isBubble())
         inputBuffer[inp.outputWire->threadId].setTail(*inp.outputWire);
