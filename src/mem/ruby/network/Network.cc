@@ -218,6 +218,7 @@ Network::checkNetworkAllocation(NodeID id, bool ordered,
                                         int network_num,
                                         std::string vnet_type)
 {
+    // printf("id: %d, m_nodes: %d\n",id,m_nodes);
     fatal_if(id >= m_nodes, "Node ID is out of range");
     fatal_if(network_num >= m_virtual_networks, "Network id is out of range");
 

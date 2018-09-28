@@ -71,9 +71,9 @@ Throttle::addLinks(const vector<MessageBuffer*>& in_vec,
                    const vector<MessageBuffer*>& out_vec)
 {
   // comes here 20 times
-  printf("Comes here for links connecting buffers, ideally should be 4*5*2=40 times\n");
+  // printf("Comes here for links connecting buffers, ideally should be 4*5*2=40 times\n");
     assert(in_vec.size() == out_vec.size());
-    printf("size of the input vector: %lu, basically the num of vnets=5? \n", in_vec.size());
+    // printf("size of the input vector: %lu, basically the num of vnets=5? \n", in_vec.size());
     for (int vnet = 0; vnet < in_vec.size(); ++vnet) {
         MessageBuffer *in_ptr = in_vec[vnet];
         MessageBuffer *out_ptr = out_vec[vnet];
@@ -90,7 +90,7 @@ Throttle::addLinks(const vector<MessageBuffer*>& in_vec,
             to_string(m_node) + "]";
     }
 	// printf("%s\n",desc);
-	printf("Updated m_in and m_out size: %lu and %lu\n",m_in.size(),m_out.size());
+	// printf("Updated m_in and m_out size: %lu and %lu\n",m_in.size(),m_out.size());
 }
 
 void
@@ -98,16 +98,20 @@ Throttle::operateVnet(int vnet, int &bw_remaining, bool &schedule_wakeup,
                       MessageBuffer *in, MessageBuffer *out)
 {
 
-  printf("CAME HERE TO OPERATE THE VIRTUAL NETWORK\n");
+  // printf("CAME HERE TO OPERATE THE VIRTUAL NETWORK\n");
   // consumer of in link should be switch and out should be controller
     if (out == nullptr || in == nullptr) {
         return;
     }
 
-    assert(m_units_remaining[vnet] >= 0);
+	assert(m_units_remaining[vnet] >= 0);
     Tick current_time = m_switch->clockEdge();
 
-    while (bw_remaining > 0 && (in->isReady(current_time) ||
+
+    printf("Is the buffer ready to take in values? %d\n",in->isReady(current_time));
+    printf("Is units remaining on vnet? %d\n",m_units_remaining[vnet]);
+        
+	while (bw_remaining > 0 && (in->isReady(current_time) ||
                                 m_units_remaining[vnet] > 0) &&
            out->areNSlotsAvailable(1, current_time)) {
         // See if we are done transferring the previous message on
