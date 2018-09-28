@@ -158,13 +158,19 @@ class MinorCPU : public BaseCPU
 	  // FIXME: CHEck this virtual network num allocation, I have used dummy
 
 	  // spu_net_ptr->setToNetQueue(core_id, true, 1, "response", requestFromSpu);
-	  spu_net_ptr->setToNetQueue(core_id, true, 4, "response", requestFromSpu);
-	  spu_net_ptr->setToNetQueue(core_id, true, 3, "forward", dummy1);
-	  spu_net_ptr->setToNetQueue(core_id, true, 1, "response", dummy2);
+	  // FIXME: should send base by ctrl nodes=8
+	  // printf("CORE ID IS: %d\n",core_id);
+	  spu_net_ptr->setToNetQueue(8+core_id, true, 4, "response", requestFromSpu);
+	  spu_net_ptr->setToNetQueue(8+core_id, true, 3, "forward", dummy1);
+	  spu_net_ptr->setToNetQueue(8+core_id, true, 1, "response", dummy2);
 	  
 	  // spu_net_ptr->setFromNetQueue(core_id, true, 0, "request", responseToSpu);
-	  spu_net_ptr->setFromNetQueue(core_id, true, 2, "request", responseToSpu);
-	  spu_net_ptr->setFromNetQueue(core_id, true, 0, "request", dummy3);
+	  // spu_net_ptr->setFromNetQueue(20+core_id, true, 2, "request", responseToSpu);
+	  // spu_net_ptr->setFromNetQueue(20+core_id, true, 0, "request", dummy3);
+
+	  spu_net_ptr->setFromNetQueue(8+core_id, true, 2, "request", responseToSpu);
+	  spu_net_ptr->setFromNetQueue(8+core_id, true, 0, "request", dummy3);
+
 	  // spu_net_ptr->setFromNetQueue(core_id, true, 0, "response", dummy3);
 
 	}
