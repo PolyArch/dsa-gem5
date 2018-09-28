@@ -266,6 +266,11 @@ for i in xrange(np):
     system.cpu[i].responseToSpu = MessageBuffer()
     system.cpu[i].requestFromSpu = MessageBuffer()
 
+    system.cpu[i].dummy1 = MessageBuffer()
+    system.cpu[i].dummy2 = MessageBuffer()
+    system.cpu[i].dummy3 = MessageBuffer()
+
+
 if options.ruby:
     Ruby.create_system(options, False, system)
     assert(options.num_cpus == len(system.ruby._cpu_ports))
