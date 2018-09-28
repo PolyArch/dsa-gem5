@@ -122,7 +122,7 @@ class Mesh_XY(SimpleTopology):
         # in code only)
         # FIXME: these nodes should not be controllers
 
-        print("COMES TO THE CONFIG FILES TO CREATE TOPOLOGY- HOW TO CHANGE?")
+        # print("COMES TO THE CONFIG FILES TO CREATE TOPOLOGY- HOW TO CHANGE?")
         spu_nodes = []
         # print len(self.spu_ports)
         # print options.num_cpus

@@ -70,8 +70,10 @@ void
 Throttle::addLinks(const vector<MessageBuffer*>& in_vec,
                    const vector<MessageBuffer*>& out_vec)
 {
+  // comes here 20 times
+  printf("Comes here for links connecting buffers, ideally should be 4*5*2=40 times\n");
     assert(in_vec.size() == out_vec.size());
-    // printf("size of the input vector: %lu\n", in_vec.size());
+    printf("size of the input vector: %lu, basically the num of vnets=5? \n", in_vec.size());
     for (int vnet = 0; vnet < in_vec.size(); ++vnet) {
         MessageBuffer *in_ptr = in_vec[vnet];
         MessageBuffer *out_ptr = out_vec[vnet];
@@ -87,6 +89,8 @@ Throttle::addLinks(const vector<MessageBuffer*>& in_vec,
         string desc = "[Queue to Throttle " + to_string(m_switch_id) + " " +
             to_string(m_node) + "]";
     }
+	// printf("%s\n",desc);
+	printf("Updated m_in and m_out size: %lu and %lu\n",m_in.size(),m_out.size());
 }
 
 void

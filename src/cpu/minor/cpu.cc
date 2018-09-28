@@ -84,6 +84,9 @@ MinorCPU::MinorCPU(MinorCPUParams *params) :
 	// does it work like get()?
 	requestFromSpu = params->requestFromSpu;
 	responseToSpu = params->responseToSpu;
+	dummy1 = params->dummy1;
+	dummy2 = params->dummy2;
+	dummy3 = params->dummy3;
 }
 
 MinorCPU::~MinorCPU()

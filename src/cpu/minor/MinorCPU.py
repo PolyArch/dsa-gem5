@@ -278,6 +278,9 @@ class MinorCPU(BaseCPU):
 
     requestFromSpu = Param.MessageBuffer("SPU->network message buffers")
     responseToSpu = Param.MessageBuffer("network->SPU message buffers")
+    dummy1 = Param.MessageBuffer("dummy1 SPU message buffer")
+    dummy2 = Param.MessageBuffer("dummy2 SPU message buffer")
+    dummy3 = Param.MessageBuffer("dummy3 SPU message buffer")
 
     def addCheckerCpu(self):
         print("Checker not yet supported by MinorCPU")
