@@ -46,6 +46,9 @@
 #include "debug/Drain.hh"
 #include "debug/MinorCPU.hh"
 #include "debug/Quiesce.hh"
+#include "mem/ruby/slicc_interface/RubySlicc_ComponentMapping.hh"
+#include "mem/protocol/MachineType.hh"
+#include "mem/ruby/slicc_interface/RubySlicc_Util.hh"
 
 MinorCPU::MinorCPU(MinorCPUParams *params) :
     BaseCPU(params),
@@ -87,6 +90,12 @@ MinorCPU::MinorCPU(MinorCPUParams *params) :
 	dummy1 = params->dummy1;
 	dummy2 = params->dummy2;
 	dummy3 = params->dummy3;
+
+	// FIXME: might need to add this (let's keep it added actually)
+	// will be useful for getDest, etc
+    createMachineID(MachineType_Accel, intToID(core_id));
+
+
 }
 
 MinorCPU::~MinorCPU()

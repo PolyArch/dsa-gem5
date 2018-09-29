@@ -59,7 +59,9 @@ Network::Network(const Params *p)
 
     // Total nodes/controllers in network
     // Must make sure this is called after the State Machine constructors
-    // m_nodes = MachineType_base_number(MachineType_NUM);
+	// base_number has to be updated with every new creating of type
+    m_nodes = MachineType_base_number(MachineType_NUM);
+	printf("m_nodes is: %d and machine type num %d\n",m_nodes,MachineType_NUM);
     // m_nodes = p->ext_links.size();
     m_nodes = p->ext_links.size() + p->spu_ext_links.size();
     ctrl_nodes = p->ext_links.size();
