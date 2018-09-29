@@ -726,10 +726,23 @@ ${{self.c_ident}}_base_number(const ${{self.c_ident}}& obj)
             code('  case ${{self.c_ident}}_NUM:')
             for enum in reversed(self.enums.values()):
                 # Check if there is a defined machine with this type
+                # print(enum.ident)
+                # s=str(enum.indent)
+                # print(enum.primary)
                 if enum.primary:
                     code('    base += ${{enum.ident}}_Controller::getNumControllers();')
                 else:
-                    code('    base += 0;')
+                    # Hack for the extra primary accel link
+                    # if enum.ident == "Accel":
+                    if enum.ident == "RegionBuffer":
+                        code('    base += L1Cache_Controller::getNumControllers();')
+                    else:
+                        code('    base += 0;')
+                    # code('    base += 0;')
+                    # if enum==MachineType_Accel:
+                    #     # code('    base += ${{enum.ident}}_Controller::getNumControllers();')
+                    # else:
+                    #     code('    base += 0;')
                 code('    M5_FALLTHROUGH;')
                 code('  case ${{self.c_ident}}_${{enum.ident}}:')
             code('    break;')

@@ -56,6 +56,7 @@ Topology::Topology(uint32_t num_routers,
     // : m_nodes(ext_links.size()), m_number_of_switches(num_routers),
       m_ext_link_vector(ext_links), spu_ext_link_vector (spu_ext_links), m_int_link_vector(int_links)
 {
+
     // Total nodes/controllers in network
     assert(m_nodes > 1);
 
@@ -100,7 +101,11 @@ Topology::Topology(uint32_t num_routers,
 		// TODO: use it to get the coreid later on
         // RubySequencer *nse_seq = spu_ext_link->params()->spu_ext_node;
         // BasicRouter *router = spu_ext_link->params()->spu_int_node;
+		// FIXME: otherwise, I will have to do that hack, create this machine
+		// in the controller somehow
         int machine_base_idx = temp;
+        // int machine_base_idx = MachineType_base_number(MachineType_Accel);
+        // int machine_base_idx = MachineType_base_number(MachineType:Accel);
         int ext_idx1 = machine_base_idx;
         int ext_idx2 = ext_idx1 + m_nodes;
 		// HACK!
@@ -343,6 +348,8 @@ Topology::shortest_path_to_node(SwitchID src, SwitchID next,
     int max_machines;
 
     machines = MachineType_NUM;
+	// FIXME: hard-coded to debug
+    // machines = MachineType_NUM+4;
     max_machines = MachineType_base_number(MachineType_NUM);
 
     for (int m = 0; m < machines; m++) {
