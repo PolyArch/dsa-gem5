@@ -61,7 +61,9 @@ Network::Network(const Params *p)
     // Must make sure this is called after the State Machine constructors
 	// base_number has to be updated with every new creating of type
     m_nodes = MachineType_base_number(MachineType_NUM);
-	printf("m_nodes is: %d and machine type num %d\n",m_nodes,MachineType_NUM);
+	// printf("m_nodes is: %d and machine type num %d\n",m_nodes,MachineType_NUM);
+	// printf("base number of controller: %d\n",MachineType_base_number(MachineType_Directory));
+	// printf("base number of accel: %d\n",MachineType_base_number(MachineType_Accel));
     // m_nodes = p->ext_links.size();
     m_nodes = p->ext_links.size() + p->spu_ext_links.size();
     ctrl_nodes = p->ext_links.size();
@@ -128,16 +130,14 @@ Network::Network(const Params *p)
 	// s_toNetQueues.resize(n_spu_cores);
     // s_fromNetQueues.resize(n_spu_cores);
 
-	// seq_id as a hack for now
-	int core_id=0;
+	// int core_id=0;
 	for (std::vector<SpuExtLink*>::const_iterator i = p->spu_ext_links.begin();
          i != p->spu_ext_links.end(); ++i) {
         SpuExtLink *spu_ext_link = (*i);
 	    MinorCPU *accel = spu_ext_link->params()->spu_ext_node;
-        accel->initNetworkPtr(this, core_id);
-        // accel->initNetworkPtr(this);
-	    core_id++;
-        // spu_port->initNetworkPtr(this);
+        // accel->initNetworkPtr(this, core_id);
+        accel->initNetworkPtr(this);
+	    // core_id++;
     }
 
 	for (auto &it : dynamic_cast<Network *>(this)->params()->spu_ext_links) {
@@ -214,7 +214,6 @@ Network::MessageSizeType_to_int(MessageSizeType size_type)
     }
 }
 
-// It should be different I think!
 void
 Network::checkNetworkAllocation(NodeID id, bool ordered,
                                         int network_num,
@@ -236,6 +235,7 @@ void
 Network::setToNetQueue(NodeID id, bool ordered, int network_num,
                                  std::string vnet_type, MessageBuffer *b)
 {
+  // printf("id check in settonetqueue: %d\n",id);
     checkNetworkAllocation(id, ordered, network_num, vnet_type);
     while (m_toNetQueues[id].size() <= network_num) {
         m_toNetQueues[id].push_back(nullptr);

@@ -53,10 +53,13 @@
 #include "enums/ThreadPolicy.hh"
 #include "params/MinorCPU.hh"
 #include "mem/ruby/network/Network.hh"
+#include "mem/ruby/network/MessageBuffer.hh"
 #include "mem/ruby/slicc_interface/Message.hh"
 
 #include "mem/packet.hh"
 #include "mem/ruby/slicc_interface/RubyRequest.hh"
+#include "mem/protocol/Types.hh"
+#include "mem/ruby/common/Consumer.hh"
 // FIXME: check if I need it or not!
 // class Message;
 
@@ -83,7 +86,8 @@ typedef SimpleThread MinorThread;
  *      Minor::ExecContext objects
  *  created by Minor::Execute.
  */
-class MinorCPU : public BaseCPU
+// class MinorCPU : public BaseCPU
+class MinorCPU : public BaseCPU, public Consumer
 {
   protected:
     /** pipeline is a container for the clockable pipeline stage objects.
@@ -135,8 +139,7 @@ class MinorCPU : public BaseCPU
 	MessageBuffer *dummy1;
 	MessageBuffer *dummy2;
 	MessageBuffer *dummy3;
-	// Core id associated with each core
-	int core_id = 0;
+	MachineID m_machineID;
 
 
 
@@ -147,31 +150,46 @@ class MinorCPU : public BaseCPU
 
   public:
 
-	// FIXME: spu, have to be called using cpu reference, so should be protected?
-	void initNetworkPtr(Network* net_ptr, int id) {
+	void wakeup();
+	void print(std::ostream& out) const;
+
+	void initNetworkPtr(Network* net_ptr) {
 	  spu_net_ptr = net_ptr;
-	  core_id = id;
+	  m_machineID.type = MachineType_Accel;
+	  m_machineID.num = intToID(cpuId());
 	}
+
+	MachineID get_m_version(){
+	  return m_machineID;
+	}
+    
+	// return machine id corresponding to the given node id
+	MachineID get_m_version(int node_id){
+	  MachineID n_machineID;
+	  n_machineID.type = MachineType_Accel;
+	  n_machineID.num = intToID(node_id);
+	  return n_machineID;
+	}
+
 	void initNetQueues() {
-	  // fromSpu_q_ptr->create();
-	  // toSpu_q_ptr->create();
 	  // FIXME: CHEck this virtual network num allocation, I have used dummy
+	  MachineType machine_type = string_to_MachineType("Accel");
+      int base M5_VAR_USED = MachineType_base_number(machine_type);
 
-	  // spu_net_ptr->setToNetQueue(core_id, true, 1, "response", requestFromSpu);
-	  // FIXME: should send base by ctrl nodes=8
-	  // printf("CORE ID IS: %d\n",core_id);
-	  spu_net_ptr->setToNetQueue(8+core_id, true, 4, "response", requestFromSpu);
-	  spu_net_ptr->setToNetQueue(8+core_id, true, 3, "forward", dummy1);
-	  spu_net_ptr->setToNetQueue(8+core_id, true, 1, "response", dummy2);
-	  
-	  // spu_net_ptr->setFromNetQueue(core_id, true, 0, "request", responseToSpu);
-	  // spu_net_ptr->setFromNetQueue(20+core_id, true, 2, "request", responseToSpu);
-	  // spu_net_ptr->setFromNetQueue(20+core_id, true, 0, "request", dummy3);
+	  // spu_net_ptr->setToNetQueue(base+core_id, true, 1, "response", requestFromSpu);
+	  // spu_net_ptr->setFromNetQueue(base+core_id, true, 0, "request", responseToSpu);
 
-	  spu_net_ptr->setFromNetQueue(8+core_id, true, 2, "request", responseToSpu);
-	  spu_net_ptr->setFromNetQueue(8+core_id, true, 0, "request", dummy3);
+	  // spu_net_ptr->setToNetQueue(base+core_id, true, 4, "response", requestFromSpu);
+	  // spu_net_ptr->setToNetQueue(base+core_id, true, 3, "forward", dummy1);
+	  // spu_net_ptr->setToNetQueue(base+core_id, true, 1, "response", dummy2);
+	  // spu_net_ptr->setFromNetQueue(base+core_id, true, 2, "request", responseToSpu);
+	  // spu_net_ptr->setFromNetQueue(base+core_id, true, 0, "request", dummy3);
 
-	  // spu_net_ptr->setFromNetQueue(core_id, true, 0, "response", dummy3);
+	  spu_net_ptr->setToNetQueue(base+cpuId(), true, 4, "response", requestFromSpu);
+	  spu_net_ptr->setToNetQueue(base+cpuId(), true, 3, "forward", dummy1);
+	  spu_net_ptr->setToNetQueue(base+cpuId(), true, 1, "response", dummy2);
+	  spu_net_ptr->setFromNetQueue(base+cpuId(), true, 0, "request", responseToSpu);
+	  spu_net_ptr->setFromNetQueue(base+cpuId(), true, 2, "request", dummy3);
 
 	}
 
@@ -183,6 +201,7 @@ class MinorCPU : public BaseCPU
 	}
 
 	// not sure about this now, pass reference to data
+	/*
 	bool popReqFromSpu() {
 	  if(!responseToSpu->isEmpty()){
 		responseToSpu->dequeue(clockEdge());
@@ -190,6 +209,7 @@ class MinorCPU : public BaseCPU
 	  }
 	  return false;
 	}
+	*/
 
     /** Starting, waking and initialisation */
     void init() override;

@@ -126,6 +126,7 @@ CPUProgressEvent::description() const
 }
 
 BaseCPU::BaseCPU(Params *p, bool is_checker)
+    // : MemObject(p), Consumer(this), instCnt(0), _cpuId(p->cpu_id), _socketId(p->socket_id),
     : MemObject(p), instCnt(0), _cpuId(p->cpu_id), _socketId(p->socket_id),
       _instMasterId(p->system->getMasterId(this, "inst")),
       _dataMasterId(p->system->getMasterId(this, "data")),

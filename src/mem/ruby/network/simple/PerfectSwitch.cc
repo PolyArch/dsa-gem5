@@ -115,12 +115,12 @@ PerfectSwitch::operateVnet(int vnet)
 {
     // This is for round-robin scheduling
     int incoming = m_round_robin_start; 
-	printf("INPUT BUFFER ID AT THIS TIME IN ROUTER: %d\n", incoming);
+	// printf("INPUT BUFFER ID AT THIS TIME IN ROUTER: %d\n", incoming);
     m_round_robin_start++;
     if (m_round_robin_start >= m_in.size()) {
         m_round_robin_start = 0;
     }
-	printf("m_in size: %lu\n",m_in.size()); // does it go for all vnets?
+	// printf("m_in size: %lu\n",m_in.size()); // does it go for all vnets?
 
     if (m_pending_message_count[vnet] > 0) {
         // for all input ports, use round robin scheduling
@@ -168,7 +168,7 @@ PerfectSwitch::operateMessageBuffer(MessageBuffer *buffer, int incoming,
 
         output_links.clear();
         output_link_destinations.clear();
-		printf("MESSAGE DETECTED AT THE BUFFER, ready to be routed on the n/w\n");
+		// printf("MESSAGE DETECTED AT THE BUFFER, ready to be routed on the n/w\n");
         NetDest msg_dsts = net_msg_ptr->getDestination();
 		// printf("destination in the network: %lu\n",msg_dsts);
 
@@ -315,7 +315,7 @@ PerfectSwitch::wakeup()
     for (int vnet = highest_prio_vnet;
          (vnet * decrementer) >= (decrementer * lowest_prio_vnet);
          vnet -= decrementer) {
-	  printf("SENT FOR VNET ID: %d\n",vnet);
+	  // printf("SENT FOR VNET ID: %d\n",vnet);
         operateVnet(vnet);
     }
 }

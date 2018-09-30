@@ -398,7 +398,7 @@ bool
 MessageBuffer::isReady(Tick current_time) const
 {
   // for some reason, this buffer is not ready
-    printf("Is the size of heap +ve? %d\n",(m_prio_heap.size()>0));
+    // printf("Is the size of heap +ve? %d\n",(m_prio_heap.size()>0));
     // printf("Is the timing constraints correct? %d\n",(m_prio_heap.front()->getLastEnqueueTime() <= current_time));
     return ((m_prio_heap.size() > 0) &&
         (m_prio_heap.front()->getLastEnqueueTime() <= current_time));

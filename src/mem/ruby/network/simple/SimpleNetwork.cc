@@ -107,14 +107,16 @@ void
 SimpleNetwork::makeSpuExtOutLink(SwitchID src, NodeID dest, BasicLink* link,
                            const NetDest& routing_table_entry)
 {
-	dest = dest - ctrl_nodes;
-    assert(dest < (m_nodes-ctrl_nodes));
+	// dest = dest - ctrl_nodes;
+    // assert(dest < (m_nodes-ctrl_nodes));
+    assert(dest < m_nodes);
     assert(src < m_switches.size());
     assert(m_switches[src] != NULL);
     // printf("for links to SPU, src: %d dest: %d, dest should be less than 4, src should be less than num of switches\n",src,dest);
 
 	SimpleSpuExtLink *simple_link = safe_cast<SimpleSpuExtLink*>(link);
-    m_switches[src]->addOutPort(m_fromNetQueues[dest+ctrl_nodes], routing_table_entry,
+    // m_switches[src]->addOutPort(m_fromNetQueues[dest+ctrl_nodes], routing_table_entry,
+    m_switches[src]->addOutPort(m_fromNetQueues[dest], routing_table_entry,
                                 simple_link->m_latency,
                                 simple_link->m_bw_multiplier);
 }
@@ -124,13 +126,15 @@ SimpleNetwork::makeSpuExtInLink(NodeID src, SwitchID dest, BasicLink* link,
                           const NetDest& routing_table_entry)
 {
   // index into this is different
-    src = src-ctrl_nodes;
+    // src = src-ctrl_nodes;
     // printf("src: %d dest: %d\n",src,dest);
-    assert(src < (m_nodes-ctrl_nodes));
+    // assert(src < (m_nodes-ctrl_nodes));
+    assert(src < m_nodes);
     assert(dest < m_switches.size());
     assert(m_switches[dest] != NULL);
     // printf("for links to switches, src: %d dest: %d, src should be less than 4, dest should be less than num of switches\n",src,dest);
-    m_switches[dest]->addInPort(m_toNetQueues[src+ctrl_nodes]);
+    // m_switches[dest]->addInPort(m_toNetQueues[src+ctrl_nodes]);
+    m_switches[dest]->addInPort(m_toNetQueues[src]);
 }
 
 // From a switch to a switch

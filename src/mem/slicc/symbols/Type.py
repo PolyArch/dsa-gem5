@@ -733,8 +733,8 @@ ${{self.c_ident}}_base_number(const ${{self.c_ident}}& obj)
                     code('    base += ${{enum.ident}}_Controller::getNumControllers();')
                 else:
                     # Hack for the extra primary accel link
-                    # if enum.ident == "Accel":
-                    if enum.ident == "RegionBuffer":
+                    if enum.ident == "Accel":
+                    # if enum.ident == "RegionBuffer":
                         code('    base += L1Cache_Controller::getNumControllers();')
                     else:
                         code('    base += 0;')
@@ -771,7 +771,10 @@ ${{self.c_ident}}_base_count(const ${{self.c_ident}}& obj)
                 if enum.primary:
                     code('return ${{enum.ident}}_Controller::getNumControllers();')
                 else:
-                    code('return 0;')
+                    if enum.ident == "Accel":
+                        code('return L1Cache_Controller::getNumControllers();')
+                    else:
+                        code('return 0;')
 
             # total num
             code('''

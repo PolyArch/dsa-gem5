@@ -67,6 +67,8 @@
 #include "sim/system.hh"
 #include "debug/Mwait.hh"
 
+#include "mem/ruby/common/Consumer.hh"
+
 class BaseCPU;
 struct BaseCPUParams;
 class CheckerCPU;

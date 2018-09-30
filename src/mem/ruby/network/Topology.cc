@@ -76,6 +76,7 @@ Topology::Topology(uint32_t num_routers,
 
         int machine_base_idx = MachineType_base_number(abs_cntrl->getType());
         int ext_idx1 = machine_base_idx + abs_cntrl->getVersion(); // input link id
+		// printf("base index of ctrl: %d and m_version+first: %d\n",machine_base_idx, ext_idx1);
 		// printf("id of the controllers: %d\n",ext_idx1);
         int ext_idx2 = ext_idx1 + m_nodes; // output link id (different thing taking output?)
         int int_idx = router->params()->router_id + 2*m_nodes; // router id
@@ -259,7 +260,8 @@ Topology::makeLink(Network *net, SwitchID src, SwitchID dest,
         src_dest.first = src;
         src_dest.second = dest;
         link_entry = m_link_map[src_dest];
-		if(dest < m_nodes+ctrl_nodes) { // mem nodes
+		// if(dest < m_nodes+ctrl_nodes) { // mem nodes
+		if(node < ctrl_nodes) { // mem nodes
           net->makeExtOutLink(src - (2 * m_nodes), node, link_entry.link,
                          routing_table_entry);
 		} else {

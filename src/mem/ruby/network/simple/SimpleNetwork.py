@@ -87,7 +87,7 @@ class SimpleNetwork(RubyNetwork):
                         router_buffers.append(MessageBuffer(ordered = True))
             router.port_buffers = router_buffers
             # print(self.number_of_virtual_networks)
-            print(len(router_buffers))
+            # print(len(router_buffers))
 
 # port buffers include all internal and external buffers
 class Switch(BasicRouter):
