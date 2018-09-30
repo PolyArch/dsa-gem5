@@ -60,8 +60,8 @@ class Mesh_XY(SimpleTopology):
         self.spu_ports = accel
 
         num_routers = options.num_cpus
-        print("number of routers instantiated in the topology is ")
-        print(num_routers)
+        # print("number of routers instantiated in the topology is ")
+        # print(num_routers)
         num_rows = options.mesh_rows
 
         # default values for link latency and router latency.

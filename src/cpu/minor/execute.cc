@@ -58,6 +58,9 @@
 
 #include "mem/protocol/SequencerMsg.hh"
 #include "mem/protocol/RequestMsg.hh"
+#include "mem/ruby/slicc_interface/RubySlicc_Util.hh"
+#include "mem/ruby/network/Network.hh"
+#include "mem/ruby/system/RubySystem.hh"
 // #include "mem/protocol/SequencerRequestType.hh"
 
 #include "ssim/sim-debug.hh"
@@ -1553,11 +1556,10 @@ Execute::isInbetweenInsts(ThreadID thread_id) const
 void
 Execute::evaluate()
 {
-/*
   // push values into the nse port if the request is from SPU
-  int first=0;
-  if(cpu.curCycle()==2 && first==0){
-	first=1;
+  // int first=0;
+  if(cpu.curCycle()==2 && cpu.cpuId()==0){
+	// first=1;
 	// ideally we should send a request
 	 printf("Request sent to be pushed into the SPU buffer\n");
 	 // SpuRequestPtr request = new SpuRequestPtr(*this); // , InstId::0); // last are id's
@@ -1566,20 +1568,31 @@ Execute::evaluate()
      // std::shared_ptr<SequencerMsg> msg = std::make_shared<SequencerMsg>(cpu.clockEdge());
 	 // RequestMsg, ResponseMsg
 	 // I can modify some of the message parameters here!
-	 // (*msg).m_Destination.add(2); // dest m/c id
+	 // base+core_id
 	 // (*msg).m_Requestor = 0; // sending core id
-	 
-     // std::shared_ptr<RequestMsg> msg = std::make_shared<RequestMsg>(cpu.clockEdge());
-	 // set the coherence request type
-     // std::shared_ptr<SequencerMsg> msg = std::make_shared<SequencerMsg>(cpu.clockEdge());
-     // cpu.pushReqFromSpu(msg);
-	 printf("Request pushed into the SPU buffer\n");
+	
+	 // may add this according to our requirements
+     std::shared_ptr<RequestMsg> msg = std::make_shared<RequestMsg>(cpu.clockEdge());
+	  // TODO: we can declare this also in Type.py (only 2 lengths allowed)
+	  // (*msg).m_MessageSize = MessageSizeType_Writeback_Control;
+	  // (*msg).m_MessageSize = MessageSizeType_Writeback_Data;
+	  // TODO: add a new new message type (specific to each coherence protocol, find some common point)
+	  
+	  (*msg).m_MessageSize = MessageSizeType_Control;
+	  (*msg).m_Type = CoherenceRequestType_GETX;
+	  (*msg).m_Requestor = cpu.get_m_version();
+	  (*msg).m_Destination.add(cpu.get_m_version(2));
+	  (*msg).m_addr = 0;
+	  // find other way to do it
+	  // (*msg).m_DataBlk = 0; 
+	  cpu.pushReqFromSpu(msg);
+	  printf("Request pushed into the SPU buffer\n");
   }
 
-  // if value at nse in port, print success
+  // no need to check every cycle, check at wakeup
+  /*
   if(cpu.popReqFromSpu()){
 	 printf("Request popped from the SPU buffer, success!!");
-
   }
   */
 

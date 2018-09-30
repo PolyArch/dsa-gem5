@@ -49,11 +49,15 @@
 #include "mem/ruby/slicc_interface/RubySlicc_ComponentMapping.hh"
 #include "mem/protocol/MachineType.hh"
 #include "mem/ruby/slicc_interface/RubySlicc_Util.hh"
+// #include "mem/ruby/common/Consumer.hh"
+
+// FIXME: should not have any effect?
+#include "mem/ruby/network/MessageBuffer.hh"
 
 MinorCPU::MinorCPU(MinorCPUParams *params) :
     BaseCPU(params),
+	Consumer(this),
     threadPolicy(params->threadPolicy)
-	// , fromSpu_q_ptr(NULL), toSpu_q_ptr(NULL)
 {
     /* This is only written for one thread at the moment */
     Minor::MinorThread *thread;
@@ -85,6 +89,7 @@ MinorCPU::MinorCPU(MinorCPUParams *params) :
     activityRecorder = pipeline->getActivityRecorder();
 
 	// does it work like get()?
+	// printf("Number of accel in the system are: %d\n",params->numThreads);
 	requestFromSpu = params->requestFromSpu;
 	responseToSpu = params->responseToSpu;
 	dummy1 = params->dummy1;
@@ -93,10 +98,37 @@ MinorCPU::MinorCPU(MinorCPUParams *params) :
 
 	// FIXME: might need to add this (let's keep it added actually)
 	// will be useful for getDest, etc
-    createMachineID(MachineType_Accel, intToID(core_id));
-
-
+    createMachineID(MachineType_Accel, intToID(cpuId()));
+	// responseToSpu->setConsumer(this);
+	// TODO: check difference between init and constructor
+	(*responseToSpu).setConsumer(this);
 }
+
+
+void MinorCPU::wakeup()
+{
+  printf("Wake up accel id at destination node: %d\n",cpuId());
+  assert(!responseToSpu->isEmpty());
+  responseToSpu->dequeue(clockEdge());
+  printf("Request popped from the SPU buffer, success!!\n");
+
+  /*
+  if(!responseToSpu->isEmpty()){
+	responseToSpu->dequeue(clockEdge());
+	printf("Request popped from the SPU buffer, success!!\n");
+  } else {
+	printf("Why is queue empty?\n");
+  }
+  */
+}
+
+
+
+void MinorCPU::print(std::ostream& out) const
+{
+  out << "[CPU " << cpuId() << "]";
+}
+
 
 MinorCPU::~MinorCPU()
 {
@@ -136,6 +168,7 @@ MinorCPU::init()
             TheISA::initCPU(tc, cpuId());
         }
     }
+
 }
 
 /** Stats interface from SimObject (by way of BaseCPU) */
