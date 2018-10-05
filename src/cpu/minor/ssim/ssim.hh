@@ -18,6 +18,7 @@ class ssim_t
   friend class ticker_t;
   friend class scratch_read_controller_t;
   friend class scratch_write_controller_t;
+  friend class network_controller_t;
   friend class dma_controller_t;
   friend class port_port_controller_t;
 
@@ -61,8 +62,8 @@ public:
                       SBDT constant, uint64_t num_elem, 
                       SBDT constant2, uint64_t num_elem2, 
                       uint64_t flags); 
-  // void atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int opcode);
   void atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode);
+  void multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_port, int rem_port);
   void write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int num_elem);
 
   void insert_barrier(uint64_t mask);
@@ -199,6 +200,8 @@ private:
   uint64_t _fill_mode=0; //fill mode (default 0, no fill)
 
   Minor::LSQ* _lsq;
+  // required to access network
+  Minor::Execute* _execute;
 
   accel_t* accel_arr[NUM_ACCEL+1]; //LAST ONE IS SHARED SCRATCH
 

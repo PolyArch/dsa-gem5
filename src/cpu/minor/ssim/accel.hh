@@ -74,10 +74,9 @@ public:
 
   std::vector<bool> cgra_in_ports_active;
 
-  //input dfg nodes for [group][vec][port]
-  std::vector<std::vector<std::vector<SSDfgInput*>>>  input_dfg_node;
-  std::vector<std::vector<std::vector<SSDfgOutput*>>> output_dfg_node;
-
+  //input dsf nodes for [group][vec][port]
+  std::vector<std::vector<std::vector<SbDfg_Input*>>>  input_dfg_node;
+  std::vector<std::vector<std::vector<SbDfg_Output*>>> output_dfg_node;
   std::map<SS_CONFIG::ss_inst_t,int> inst_histo;
 
   void reset();
@@ -154,18 +153,18 @@ public:
       }
     }
   }
-  
+
   //utility functions
   template <typename T>
   std::vector<uint8_t> get_byte_vector(T val, int len){
-	// std::cout << "value inside get_byte_vector is: " << val << " and length should be: " << len << "\n"; 
+	// std::cout << "value inside get_byte_vector is: " << val << " and length should be: " << len << "\n";
     std::vector<uint8_t> v;
     for(int i=0; i<len; i++){
       v.push_back((val >> (i*8)) & 255);
     }
     return v;
   }
- 
+
   template <typename T>
   T merge_bytes(T val, std::vector<uint8_t> v, int len) {
 	// std::cout << "while merging\n";
@@ -233,7 +232,7 @@ public:
       for(int i = 0; i <8; ++i) _incomplete_word[i]=0;
      }
   }
-  
+
   void push_data(std::vector<uint8_t> data, bool valid=true) {
     int data_size = sizeof(data);
     assert(data_size=_port_width && "data size doesn't match the port width in dfg");
@@ -248,18 +247,6 @@ public:
     _total_pushed+=valid;
   }
 
-/*
-  void push_data(SBDT data, bool valid=true) {
-    if(_bytes_in_word!=0) {
-      std::cout << "It's not cool to leave random incomplete words in the port, "
-           << "please be more tidy next time\n";
-      assert(0);
-    }
-    _mem_data.push_back(data);
-    _valid_data.push_back(valid);
-    _total_pushed+=valid;
-  }
-  */
   template <typename T>
   void push_data(T data, bool valid=true) {
     int data_size = sizeof(T);
@@ -573,22 +560,26 @@ protected:
 
 class scratch_write_controller_t;
 class scratch_read_controller_t;
+class network_controller_t;
 
 
 //Limitations: 1 simultaneously active scratch stream
 class dma_controller_t : public data_controller_t {
   friend class scratch_write_controller_t;
   friend class scratch_read_controller_t;
+  friend class network_controller_t;
 
   public:
   static const int data_width=64; //data width in bytes
   //static const int data_ssdts=data_width/SBDT; //data width in bytes
   std::vector<bool> mask;
 
+  // FIXME: why do they need references to scratch controllers?
   dma_controller_t(accel_t* host,
       scratch_read_controller_t* scr_r_c,
-      scratch_write_controller_t* scr_w_c) :
-    data_controller_t(host), _scr_r_c(scr_r_c), _scr_w_c(scr_w_c) {
+      scratch_write_controller_t* scr_w_c,
+      network_controller_t* net_c) :
+    data_controller_t(host), _scr_r_c(scr_r_c), _scr_w_c(scr_w_c), _net_c(net_c) {
 
     _prev_port_cycle.resize(64); //resize to maximum conceivable ports
     mask.resize(MEM_WIDTH/DATA_WIDTH);
@@ -645,11 +636,12 @@ class dma_controller_t : public data_controller_t {
 
   scratch_read_controller_t*  scr_r_c() {return _scr_r_c;}
   scratch_write_controller_t* scr_w_c() {return _scr_w_c;}
-
+  network_controller_t* net_c() {return _net_c;}
   private:
 
   scratch_read_controller_t* _scr_r_c;
   scratch_write_controller_t* _scr_w_c;
+  network_controller_t* _net_c;
 
   void port_resp(unsigned i);
 
@@ -842,11 +834,112 @@ class scratch_write_controller_t : public data_controller_t {
   std::vector<atomic_scr_stream_t*> _atomic_scr_streams;
   std::vector<indirect_wr_stream_t*> _ind_wr_streams;
 
-  // TODO: add request queue max size
   std::vector<std::queue<atomic_scr_op_req>> _atomic_scr_issued_requests;
   dma_controller_t* _dma_c;
 };
 
+// It deals with all the remote rd/wr requests
+class network_controller_t : public data_controller_t {
+  public:
+  // std::vector <bool> mask;
+
+  network_controller_t(accel_t* host, dma_controller_t* d)
+    : data_controller_t(host) {
+    _dma_c=d; //save this for later
+
+	// it might be needed to port->spad things
+    // mask.resize(SCR_WIDTH/DATA_WIDTH);
+
+    // _indirect_scr_read_requests.resize(NUM_SCRATCH_BANKS);
+
+    reset_stream_engines();
+  }
+
+  void reset_stream_engines() {
+    _remote_port_multicast_streams.clear();
+	// _ind_port_streams.clear();
+    // _scr_port_streams.clear();
+  }
+
+  void reset_data() {
+    reset_stream_engines();
+  }
+
+  // these are the kind of streams declared somewhere
+  void send_multicast_message(int dest_port_id, SBDT val, SBDT mask, int stream_id);
+  // std::vector<SBDT> read_scratch(affine_read_stream_t& stream);
+  // void read_scratch_ind(indirect_stream_t& stream, uint64_t scr_addr);
+
+  // TODO: What does this do?: checks the most needy port, doesn't make sense
+  // here
+  // float calc_min_port_ready();
+  // things to be done at each cycle
+  void cycle();
+  // void cycle(bool &performed_read);
+  // banked scratchpad read buffers
+  bool remote_port_multicast_requests_active();
+
+  // TODO: What is this?: for reorder buffer
+  // int cycle_read_queue();
+
+  void finish_cycle();
+  bool done(bool,int);
+
+  bool schedule_remote_port(remote_port_multicast_stream_t& s);
+  // bool schedule_scr_port(affine_read_stream_t& s);
+  // bool schedule_indirect(indirect_stream_t& s);
+
+  void print_status();
+  void cycle_status();
+  // this shuld wakeup the controller when it recevies a message
+  // void wakeup();
+  // void receive_message();
+
+  // bool scr_port_streams_active();
+
+  private:
+  // to schedule the streams in the stream table
+  int _which_remote=0;
+
+  // reordering not required now for remote writes
+  /*
+  struct ind_reorder_entry_t {
+    uint8_t data[64]; //64 bytes per request
+    int size; //number of writes that should be completed
+    int completed=0;
+    int data_bytes;
+    base_stream_t* stream;
+    bool last = false;
+  };
+  */
+
+  // we might need similar thing for remote_port requests
+  /*
+  struct indirect_scr_read_req{
+    void *ptr;
+    uint64_t addr;
+    size_t bytes;
+    ind_reorder_entry_t* reorder_entry=NULL;
+  };
+  */
+
+  // It contains all kind of streams: copy?
+  std::vector<base_stream_t*> _remote_streams;
+
+  void delete_stream(int i, remote_port_multicast_stream_t* s);
+  // void delete_stream(int i, indirect_stream_t* s);
+
+  std::vector<remote_port_multicast_stream_t*> _remote_port_multicast_streams;
+  //std::vector<scr_scr_stream_t*> _scr_scr_streams;
+  // std::vector<indirect_stream_t*> _ind_port_streams;
+
+  // queues are the buffers associated with each bank
+  // std::vector<std::queue<indirect_scr_read_req>> _indirect_scr_read_requests;
+  // std::queue<ind_reorder_entry_t*> _ind_ROB;
+
+  // TODO: do we need that?
+  dma_controller_t* _dma_c;
+};
 
 class port_controller_t : public data_controller_t {
   public:
@@ -1055,6 +1148,7 @@ class accel_t
   friend class ssim_t;
   friend class scratch_read_controller_t;
   friend class scratch_write_controller_t;
+  friend class network_controller_t;
   friend class dma_controller_t;
   friend class port_port_controller_t;
 
@@ -1160,6 +1254,7 @@ public:
 
   scratch_read_controller_t*  scr_r_c() {return &_scr_r_c;}
   scratch_write_controller_t* scr_w_c() {return &_scr_w_c;}
+  network_controller_t* net_c() {return &_net_c;}
 
 private:
   ssim_t* _ssim;
@@ -1315,6 +1410,18 @@ private:
     }
   }
 
+  // I can put it in accel.cc as well if any issue
+  void send_multicast_message(int dest_port_id, SBDT val, SBDT mask, int stream_id) {
+     _lsq->push_spu_req(dest_port_id, val, mask);
+  }
+
+  // TODO: this should be called from wakeup in execute
+  void receive_message(SBDT data, int remote_in_port) {
+    port_data_t& in_vp = port_interf().out_port(remote_in_port);
+    // port_data_t& in_vp = _accel->port_interf().out_port(remote_in_port);
+    // TODO: Check the max port size here and apply backpressure
+    in_vp.push_data(data);
+  }
 
   //members------------------------
   soft_config_t _soft_config;
@@ -1345,6 +1452,7 @@ private:
   dma_controller_t _dma_c;
   scratch_read_controller_t _scr_r_c;
   scratch_write_controller_t _scr_w_c;
+  network_controller_t _net_c;
   port_controller_t _port_c;
 
   std::list<std::shared_ptr<base_stream_t>> _cmd_queue;
@@ -1373,6 +1481,7 @@ private:
   uint64_t _stat_scratch_write_bytes = 0;
   uint64_t _stat_scratch_reads = 0;
   uint64_t _stat_scratch_writes = 0;
+  uint64_t _stat_port_multicast = 0;
   uint64_t _stat_scratch_bank_requests_pushed = 0;
   uint64_t _stat_scratch_bank_requests_executed = 0;
   double _stat_bank_conflicts=0.0;

@@ -392,12 +392,8 @@ void port_interf_t::initialize(SSModel* ssconfig) {
 
   }
 
-  for (auto& x : ssconfig->subModel()->io_interf().out_vports) {
-    _out_port_data[x.first].initialize(ssconfig,x.first,false);
-	// int port_index=x.first;
-    // SSDfgVecOutput* vec_out = dynamic_cast<SSDfgVecOutput*>(
-    //     sched->vportOf(make_pair(false/*input*/,port_index)));
-    // _out_port_data[x.first].initialize(ssconfig, port_index,false,vec_out->get_port_width()); // port, isInput, port_width
+  for(auto& x : sbconfig->subModel()->io_interf().out_vports) {
+    _out_port_data[x.first].initialize(sbconfig,x.first,false);
   }
 }
 
@@ -413,9 +409,10 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
   _lsq(lsq),
   _accel_index(i),
   _accel_mask(1<<i),
-  _dma_c(this,&_scr_r_c,&_scr_w_c),
+  _dma_c(this,&_scr_r_c,&_scr_w_c,&_net_c),
   _scr_r_c(this,&_dma_c),
   _scr_w_c(this,&_dma_c),
+  _net_c(this,&_dma_c),
   _port_c(this) {
 
   int ugh = system("mkdir -p stats/");
@@ -491,6 +488,7 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
   }
 
   _banked_spad_mapping_strategy = std::getenv("MAPPING");
+
 
 
   _ssconfig = new SSModel(ssconfig_file);
@@ -665,7 +663,7 @@ void accel_t::whos_to_blame(std::vector<pipeline_stats_t::PIPE_STATUS>& blame_ve
   std::vector<pipeline_stats_t::PIPE_STATUS> temp_vec;
 
   for(int g = 0; g < NUM_GROUPS; ++g) {
-    if (_dfg->group_prop(g).is_temporal) continue;
+    if(_dfg->group_prop(g).is_temporal) continue;
 
     pipeline_stats_t::PIPE_STATUS blame = whos_to_blame(g);
     group_vec.push_back(blame);
@@ -1930,6 +1928,14 @@ bool scratch_read_controller_t::schedule_indirect(indirect_stream_t& new_s) {
   return true;
 }
 
+// For port->remote port affine stream
+bool network_controller_t::schedule_remote_port(remote_port_multicast_stream_t& new_s) {
+  auto* s = new remote_port_multicast_stream_t(new_s);
+  _remote_port_multicast_streams.push_back(s);
+  _remote_streams.push_back(s);
+  return true;
+}
+
 bool scratch_write_controller_t::schedule_indirect_wr(indirect_wr_stream_t& new_s) {
   auto* s = new indirect_wr_stream_t(new_s);
   _ind_wr_streams.push_back(s);
@@ -2193,6 +2199,10 @@ void scratch_read_controller_t::delete_stream(int i, indirect_stream_t* s) {
   delete_stream_internal(i,s,_ind_port_streams,_read_streams);
 }
 
+// deleted both of them?
+void network_controller_t::delete_stream(int i, remote_port_multicast_stream_t* s) {
+  delete_stream_internal(i,s,_remote_port_multicast_streams,_remote_streams);
+}
 void scratch_write_controller_t::delete_stream(int i, affine_write_stream_t* s) {
   delete_stream_internal(i,s,_port_scr_streams,_write_streams);
 }
@@ -2880,6 +2890,24 @@ vector<SBDT> scratch_read_controller_t::read_scratch(
   return data;
 }
 
+// send a multicast message
+// TODO: copy the things from write message (we need to parse
+// whole stream to collect all data in read)
+// TODO: we should have configurability
+// TODO: put this also in accel_t
+/*
+void network_controller_t::send_multicast_message(
+               int dest_port_id, SBDT val, SBDT mask, int stream_id) {
+               }
+      // TODO: use this code in the execute
+     // std::bitset<64> core_mask(mask);
+     // int num_dest = core_mask.count();
+     // printf("number of cores we want to send is: %d\n",num_dest);
+     // It should take these parameters and push the request to queue
+     _lsq.push_spu_req(dest_port_id, val, mask);
+}
+*/
+
 #define MAX_PORT_READY 100000
 
 //Figure out which port is the most needy
@@ -2899,6 +2927,91 @@ float scratch_read_controller_t::calc_min_port_ready() {
   }
   return min_port_ready;
 }
+
+// make it simpler so that we don't use fancy scheduling, probably copy from
+// the write controller
+void network_controller_t::cycle() {
+  // required for optimization `based on CGRA reads--not required here
+  // float min_port_ready=-2;
+
+  // TODO: required for reordering read buffer
+  // cycle_read_queue();
+
+  int i=0;
+  // cycle over all the streams
+  for(i=0; i < _remote_streams.size(); ++i) {
+    _which_remote=(_which_remote+1)>=_remote_streams.size() ? 0:_which_remote+1;
+    base_stream_t* s = _remote_streams[_which_remote];
+
+	// if the stream is affine stream like in my case
+
+  if(auto* sp = dynamic_cast<remote_port_multicast_stream_t*>(s)) {
+	{
+    remote_port_multicast_stream_t stream = *sp;
+  // remote_port_multicast_stream_t* stream;
+	if(stream.stream_active()) {
+        // out_vp has the data to be broadcasted
+        port_data_t& out_vp = _accel->port_interf().out_port(stream._out_port);
+        int remote_in_port = stream._remote_port;
+
+        // it will have final port where to write
+        if(out_vp.mem_size() > 0) {
+          // go while stream and port does not run out
+          // we can send max of message_size*bus_wisth messages in 1 cycle
+          // or till the queue is full (Oh, this bus is also 512-bit bus)
+          uint64_t bytes_written=0;
+          uint64_t remote_elem_sent=0;
+          while(stream.stream_active() //enough in dest
+                                && out_vp.mem_size() && bytes_written<64) { //enough in source (64-bytes)
+            // peek out and pop later if message buffer size was full?
+            SBDT val = out_vp.pop_out_data();
+            // timestamp(); cout << "POPPED b/c port->scratch WRITE: " << out_vp.port() << " " << out_vp.mem_size() << "\n";
+
+            // function inside network controller
+            // send_multicast_message(&val, remote_in_port, sizeof(SBDT), stream.id());
+            // I dn't want to modify val, not sure why we send address in write scratchapd
+            _accel->send_multicast_message(val, remote_in_port, sizeof(SBDT), stream.id());
+
+            // only val, this should decrease the stream size
+            // val = stream.pop_val();
+            bytes_written += DATA_WIDTH;
+            remote_elem_sent+=1;
+            stream._num_elements--;
+          }
+          if(_accel->_ssim->in_roi()) {
+             // add_bw(stream.src(), stream.dest(), 1, bytes_written);
+            _accel->_stat_port_multicast+=remote_elem_sent;
+          }
+
+          bool is_empty = stream.check_set_empty();
+          // FIXME: do we need to send sp or *sp, check!
+          if(is_empty) {
+            // _accel->process_stream_stats(*sp);
+            _accel->process_stream_stats(stream);
+            if(SS_DEBUG::VP_SCORE2) {
+              cout << "SOURCE: PORT->PORT\n";
+            }
+            out_vp.set_status(port_data_t::STATUS::FREE);
+            delete_stream(_which_remote,sp);
+          }
+          break;
+        }
+      }
+  } /* else if(auto* sp = dynamic_cast<affine_read_stream_t*>(s)) {
+      }
+      */
+    }
+  }
+}
+
+void network_controller_t::finish_cycle() {
+}
+
+// just prints affine properties, see if it really follows that
+void network_controller_t::print_status() {
+  for(auto& i : _remote_streams) {if(!i->empty()){i->print_status();}}
+}
+
 
 void scratch_read_controller_t::cycle(bool &performed_read) {
   float min_port_ready=-2;

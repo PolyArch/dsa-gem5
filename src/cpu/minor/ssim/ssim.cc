@@ -414,6 +414,19 @@ void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_
 }
 
 
+void ssim_t::multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_port, int rem_port) {
+    remote_port_multicast_stream_t* s = new remote_port_multicast_stream_t();
+    s->_core_mask = mask;
+    s->_num_elements = num_elem;
+    s->_out_port = out_port;
+    s->_remote_port = rem_port;
+	// What is this?
+    // s->_unit=LOC::SCR;
+    s->set_orig(); 
+
+    add_bitmask_stream(s);
+}
+
 void ssim_t::write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int num_elem) {
     const_scr_stream_t* s = new const_scr_stream_t();
     s->_scratch_addr = scratch_addr;
@@ -423,9 +436,6 @@ void ssim_t::write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int 
 
     add_bitmask_stream(s);
 }
-
-
-
 
 //The reroute function handles either local recurrence, or remote data transfer
 void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem, 

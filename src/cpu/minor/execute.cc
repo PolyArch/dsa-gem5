@@ -55,6 +55,7 @@
 #include "debug/MinorMem.hh"
 #include "debug/MinorTrace.hh"
 #include "debug/PCEvent.hh"
+#include <bits/stdc++.h>
 
 #include "mem/protocol/SequencerMsg.hh"
 #include "mem/protocol/RequestMsg.hh"
@@ -646,9 +647,11 @@ Execute::issue(ThreadID thread_id)
                 " there are too many in flight\n", *inst);
             issued = false;
         } else {
-            if(inst->staticInst->isSS() && ssim.is_in_config()) {
+            /*
+            if(inst->staticInst!=NULL && inst->staticInst->isSS() && ssim.is_in_config()) {
                issued=false;
             }
+            */
 
             /* Try and issue an instruction into an FU, assume we didn't and
              * fix that in the loop */
@@ -1553,11 +1556,31 @@ Execute::isInbetweenInsts(ThreadID thread_id) const
         !lsq.accessesInFlight();
 }
 
+void Execute::send_spu_req(int dest_port_id, uint64_t val, int64_t mask){
+  
+  std::shared_ptr<RequestMsg> msg = std::make_shared<RequestMsg>(cpu.clockEdge());
+  (*msg).m_MessageSize = MessageSizeType_Control;
+  (*msg).m_Type = CoherenceRequestType_GETX;
+  (*msg).m_Requestor = cpu.get_m_version();
+  (*msg).m_addr = 0;
+  // find other way to do it
+  // (*msg).m_DataBlk = 0; 
+  // TODO2: somehow send dest_port_id
+  (*msg).m_addr = dest_port_id;
+  // TODO1: derive dest from mask (or can we directly send the mask?)
+  std::bitset<64> core_mask(mask);
+  for(int i=0; i<core_mask.size(); ++i){
+	if(core_mask.test(i)){
+      (*msg).m_Destination.add(cpu.get_m_version(i));
+	}
+  }
+  cpu.pushReqFromSpu(msg);
+}
+
 void
 Execute::evaluate()
 {
-  // push values into the nse port if the request is from SPU
-  // int first=0;
+  /*
   if(cpu.curCycle()==2 && cpu.cpuId()==0){
 	// first=1;
 	// ideally we should send a request
@@ -1572,12 +1595,11 @@ Execute::evaluate()
 	 // (*msg).m_Requestor = 0; // sending core id
 	
 	 // may add this according to our requirements
-     std::shared_ptr<RequestMsg> msg = std::make_shared<RequestMsg>(cpu.clockEdge());
 	  // TODO: we can declare this also in Type.py (only 2 lengths allowed)
 	  // (*msg).m_MessageSize = MessageSizeType_Writeback_Control;
 	  // (*msg).m_MessageSize = MessageSizeType_Writeback_Data;
-	  // TODO: add a new new message type (specific to each coherence protocol, find some common point)
-	  
+	  // TODO: add a new new message type (specific to each coherence protocol, find some common point)  
+      std::shared_ptr<RequestMsg> msg = std::make_shared<RequestMsg>(cpu.clockEdge());
 	  (*msg).m_MessageSize = MessageSizeType_Control;
 	  (*msg).m_Type = CoherenceRequestType_GETX;
 	  (*msg).m_Requestor = cpu.get_m_version();
@@ -1587,12 +1609,6 @@ Execute::evaluate()
 	  // (*msg).m_DataBlk = 0; 
 	  cpu.pushReqFromSpu(msg);
 	  printf("Request pushed into the SPU buffer\n");
-  }
-
-  // no need to check every cycle, check at wakeup
-  /*
-  if(cpu.popReqFromSpu()){
-	 printf("Request popped from the SPU buffer, success!!");
   }
   */
 
