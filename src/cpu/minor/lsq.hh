@@ -763,6 +763,9 @@ class LSQ : public Named
     void recvReqRetry();
     void recvTimingSnoopReq(PacketPtr pkt);
 
+    /* Push request into the SPU buffer, FIXME: it could directly push here also? */
+    void push_spu_req(int dest_port_id, uint64_t val, int64_t mask);
+
     /** Return the raw-bindable port */
     MinorCPU::MinorCPUPort &getDcachePort() { return dcachePort; }
 

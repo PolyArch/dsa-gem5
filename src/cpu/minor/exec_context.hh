@@ -581,6 +581,11 @@ class ExecContext : public ::ExecContext
                 thread.getSSReg(SS_SCRATCH_ADDR),  thread.getSSReg(SS_CONSTANT),
                 thread.getSSReg(SS_NUM_STRIDES));
             break;
+			case SS_REM_PORT: ssim.multicast_remote_port(
+				// thread.getSSReg(SS_NUM_ELEM), thread.getSSReg(SS_MASK),  
+                thread.getSSReg(SS_NUM_ELEM), thread.getSSReg(SS_SCRATCH_ADDR),  
+                thread.getSSReg(SS_OUT_PORT), thread.getSSReg(SS_IN_PORT));    
+            break;
             case SS_WAIT:
                 if(thread.getSSReg(SS_WAIT_MASK) == 0) {
                     ssim.set_not_in_use();

@@ -898,6 +898,13 @@ decode QUADRANT default Unknown::unknown() {
                     xc->setSSReg( (imm & 0x40) ? 2 : 0, SS_SHIFT_BYTES);
                     xc->callSSFunc(SS_PRT_SCR);
                 }}, IsSSStream, No_OpClass);
+				0x2: ss_rem_port({{
+					xc->setSSReg(Rs1,SS_NUM_ELEM);
+                    xc->setSSReg(Rs2,SS_SCRATCH_ADDR);
+                    xc->setSSReg((imm >> 6) & 0x3f, SS_OUT_PORT);
+                    xc->setSSReg(imm & 0x3f, SS_IN_PORT);
+                    xc->callSSFunc(SS_REM_PORT);
+                }}, IsSSStream, No_OpClass);
                 0x3: ss_garb({{
                      xc->setSSReg(Rs1,SS_GARB_ELEM);
                 }}, IsSSStream, No_OpClass);

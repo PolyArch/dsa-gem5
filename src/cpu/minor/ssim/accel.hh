@@ -37,7 +37,7 @@ struct pair_hash {
         auto h1 = std::hash<T1>{}(p.first);
         auto h2 = std::hash<T2>{}(p.second);
 
-        return (h1 ^ h2) + h1;  
+        return (h1 ^ h2) + h1;
     }
 };
 
@@ -75,7 +75,7 @@ public:
   std::vector<bool> cgra_in_ports_active;
 
   //input pdg nodes for [group][vec][port]
-  std::vector<std::vector<std::vector<SbPDG_Input*>>>  input_pdg_node; 
+  std::vector<std::vector<std::vector<SbPDG_Input*>>>  input_pdg_node;
   std::vector<std::vector<std::vector<SbPDG_Output*>>> output_pdg_node;
 
   std::map<SB_CONFIG::sb_inst_t,int> inst_histo;
@@ -95,9 +95,9 @@ public:
   unsigned port_cgra_elem() {
     int pm_size = _port_map.size();
     return std::max(pm_size,1);
-  } //num of pairs in mapping 
-  
-  unsigned port_vec_elem(); //total size elements of the std::vector port 
+  } //num of pairs in mapping
+
+  unsigned port_vec_elem(); //total size elements of the std::vector port
   unsigned port_depth() { return port_vec_elem() / port_cgra_elem();} //depth of queue
   unsigned cgra_port_for_index(unsigned i) { return _port_map[i].first;}
 
@@ -114,7 +114,7 @@ public:
       _cgra_data[i].clear();
       _cgra_valid[i].clear();
     }
-    _num_in_flight=0; 
+    _num_in_flight=0;
     _num_ready=0;
     _total_pushed=0;
   }
@@ -163,13 +163,13 @@ public:
   //We need an adaptor so that we can push sub-word size data to the ports
   //Ideally we'd change all the datastructures so they could work properly
   //for now I'm implementing a hack
-  
+
   void push_data_byte(uint8_t b) {
      _incomplete_word[_bytes_in_word++]=b;
      if(_bytes_in_word==8) {
        _bytes_in_word=0;
        push_data( *((uint64_t*)_incomplete_word),true);
-      for(int i = 0; i <8; ++i) _incomplete_word[i]=0; 
+      for(int i = 0; i <8; ++i) _incomplete_word[i]=0;
      }
   }
 
@@ -180,13 +180,13 @@ public:
       assert(0);
     }
     _mem_data.push_back(data);
-    _valid_data.push_back(valid); 
+    _valid_data.push_back(valid);
     _total_pushed+=valid;
   }
 
 
-  void push_data(std::vector<SBDT> data, bool valid=true) { 
-    for(auto i : data) push_data(i,valid); 
+  void push_data(std::vector<SBDT> data, bool valid=true) {
+    for(auto i : data) push_data(i,valid);
   }
 
   void reformat_in();  //rearrange all data for CGRA
@@ -276,22 +276,22 @@ public:
       }
     }
     if(status == STATUS::BUSY) {
-      assert((_loc==loc || _status==STATUS::FREE) && 
+      assert((_loc==loc || _status==STATUS::FREE) &&
           "can only assign to a port with eqiv. loc, or if the status is FREE");
     }
-    
+
     if(status == STATUS::FREE) {
       //We are really just freeing one stream! So...
       //only enter truely free status if no outstanding streams
       _outstanding--;
       if(_outstanding==0){
         _status=STATUS::FREE;
-      } 
+      }
 
-      fill(fill_mode); //call fill 
+      fill(fill_mode); //call fill
 
     } else {
-       _status=status; // no need 
+       _status=status; // no need
       if(status == STATUS::BUSY) {
         _outstanding++;
         _loc=loc;
@@ -304,15 +304,15 @@ public:
   }
 
   bool can_take(LOC loc, int repeat=1, int repeat_stretch=0) {
-    //This makes sure the input port is fully drained before sending the next 
-    //stream. This causes ~1-2 cycles of pipeline bubble + memory access time 
+    //This makes sure the input port is fully drained before sending the next
+    //stream. This causes ~1-2 cycles of pipeline bubble + memory access time
     //as well -- NOT GOOD.   Don't switch often the repeat size, especially
     //streams comming from memory!  (if this is required, add new h/w mechanism)
-    if(_repeat != repeat || _repeat_stretch != repeat_stretch) { 
-      return !in_use() && mem_size()==0 && (_cgra_data.size()==0 || 
+    if(_repeat != repeat || _repeat_stretch != repeat_stretch) {
+      return !in_use() && mem_size()==0 && (_cgra_data.size()==0 ||
                                             _cgra_data[0].size()==0);
     }
-    return (_status == STATUS::FREE) || 
+    return (_status == STATUS::FREE) ||
            (_status == STATUS::COMPLETE && _loc == loc);
   }
   bool in_use() {
@@ -329,7 +329,7 @@ public:
   //NOTE:TODO:FIXME: Right now we only support wide maps, so pm is not really
   //necessary -- we construct our own pm from the mask -- maybe fix this later
   //when we are more ambitious
-  void set_port_map(std::vector<int> pm, 
+  void set_port_map(std::vector<int> pm,
                     std::vector<bool> mask, int temporal) {
     assert(mask.size() == pm.size()); //masks should be the same!
     assert(mask.size() != 0);
@@ -359,7 +359,7 @@ public:
   int repeat() {return _repeat;}
 
   void set_repeat(int r, int rs);
-  
+
   // Increase the times of data repeated.
   // Return true if the value should be popped.
   // Or more accurately, repeat time runs out.
@@ -385,7 +385,7 @@ private:
   std::deque<bool> _valid_data;
   std::vector<std::deque<SBDT>> _cgra_data; //data per port
   std::vector<std::deque<bool>> _cgra_valid; //data per port
-  unsigned _num_in_flight=0; 
+  unsigned _num_in_flight=0;
   unsigned _num_ready=0;
 
   uint64_t _total_pushed=0;
@@ -448,23 +448,27 @@ protected:
 
 class scratch_write_controller_t;
 class scratch_read_controller_t;
+class network_controller_t;
 
 
 //Limitations: 1 simultaneously active scratch stream
 class dma_controller_t : public data_controller_t {
   friend class scratch_write_controller_t;
   friend class scratch_read_controller_t;
+  friend class network_controller_t;
 
   public:
   static const int data_width=64; //data width in bytes
   //static const int data_sbdts=data_width/SBDT; //data width in bytes
   std::vector<bool> mask;
 
+  // FIXME: why do they need references to scratch controllers?
   dma_controller_t(accel_t* host,
       scratch_read_controller_t* scr_r_c,
-      scratch_write_controller_t* scr_w_c) : 
-    data_controller_t(host), _scr_r_c(scr_r_c), _scr_w_c(scr_w_c) {
-    
+      scratch_write_controller_t* scr_w_c,
+      network_controller_t* net_c) :
+    data_controller_t(host), _scr_r_c(scr_r_c), _scr_w_c(scr_w_c), _net_c(net_c) {
+
     _prev_port_cycle.resize(64); //resize to maximum conceivable ports
     mask.resize(MEM_WIDTH/DATA_WIDTH);
   }
@@ -520,11 +524,12 @@ class dma_controller_t : public data_controller_t {
 
   scratch_read_controller_t*  scr_r_c() {return _scr_r_c;}
   scratch_write_controller_t* scr_w_c() {return _scr_w_c;}
-
+  network_controller_t* net_c() {return _net_c;}
   private:
 
   scratch_read_controller_t* _scr_r_c;
   scratch_write_controller_t* _scr_w_c;
+  network_controller_t* _net_c;
 
   void port_resp(unsigned i);
 
@@ -541,9 +546,9 @@ class dma_controller_t : public data_controller_t {
 
   void delete_stream(int i, affine_read_stream_t* s);
   void delete_stream(int i, indirect_stream_t* s);
-  void delete_stream(int i, affine_write_stream_t* s);  
+  void delete_stream(int i, affine_write_stream_t* s);
   void delete_stream(int i, indirect_wr_stream_t* s);
- 
+
   //address to stream -> [stream_index, data]
   uint64_t _mem_read_reqs=0, _mem_write_reqs=0;
   std::vector<uint64_t> _prev_port_cycle;
@@ -557,7 +562,7 @@ class scratch_read_controller_t : public data_controller_t {
   public:
   std::vector <bool> mask;
 
-  scratch_read_controller_t(accel_t* host, dma_controller_t* d) 
+  scratch_read_controller_t(accel_t* host, dma_controller_t* d)
     : data_controller_t(host) {
     _dma_c=d; //save this for later
 
@@ -566,7 +571,7 @@ class scratch_read_controller_t : public data_controller_t {
     //if(is_shared()) {
     //  _scr_scr_streams.resize(NUM_ACCEL);
     //} else {
-    //  _scr_scr_streams.resize(1); 
+    //  _scr_scr_streams.resize(1);
     //}
     _indirect_scr_read_requests.resize(NUM_SCRATCH_BANKS);
 
@@ -612,7 +617,7 @@ class scratch_read_controller_t : public data_controller_t {
     int size; //number of writes that should be completed
     int completed=0;
     int data_bytes;
-    base_stream_t* stream; 
+    base_stream_t* stream;
     bool last = false;
   };
 
@@ -635,7 +640,7 @@ class scratch_read_controller_t : public data_controller_t {
   std::vector<std::queue<indirect_scr_read_req>> _indirect_scr_read_requests;
   std::queue<ind_reorder_entry_t*> _ind_ROB;
 
-  dma_controller_t* _dma_c;  
+  dma_controller_t* _dma_c;
 };
 
 
@@ -643,7 +648,7 @@ class scratch_write_controller_t : public data_controller_t {
   public:
   std::vector<bool> mask;
 
-  scratch_write_controller_t(accel_t* host, dma_controller_t* d) 
+  scratch_write_controller_t(accel_t* host, dma_controller_t* d)
     : data_controller_t(host) {
     _dma_c=d;
     mask.resize(SCR_WIDTH/DATA_WIDTH);
@@ -651,9 +656,9 @@ class scratch_write_controller_t : public data_controller_t {
     _atomic_scr_issued_requests.resize(NUM_SCRATCH_BANKS);
 
     //if(is_shared()) {
-    //  _scr_scr_streams.resize(NUM_ACCEL); 
+    //  _scr_scr_streams.resize(NUM_ACCEL);
     //} else {
-    //  _scr_scr_streams.resize(1); 
+    //  _scr_scr_streams.resize(1);
     //}
   }
 
@@ -712,16 +717,117 @@ class scratch_write_controller_t : public data_controller_t {
 
   std::vector<base_stream_t*> _write_streams;
 
-  std::vector<affine_write_stream_t*> _port_scr_streams; 
-  std::vector<const_scr_stream_t*> _const_scr_streams;  
-  std::vector<atomic_scr_stream_t*> _atomic_scr_streams; 
-  std::vector<indirect_wr_stream_t*> _ind_wr_streams; 
+  std::vector<affine_write_stream_t*> _port_scr_streams;
+  std::vector<const_scr_stream_t*> _const_scr_streams;
+  std::vector<atomic_scr_stream_t*> _atomic_scr_streams;
+  std::vector<indirect_wr_stream_t*> _ind_wr_streams;
 
-  // TODO: add request queue max size
   std::vector<std::queue<atomic_scr_op_req>> _atomic_scr_issued_requests;
   dma_controller_t* _dma_c;
 };
 
+// It deals with all the remote rd/wr requests
+class network_controller_t : public data_controller_t {
+  public:
+  // std::vector <bool> mask;
+
+  network_controller_t(accel_t* host, dma_controller_t* d)
+    : data_controller_t(host) {
+    _dma_c=d; //save this for later
+
+	// it might be needed to port->spad things
+    // mask.resize(SCR_WIDTH/DATA_WIDTH);
+
+    // _indirect_scr_read_requests.resize(NUM_SCRATCH_BANKS);
+
+    reset_stream_engines();
+  }
+
+  void reset_stream_engines() {
+    _remote_port_multicast_streams.clear();
+	// _ind_port_streams.clear();
+    // _scr_port_streams.clear();
+  }
+
+  void reset_data() {
+    reset_stream_engines();
+  }
+
+  // these are the kind of streams declared somewhere
+  void send_multicast_message(int dest_port_id, SBDT val, SBDT mask, int stream_id);
+  // std::vector<SBDT> read_scratch(affine_read_stream_t& stream);
+  // void read_scratch_ind(indirect_stream_t& stream, uint64_t scr_addr);
+
+  // TODO: What does this do?: checks the most needy port, doesn't make sense
+  // here
+  // float calc_min_port_ready();
+  // things to be done at each cycle
+  void cycle();
+  // void cycle(bool &performed_read);
+  // banked scratchpad read buffers
+  bool remote_port_multicast_requests_active();
+
+  // TODO: What is this?: for reorder buffer
+  // int cycle_read_queue();
+
+  void finish_cycle();
+  bool done(bool,int);
+
+  bool schedule_remote_port(remote_port_multicast_stream_t& s);
+  // bool schedule_scr_port(affine_read_stream_t& s);
+  // bool schedule_indirect(indirect_stream_t& s);
+
+  void print_status();
+  void cycle_status();
+  // this shuld wakeup the controller when it recevies a message
+  // void wakeup();
+  // void receive_message();
+
+  // bool scr_port_streams_active();
+
+  private:
+  // to schedule the streams in the stream table
+  int _which_remote=0;
+
+  // reordering not required now for remote writes
+  /*
+  struct ind_reorder_entry_t {
+    uint8_t data[64]; //64 bytes per request
+    int size; //number of writes that should be completed
+    int completed=0;
+    int data_bytes;
+    base_stream_t* stream;
+    bool last = false;
+  };
+  */
+
+  // we might need similar thing for remote_port requests
+  /*
+  struct indirect_scr_read_req{
+    void *ptr;
+    uint64_t addr;
+    size_t bytes;
+    ind_reorder_entry_t* reorder_entry=NULL;
+  };
+  */
+
+  // It contains all kind of streams: copy?
+  std::vector<base_stream_t*> _remote_streams;
+
+  void delete_stream(int i, remote_port_multicast_stream_t* s);
+  // void delete_stream(int i, indirect_stream_t* s);
+
+  std::vector<remote_port_multicast_stream_t*> _remote_port_multicast_streams;
+  //std::vector<scr_scr_stream_t*> _scr_scr_streams;
+  // std::vector<indirect_stream_t*> _ind_port_streams;
+
+  // queues are the buffers associated with each bank
+  // std::vector<std::queue<indirect_scr_read_req>> _indirect_scr_read_requests;
+  // std::queue<ind_reorder_entry_t*> _ind_ROB;
+
+  // TODO: do we need that?
+  dma_controller_t* _dma_c;
+};
 
 class port_controller_t : public data_controller_t {
   public:
@@ -736,9 +842,9 @@ class port_controller_t : public data_controller_t {
 
   void cycle();
   void finish_cycle();
- 
+
   //bool any_stream_active() {
-  //  return comm_streams_active() || read_streams_active() 
+  //  return comm_streams_active() || read_streams_active()
   //    || write_streams_active();
   //}
   //bool comm_streams_active() {
@@ -824,7 +930,7 @@ struct stream_stats_histo_t {
 
     out << "   by pattern type:\n";
     for(int i = 0; i < (int)STR_PAT::LEN; ++i) {
-      out << name_of((STR_PAT)i) << ": " 
+      out << name_of((STR_PAT)i) << ": "
           << ((double)vol_by_type[i])/total_vol << "\n";
     }
     int lowest=64, highest=0;
@@ -840,11 +946,11 @@ struct stream_stats_histo_t {
     }
   }
 
-  
+
 
 };
 
-struct stream_stats_t { 
+struct stream_stats_t {
   stream_stats_histo_t reqs_histo;
   stream_stats_histo_t vol_histo;
 
@@ -856,7 +962,7 @@ struct stream_stats_t {
   void print(std::ostream& out) {
     out << "Volume ";
     vol_histo.print(out);
-  } 
+  }
 
 };
 
@@ -864,7 +970,7 @@ struct stream_stats_t {
 struct pipeline_stats_t {
   enum PIPE_STATUS {CONFIG, ISSUED, ISSUED_MULTI, TEMPORAL_ONLY,
                     CONST_FILL, SCR_FILL, DMA_FILL, REC_WAIT,
-                    CORE_WAIT, SCR_BAR_WAIT, DMA_WRITE, CMD_QUEUE, CGRA_BACK,  
+                    CORE_WAIT, SCR_BAR_WAIT, DMA_WRITE, CMD_QUEUE, CGRA_BACK,
                     DRAIN, NOT_IN_USE, LAST};
 
   static std::string name_of(PIPE_STATUS value) {
@@ -905,7 +1011,7 @@ struct pipeline_stats_t {
     uint64_t total=0;
     for(int i=0; i < PIPE_STATUS::LAST; ++i) {
       total+=pipe_stats[i];
-    } 
+    }
 
     if(roi_cycles < total) {
       total=roi_cycles;
@@ -914,7 +1020,7 @@ struct pipeline_stats_t {
     pipe_stats[NOT_IN_USE]=roi_cycles - total;
 
     for(int i=0; i < PIPE_STATUS::LAST; ++i) {
-      out << name_of( (PIPE_STATUS)i) << ":" << 
+      out << name_of( (PIPE_STATUS)i) << ":" <<
         pipe_stats[i] / (double)roi_cycles << " ";
     }
 
@@ -930,9 +1036,10 @@ class accel_t
   friend class ssim_t;
   friend class scratch_read_controller_t;
   friend class scratch_write_controller_t;
+  friend class network_controller_t;
   friend class dma_controller_t;
   friend class port_port_controller_t;
- 
+
 public:
 
   accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim);
@@ -1035,6 +1142,7 @@ public:
 
   scratch_read_controller_t*  scr_r_c() {return &_scr_r_c;}
   scratch_write_controller_t* scr_w_c() {return &_scr_w_c;}
+  network_controller_t* net_c() {return &_net_c;}
 
 private:
   ssim_t* _ssim;
@@ -1046,23 +1154,23 @@ private:
   std::ostream* _cgra_dbg_stream=NULL;
 
   //softsim_interf_t* _sim_interf;
-  //SBDT ld_mem8(addr_t addr,uint64_t& cycle, Minor::MinorDynInstPtr m) 
+  //SBDT ld_mem8(addr_t addr,uint64_t& cycle, Minor::MinorDynInstPtr m)
   //  {return _sim_interf->ld_mem8(addr,cycle,m);}
-  //SBDT ld_mem(addr_t addr, uint64_t& cycle, Minor::MinorDynInstPtr m)  
+  //SBDT ld_mem(addr_t addr, uint64_t& cycle, Minor::MinorDynInstPtr m)
   //  {return _sim_interf->ld_mem(addr,cycle,m);}
-  //void st_mem(addr_t addr, SBDT val, uint64_t& cycle, Minor::MinorDynInstPtr m) 
+  //void st_mem(addr_t addr, SBDT val, uint64_t& cycle, Minor::MinorDynInstPtr m)
   //  {_sim_interf->st_mem(addr,val,cycle,m);}
-  //void st_mem16(addr_t addr, SBDT val, uint64_t& cycle, Minor::MinorDynInstPtr m) 
+  //void st_mem16(addr_t addr, SBDT val, uint64_t& cycle, Minor::MinorDynInstPtr m)
 
   //***timing-related code***
   bool done_internal(bool show, int mask);
   bool done_concurrent(bool show, int mask);
 
   void cycle_cgra();   //Tick on each cycle
-  void cycle_cgra_backpressure();  
-  void cycle_cgra_fixedtiming();   
+  void cycle_cgra_backpressure();
+  void cycle_cgra_fixedtiming();
 
-  void reset_data(); //carry out the work 
+  void reset_data(); //carry out the work
 
   void cycle_in_interf();
   void cycle_out_interf();
@@ -1074,10 +1182,10 @@ private:
     for(unsigned i = 0; i < _soft_config.in_ports_active_plus.size(); ++i) {
       int cur_port = _soft_config.in_ports_active_plus[i];
       auto& in_vp = _port_interf.in_port(cur_port);
-      if(in_vp.in_use() || in_vp.num_ready() || in_vp.mem_size()) { 
+      if(in_vp.in_use() || in_vp.num_ready() || in_vp.mem_size()) {
         return true;
       }
-    } 
+    }
     return false;
   }
 
@@ -1096,8 +1204,8 @@ private:
     for(unsigned i = 0; i < _soft_config.out_ports_active_plus.size(); ++i) {
       int cur_port = _soft_config.out_ports_active_plus[i];
       auto& out_vp = _port_interf.out_port(cur_port);
-      if(out_vp.in_use() || out_vp.num_ready() || out_vp.mem_size()) { 
-        return true; 
+      if(out_vp.in_use() || out_vp.num_ready() || out_vp.mem_size()) {
+        return true;
       }
     }
     return false;
@@ -1111,16 +1219,16 @@ private:
   void verif_cmd(base_stream_t* s) {
     if(SS_DEBUG::VERIF_CMD) {
       cmd_verif << s->short_name();
-      cmd_verif << s->mem_addr()     << " ";   
-      cmd_verif << s->access_size()  << " ";   
-      cmd_verif << s->stride()       << " ";   
-      cmd_verif << s->scratch_addr() << " ";   
-      cmd_verif << s->num_strides()  << " ";   
-      cmd_verif << s->num_bytes()    << " ";   
-      cmd_verif << s->constant()     << " ";   
-      cmd_verif << s->first_in_port()      << " ";   
-      cmd_verif << s->out_port()     << " ";   
-      cmd_verif << s->wait_mask()    << " ";   
+      cmd_verif << s->mem_addr()     << " ";
+      cmd_verif << s->access_size()  << " ";
+      cmd_verif << s->stride()       << " ";
+      cmd_verif << s->scratch_addr() << " ";
+      cmd_verif << s->num_strides()  << " ";
+      cmd_verif << s->num_bytes()    << " ";
+      cmd_verif << s->constant()     << " ";
+      cmd_verif << s->first_in_port()      << " ";
+      cmd_verif << s->out_port()     << " ";
+      cmd_verif << s->wait_mask()    << " ";
       cmd_verif << s->shift_bytes()  << "\n";
     }
   }
@@ -1143,12 +1251,12 @@ private:
   void execute_pdg(unsigned instance, int group);
 
   void forward_progress() {
-    _waiting_cycles=0; 
+    _waiting_cycles=0;
     _forward_progress_cycle=now();
   }
 
 
-  void read_scratchpad(void* dest, uint64_t scr_addr, 
+  void read_scratchpad(void* dest, uint64_t scr_addr,
       std::size_t count, int id) {
     assert(scr_addr < SCRATCH_SIZE);
 
@@ -1167,7 +1275,7 @@ private:
     }
   }
 
-  void write_scratchpad(uint64_t scr_addr, const void* src, 
+  void write_scratchpad(uint64_t scr_addr, const void* src,
       std::size_t count, int id) {
     std::memcpy(&scratchpad[scr_addr], src, count);
     if(SS_DEBUG::CHECK_SCR_ALIAS) {
@@ -1176,7 +1284,7 @@ private:
         if(scratchpad_writers[running_addr]) {
           std::cout << "WARNING: scr_addr: " << running_addr
                     << " constistency is potentially violated; "
-                    << " writer_id: " << scratchpad_writers[running_addr] 
+                    << " writer_id: " << scratchpad_writers[running_addr]
                     << " writer_id: " << id << "\n";
         }
         if(scratchpad_readers[running_addr]) {
@@ -1190,6 +1298,18 @@ private:
     }
   }
 
+  // I can put it in accel.cc as well if any issue
+  void send_multicast_message(int dest_port_id, SBDT val, SBDT mask, int stream_id) {
+     _lsq->push_spu_req(dest_port_id, val, mask);
+  }
+
+  // TODO: this should be called from wakeup in execute
+  void receive_message(SBDT data, int remote_in_port) {
+    port_data_t& in_vp = port_interf().out_port(remote_in_port);
+    // port_data_t& in_vp = _accel->port_interf().out_port(remote_in_port);
+    // TODO: Check the max port size here and apply backpressure
+    in_vp.push_data(data);
+  }
 
   //members------------------------
   soft_config_t _soft_config;
@@ -1205,11 +1325,11 @@ private:
   int _ind_rob_size=DEFAULT_IND_ROB_SIZE;
 
 
-  std::vector<uint8_t> scratchpad;    
+  std::vector<uint8_t> scratchpad;
   std::bitset<SCRATCH_SIZE/SCR_WIDTH> scratch_ready; //TODO: use this
 
-  unsigned scratch_line_size = 16;                //16B line 
-  unsigned fifo_depth = 32;  
+  unsigned scratch_line_size = 16;                //16B line
+  unsigned fifo_depth = 32;
   bool debug;
   unsigned _queue_size=16;
 
@@ -1220,6 +1340,7 @@ private:
   dma_controller_t _dma_c;
   scratch_read_controller_t _scr_r_c;
   scratch_write_controller_t _scr_w_c;
+  network_controller_t _net_c;
   port_controller_t _port_c;
 
   std::list<std::shared_ptr<base_stream_t>> _cmd_queue;
@@ -1240,7 +1361,7 @@ private:
 
   std::vector<bool> _cgra_prev_issued_group[NUM_GROUPS];
   //uint64_t _delay_group_until[NUM_GROUPS]={0,0,0,0,0,0};
-    
+
   //* Stats
   uint64_t _stat_comp_instances = 0;
   uint64_t _stat_cgra_busy_cycles = 0;
@@ -1248,6 +1369,7 @@ private:
   uint64_t _stat_scratch_write_bytes = 0;
   uint64_t _stat_scratch_reads = 0;
   uint64_t _stat_scratch_writes = 0;
+  uint64_t _stat_port_multicast = 0;
   uint64_t _stat_scratch_bank_requests_pushed = 0;
   uint64_t _stat_scratch_bank_requests_executed = 0;
   double _stat_bank_conflicts=0.0;
@@ -1263,7 +1385,7 @@ private:
   uint64_t _stat_tot_stores=0;
   uint64_t _stat_tot_mem_store_acc=0;
   uint64_t _stat_tot_mem_load_acc=0;
- 
+
   //Cycle stats
   std::map<int,int> _stat_ivp_put;
   std::map<int,int> _stat_ivp_get;
@@ -1292,8 +1414,8 @@ private:
   std::map<SB_CONFIG::sb_inst_t,int> _total_histo;
   std::map<int,int> _vport_histo;
 
-  stream_stats_t _stream_stats;  
-  pipeline_stats_t _pipe_stats;  
+  stream_stats_t _stream_stats;
+  pipeline_stats_t _pipe_stats;
   uint64_t _prev_roi_clock;
 
   std::map<std::pair<LOC,LOC>, std::pair<uint64_t,uint64_t>> _bw_map;
@@ -1305,4 +1427,3 @@ private:
 };
 
 #endif
-

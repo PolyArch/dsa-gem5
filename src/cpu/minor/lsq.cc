@@ -1207,6 +1207,11 @@ LSQ::canSendToMemorySystem()
         numAccessesInMemorySystem < inMemorySystemLimit;
 }
 
+/* Push request into the SPU buffer, FIXME: it could directly push here also? */
+void LSQ::push_spu_req(int dest_port_id, uint64_t val, int64_t mask) {
+  execute.send_spu_req(dest_port_id, val, mask);
+}
+
 bool
 LSQ::recvTimingResp(PacketPtr response)
 {

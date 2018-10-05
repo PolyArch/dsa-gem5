@@ -442,6 +442,9 @@ class Execute : public Named
     /** Pass on input/buffer data to the output if you can */
     void evaluate();
 
+	/* push the multicast request on the message buffer */
+    void send_spu_req(int dest_port_id, uint64_t val, int64_t mask);
+
     void minorTrace() const;
 
     /** After thread suspension, has Execute been drained of in-flight
