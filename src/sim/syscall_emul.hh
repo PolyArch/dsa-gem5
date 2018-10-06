@@ -1365,7 +1365,11 @@ cloneFunc(SyscallDesc *desc, int callnum, Process *p, ThreadContext *tc)
     TheISA::copyRegs(tc, ctc);
 #endif
 
-#if THE_ISA == X86_ISA
+#if THE_ISA == RISCV_ISA
+	if (flags & OS::TGT_CLONE_SETTLS) {
+	    ctc->setIntReg(TheISA::ThreadPointerReg, tlsPtr);
+	}
+#elif THE_ISA == X86_ISA
     if (flags & OS::TGT_CLONE_SETTLS) {
         ctc->setMiscRegNoEffect(TheISA::MISCREG_FS_BASE, tlsPtr);
         ctc->setMiscRegNoEffect(TheISA::MISCREG_FS_EFF_BASE, tlsPtr);

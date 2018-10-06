@@ -675,7 +675,7 @@ Execute::issue(ThreadID thread_id)
                 bool fu_is_capable = (!inst->isFault() ?
                     fu->provides(inst->staticInst->opClass()) : true);
 
-                if (inst->isNoCostInst()) { 
+                if (inst->isNoCostInst()) {
                         /* Issue free insts. to a fake numbered FU */
                         fu_index = noCostFUIndex;
 
@@ -688,7 +688,7 @@ Execute::issue(ThreadID thread_id)
                         scoreboard[thread_id].markupInstDests(inst, cpu.curCycle() +
                             Cycles(0), cpu.getContext(thread_id), false);
 
-                        DPRINTF(MinorExecute, "Issuing %s to %d\n", 
+                        DPRINTF(MinorExecute, "Issuing %s to %d\n",
                             inst->id, noCostFUIndex);
                         inst->fuIndex = noCostFUIndex;
                         inst->extraCommitDelay = Cycles(0);
@@ -964,7 +964,7 @@ void __attribute__ ((noinline)) breakpoint() {
 
 void Execute::timeout_check(bool should_commit, MinorDynInstPtr inst) {
   uint64_t cyc = cpu.curCycle();
-  uint64_t last_event = std::max(last_sd_issue, 
+  uint64_t last_event = std::max(last_sd_issue,
                         ssim.forward_progress_cycle());
   if(!should_commit) {
     if(cyc > 9990 + last_event) {
@@ -1077,18 +1077,18 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
         completed_inst = false;
         ssim.wait_config();
     } else {
-      
+
         bool should_commit = true;
 
         //break down by type
-        if ( (inst->staticInst->isSSStream()  ||   
-              (inst->staticInst->isSSWait() && 
+        if ( (inst->staticInst->isSSStream()  ||
+              (inst->staticInst->isSSWait() &&
                   ssim_t::stall_core(inst->staticInst->get_imm())) )
               && !ssim.can_add_stream()) {
             should_commit = false;
             //DPRINTF(SS,"Can't issue stream b/c buffer is full");
             //continue;
-        } else if(inst->staticInst->isSSWait() && 
+        } else if(inst->staticInst->isSSWait() &&
                   ssim_t::stall_core(inst->staticInst->get_imm())) {
           if(!ssim.done(false,inst->staticInst->get_imm()) ) {
             should_commit = false;
@@ -1099,11 +1099,11 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
           } else {
             DPRINTF(SS,"Wait complete, mask: %x\n",inst->staticInst->get_imm());
             if(SS_DEBUG::COMMAND || SS_DEBUG::WAIT) {
-              std::cout << "Wait complete, mask:" 
+              std::cout << "Wait complete, mask:"
                         << inst->staticInst->get_imm() << "\n";
             }
           }
-        } 
+        }
 
         if(inst->staticInst->isSS()) {
           timeout_check(should_commit, inst);
@@ -1220,7 +1220,9 @@ Execute::commit(ThreadID thread_id, bool only_commit_microops, bool discard,
         !branch.isStreamChange() && /* No real branch */
         fault == NoFault && /* No faults */
         completed_inst && /* Still finding instructions to execute */
-        num_insts_committed != commitLimit /* Not reached commit limit */
+        // num_insts_committed != commitLimit /* Not reached commit limit */
+        num_insts_committed != commitLimit && /* Not reached commit limit */
+        cpu.getContext(thread_id)->status() != ThreadContext::Suspended
         )
     {
         if (only_commit_microops) {
@@ -1557,14 +1559,14 @@ Execute::isInbetweenInsts(ThreadID thread_id) const
 }
 
 void Execute::send_spu_req(int dest_port_id, uint64_t val, int64_t mask){
-  
+
   std::shared_ptr<RequestMsg> msg = std::make_shared<RequestMsg>(cpu.clockEdge());
   (*msg).m_MessageSize = MessageSizeType_Control;
   (*msg).m_Type = CoherenceRequestType_GETX;
   (*msg).m_Requestor = cpu.get_m_version();
   (*msg).m_addr = 0;
   // find other way to do it
-  // (*msg).m_DataBlk = 0; 
+  // (*msg).m_DataBlk = 0;
   // TODO2: somehow send dest_port_id
   (*msg).m_addr = dest_port_id;
   // TODO1: derive dest from mask (or can we directly send the mask?)
@@ -1593,12 +1595,12 @@ Execute::evaluate()
 	 // I can modify some of the message parameters here!
 	 // base+core_id
 	 // (*msg).m_Requestor = 0; // sending core id
-	
+
 	 // may add this according to our requirements
 	  // TODO: we can declare this also in Type.py (only 2 lengths allowed)
 	  // (*msg).m_MessageSize = MessageSizeType_Writeback_Control;
 	  // (*msg).m_MessageSize = MessageSizeType_Writeback_Data;
-	  // TODO: add a new new message type (specific to each coherence protocol, find some common point)  
+	  // TODO: add a new new message type (specific to each coherence protocol, find some common point)
       std::shared_ptr<RequestMsg> msg = std::make_shared<RequestMsg>(cpu.clockEdge());
 	  (*msg).m_MessageSize = MessageSizeType_Control;
 	  (*msg).m_Type = CoherenceRequestType_GETX;
@@ -1606,7 +1608,7 @@ Execute::evaluate()
 	  (*msg).m_Destination.add(cpu.get_m_version(2));
 	  (*msg).m_addr = 0;
 	  // find other way to do it
-	  // (*msg).m_DataBlk = 0; 
+	  // (*msg).m_DataBlk = 0;
 	  cpu.pushReqFromSpu(msg);
 	  printf("Request pushed into the SPU buffer\n");
   }
@@ -2095,12 +2097,3 @@ Execute::getDcachePort()
 }
 
 }
-
-
-
-
-
-
-
-
-

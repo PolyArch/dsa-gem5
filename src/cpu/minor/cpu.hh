@@ -94,7 +94,14 @@ class MinorCPU : public BaseCPU, public Consumer
      *  Elements of pipeline call TheISA to implement the model. */
     Minor::Pipeline *pipeline;
 
-	// pipeline->execute->initNetPtr(); 
+    /** An event that wakes up the pipeline when a thread context is
+     * activated */
+    EventFunctionWrapper pipelineStartupEvent;
+
+    /** List of threads that are ready to wake up and run */
+    std::vector<ThreadID> readyThreads;
+
+	// pipeline->execute->initNetPtr();
 
   public:
     /** Activity recording for pipeline.  This belongs to Pipeline but
@@ -162,7 +169,7 @@ class MinorCPU : public BaseCPU, public Consumer
 	MachineID get_m_version(){
 	  return m_machineID;
 	}
-    
+
 	// return machine id corresponding to the given node id
 	MachineID get_m_version(int node_id){
 	  MachineID n_machineID;
@@ -250,6 +257,9 @@ class MinorCPU : public BaseCPU, public Consumer
     /** Thread activation interface from BaseCPU. */
     void activateContext(ThreadID thread_id) override;
     void suspendContext(ThreadID thread_id) override;
+
+    /** Wake up ready-to-run threads */
+    void wakeupPipeline();
 
     /** Thread scheduling utility functions */
     std::vector<ThreadID> roundRobinPriority(ThreadID priority)
