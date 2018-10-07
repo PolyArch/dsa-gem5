@@ -121,7 +121,8 @@ void port_data_t::reset() {
   assert(_outstanding==0);
   assert(_status==STATUS::FREE);
   //assert(_loc==LOC::NONE); TODO: should this be enforced?
-  assert(_mem_data.size()==0); //FIXME: Is this still true?
+  // removed because for data which enters remotely, cgra might get data from somewhere else
+  // assert(_mem_data.size()==0);
   assert(_mem_data.size() == _valid_data.size());
 
   assert(_num_in_flight==0);
@@ -2127,12 +2128,21 @@ template<typename T> void delete_stream_internal(int i, T* s,
 }
 
 void dma_controller_t::delete_stream(int i, affine_read_stream_t* s) {
+  // FIXME: see if it useful in long term for debugging!
+  if(SS_DEBUG::COMMAND){
+	printf("COMMITTED: ");
+	s->print_status();
+  }
   delete_stream_internal(i,s,_dma_port_streams,_read_streams);
 }
 void dma_controller_t::delete_stream(int i, indirect_stream_t* s) {
   delete_stream_internal(i,s,_indirect_streams,_read_streams);
 }
 void dma_controller_t::delete_stream(int i, affine_write_stream_t* s) {
+  if(SS_DEBUG::COMMAND){
+	printf("COMMITTED: ");
+	s->print_status();
+  }
   delete_stream_internal(i,s,_port_dma_streams,_write_streams);
 }
 void dma_controller_t::delete_stream(int i, indirect_wr_stream_t* s) {
@@ -2148,6 +2158,10 @@ void scratch_read_controller_t::delete_stream(int i, indirect_stream_t* s) {
 
 // deleted both of them?
 void network_controller_t::delete_stream(int i, remote_port_multicast_stream_t* s) {
+  if(SS_DEBUG::COMMAND){
+	printf("COMMITTED: ");
+	s->print_status();
+  }
   delete_stream_internal(i,s,_remote_port_multicast_streams,_remote_streams);
 }
 void scratch_write_controller_t::delete_stream(int i, affine_write_stream_t* s) {

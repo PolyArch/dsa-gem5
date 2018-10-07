@@ -170,7 +170,7 @@ std::map<int, SyscallDesc> RiscvLinuxProcess::syscallDescs = {
     {98,   SyscallDesc("futex", futexFunc<RiscvLinux>)},
     {99,   SyscallDesc("set_robust_list", ignoreFunc, SyscallDesc::WarnOnce)},
     {100,  SyscallDesc("get_robust_list", ignoreFunc, SyscallDesc::WarnOnce)},
-    {101,  SyscallDesc("nanosleep")},
+    {101,  SyscallDesc("nanosleep", ignoreFunc, SyscallDesc::WarnOnce)},
     {102,  SyscallDesc("getitimer")},
     {103,  SyscallDesc("setitimer")},
     {104,  SyscallDesc("kexec_load")},
