@@ -584,7 +584,11 @@ Fetch2::getScheduledThread()
     }
 
     for (auto tid : priority_list) {
-        if (getInput(tid) && !fetchInfo[tid].blocked) {
+
+        // if (getInput(tid) && !fetchInfo[tid].blocked) {
+        if (cpu.getContext(tid)->status() == ThreadContext::Active &&
+            getInput(tid) &&
+            !fetchInfo[tid].blocked) {
             threadPriority = tid;
             return tid;
         }

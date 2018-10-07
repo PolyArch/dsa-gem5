@@ -1572,12 +1572,16 @@ void Execute::send_spu_req(int dest_port_id, uint64_t val, int64_t mask){
   (*msg).m_addr = val << 6 | dest_port_id;
   // TODO1: derive dest from mask (or can we directly send the mask?)
   // printf("mask is %ld\n",mask);
+  // printf("current cpu id is %d\n",cpu.cpuId());
+  int dest_core_id = 0;
   std::bitset<64> core_mask(mask);
   for(int i=0; i<core_mask.size(); ++i){
 	if(core_mask.test(i)){
-      (*msg).m_Destination.add(cpu.get_m_version(i));
+	  dest_core_id = i+1; // because of 1 offset with tid
+	  // printf("dest core id is: %d\n",dest_core_id);
+      (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
 	  if(SS_DEBUG::NET_REQ){
-		printf("output destinations: %d\n",i);
+		printf("output destinations: %d\n",dest_core_id);
 	  }
 	}
   }
@@ -1911,8 +1915,14 @@ Execute::getCommittingThread()
     }
 
     for (auto tid : priority_list) {
+
         ExecuteThreadInfo &ex_info = executeInfo[tid];
-        bool can_commit_insts = !ex_info.inFlightInsts->empty();
+        // bool can_commit_insts = !ex_info.inFlightInsts->empty();
+        bool is_thread_active =
+                cpu.getContext(tid)->status() == ThreadContext::Active;
+        bool can_commit_insts = !ex_info.inFlightInsts->empty() &&
+                                is_thread_active;
+
         if (can_commit_insts) {
             QueuedInst *head_inflight_inst = &(ex_info.inFlightInsts->front());
             MinorDynInstPtr inst = head_inflight_inst->inst;
@@ -1978,7 +1988,9 @@ Execute::getIssuingThread()
     }
 
     for (auto tid : priority_list) {
-        if (getInput(tid)) {
+        // if (getInput(tid)) {
+        if (cpu.getContext(tid)->status() == ThreadContext::Active &&
+            getInput(tid)) {
             issuePriority = tid;
             return tid;
         }
