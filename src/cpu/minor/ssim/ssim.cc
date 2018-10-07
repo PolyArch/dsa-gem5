@@ -49,6 +49,12 @@ void ssim_t::req_config(addr_t addr, int size) {
   }
 }
 
+// receive network message at the given input port id
+void ssim_t::push_in_accel_port(int accel_id, int64_t val, int in_port) {
+  assert(accel_id<NUM_ACCEL_TOTAL);
+  accel_arr[accel_id]->receive_message(val, in_port);
+}
+
 bool ssim_t::can_add_stream() {
   for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i,b<<=1) {
     if(_context_bitmask & b) {
@@ -116,7 +122,7 @@ void ssim_t::print_stats() {
    out.precision(4);
    out << dec;
 
-   out << "\n*** ROI STATISTICS ***\n";
+   out << "\n*** ROI STATISTICS for CORE ID: " << _lsq->getCpuId() << " ***\n";
    out << "Simulator Time: " << ((double)elpased_time_in_roi())
                                     /1000000000 << " sec\n";
 
@@ -420,9 +426,13 @@ void ssim_t::multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_por
     s->_num_elements = num_elem;
     s->_out_port = out_port;
     s->_remote_port = rem_port;
-	// What is this?
-    // s->_unit=LOC::SCR;
+    // s->_unit=LOC::SCR; (probably add a flag for the destination to save a new opcode)
     s->set_orig(); 
+
+	if(SS_DEBUG::NET_REQ){
+      printf("Remote stream initialized");
+	  s->print_status();
+	}
 
     add_bitmask_stream(s);
 }

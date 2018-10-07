@@ -66,6 +66,9 @@ public:
   void multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_port, int rem_port);
   void write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int num_elem);
 
+
+  void push_in_accel_port(int accel_id, int64_t val, int in_port);
+
   void insert_barrier(uint64_t mask);
   
   void print_stats();

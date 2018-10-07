@@ -1566,14 +1566,19 @@ void Execute::send_spu_req(int dest_port_id, uint64_t val, int64_t mask){
   (*msg).m_Requestor = cpu.get_m_version();
   (*msg).m_addr = 0;
   // find other way to do it
-  // (*msg).m_DataBlk = 0;
-  // TODO2: somehow send dest_port_id
-  (*msg).m_addr = dest_port_id;
+  // (*msg).m_DataBlk.setData();
+  // last 6 bits are dest_port_id and earlier bits are vals
+  // TODO: see how to set custom things
+  (*msg).m_addr = val << 6 | dest_port_id;
   // TODO1: derive dest from mask (or can we directly send the mask?)
+  // printf("mask is %ld\n",mask);
   std::bitset<64> core_mask(mask);
   for(int i=0; i<core_mask.size(); ++i){
 	if(core_mask.test(i)){
       (*msg).m_Destination.add(cpu.get_m_version(i));
+	  if(SS_DEBUG::NET_REQ){
+		printf("output destinations: %d\n",i);
+	  }
 	}
   }
   cpu.pushReqFromSpu(msg);

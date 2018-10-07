@@ -207,17 +207,6 @@ class MinorCPU : public BaseCPU, public Consumer
 	  requestFromSpu->enqueue(msg, clockEdge(), 1);
 	}
 
-	// not sure about this now, pass reference to data
-	/*
-	bool popReqFromSpu() {
-	  if(!responseToSpu->isEmpty()){
-		responseToSpu->dequeue(clockEdge());
-		return true;
-	  }
-	  return false;
-	}
-	*/
-
     /** Starting, waking and initialisation */
     void init() override;
     void startup() override;

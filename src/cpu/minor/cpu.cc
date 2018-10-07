@@ -100,7 +100,6 @@ MinorCPU::MinorCPU(MinorCPUParams *params) :
 	// FIXME: might need to add this (let's keep it added actually)
 	// will be useful for getDest, etc
     createMachineID(MachineType_Accel, intToID(cpuId()));
-	// responseToSpu->setConsumer(this);
 	// TODO: check difference between init and constructor
 	(*responseToSpu).setConsumer(this);
 }
@@ -108,22 +107,20 @@ MinorCPU::MinorCPU(MinorCPUParams *params) :
 
 void MinorCPU::wakeup()
 {
-  printf("Wake up accel id at destination node: %d\n",cpuId());
-  assert(!responseToSpu->isEmpty());
-  responseToSpu->dequeue(clockEdge());
-  printf("Request popped from the SPU buffer, success!!\n");
-
-  /*
-  if(!responseToSpu->isEmpty()){
-	responseToSpu->dequeue(clockEdge());
-	printf("Request popped from the SPU buffer, success!!\n");
-  } else {
-	printf("Why is queue empty?\n");
+  if(SS_DEBUG::NET_REQ){
+    printf("Wake up accel at destination node: %d\n",cpuId());
   }
-  */
+  assert(!responseToSpu->isEmpty());
+  // could do dynamic cast
+  const RequestMsg* msg = (RequestMsg*)responseToSpu->peek();
+  int64_t return_info = msg->m_addr;
+  int64_t val = return_info >> 6;
+  int remote_port_id = return_info & 63;
+  pipeline->receiveSpuMessage(val, remote_port_id);
+  // printf("Comes back after updating SPU ports\n");
+  responseToSpu->dequeue(clockEdge());
+  // printf("Request popped from the SPU buffer, success!!\n");
 }
-
-
 
 void MinorCPU::print(std::ostream& out) const
 {
