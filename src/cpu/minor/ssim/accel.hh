@@ -865,8 +865,9 @@ class network_controller_t : public data_controller_t {
     reset_stream_engines();
   }
 
+  void multicast_data(remote_port_multicast_stream_t& stream);
   // these are the kind of streams declared somewhere
-  void send_multicast_message(int dest_port_id, SBDT val, SBDT mask, int stream_id);
+  // void send_multicast_message(int dest_port_id, SBDT val, SBDT mask, int stream_id);
   // std::vector<SBDT> read_scratch(affine_read_stream_t& stream);
   // void read_scratch_ind(indirect_stream_t& stream, uint64_t scr_addr);
 
@@ -883,9 +884,9 @@ class network_controller_t : public data_controller_t {
   // int cycle_read_queue();
 
   void finish_cycle();
-  bool done(bool,int);
+  bool done(bool show, int mask);
 
-  bool schedule_remote_port(remote_port_multicast_stream_t& s);
+  bool schedule_remote_port_multicast(remote_port_multicast_stream_t& s);
   // bool schedule_scr_port(affine_read_stream_t& s);
   // bool schedule_indirect(indirect_stream_t& s);
 
@@ -1410,18 +1411,16 @@ private:
     }
   }
 
-  // I can put it in accel.cc as well if any issue
   void send_multicast_message(int dest_port_id, SBDT val, SBDT mask, int stream_id) {
      _lsq->push_spu_req(dest_port_id, val, mask);
   }
 
-  // TODO: this should be called from wakeup in execute
   void receive_message(SBDT data, int remote_in_port) {
-    port_data_t& in_vp = port_interf().out_port(remote_in_port);
-    // port_data_t& in_vp = _accel->port_interf().out_port(remote_in_port);
+    port_data_t& in_vp = _port_interf.in_port(remote_in_port);
     // TODO: Check the max port size here and apply backpressure
     in_vp.push_data(data);
   }
+
 
   //members------------------------
   soft_config_t _soft_config;

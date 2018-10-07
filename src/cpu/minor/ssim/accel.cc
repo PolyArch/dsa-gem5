@@ -204,7 +204,7 @@ void port_data_t::reformat_in_one_vec() { //rearrange data for CGRA
 }
 
 void port_data_t::reformat_in_work() {
-  // vidushi: I removed this!
+  // TODO:FIXME: Check if this is required!
   // assert(_mem_data.size() == _valid_data.size());
   if(_repeat==0) { //on repeat==0, delete data
     _mem_data.erase(_mem_data.begin(),_mem_data.begin()+port_vec_elem());
@@ -759,9 +759,8 @@ void accel_t::tick() {
   }
   _scr_ctrl_turn = (_scr_ctrl_turn+1)%2;
 
-
-
   _port_c.cycle();
+  _net_c.cycle();
   cycle_in_interf();
   cycle_cgra();
 
@@ -829,6 +828,7 @@ void accel_t::tick() {
   _dma_c.finish_cycle();
   _scr_w_c.finish_cycle();
   _scr_r_c.finish_cycle();
+  _net_c.finish_cycle();
 }
 
 //forward from indirect inputs to indirect outputs -- this makes the protocol
@@ -1125,6 +1125,11 @@ void accel_t::cycle_cgra() {
   }
   if(in_roi()) {
     _stat_cgra_busy_cycles+=(_cgra_issued>0);
+  }
+
+  // FIXME: Check if this is giving wrong results for some reason
+  if(_cgra_issued>0 && SS_DEBUG::COMP && SS_DEBUG::NET_REQ) {
+	printf("ACCEL ID: %d\n",_lsq->getCpuId());
   }
 }
 
@@ -1725,7 +1730,21 @@ void accel_t::schedule_streams() {
           scheduled = _port_c.schedule_remote_port(*stream);
         }
       }
-    } else if(auto port_port_stream = dynamic_cast<port_port_stream_t*>(ip)) {
+    }
+    // make sure the base stream is lower in the comparison
+	else if(auto rem_port_multicast_stream = dynamic_cast<remote_port_multicast_stream_t*>(ip)) {
+      int out_port = rem_port_multicast_stream->_out_port;
+      out_vp = &_port_interf.out_port(out_port); //this is data output port
+	  // check if we can issue and then set status of ports to be busy (we
+	  // cannot do for the remote case here)
+	  // std::cout << "Is no one in hold of the output port: " << out_vp->can_take(LOC::PORT) << "\n";
+	  // not sure what is this
+	  // std::cout << "Is the output port blocked waiting on something else: " << blocked_ovp[out_port] << "\n";
+	  if(out_vp->can_take(LOC::PORT) && !blocked_ovp[out_port] && (scheduled = _net_c.schedule_remote_port_multicast(*rem_port_multicast_stream))) {
+		// printf("Remote port stream is scheduled\n");
+        out_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
+	  }
+	} else if(auto port_port_stream = dynamic_cast<port_port_stream_t*>(ip)) {
       int out_port = port_port_stream->_out_port;
       out_vp = &_port_interf.out_port(out_port);
       if(ivps_can_take && out_vp->can_take(LOC::PORT) &&
@@ -1808,7 +1827,7 @@ void accel_t::schedule_streams() {
       }
     } else if(auto const_scr_stream = dynamic_cast<const_scr_stream_t*>(ip)) {
       scheduled = _scr_w_c.schedule_const_scr(*const_scr_stream);
-    }
+    } 
 
     //prevent out-of-order access
     for(int in_port : ip->in_ports()) blocked_ivp[in_port] = true;
@@ -1928,11 +1947,15 @@ bool scratch_read_controller_t::schedule_indirect(indirect_stream_t& new_s) {
   return true;
 }
 
-// For port->remote port affine stream
-bool network_controller_t::schedule_remote_port(remote_port_multicast_stream_t& new_s) {
+// For port->remote port multicast affine stream
+bool network_controller_t::schedule_remote_port_multicast(remote_port_multicast_stream_t& new_s) {
   auto* s = new remote_port_multicast_stream_t(new_s);
   _remote_port_multicast_streams.push_back(s);
   _remote_streams.push_back(s);
+  if(SS_DEBUG::NET_REQ){
+    // printf("A new stream pushed in remote streams\n");
+	s->print_status();
+  }
   return true;
 }
 
@@ -2928,45 +2951,55 @@ float scratch_read_controller_t::calc_min_port_ready() {
   return min_port_ready;
 }
 
+void network_controller_t::multicast_data(
+          remote_port_multicast_stream_t& stream) {
+  port_data_t& out_vp = _accel->port_interf().out_port(stream._out_port);
+  int remote_in_port = stream._remote_port;
+  uint64_t bytes_written=0;
+  uint64_t remote_elem_sent=0;
+  while(stream.stream_active() //enough in dest
+                        && out_vp.mem_size() && bytes_written<64) { //enough in source (64-bytes)
+    // peek out and pop later if message buffer size was full?
+    SBDT val = out_vp.pop_out_data();
+
+    // I dn't want to modify val, not sure why we send address in write scratchapd
+    _accel->send_multicast_message(remote_in_port, val, stream._core_mask, stream.id());
+    
+    bytes_written += DATA_WIDTH;
+    remote_elem_sent+=1;
+    stream._num_elements--;
+
+   	if(SS_DEBUG::NET_REQ){
+      timestamp(); cout << "POPPED b/c port->remote port WRITE: " << out_vp.port() << " " << out_vp.mem_size() << "\n";
+   	  printf("After issue: ");
+   	  stream.print_status();
+    }
+  }
+  if(_accel->_ssim->in_roi()) {
+    // add_bw(stream.src(), stream.dest(), 1, bytes_written);
+    _accel->_stat_port_multicast+=remote_elem_sent;
+  }
+}
+ 
 // make it simpler so that we don't use fancy scheduling, probably copy from
 // the write controller
 void network_controller_t::cycle() {
-  // required for optimization `based on CGRA reads--not required here
-  // float min_port_ready=-2;
-
-  // TODO: required for reordering read buffer
-  // cycle_read_queue();
-
   int i=0;
   // cycle over all the streams
   for(i=0; i < _remote_streams.size(); ++i) {
     _which_remote=(_which_remote+1)>=_remote_streams.size() ? 0:_which_remote+1;
     base_stream_t* s = _remote_streams[_which_remote];
 
-	// if the stream is affine stream like in my case
-
-  if(auto* sp = dynamic_cast<remote_port_multicast_stream_t*>(s)) {
-	{
-    remote_port_multicast_stream_t stream = *sp;
-  // remote_port_multicast_stream_t* stream;
-	if(stream.stream_active()) {
-        // out_vp has the data to be broadcasted
+    if(auto* sp = dynamic_cast<remote_port_multicast_stream_t*>(s)) {
+      // remote_port_multicast_stream_t stream = *sp;
+      auto& stream = *sp;
+	  if(stream.stream_active()) {
         port_data_t& out_vp = _accel->port_interf().out_port(stream._out_port);
-        int remote_in_port = stream._remote_port;
 
-        // it will have final port where to write
-        if(out_vp.mem_size() > 0) {
-          // go while stream and port does not run out
-          // we can send max of message_size*bus_wisth messages in 1 cycle
-          // or till the queue is full (Oh, this bus is also 512-bit bus)
-          uint64_t bytes_written=0;
-          uint64_t remote_elem_sent=0;
-          while(stream.stream_active() //enough in dest
-                                && out_vp.mem_size() && bytes_written<64) { //enough in source (64-bytes)
-            // peek out and pop later if message buffer size was full?
-            SBDT val = out_vp.pop_out_data();
-            // timestamp(); cout << "POPPED b/c port->scratch WRITE: " << out_vp.port() << " " << out_vp.mem_size() << "\n";
+        // we can send max of message_size*bus_wisth messages in 1 cycle or till the queue is full (Oh, this bus is also 512-bit bus)
+	    multicast_data(stream);
 
+<<<<<<< HEAD
             // function inside network controller
             // send_multicast_message(&val, remote_in_port, sizeof(SBDT), stream.id());
             // I dn't want to modify val, not sure why we send address in write scratchapd
@@ -2993,13 +3026,30 @@ void network_controller_t::cycle() {
             }
             out_vp.set_status(port_data_t::STATUS::FREE);
             delete_stream(_which_remote,sp);
+=======
+        bool is_empty = stream.check_set_empty();
+        if(is_empty) {
+          _accel->process_stream_stats(stream);
+          if(SS_DEBUG::VP_SCORE2) {
+            cout << "SOURCE: PORT->PORT\n";
+>>>>>>> 55678a9... added port->port multicast functionality
           }
-          break;
+	      if(SS_DEBUG::NET_REQ){
+	        printf("Multicast stream empty\n");
+	      }
+          out_vp.set_status(port_data_t::STATUS::FREE);
+          delete_stream(_which_remote,sp);
         }
+        break;
       }
-  } /* else if(auto* sp = dynamic_cast<affine_read_stream_t*>(s)) {
+	/* else if(auto* sp = dynamic_cast<affine_read_stream_t*>(s)) {
+	  // required for optimization based on CGRA reads--not required here
+      // float min_port_ready=-2;
+
+      // TODO: required for reordering read buffer
+      // cycle_read_queue();
       }
-      */
+    */
     }
   }
 }
@@ -3007,9 +3057,10 @@ void network_controller_t::cycle() {
 void network_controller_t::finish_cycle() {
 }
 
-// just prints affine properties, see if it really follows that
 void network_controller_t::print_status() {
-  for(auto& i : _remote_streams) {if(!i->empty()){i->print_status();}}
+  for(auto& i : _remote_streams) {
+	if(!i->empty()) {i->print_status();}
+  }
 }
 
 
@@ -3714,7 +3765,7 @@ bool accel_t::done_concurrent(bool show, int mask) {
   bool done = true;
 
   if(!_dma_c.done(show,mask) || !_scr_r_c.done(show,mask) ||
-     !_scr_w_c.done(show,mask) || !_port_c.done(show,mask)) {
+     !_scr_w_c.done(show,mask) || !_port_c.done(show,mask) || !_net_c.done(show,mask)) {
     done=false;
   }
 
@@ -3758,12 +3809,23 @@ bool accel_t::done_internal(bool show, int mask) {
   return true;
 }
 
+bool network_controller_t::remote_port_multicast_requests_active() {return _remote_port_multicast_streams.size();}
 
 bool dma_controller_t::dma_port_streams_active() {return _dma_port_streams.size();}
 bool dma_controller_t::port_dma_streams_active() {return _port_dma_streams.size();}
 bool dma_controller_t::indirect_streams_active() {return _indirect_streams.size();}
 bool dma_controller_t::indirect_wr_streams_active() {
                                                return _indirect_wr_streams.size();}
+
+bool network_controller_t::done(bool show, int mask) {
+  if(mask==0 || mask&WAIT_CMP) {
+    if(remote_port_multicast_requests_active()) {
+      if(show) cout << "PORT -> REMOTE PORT Streams Not Empty\n";
+      return false;
+    }
+  }
+  return true;
+}
 
 bool dma_controller_t::done(bool show, int mask) {
   if(mask==0 || mask&WAIT_CMP) {

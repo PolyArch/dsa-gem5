@@ -109,6 +109,12 @@ class Pipeline : public Ticked {
     Pipeline(MinorCPU &cpu_, MinorCPUParams &params);
 
   public:
+	// TODO:FIXME: need to access execute from cpu to talk to accel
+	void receiveSpuMessage(int64_t val, int in_port) 
+	{ 
+	  return execute.receiveSpuMessage(val, in_port); 
+	}
+
     /** Wake up the Fetch unit.  This is needed on thread activation esp.
      *  after quiesce wakeup */
     void wakeupFetch(ThreadID tid);

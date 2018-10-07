@@ -820,20 +820,24 @@ struct indirect_wr_stream_t : public indirect_base_stream_t {
 };
 
 //Port -> Remote Port
+//TODO: TO reuse some info, can convert to port_port_stream later
 struct remote_port_multicast_stream_t;
-struct remote_port_multicast_stream_t : public port_port_stream_t {
+struct remote_port_multicast_stream_t : public base_stream_t {
   remote_port_multicast_stream_t() {
     _num_elements=0;
   }
 
+  /*
   //in other definition mask could be negative
   //TODO: see what to do with this repeat, repeat_str
   //TODO: also check is_ready
+  // is this never called?
   remote_port_multicast_stream_t(int out_port, int remote_in_port, uint64_t num_elem,
                        int64_t mask, int repeat, int repeat_str) :
                        port_port_stream_t(out_port,remote_in_port,num_elem,
                            repeat,repeat_str) {
 
+	printf("Does it ever comes in this constructor?\n");
 	// this would be multiple ports for double port thing
     // _in_ports.clear();
 
@@ -842,29 +846,41 @@ struct remote_port_multicast_stream_t : public port_port_stream_t {
     _remote_port = remote_in_port;
     _core_mask = mask;
     _is_ready=false;
-	_core_mask = mask;
+	// _core_mask = mask;
   }
 
   // this was core_id instead of the mask
   // int _which_core = 0;
   bool _is_ready = false;
+  */
   int64_t _core_mask = 0;
-  int _remote_port = -1;
+  int64_t _remote_port = -1;
+  int64_t _out_port;
+  addr_t _num_elements=0;
+  addr_t _orig_elements;
 
-  virtual STR_PAT stream_pattern() {return STR_PAT::REC;}
-
-  int64_t out_port()    {
-	return _out_port;
+  virtual void set_orig() {
+    _orig_elements = _num_elements;
   }
 
-  // this copy can also be used for backpressure to the original core's output
+  int64_t out_port()    {return _out_port;}
+  uint64_t num_strides() {return _num_elements;}
+
+  virtual STR_PAT stream_pattern() {return STR_PAT::REC;}
+  
+  virtual bool stream_active() {
+    return _num_elements!=0;
+  }
+
+  virtual void cycle_status() {
+  }
+
   // port
   virtual void print_status() {
     std::cout << "port->remote";
     std::cout << "\tout_port=" << _out_port;
-    print_in_ports();
-    std::cout << "\tdir:" << _core_mask << "\trepeat:" << _repeat_in
-              << "\telem_left=" << _num_elements;
+    // print_in_ports();
+    std::cout << "\tdir:" << _core_mask << "\telem_left=" << _num_elements;
 
     base_stream_t::print_status();
   }

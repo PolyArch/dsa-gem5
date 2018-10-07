@@ -445,6 +445,11 @@ class Execute : public Named
 	/* push the multicast request on the message buffer */
     void send_spu_req(int dest_port_id, uint64_t val, int64_t mask);
 
+	/* receive the message at a port or scratchpad */
+	void receiveSpuMessage(int64_t val, int in_port_id){
+	  ssim.push_in_accel_port(0, val, in_port_id);
+	}
+
     void minorTrace() const;
 
     /** After thread suspension, has Execute been drained of in-flight
