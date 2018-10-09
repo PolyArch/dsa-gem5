@@ -445,10 +445,20 @@ class Execute : public Named
 	/* push the multicast request on the message buffer */
     void send_spu_req(int dest_port_id, uint64_t val, int64_t mask);
 
+    /* push the port->scr request on the message buffer */
+    void send_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id);
+
 	/* receive the message at a port or scratchpad */
 	void receiveSpuMessage(int64_t val, int in_port_id){
 	  ssim.push_in_accel_port(0, val, in_port_id);
 	}
+
+	/* receive the message at a port or scratchpad */
+    void receiveSpuMessage(bool scr_type, int64_t val, int16_t remote_scr_offset){
+	  if(scr_type==0){
+        ssim.write_remote_banked_scratchpad(val, remote_scr_offset);
+	  }
+    }
 
     void minorTrace() const;
 

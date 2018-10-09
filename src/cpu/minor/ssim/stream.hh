@@ -156,6 +156,7 @@ static inline int ilog2(const uint64_t x) {
   return y;
 }
 
+/*
 //This class represents a barrier (does not stall core)
 struct stream_barrier_t : public base_stream_t {
   uint64_t _mask=0;
@@ -171,6 +172,36 @@ struct stream_barrier_t : public base_stream_t {
     }
     if(bar_scr_wr()) {
       std::cout << " write_barrier";
+    }
+    std::cout << std::hex << " mask=0x" << _mask << std::dec << "\n";
+  }
+
+};
+*/
+//This class represents a barrier (does not stall core)
+struct stream_barrier_t : public base_stream_t {
+  uint64_t _mask=0;
+  // int64_t _num_remote_writes=-1;
+  bool _scr_type=0; // 0 means banked scratchpad
+
+  bool bar_scr_wr_df() {return _mask & WAIT_SCR_WR_DF;}
+  bool bar_scr_rd() {return _mask & WAIT_SCR_RD;}
+  bool bar_scr_wr() {return _mask & WAIT_SCR_WR;}
+
+  virtual bool stream_active() {
+    return true;
+    // return (_num_remote_writes!=0); // returns true for streams which do not use this!
+  }
+
+  virtual void print_status() {
+    if(bar_scr_rd()) {
+      std::cout << " read_barrier";
+    }
+    if(bar_scr_wr()) {
+      std::cout << " write_barrier";
+    }
+    if(bar_scr_wr_df()) {
+      std::cout << " remote_write_barrier";
     }
     std::cout << std::hex << " mask=0x" << _mask << std::dec << "\n";
   }
@@ -827,32 +858,18 @@ struct remote_port_multicast_stream_t : public base_stream_t {
     _num_elements=0;
   }
 
-  /*
-  //in other definition mask could be negative
-  //TODO: see what to do with this repeat, repeat_str
-  //TODO: also check is_ready
-  // is this never called?
-  remote_port_multicast_stream_t(int out_port, int remote_in_port, uint64_t num_elem,
-                       int64_t mask, int repeat, int repeat_str) :
-                       port_port_stream_t(out_port,remote_in_port,num_elem,
-                           repeat,repeat_str) {
-
-	printf("Does it ever comes in this constructor?\n");
-	// this would be multiple ports for double port thing
-    // _in_ports.clear();
-
-    // _in_ports.push_back(remote_in_port);
-    // _which_core = core;
+remote_port_multicast_stream_t(int out_port, int remote_in_port, uint64_t num_elem,
+                       int64_t mask) { //:
+                       // base_stream_t(out_port,remote_in_port,num_elem) {
     _remote_port = remote_in_port;
     _core_mask = mask;
-    _is_ready=false;
-	// _core_mask = mask;
+    // _is_ready=false;
   }
-
+	// _core_mask = mask;
   // this was core_id instead of the mask
+  // bool _is_ready = false;
   // int _which_core = 0;
-  bool _is_ready = false;
-  */
+
   int64_t _core_mask = 0;
   int64_t _remote_port = -1;
   int64_t _out_port;
@@ -867,7 +884,7 @@ struct remote_port_multicast_stream_t : public base_stream_t {
   uint64_t num_strides() {return _num_elements;}
 
   virtual STR_PAT stream_pattern() {return STR_PAT::REC;}
-  
+
   virtual bool stream_active() {
     return _num_elements!=0;
   }
@@ -877,10 +894,11 @@ struct remote_port_multicast_stream_t : public base_stream_t {
 
   // port
   virtual void print_status() {
-    std::cout << "port->remote";
+    std::cout << "port->remote port";
     std::cout << "\tout_port=" << _out_port;
     // print_in_ports();
-    std::cout << "\tdir:" << _core_mask << "\telem_left=" << _num_elements;
+    std::cout << "\tremote_in_port=" << _remote_port;
+    std::cout << "\tmask:" << _core_mask << "\telem_left=" << _num_elements;
 
     base_stream_t::print_status();
   }
@@ -889,6 +907,61 @@ struct remote_port_multicast_stream_t : public base_stream_t {
   virtual LOC dest() {return LOC::REMOTE_PORT;}
 };
 
+struct remote_scr_stream_t;
+struct remote_scr_stream_t : public remote_port_multicast_stream_t {
+    remote_scr_stream_t() {
+    _num_elements=0;
+  }
+
+  remote_scr_stream_t(int out_port, int addr_port, addr_t scratch_base_addr, uint64_t num_elem, bool spad_type) :
+                       remote_port_multicast_stream_t(out_port,-1,num_elem,-1) {
+
+    // _which_core = core;
+    // _is_ready=false;
+    _remote_scr_base_addr = scratch_base_addr;
+    _scr_type = spad_type;
+	_addr_port = addr_port;
+  }
+
+  addr_t _remote_scr_base_addr = -1;
+  bool _scr_type = 0; // 0 means banked scr
+  int _addr_port = -1;
+  // out_port is val port
+  // int64_t _out_port;
+  // addr_t _num_elements=0;
+  // addr_t _orig_elements;
+
+  virtual void set_orig() {
+    _orig_elements = _num_elements;
+  }
+
+  int64_t val_port()    {return _out_port;}
+  int addr_port()    {return _addr_port;}
+  addr_t scratch_base_addr()    {return _remote_scr_base_addr;}
+  uint64_t num_strides() {return _num_elements;}
+
+  virtual STR_PAT stream_pattern() {return STR_PAT::REC;}
+
+  virtual bool stream_active() {
+    return _num_elements!=0;
+  }
+
+  virtual void cycle_status() {
+  }
+
+  // port
+  virtual void print_status() {
+    std::cout << "port->remote scratch";
+    std::cout << "\tval_port=" << _out_port;
+    std::cout << "\taddr_port=" << _addr_port;
+    std::cout << "\tremote_scratch_base_addr:" << _remote_scr_base_addr << "\telem_left=" << _num_elements;
+
+    // base_stream_t::print_status(); // configuration may not have been done yet!
+  }
+
+  virtual LOC src() {return LOC::PORT;}
+  virtual LOC dest() {return LOC::REMOTE_SCR;}
+};
 
 //Indirect Read Port -> SCR
 struct atomic_scr_stream_t;
@@ -998,10 +1071,10 @@ struct atomic_scr_stream_t : public base_stream_t {
     std::cout << "atomic_scr " << "\tval_port=" << _val_port
               << "\taddr_port:" << _out_port  << "\top_code:" << _op_code << "\titers left: " << _num_strides
          << std::dec << "\tinput_type:" << _value_type << "\toutput_type:" << _output_type << "\taddr_type:" << _addr_type;
-    // base_stream_t::print_status();
-  }
-};
+       };
 
+    // base_stream_t::print_status();
+  };
 
 
 #endif

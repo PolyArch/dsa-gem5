@@ -765,7 +765,8 @@ class LSQ : public Named
 
     /* Push request into the SPU buffer, FIXME: it could directly push here also? */
     void push_spu_req(int dest_port_id, uint64_t val, int64_t mask);
-	int getCpuId() { return cpu.cpuId(); }
+    void push_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id, int stream_id);
+    int getCpuId() { return cpu.cpuId(); }
 
     /** Return the raw-bindable port */
     MinorCPU::MinorCPUPort &getDcachePort() { return dcachePort; }
