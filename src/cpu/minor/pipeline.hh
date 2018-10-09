@@ -115,6 +115,11 @@ class Pipeline : public Ticked {
 	  return execute.receiveSpuMessage(val, in_port); 
 	}
 
+	void receiveSpuMessage(bool scr_type, int64_t val, int16_t remote_scr_offset) 
+	{ 
+	  return execute.receiveSpuMessage(scr_type, val, remote_scr_offset); 
+	}
+
     /** Wake up the Fetch unit.  This is needed on thread activation esp.
      *  after quiesce wakeup */
     void wakeupFetch(ThreadID tid);

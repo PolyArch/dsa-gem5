@@ -4,7 +4,7 @@
 #include <iostream>
 #include <fstream>
 #include <iomanip>
-#include <memory> 
+#include <memory>
 
 #include "ssim.hh"
 #include "cpu/minor/cpu.hh"
@@ -25,7 +25,7 @@ ssim_t::ssim_t(Minor::LSQ* lsq) : _lsq(lsq) {
   //TODO: inform accel_arr
 }
 void ssim_t::req_config(addr_t addr, int size) {
-  if(addr==0 && size==0) { 
+  if(addr==0 && size==0) {
     //This is the reset_data case!
     for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
       if(_context_bitmask & b) {
@@ -34,12 +34,12 @@ void ssim_t::req_config(addr_t addr, int size) {
     }
     return;
   }
-  
+
   set_in_use();  //lets get going then..
 
 
-  //Send req_config to master accel -- TODO: is this the right decision? 
-  shared_acc()->req_config(addr,size,_context_bitmask); 
+  //Send req_config to master accel -- TODO: is this the right decision?
+  shared_acc()->req_config(addr,size,_context_bitmask);
 
   //We're also going to want to let these cores know they're in_config
   for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
@@ -111,7 +111,7 @@ void ssim_t::step() {
   cycle_shared_busses();
   for(uint64_t i=0,b=1; i < NUM_ACCEL; ++i, b<<=1) {
     if(_ever_used_bitmask & b) {
-      accel_arr[i]->tick();     
+      accel_arr[i]->tick();
     }
   }
   shared_acc()->tick();
@@ -131,7 +131,7 @@ void ssim_t::print_stats() {
    out << "Control Core Discarded Insts Issued: " << control_core_discarded_insts() << "\n";
    out << "Control Core Discarded Inst Stalls: " << ((double)control_core_discarded_insts()/(double)control_core_insts()) << "\n";
    // out << "Control Core Bubble Insts Issued: " << control_core_bubble_insts() << "\n";
-   out << "Control Core Config Stalls: " 
+   out << "Control Core Config Stalls: "
        << ((double)config_waits()/roi_cycles()) << "\n";
    out << "Control Core Wait Stalls:   ";
    for(auto& i : _wait_map) {
@@ -158,7 +158,7 @@ void ssim_t::print_stats() {
     }
   }
 
-  cout << "\nCores used: " << cores_used << "bitmask: " 
+  cout << "\nCores used: " << cores_used << "bitmask: "
        << std::hex << _ever_used_bitmask << std::dec << "\n";
 
   uint64_t total_mem_accesses=0;
@@ -172,14 +172,14 @@ void ssim_t::print_stats() {
     }
   }
 
-  cout << "Total Memory Activity: " << (double) total_mem_accesses 
+  cout << "Total Memory Activity: " << (double) total_mem_accesses
                                      / (double) roi_cycles() << "\n";
 
-  cout << "\n -- Parallelization Estimates --\n"; 
+  cout << "\n -- Parallelization Estimates --\n";
 
   out << "Multi-Pipeline Cycles (cores:cycles): ";
   for(int i = 1; i * cores_used <= 18; ++i) { // estimate performance
-    cout << i*cores_used << ":"; 
+    cout << i*cores_used << ":";
     uint64_t multicore_cyc = roi_cycles() / i;
     uint64_t mem_cyc = total_mem_accesses;
     out << std::max(multicore_cyc,mem_cyc) << " ";
@@ -188,7 +188,7 @@ void ssim_t::print_stats() {
 
   out << "Multi-Pipeline Activity: (cores:cycles)";
   for(int i = 1; i * cores_used <= 18; ++i) { // estimate performance
-    cout << i*cores_used << ":"; 
+    cout << i*cores_used << ":";
     uint64_t multicore_cyc = roi_cycles() / i;
     uint64_t mem_cyc = total_mem_accesses;
     uint64_t cycles = std::max(multicore_cyc,mem_cyc);
@@ -224,7 +224,7 @@ void ssim_t::add_bitmask_stream(base_stream_t* s, uint64_t ctx) {
   if(debug && (SS_DEBUG::COMMAND)  ) {
     timestamp_context();
     cout << "id:" << s->id() << " ";
-    s->print_status(); 
+    s->print_status();
   }
 
   if(!s->stream_active()) {
@@ -240,7 +240,7 @@ void ssim_t::add_bitmask_stream(base_stream_t* s, uint64_t ctx) {
   //  cout << "Sending to Cores: ";
   //}
 
-  shared_ptr<base_stream_t> s_shr(s); 
+  shared_ptr<base_stream_t> s_shr(s);
 
   for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
     if(ctx & b) {
@@ -254,7 +254,7 @@ void ssim_t::add_bitmask_stream(base_stream_t* s, uint64_t ctx) {
   //if(debug && (SS_DEBUG::COMMAND)  ) {
   //  cout << "\n";
   //}
-  
+
   extra_in_ports.clear(); //reset this
 }
 
@@ -312,8 +312,8 @@ void ssim_t::set_fill_mode(uint64_t mode) {
   _fill_mode = mode;
 }
 
-//void ssim_t::load_dma_to_scratch(addr_t mem_addr, uint64_t stride, 
-//    uint64_t access_size, int stretch, uint64_t num_strides, 
+//void ssim_t::load_dma_to_scratch(addr_t mem_addr, uint64_t stride,
+//    uint64_t access_size, int stretch, uint64_t num_strides,
 //    addr_t scratch_addr, uint64_t flags) {
 //
 //
@@ -332,10 +332,10 @@ void ssim_t::set_fill_mode(uint64_t mode) {
 //    auto* s = new dma_scr_stream_t(mem_addr,stride, access_size, stretch,
 //               num_strides, scratch_addr);
 //    add_bitmask_stream(s);  //load dma to shared proc
-//  }  
+//  }
 //}
 
-//void ssim_t::write_dma_from_scratch(addr_t scratch_addr, uint64_t stride, 
+//void ssim_t::write_dma_from_scratch(addr_t scratch_addr, uint64_t stride,
 //      uint64_t access_size, uint64_t num_strides, addr_t mem_addr, uint64_t flags) {
 //
 //  if(flags) {
@@ -392,15 +392,21 @@ void ssim_t::load_scratch_to_port(addr_t scratch_addr,
   add_bitmask_stream(s);
 }
 
-void ssim_t::write_scratchpad(int out_port, 
+void ssim_t::write_scratchpad(int out_port,
     addr_t scratch_addr, uint64_t num_bytes, uint64_t shift_bytes) {
 
-  affine_write_stream_t* s = new affine_write_stream_t(LOC::SCR, 
+  affine_write_stream_t* s = new affine_write_stream_t(LOC::SCR,
       scratch_addr, 8, 8, 0, num_bytes/8, out_port, shift_bytes, 0);
 
   add_bitmask_stream(s);
 }
 
+// it is not a stream; just a linear write (just push data into buf?)
+void ssim_t::write_remote_banked_scratchpad(int64_t val, int16_t scr_addr) {
+  // TODO: add a check for full buffer to apply backpressure to network
+  accel_arr[0]->push_scratch_remote_buf(val, scr_addr); // hopefully, we use single accel per CC
+  // _accel->push_scratch_remote_buf(val, scr_addr);
+}
 
 // command decode for atomic stream update
 void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode) {
@@ -414,27 +420,40 @@ void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_
     s->_output_type=output_type;
     s->_addr_type=addr_type;
     s->_unit=LOC::SCR;
-    s->set_orig(); 
+    s->set_orig();
 
     add_bitmask_stream(s);
 }
 
-
-void ssim_t::multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_port, int rem_port) {
-    remote_port_multicast_stream_t* s = new remote_port_multicast_stream_t();
-    s->_core_mask = mask;
-    s->_num_elements = num_elem;
-    s->_out_port = out_port;
-    s->_remote_port = rem_port;
-    // s->_unit=LOC::SCR; (probably add a flag for the destination to save a new opcode)
-    s->set_orig(); 
-
-	if(SS_DEBUG::NET_REQ){
-      printf("Remote stream initialized");
-	  s->print_status();
-	}
-
-    add_bitmask_stream(s);
+// TODO: make it neater
+void ssim_t::multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_port, int rem_port, bool dest_flag, bool spad_type) {
+    // remote_port_multicast_stream_t* s = NULL;
+	// 0 means port->port stream
+    if (dest_flag==0) {
+      remote_port_multicast_stream_t* s = new remote_port_multicast_stream_t();
+      s->_core_mask = mask;
+      s->_num_elements = num_elem;
+      s->_out_port = out_port;
+      s->_remote_port = rem_port;
+      // s->_unit=LOC::SCR; (probably add a flag for the destination to save a new opcode)
+      s->set_orig();
+	    if(SS_DEBUG::NET_REQ){
+        printf("Remote stream initialized");
+	      s->print_status();
+	    }
+      add_bitmask_stream(s);
+	  } else {
+      remote_scr_stream_t* s = new remote_scr_stream_t();
+      s->_num_elements = num_elem;
+      s->_core_mask = -1;
+      s->_out_port = out_port;
+      s->_remote_port = -1;
+	  s->_addr_port = rem_port;
+      s->_remote_scr_base_addr = mask; // this would now be scratch_base_addr
+      s->_scr_type = spad_type;
+      s->set_orig();
+      add_bitmask_stream(s);
+    }
 }
 
 void ssim_t::write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int num_elem) {
@@ -448,7 +467,7 @@ void ssim_t::write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int 
 }
 
 //The reroute function handles either local recurrence, or remote data transfer
-void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem, 
+void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
                      int repeat, int repeat_str, uint64_t flags) {
   base_stream_t* s=NULL, *r=NULL;
 
@@ -472,7 +491,7 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
   if(r) {
     uint64_t new_ctx=0;
     if(core_d==1) {
-      new_ctx = ((_context_bitmask<<1) & ACCEL_MASK) | 
+      new_ctx = ((_context_bitmask<<1) & ACCEL_MASK) |
                 (_context_bitmask>>(NUM_ACCEL-1) & 1);
     } else if(core_d==-1) {
       new_ctx = ((_context_bitmask>>1) & ACCEL_MASK) |
@@ -480,7 +499,7 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
     } else {
       assert(0 && "how do i do this?");
     }
-    add_bitmask_stream(r, new_ctx);  
+    add_bitmask_stream(r, new_ctx);
   }
 
 
@@ -488,7 +507,7 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
 
 //Configure an indirect stream with params
 void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
-    uint64_t num_elem, int repeat, int repeat_str,uint64_t offset_list, 
+    uint64_t num_elem, int repeat, int repeat_str,uint64_t offset_list,
     int dtype, uint64_t ind_mult, bool scratch) {
   indirect_stream_t* s = new indirect_stream_t();
   s->_ind_port=ind_port;
@@ -509,8 +528,8 @@ void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr
 }
 
 //Configure an indirect stream with params
-void ssim_t::indirect_write(int ind_port, int ind_type, int out_port, 
-    addr_t index_addr, uint64_t num_elem, uint64_t offset_list, 
+void ssim_t::indirect_write(int ind_port, int ind_type, int out_port,
+    addr_t index_addr, uint64_t num_elem, uint64_t offset_list,
     int dtype, uint64_t ind_mult, bool scratch) {
   indirect_wr_stream_t* s = new indirect_wr_stream_t();
   s->_ind_port=ind_port;
@@ -533,7 +552,7 @@ void ssim_t::indirect_write(int ind_port, int ind_type, int out_port,
 bool ssim_t::can_receive(int out_port) {
   for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
     if(_context_bitmask & b) {
-      return accel_arr[i]->can_receive(out_port); 
+      return accel_arr[i]->can_receive(out_port);
     }
   }
   return false;
@@ -543,7 +562,7 @@ bool ssim_t::can_receive(int out_port) {
 uint64_t ssim_t::receive(int out_port) {
   for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
     if(_context_bitmask & b) {
-      return accel_arr[i]->receive(out_port); 
+      return accel_arr[i]->receive(out_port);
     }
   }
   assert(0 && "has to be an accel active");
@@ -559,9 +578,21 @@ void ssim_t::insert_barrier(uint64_t mask) {
   add_bitmask_stream(s);
 }
 
-void ssim_t::write_constant(int num_strides, int in_port, 
-                    SBDT constant, uint64_t num_elem, 
-                    SBDT constant2, uint64_t num_elem2, 
+// TODO:FIXME: see if we need new mask
+void ssim_t::insert_df_barrier(int64_t num_scr_wr, bool spad_type) {
+  stream_barrier_t* s = new stream_barrier_t();
+  s->_mask = 64;
+  // s->_num_remote_writes = num_scr_wr;
+  s->_scr_type = spad_type; // TODO: Where to use this?
+  s->set_orig();
+  // printf("df count read from register is: %ld\n",num_scr_wr);
+  accel_arr[0]->_scr_w_c.set_df_count(num_scr_wr);
+  add_bitmask_stream(s);
+}
+
+void ssim_t::write_constant(int num_strides, int in_port,
+                    SBDT constant, uint64_t num_elem,
+                    SBDT constant2, uint64_t num_elem2,
                     uint64_t flags) { //new
 
   const_port_stream_t* s = new const_port_stream_t();
@@ -635,10 +666,8 @@ void ssim_t::roi_entry(bool enter) {
       cout << "Exiting ROI ------------";
       cout << "(" << _stat_start_cycle << "to" << _stat_stop_cycle << ")\n";
     }
-    
+
     _roi_cycles += _stat_stop_cycle - _stat_start_cycle;
     _in_roi=false;
   }
 }
-
-

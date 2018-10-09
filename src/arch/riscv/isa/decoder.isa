@@ -901,8 +901,10 @@ decode QUADRANT default Unknown::unknown() {
 				0x2: ss_rem_port({{
 					xc->setSSReg(Rs1,SS_NUM_ELEM);
                     xc->setSSReg(Rs2,SS_SCRATCH_ADDR);
-                    xc->setSSReg((imm >> 6) & 0x3f, SS_OUT_PORT);
-                    xc->setSSReg(imm & 0x3f, SS_IN_PORT);
+                    xc->setSSReg((imm >> 7) & 0x1f, SS_OUT_PORT);
+                    xc->setSSReg((imm >> 6) & 0x1, SS_ADDR_TYPE);
+                    xc->setSSReg((imm >> 1) & 0x1f, SS_IN_PORT);
+					xc->setSSReg(imm & 0x1, SS_FLAGS);
                     xc->callSSFunc(SS_REM_PORT);
                 }}, IsSSStream, No_OpClass);
                 0x3: ss_garb({{
@@ -944,6 +946,11 @@ decode QUADRANT default Unknown::unknown() {
                 0x2: ss_set_iter({{
                     xc->setSSReg(Rs1, SS_NUM_STRIDES);
                 }}, IsSSParam, No_OpClass);
+                0x3: ss_wait_df({{
+                    xc->setSSReg(Rs1,SS_NUM_ELEM);
+                    xc->setSSReg(imm & 1,SS_ADDR_TYPE);
+                    xc->callSSFunc(SS_WAIT_DF);
+                }}, IsSSWait, IsNonSpeculative, IsSerializeAfter, No_OpClass);
                 0x4: ss_wait({{
                     xc->setSSReg(imm,SS_WAIT_MASK);
                     xc->callSSFunc(SS_WAIT);

@@ -1558,6 +1558,28 @@ Execute::isInbetweenInsts(ThreadID thread_id) const
         !lsq.accessesInFlight();
 }
 
+// TODO: see how to set custom messages
+// pack the message to send request on the SPU network to write on remote scratchpad
+void Execute::send_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id) {
+
+  std::shared_ptr<RequestMsg> msg = std::make_shared<RequestMsg>(cpu.clockEdge());
+  (*msg).m_MessageSize = MessageSizeType_Control;
+  // (*msg).m_Type = CoherenceRequestType_GETX; // TODO: can I do it different type to check during wakeup?
+  (*msg).m_Type = CoherenceRequestType_PUTX;
+  (*msg).m_Requestor = cpu.get_m_version();
+  (*msg).m_addr = 0;
+  // (*msg).m_DataBlk.setData();
+  // last 1 bit is scr type; 16-bits for scr_offset and earlier bits are vals
+  (*msg).m_addr = val << 17 | scr_offset << 1 | scr_type;
+  dest_core_id += 1;
+  if(SS_DEBUG::NET_REQ){
+    printf("output destination core: %d\n",dest_core_id);
+  }
+  (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
+  cpu.pushReqFromSpu(msg);
+}
+
+
 void Execute::send_spu_req(int dest_port_id, uint64_t val, int64_t mask){
 
   std::shared_ptr<RequestMsg> msg = std::make_shared<RequestMsg>(cpu.clockEdge());
@@ -1568,7 +1590,7 @@ void Execute::send_spu_req(int dest_port_id, uint64_t val, int64_t mask){
   // find other way to do it
   // (*msg).m_DataBlk.setData();
   // last 6 bits are dest_port_id and earlier bits are vals
-  // TODO: see how to set custom things
+  // TODO: also make this 6 as 5-bits
   (*msg).m_addr = val << 6 | dest_port_id;
   // TODO1: derive dest from mask (or can we directly send the mask?)
   // printf("mask is %ld\n",mask);

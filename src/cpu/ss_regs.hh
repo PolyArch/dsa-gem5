@@ -66,6 +66,7 @@ enum SSCmdIdx {
     SS_CONST_SCR,
 	SS_REM_PORT,
     // SS_CONFIG_ATOMIC_SCR_OP,
+	SS_WAIT_DF,
     SS_WAIT,
     SS_NUM_CMDS
 };
@@ -96,6 +97,7 @@ const char* const SSCmdNames[] = {
     "SS_CONST_SCR",
 	"SS_REM_PORT",
     // "SS_CONFIG_ATOMIC_SCR_OP",
+	"SS_WAIT_DF",
     "SS_WAIT",
     "SS_NUM_CMDS" };
 

@@ -652,7 +652,7 @@ class scratch_write_controller_t : public data_controller_t {
     : data_controller_t(host) {
     _dma_c=d;
     mask.resize(SCR_WIDTH/DATA_WIDTH);
-
+    // _remote_scr_w_buf.resize(DEFAULT_FIFO_LEN); // same size as cgra port fifo's
     _atomic_scr_issued_requests.resize(NUM_SCRATCH_BANKS);
 
     //if(is_shared()) {
@@ -670,6 +670,7 @@ class scratch_write_controller_t : public data_controller_t {
     _atomic_scr_streams.clear();
     _ind_wr_streams.clear();
     _write_streams.clear();
+    while(!_remote_scr_w_buf.empty()) { _remote_scr_w_buf.pop(); }
   }
 
   void reset_data() {
@@ -700,6 +701,20 @@ class scratch_write_controller_t : public data_controller_t {
   bool schedule_port_scr(affine_write_stream_t& s);
   bool schedule_const_scr(const_scr_stream_t& s);
 
+  void push_remote_wr_req(SBDT val, addr_t scr_addr);
+
+  bool release_df_barrier(){
+    assert(_df_count!=-1);
+	// printf("df_count: %ld current_writes: %ld\n",_df_count,_remote_scr_writes);
+    return (_remote_scr_writes==_df_count);
+  }
+
+  void set_df_count(int64_t df_count){
+	// printf("Setting df count to be: %ld\n",df_count);
+	// printf("Current remote writes: %ld\n",_remote_scr_writes);
+    _df_count = df_count;
+  }
+
   private:
   int _which_wr=0;
 
@@ -710,11 +725,24 @@ class scratch_write_controller_t : public data_controller_t {
     int _value_bytes;
   };
 
+  // FIXME: how do we make it group? (val,addr)
+  // TODO: check if we can do this in a better way!
+  struct ind_write_req{
+    addr_t scr_addr;
+    int64_t val;
+    ind_write_req(addr_t addr, int64_t value){
+      scr_addr=addr;
+      val=value;
+    }
+  };
+
   void delete_stream(int i, affine_write_stream_t* s);
   void delete_stream(int i, const_scr_stream_t* s);
   void delete_stream(int i, atomic_scr_stream_t* s);
   void delete_stream(int i, indirect_wr_stream_t* s);
-
+  
+  int64_t _remote_scr_writes=0;
+  int64_t _df_count=-1; // only 1 active at a time
   std::vector<base_stream_t*> _write_streams;
 
   std::vector<affine_write_stream_t*> _port_scr_streams;
@@ -722,6 +750,8 @@ class scratch_write_controller_t : public data_controller_t {
   std::vector<atomic_scr_stream_t*> _atomic_scr_streams;
   std::vector<indirect_wr_stream_t*> _ind_wr_streams;
 
+  // TODO: fix the size of these queues
+  std::queue<struct ind_write_req> _remote_scr_w_buf;
   std::vector<std::queue<atomic_scr_op_req>> _atomic_scr_issued_requests;
   dma_controller_t* _dma_c;
 };
@@ -737,7 +767,6 @@ class network_controller_t : public data_controller_t {
 
 	// it might be needed to port->spad things
     // mask.resize(SCR_WIDTH/DATA_WIDTH);
-
     // _indirect_scr_read_requests.resize(NUM_SCRATCH_BANKS);
 
     reset_stream_engines();
@@ -745,8 +774,7 @@ class network_controller_t : public data_controller_t {
 
   void reset_stream_engines() {
     _remote_port_multicast_streams.clear();
-	// _ind_port_streams.clear();
-    // _scr_port_streams.clear();
+    _remote_scr_streams.clear();
   }
 
   void reset_data() {
@@ -754,6 +782,7 @@ class network_controller_t : public data_controller_t {
   }
 
   void multicast_data(remote_port_multicast_stream_t& stream);
+  void write_remote_scr(remote_scr_stream_t& stream);
   // these are the kind of streams declared somewhere
   // void send_multicast_message(int dest_port_id, SBDT val, SBDT mask, int stream_id);
   // std::vector<SBDT> read_scratch(affine_read_stream_t& stream);
@@ -762,11 +791,10 @@ class network_controller_t : public data_controller_t {
   // TODO: What does this do?: checks the most needy port, doesn't make sense
   // here
   // float calc_min_port_ready();
-  // things to be done at each cycle
   void cycle();
   // void cycle(bool &performed_read);
-  // banked scratchpad read buffers
   bool remote_port_multicast_requests_active();
+  bool remote_scr_requests_active();
 
   // TODO: What is this?: for reorder buffer
   // int cycle_read_queue();
@@ -775,15 +803,12 @@ class network_controller_t : public data_controller_t {
   bool done(bool show, int mask);
 
   bool schedule_remote_port_multicast(remote_port_multicast_stream_t& s);
+  bool schedule_remote_scr(remote_scr_stream_t& s);
   // bool schedule_scr_port(affine_read_stream_t& s);
   // bool schedule_indirect(indirect_stream_t& s);
 
   void print_status();
   void cycle_status();
-  // this shuld wakeup the controller when it recevies a message
-  // void wakeup();
-  // void receive_message();
-
   // bool scr_port_streams_active();
 
   private:
@@ -816,11 +841,10 @@ class network_controller_t : public data_controller_t {
   std::vector<base_stream_t*> _remote_streams;
 
   void delete_stream(int i, remote_port_multicast_stream_t* s);
-  // void delete_stream(int i, indirect_stream_t* s);
+  void delete_stream(int i, remote_scr_stream_t* s);
 
   std::vector<remote_port_multicast_stream_t*> _remote_port_multicast_streams;
-  //std::vector<scr_scr_stream_t*> _scr_scr_streams;
-  // std::vector<indirect_stream_t*> _ind_port_streams;
+  std::vector<remote_scr_stream_t*> _remote_scr_streams;
 
   // queues are the buffers associated with each bank
   // std::vector<std::queue<indirect_scr_read_req>> _indirect_scr_read_requests;
@@ -1299,15 +1323,22 @@ private:
     }
   }
 
-  void send_multicast_message(int dest_port_id, SBDT val, SBDT mask, int stream_id) {
-     _lsq->push_spu_req(dest_port_id, val, mask);
-  }
-
   void receive_message(SBDT data, int remote_in_port) {
     port_data_t& in_vp = _port_interf.in_port(remote_in_port);
     // TODO: Check the max port size here and apply backpressure
     in_vp.push_data(data);
   }
+
+  void push_scratch_remote_buf(int64_t val, int16_t scr_addr){
+	  _scr_w_c.push_remote_wr_req(val,scr_addr);
+  }
+
+/*
+  void send_scr_wr_message(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id, int stream_id) {
+	// TODO: write this function
+	// _lsq->push_spu_scr_wr();
+  }
+  */
 
 
   //members------------------------
@@ -1368,7 +1399,8 @@ private:
   uint64_t _stat_scratch_write_bytes = 0;
   uint64_t _stat_scratch_reads = 0;
   uint64_t _stat_scratch_writes = 0;
-  uint64_t _stat_port_multicast = 0;
+  uint64_t _stat_port_multicast = 0; // TODO: use this!
+  uint64_t _stat_remote_scratch_writes = 0; // TODO: use this!
   uint64_t _stat_scratch_bank_requests_pushed = 0;
   uint64_t _stat_scratch_bank_requests_executed = 0;
   double _stat_bank_conflicts=0.0;

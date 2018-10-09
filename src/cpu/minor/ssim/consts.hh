@@ -6,9 +6,10 @@ typedef uint64_t addr_t;
 #define SBDT uint64_t           //cgra datatype
 #define SSWORD uint8_t          //dgra datatype
 #define DATA_WIDTH sizeof(SBDT)
-// #define SCRATCH_SIZE (16384) //size in bytes -- 16KB
+#define SCRATCH_SIZE (16384) //size in bytes -- 16KB
 // FIXME: For AC circuit results, change it back later
-#define SCRATCH_SIZE (32768) //size in bytes -- 32KB
+// #define SCRATCH_SIZE (32768) //size in bytes -- 32KB
+#define LSCRATCH_SIZE (16384) //size in bytes -- 16KB
 #define NUM_SCRATCH_BANKS 64
 #define MAX_BANK_BUFFER_SIZE 8
 // #define NUM_SCRATCH_BANKS 1024
@@ -59,6 +60,7 @@ typedef uint64_t addr_t;
 #define WAIT_SCR_RD_Q     8 //wait for all reads to be de-queued (not impl)
 #define WAIT_MEM_WR       16//wait for all writes to complete (not impl)
 #define WAIT_SCR_ATOMIC   32//wait for all atomics to be done, delay the core
+#define WAIT_SCR_WR_DF    64//wait for N remote writes to be done, delay the core
 
 
 //fill modes

@@ -1207,10 +1207,15 @@ LSQ::canSendToMemorySystem()
         numAccessesInMemorySystem < inMemorySystemLimit;
 }
 
-/* Push request into the SPU buffer, FIXME: it could directly push here also? */
+/* Push PORT MULTICAST request into the SPU network buffer, FIXME: it could directly push here also? */
 void LSQ::push_spu_req(int dest_port_id, uint64_t val, int64_t mask) 
 {
   execute.send_spu_req(dest_port_id, val, mask);
+}
+/* Push SCR WR request into the SPU network buffer */
+void LSQ::push_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id, int stream_id)
+{
+  execute.send_spu_scr_wr_req(scr_type, val, scr_offset, dest_core_id);
 }
 
 bool
