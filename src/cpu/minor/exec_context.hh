@@ -585,7 +585,8 @@ class ExecContext : public ::ExecContext
 				// thread.getSSReg(SS_NUM_ELEM), thread.getSSReg(SS_MASK),  
                 thread.getSSReg(SS_NUM_ELEM), thread.getSSReg(SS_SCRATCH_ADDR),  
                 thread.getSSReg(SS_OUT_PORT), thread.getSSReg(SS_IN_PORT),
-				thread.getSSReg(SS_FLAGS), thread.getSSReg(SS_ADDR_TYPE));    
+				thread.getSSReg(SS_FLAGS), thread.getSSReg(SS_ADDR_TYPE),
+				thread.getSSReg(SS_STRIDE), thread.getSSReg(SS_ACCESS_SIZE));    
             break;
 			case SS_WAIT_DF: ssim.insert_df_barrier(
                 thread.getSSReg(SS_NUM_ELEM), thread.getSSReg(SS_ADDR_TYPE));

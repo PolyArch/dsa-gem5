@@ -426,7 +426,7 @@ void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_
 }
 
 // TODO: make it neater
-void ssim_t::multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_port, int rem_port, bool dest_flag, bool spad_type) {
+void ssim_t::multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_port, int rem_port, bool dest_flag, bool spad_type, int64_t stride, int64_t access_size) {
     // remote_port_multicast_stream_t* s = NULL;
 	// 0 means port->port stream
     if (dest_flag==0) {
@@ -441,18 +441,36 @@ void ssim_t::multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_por
         printf("Remote stream initialized");
 	      s->print_status();
 	    }
-      add_bitmask_stream(s);
+       add_bitmask_stream(s);
 	  } else {
-      remote_scr_stream_t* s = new remote_scr_stream_t();
-      s->_num_elements = num_elem;
-      s->_core_mask = -1;
-      s->_out_port = out_port;
-      s->_remote_port = -1;
-	  s->_addr_port = rem_port;
-      s->_remote_scr_base_addr = mask; // this would now be scratch_base_addr
-      s->_scr_type = spad_type;
-      s->set_orig();
-      add_bitmask_stream(s);
+	    if(rem_port!=0) { // I hope it can never be 0
+          remote_scr_stream_t* s = new remote_scr_stream_t();
+          s->_num_elements = num_elem;
+          s->_core_mask = -1;
+          s->_out_port = out_port;
+          s->_remote_port = -1;
+	      s->_addr_port = rem_port;
+          s->_remote_scr_base_addr = mask; // this would now be scratch_base_addr
+          s->_scr_type = spad_type;
+          s->set_orig();
+          add_bitmask_stream(s);
+		} else { // inherited by the affine_base_stream
+		  // direct_remote_scr_stream_t* s = new direct_remote_scr_stream_t();
+		  direct_remote_scr_stream_t* s = new direct_remote_scr_stream_t(mask, access_size);
+          s->_num_elements = num_elem; // this is num_strides
+          s->_out_port = out_port;
+          // s->_core_mask = -1;
+          // s->_remote_port = -1;
+	      // s->_addr_port = rem_port;
+          // s->_remote_scr_base_addr = mask; // this would now be scratch_base_addr
+          // s->_mem_addr = mask; // this would now be scratch_base_addr
+		  // TODO: add these things in the function declaration
+		  // s->_access_size = access_size;
+          s->_scr_type = spad_type; // this should not be required now?
+		  s->_stride = stride;
+          s->set_orig();
+          add_bitmask_stream(s);
+		}
     }
 }
 

@@ -951,7 +951,7 @@ struct remote_scr_stream_t : public remote_port_multicast_stream_t {
 
   // port
   virtual void print_status() {
-    std::cout << "port->remote scratch";
+    std::cout << "indirect port->remote scratch";
     std::cout << "\tval_port=" << _out_port;
     std::cout << "\taddr_port=" << _addr_port;
     std::cout << "\tremote_scratch_base_addr:" << _remote_scr_base_addr << "\telem_left=" << _num_elements;
@@ -962,6 +962,92 @@ struct remote_scr_stream_t : public remote_port_multicast_stream_t {
   virtual LOC src() {return LOC::PORT;}
   virtual LOC dest() {return LOC::REMOTE_SCR;}
 };
+
+struct direct_remote_scr_stream_t : public remote_scr_stream_t {
+  direct_remote_scr_stream_t() {
+    _num_elements=0;
+  }
+  direct_remote_scr_stream_t(addr_t base_addr, int64_t acc_size) {
+    _num_elements=0;
+	_remote_scr_base_addr = base_addr;
+	_cur_addr = _remote_scr_base_addr;
+	assert(acc_size >= sizeof(SBDT));
+	_access_size = acc_size;
+	_max_count = _access_size/sizeof(SBDT); // assuming we can send max 8-bytes at a time
+  }
+
+  /*
+  remote_scr_stream_t(int out_port, int addr_port, addr_t scratch_base_addr, uint64_t num_elem, bool spad_type) :
+                       remote_port_multicast_stream_t(out_port,-1,num_elem,-1) {
+
+    // _which_core = core;
+    // _is_ready=false;
+    _remote_scr_base_addr = scratch_base_addr;
+    _scr_type = spad_type;
+	_addr_port = addr_port;
+  }
+  */
+
+  // addr_t _remote_scr_base_addr = -1;
+  bool _scr_type = 0; // 0 means banked scr
+  int64_t _stride = -1;
+  int64_t _access_size = -1;
+  addr_t _cur_addr = -1;
+  int _count = 0;
+  int _max_count = 0;
+  // int _addr_port = -1;
+  // out_port is val port
+  // int64_t _out_port;
+  // addr_t _num_elements=0;
+  // addr_t _orig_elements;
+
+  virtual void set_orig() {
+    _orig_elements = _num_elements;
+  }
+
+  int64_t val_port()    {return _out_port;}
+  addr_t scratch_base_addr()    {return _remote_scr_base_addr;}
+  uint64_t num_strides() {return _num_elements;}
+
+  virtual STR_PAT stream_pattern() {return STR_PAT::REC;}
+
+  virtual bool stream_active() {
+    return _num_elements!=0;
+  }
+
+  // Oh, 2 dimensions?
+  virtual addr_t cur_addr() { 
+	if(_count == 0) { // the first base addr
+	  _count++;
+    } else if(_count <= _max_count) { // the next ones in acc_size dimension
+	  _cur_addr += sizeof(SBDT);
+	  _count++;
+	} else {
+	  _cur_addr = _cur_addr - _access_size + _stride; // (_stride >= _access_size)
+	  _count = 0;
+	  // _num_strides--;
+	}
+	return _cur_addr; 
+  }
+
+  virtual void cycle_status() {
+  }
+
+  // port
+  virtual void print_status() {
+    std::cout << "direct port->remote scratch";
+    std::cout << "\tval_port=" << _out_port;
+    // std::cout << "\tremote_scratch_base_addr:" << _mem_addr << "\telem_left=" << _num_elements;
+    std::cout << "\telem_left=" << _num_elements;
+
+    base_stream_t::print_status(); // configuration may not have been done yet!
+  }
+
+  virtual LOC src() {return LOC::PORT;}
+  virtual LOC dest() {return LOC::REMOTE_SCR;}
+};
+
+
 
 //Indirect Read Port -> SCR
 struct atomic_scr_stream_t;
