@@ -1570,6 +1570,8 @@ void Execute::send_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset
   (*msg).m_addr = 0;
   // (*msg).m_DataBlk.setData();
   // last 1 bit is scr type; 16-bits for scr_offset and earlier bits are vals
+  // (16-bits is sufficient for both offsets; we just don't need this
+  // scr_type--TODO)
   (*msg).m_addr = val << 17 | scr_offset << 1 | scr_type;
   dest_core_id += 1;
   if(SS_DEBUG::NET_REQ){

@@ -63,7 +63,7 @@ public:
                       SBDT constant2, uint64_t num_elem2,
                       uint64_t flags);
   void atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode);
-  void multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_port, int rem_port, bool dest_flag, bool spad_type);
+  void multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_port, int rem_port, bool dest_flag, bool spad_type, int64_t stride, int64_t access_size);
   void write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int num_elem);
 
   void push_in_accel_port(int accel_id, int64_t val, int in_port);

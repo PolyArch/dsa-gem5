@@ -587,7 +587,8 @@ class scratch_read_controller_t : public data_controller_t {
     reset_stream_engines();
   }
 
-  std::vector<SBDT> read_scratch(affine_read_stream_t& stream);
+  // std::vector<SBDT> read_scratch(affine_read_stream_t& stream);
+  std::vector<SBDT> read_scratch(affine_read_stream_t& stream, bool is_banked);
   void read_scratch_ind(indirect_stream_t& stream, uint64_t scr_addr);
 
   float calc_min_port_ready();
@@ -608,9 +609,11 @@ class scratch_read_controller_t : public data_controller_t {
   void cycle_status();
 
   bool scr_port_streams_active();
+  bool isLinearSpad(addr_t addr);
 
   private:
   int _which_rd=0;
+  int _which_linear_rd=0;
 
   struct ind_reorder_entry_t {
     uint8_t data[64]; //64 bytes per request
@@ -715,8 +718,13 @@ class scratch_write_controller_t : public data_controller_t {
     _df_count = df_count;
   }
 
+  // returns true if the address belongs to the second local storage (if it
+  // exists)
+  bool isLinearSpad(addr_t addr);
+
   private:
-  int _which_wr=0;
+  int _which_wr=0; // for banked scratchpad
+  int _which_linear_wr=0; // for linear scratchpad
 
   struct atomic_scr_op_req{
     addr_t _scr_addr;
@@ -767,14 +775,13 @@ class network_controller_t : public data_controller_t {
 
 	// it might be needed to port->spad things
     // mask.resize(SCR_WIDTH/DATA_WIDTH);
-    // _indirect_scr_read_requests.resize(NUM_SCRATCH_BANKS);
-
     reset_stream_engines();
   }
 
   void reset_stream_engines() {
     _remote_port_multicast_streams.clear();
     _remote_scr_streams.clear();
+    _direct_remote_scr_streams.clear();
   }
 
   void reset_data() {
@@ -783,68 +790,38 @@ class network_controller_t : public data_controller_t {
 
   void multicast_data(remote_port_multicast_stream_t& stream);
   void write_remote_scr(remote_scr_stream_t& stream);
-  // these are the kind of streams declared somewhere
-  // void send_multicast_message(int dest_port_id, SBDT val, SBDT mask, int stream_id);
-  // std::vector<SBDT> read_scratch(affine_read_stream_t& stream);
-  // void read_scratch_ind(indirect_stream_t& stream, uint64_t scr_addr);
-
-  // TODO: What does this do?: checks the most needy port, doesn't make sense
-  // here
-  // float calc_min_port_ready();
+  void write_direct_remote_scr(direct_remote_scr_stream_t& stream);
+  
   void cycle();
   // void cycle(bool &performed_read);
   bool remote_port_multicast_requests_active();
   bool remote_scr_requests_active();
-
-  // TODO: What is this?: for reorder buffer
-  // int cycle_read_queue();
+  bool direct_remote_scr_requests_active();
 
   void finish_cycle();
   bool done(bool show, int mask);
 
   bool schedule_remote_port_multicast(remote_port_multicast_stream_t& s);
   bool schedule_remote_scr(remote_scr_stream_t& s);
-  // bool schedule_scr_port(affine_read_stream_t& s);
-  // bool schedule_indirect(indirect_stream_t& s);
+  bool schedule_direct_remote_scr(direct_remote_scr_stream_t& s);
 
   void print_status();
   void cycle_status();
-  // bool scr_port_streams_active();
 
   private:
   // to schedule the streams in the stream table
   int _which_remote=0;
-
-  // reordering not required now for remote writes
-  /*
-  struct ind_reorder_entry_t {
-    uint8_t data[64]; //64 bytes per request
-    int size; //number of writes that should be completed
-    int completed=0;
-    int data_bytes;
-    base_stream_t* stream;
-    bool last = false;
-  };
-  */
-
-  // we might need similar thing for remote_port requests
-  /*
-  struct indirect_scr_read_req{
-    void *ptr;
-    uint64_t addr;
-    size_t bytes;
-    ind_reorder_entry_t* reorder_entry=NULL;
-  };
-  */
 
   // It contains all kind of streams: copy?
   std::vector<base_stream_t*> _remote_streams;
 
   void delete_stream(int i, remote_port_multicast_stream_t* s);
   void delete_stream(int i, remote_scr_stream_t* s);
+  void delete_stream(int i, direct_remote_scr_stream_t* s);
 
   std::vector<remote_port_multicast_stream_t*> _remote_port_multicast_streams;
   std::vector<remote_scr_stream_t*> _remote_scr_streams;
+  std::vector<direct_remote_scr_stream_t*> _direct_remote_scr_streams;
 
   // queues are the buffers associated with each bank
   // std::vector<std::queue<indirect_scr_read_req>> _indirect_scr_read_requests;
