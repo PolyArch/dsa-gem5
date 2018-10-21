@@ -50,9 +50,10 @@ void ssim_t::req_config(addr_t addr, int size) {
 }
 
 // receive network message at the given input port id
-void ssim_t::push_in_accel_port(int accel_id, int64_t val, int in_port) {
+// void ssim_t::push_in_accel_port(int accel_id, int64_t val, int in_port) {
+void ssim_t::push_in_accel_port(int accel_id, int8_t* val, int num_bytes, int in_port) {
   assert(accel_id<NUM_ACCEL_TOTAL);
-  accel_arr[accel_id]->receive_message(val, in_port);
+  accel_arr[accel_id]->receive_message(val, num_bytes, in_port);
 }
 
 bool ssim_t::can_add_stream() {
@@ -402,9 +403,10 @@ void ssim_t::write_scratchpad(int out_port,
 }
 
 // it is not a stream; just a linear write (just push data into buf?)
-void ssim_t::write_remote_banked_scratchpad(int64_t val, int16_t scr_addr) {
+// void ssim_t::write_remote_banked_scratchpad(int64_t val, int16_t scr_addr) {
+void ssim_t::write_remote_banked_scratchpad(int8_t* val, int num_bytes, int16_t scr_addr) {
   // TODO: add a check for full buffer to apply backpressure to network
-  accel_arr[0]->push_scratch_remote_buf(val, scr_addr); // hopefully, we use single accel per CC
+  accel_arr[0]->push_scratch_remote_buf(val, num_bytes, scr_addr); // hopefully, we use single accel per CC
   // _accel->push_scratch_remote_buf(val, scr_addr);
 }
 

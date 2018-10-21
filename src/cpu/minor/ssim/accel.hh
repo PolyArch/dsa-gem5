@@ -414,9 +414,15 @@ public:
 
   void reset() {
     for(unsigned i = 0; i < _in_port_data.size(); ++i) {
-      _in_port_data[i].reset();
+	  if(_in_port_data[i].port() == NET_VAL_PORT || _in_port_data[i].port() == NET_ADDR_PORT){
+		// printf("Detected a network port\n");
+	  } else {
+		// printf("Index of in_port is: %d\n",i);
+        _in_port_data[i].reset();
+	  }
     }
     for(unsigned i = 0; i < _out_port_data.size(); ++i) {
+	  // printf("Index of out_port is: %d\n",i);
       _out_port_data[i].reset();
     }
 
@@ -609,7 +615,7 @@ class scratch_read_controller_t : public data_controller_t {
   void cycle_status();
 
   bool scr_port_streams_active();
-  bool isLinearSpad(addr_t addr);
+  // bool isLinearSpad(addr_t addr);
 
   private:
   int _which_rd=0;
@@ -658,6 +664,12 @@ class scratch_write_controller_t : public data_controller_t {
     // _remote_scr_w_buf.resize(DEFAULT_FIFO_LEN); // same size as cgra port fifo's
     _atomic_scr_issued_requests.resize(NUM_SCRATCH_BANKS);
 
+    _network_streams.resize(1); // just one such stream for now
+
+    // initialize a dummy network streams
+    // remote_core_net_stream_t* implicit_stream = new remote_core_net_stream_t();
+    // push_net_stream(implicit_stream);	
+
     //if(is_shared()) {
     //  _scr_scr_streams.resize(NUM_ACCEL);
     //} else {
@@ -665,7 +677,11 @@ class scratch_write_controller_t : public data_controller_t {
     //}
   }
 
+  // void push_net_stream(remote_core_net_stream_t* stream);
   void write_scratch_ind(indirect_wr_stream_t& stream);
+  void write_scratch_remote_ind(remote_core_net_stream_t& stream);
+  void write_scratch_remote_direct(direct_remote_scr_stream_t& stream);
+
 
   void reset_stream_engines() {
     _port_scr_streams.clear();
@@ -673,7 +689,7 @@ class scratch_write_controller_t : public data_controller_t {
     _atomic_scr_streams.clear();
     _ind_wr_streams.clear();
     _write_streams.clear();
-    while(!_remote_scr_w_buf.empty()) { _remote_scr_w_buf.pop(); }
+    // while(!_remote_scr_w_buf.empty()) { _remote_scr_w_buf.pop(); }
   }
 
   void reset_data() {
@@ -689,6 +705,7 @@ class scratch_write_controller_t : public data_controller_t {
 
   bool schedule_atomic_scr_op(atomic_scr_stream_t& s);
   bool schedule_indirect_wr(indirect_wr_stream_t& s);
+  bool schedule_network_stream(remote_core_net_stream_t& s);
 
   void print_status();
   void cycle_status();
@@ -704,11 +721,12 @@ class scratch_write_controller_t : public data_controller_t {
   bool schedule_port_scr(affine_write_stream_t& s);
   bool schedule_const_scr(const_scr_stream_t& s);
 
-  void push_remote_wr_req(SBDT val, addr_t scr_addr);
+  // void push_remote_wr_req(SBDT val, addr_t scr_addr);
+  void push_remote_wr_req(int8_t *val, int num_bytes, addr_t scr_addr);
 
   bool release_df_barrier(){
     assert(_df_count!=-1);
-	// printf("df_count: %ld current_writes: %ld\n",_df_count,_remote_scr_writes);
+	printf("df_count: %ld current_writes: %ld\n",_df_count,_remote_scr_writes);
     return (_remote_scr_writes==_df_count);
   }
 
@@ -720,7 +738,7 @@ class scratch_write_controller_t : public data_controller_t {
 
   // returns true if the address belongs to the second local storage (if it
   // exists)
-  bool isLinearSpad(addr_t addr);
+  // bool isLinearSpad(addr_t addr);
 
   private:
   int _which_wr=0; // for banked scratchpad
@@ -748,7 +766,7 @@ class scratch_write_controller_t : public data_controller_t {
   void delete_stream(int i, const_scr_stream_t* s);
   void delete_stream(int i, atomic_scr_stream_t* s);
   void delete_stream(int i, indirect_wr_stream_t* s);
-  
+
   int64_t _remote_scr_writes=0;
   int64_t _df_count=-1; // only 1 active at a time
   std::vector<base_stream_t*> _write_streams;
@@ -759,8 +777,9 @@ class scratch_write_controller_t : public data_controller_t {
   std::vector<indirect_wr_stream_t*> _ind_wr_streams;
 
   // TODO: fix the size of these queues
-  std::queue<struct ind_write_req> _remote_scr_w_buf;
+  // std::queue<struct ind_write_req> _remote_scr_w_buf;
   std::vector<std::queue<atomic_scr_op_req>> _atomic_scr_issued_requests;
+  std::vector<remote_core_net_stream_t*> _network_streams;
   dma_controller_t* _dma_c;
 };
 
@@ -791,7 +810,7 @@ class network_controller_t : public data_controller_t {
   void multicast_data(remote_port_multicast_stream_t& stream);
   void write_remote_scr(remote_scr_stream_t& stream);
   void write_direct_remote_scr(direct_remote_scr_stream_t& stream);
-  
+
   void cycle();
   // void cycle(bool &performed_read);
   bool remote_port_multicast_requests_active();
@@ -1241,11 +1260,26 @@ private:
 
   void add_port_based_stream(std::shared_ptr<base_stream_t> s) {
     sanity_check_stream(s.get());
-    assert(cur_minst());
-    s->set_soft_config(&_soft_config);
+	s->set_soft_config(&_soft_config);
+
+	/*
+    // if(auto stream = dynamic_cast<remote_core_net_stream_t*>(s)) {
+    if(auto stream = std::dynamic_pointer_cast<remote_core_net_stream_t>(s)) {
+       // printf("NETWORK STREAM\n"); 
+	} else {
+       // printf("NOT A NETWORK STREAM\n"); 
+	  assert(cur_minst());
+      s->set_minst(cur_minst());
+      forward_progress(); // done in the initialization stage
+	}
+	// std::cout << "size of cmd queue: " << _cmd_queue.size() << "\n";
+	*/
+	assert(cur_minst());
     s->set_minst(cur_minst());
     _cmd_queue.push_back(s);
-    forward_progress();
+    forward_progress(); 
+	// forward progress later? this was also giving seg fault
+	// printf("stream pushed into the command queue\n");
     verif_cmd(s.get());
   }
 
@@ -1300,16 +1334,33 @@ private:
     }
   }
 
-  void receive_message(SBDT data, int remote_in_port) {
+  // void receive_message(SBDT data, int remote_in_port) {
+  void receive_message(int8_t* data, int num_bytes, int remote_in_port) {
     port_data_t& in_vp = _port_interf.in_port(remote_in_port);
     // TODO: Check the max port size here and apply backpressure
-    in_vp.push_data(data);
+    assert(num_bytes%8==0); // CURRENT LIMITATION
+    int num_words=num_bytes/8;
+    SBDT val=0; int id=0;
+    for(int i=0; i<num_words; ++i){
+      id=i*8; val=0;
+      for(int j=0; j<8; ++j){
+        val |= data[id+j] << j;
+      }
+      in_vp.push_data(val);
+    }
   }
 
-  void push_scratch_remote_buf(int64_t val, int16_t scr_addr){
-	  _scr_w_c.push_remote_wr_req(val,scr_addr);
+  // void push_scratch_remote_buf(int64_t val, int16_t scr_addr){
+  void push_scratch_remote_buf(int8_t* val, int num_bytes, int16_t scr_addr){
+	  // _scr_w_c.push_remote_wr_req(val,scr_addr);
+	  _scr_w_c.push_remote_wr_req(val, num_bytes, scr_addr);
   }
 
+bool isLinearSpad(addr_t addr){
+  int spad_offset_bits = log2(SCRATCH_SIZE+LSCRATCH_SIZE);
+  int spad_type = (addr >> spad_offset_bits) & 1;
+  return spad_type; // for 1, it is linear
+}
 /*
   void send_scr_wr_message(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id, int stream_id) {
 	// TODO: write this function
@@ -1317,6 +1368,7 @@ private:
   }
   */
 
+void push_net_in_cmd_queue(base_stream_t* s);
 
   //members------------------------
   soft_config_t _soft_config;
