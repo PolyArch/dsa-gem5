@@ -443,21 +443,26 @@ class Execute : public Named
     void evaluate();
 
 	/* push the multicast request on the message buffer */
-    void send_spu_req(int dest_port_id, uint64_t val, int64_t mask);
+    // void send_spu_req(int dest_port_id, uint64_t val, int64_t mask);
+    void send_spu_req(int dest_port_id, int8_t* val, int num_bytes, int64_t mask);
 
     /* push the port->scr request on the message buffer */
-    void send_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id);
+    void send_spu_scr_wr_req(int8_t* val, int num_bytes, int64_t scr_offset, int dest_core_id);
+    // void send_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id);
 
 	/* receive the message at a port or scratchpad */
-	void receiveSpuMessage(int64_t val, int in_port_id){
-	  ssim.push_in_accel_port(0, val, in_port_id);
+	// void receiveSpuMessage(int64_t val, int in_port_id){
+	void receiveSpuMessage(int8_t* val, int num_bytes, int in_port_id){
+	  ssim.push_in_accel_port(0, val, num_bytes, in_port_id);
 	}
 
 	/* receive the message at a port or scratchpad */
-    void receiveSpuMessage(bool scr_type, int64_t val, int16_t remote_scr_offset){
-	  if(scr_type==0){
-        ssim.write_remote_banked_scratchpad(val, remote_scr_offset);
-	  }
+  // void receiveSpuMessage(bool scr_type, int64_t val, int16_t remote_scr_offset){
+  void receiveSpuMessage(int8_t* val, int num_bytes, int16_t remote_scr_offset){
+	  // if(scr_type==0){
+    // TODO: rename
+    ssim.write_remote_banked_scratchpad(val, num_bytes, remote_scr_offset);
+	  // }
     }
 
     void minorTrace() const;

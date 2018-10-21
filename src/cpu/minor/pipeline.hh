@@ -110,14 +110,17 @@ class Pipeline : public Ticked {
 
   public:
 	// TODO:FIXME: need to access execute from cpu to talk to accel
-	void receiveSpuMessage(int64_t val, int in_port) 
-	{ 
-	  return execute.receiveSpuMessage(val, in_port); 
+	// void receiveSpuMessage(int64_t val, int in_port)
+	void receiveSpuMessage(int8_t* val, int num_bytes, int in_port)
+	{
+	  return execute.receiveSpuMessage(val, num_bytes, in_port);
 	}
 
-	void receiveSpuMessage(bool scr_type, int64_t val, int16_t remote_scr_offset) 
-	{ 
-	  return execute.receiveSpuMessage(scr_type, val, remote_scr_offset); 
+	// void receiveSpuMessage(bool scr_type, int64_t val, int16_t remote_scr_offset)
+	void receiveSpuMessage(int8_t* val, int num_bytes, int16_t remote_scr_offset)
+	{
+	  return execute.receiveSpuMessage(val, num_bytes, remote_scr_offset);
+	  // return execute.receiveSpuMessage(scr_type, val, remote_scr_offset);
 	}
 
     /** Wake up the Fetch unit.  This is needed on thread activation esp.

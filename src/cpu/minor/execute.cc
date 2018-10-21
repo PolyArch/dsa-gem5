@@ -1560,7 +1560,8 @@ Execute::isInbetweenInsts(ThreadID thread_id) const
 
 // TODO: see how to set custom messages
 // pack the message to send request on the SPU network to write on remote scratchpad
-void Execute::send_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id) {
+// void Execute::send_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id) {
+void Execute::send_spu_scr_wr_req(int8_t* val, int num_bytes, int64_t scr_offset, int dest_core_id) {
 
   std::shared_ptr<RequestMsg> msg = std::make_shared<RequestMsg>(cpu.clockEdge());
   (*msg).m_MessageSize = MessageSizeType_Control;
@@ -1568,11 +1569,12 @@ void Execute::send_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset
   (*msg).m_Type = CoherenceRequestType_PUTX;
   (*msg).m_Requestor = cpu.get_m_version();
   (*msg).m_addr = 0;
-  // (*msg).m_DataBlk.setData();
-  // last 1 bit is scr type; 16-bits for scr_offset and earlier bits are vals
-  // (16-bits is sufficient for both offsets; we just don't need this
-  // scr_type--TODO)
-  (*msg).m_addr = val << 17 | scr_offset << 1 | scr_type;
+  for(int j=0; j<num_bytes; ++j){
+    (*msg).m_DataBlk.setByte(j,val[j]);
+  }
+
+  // (*msg).m_addr = scr_offset;
+  (*msg).m_addr = scr_offset | num_bytes << 16; // TODO: encode data_width
   dest_core_id += 1;
   if(SS_DEBUG::NET_REQ){
     printf("output destination core: %d\n",dest_core_id);
@@ -1581,33 +1583,31 @@ void Execute::send_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset
   cpu.pushReqFromSpu(msg);
 }
 
-
-void Execute::send_spu_req(int dest_port_id, uint64_t val, int64_t mask){
+// multicast, TODO: change names
+// void Execute::send_spu_req(int dest_port_id, uint64_t val, int64_t mask){
+void Execute::send_spu_req(int dest_port_id, int8_t* val, int num_bytes, int64_t mask){
 
   std::shared_ptr<RequestMsg> msg = std::make_shared<RequestMsg>(cpu.clockEdge());
   (*msg).m_MessageSize = MessageSizeType_Control;
   (*msg).m_Type = CoherenceRequestType_GETX;
   (*msg).m_Requestor = cpu.get_m_version();
-  (*msg).m_addr = 0;
-  // find other way to do it
-  // (*msg).m_DataBlk.setData();
-  // last 6 bits are dest_port_id and earlier bits are vals
-  // TODO: also make this 6 as 5-bits
-  (*msg).m_addr = val << 6 | dest_port_id;
-  // TODO1: derive dest from mask (or can we directly send the mask?)
+  for(int i=0; i<num_bytes; ++i){
+    (*msg).m_DataBlk.setByte(i,val[i]);
+  }
+  (*msg).m_addr = dest_port_id | num_bytes << 16; // TODO: encode data_width
   // printf("mask is %ld\n",mask);
   // printf("current cpu id is %d\n",cpu.cpuId());
   int dest_core_id = 0;
   std::bitset<64> core_mask(mask);
   for(int i=0; i<core_mask.size(); ++i){
-	if(core_mask.test(i)){
-	  dest_core_id = i+1; // because of 1 offset with tid
-	  // printf("dest core id is: %d\n",dest_core_id);
+	  if(core_mask.test(i)){
+	    dest_core_id = i+1; // because of 1 offset with tid
+	    // printf("dest core id is: %d\n",dest_core_id);
       (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
-	  if(SS_DEBUG::NET_REQ){
-		printf("output destinations: %d\n",dest_core_id);
+	    if(SS_DEBUG::NET_REQ){
+		    printf("output destinations: %d\n",dest_core_id);
+	    }
 	  }
-	}
   }
   cpu.pushReqFromSpu(msg);
 }
@@ -1615,38 +1615,6 @@ void Execute::send_spu_req(int dest_port_id, uint64_t val, int64_t mask){
 void
 Execute::evaluate()
 {
-  /*
-  if(cpu.curCycle()==2 && cpu.cpuId()==0){
-	// first=1;
-	// ideally we should send a request
-	 printf("Request sent to be pushed into the SPU buffer\n");
-	 // SpuRequestPtr request = new SpuRequestPtr(*this); // , InstId::0); // last are id's
-	 // request->makePacket();
-	 // PacketPtr pkt = request->packet; // TODO: They don't use packet here?
-     // std::shared_ptr<SequencerMsg> msg = std::make_shared<SequencerMsg>(cpu.clockEdge());
-	 // RequestMsg, ResponseMsg
-	 // I can modify some of the message parameters here!
-	 // base+core_id
-	 // (*msg).m_Requestor = 0; // sending core id
-
-	 // may add this according to our requirements
-	  // TODO: we can declare this also in Type.py (only 2 lengths allowed)
-	  // (*msg).m_MessageSize = MessageSizeType_Writeback_Control;
-	  // (*msg).m_MessageSize = MessageSizeType_Writeback_Data;
-	  // TODO: add a new new message type (specific to each coherence protocol, find some common point)
-      std::shared_ptr<RequestMsg> msg = std::make_shared<RequestMsg>(cpu.clockEdge());
-	  (*msg).m_MessageSize = MessageSizeType_Control;
-	  (*msg).m_Type = CoherenceRequestType_GETX;
-	  (*msg).m_Requestor = cpu.get_m_version();
-	  (*msg).m_Destination.add(cpu.get_m_version(2));
-	  (*msg).m_addr = 0;
-	  // find other way to do it
-	  // (*msg).m_DataBlk = 0;
-	  cpu.pushReqFromSpu(msg);
-	  printf("Request pushed into the SPU buffer\n");
-  }
-  */
-
     if (!inp.outputWire->isBubble())
         inputBuffer[inp.outputWire->threadId].setTail(*inp.outputWire);
 

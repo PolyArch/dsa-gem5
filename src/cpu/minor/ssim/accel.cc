@@ -490,18 +490,31 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
 
   _banked_spad_mapping_strategy = std::getenv("MAPPING");
 
-
-
   _ssconfig = new SSModel(ssconfig_file);
   _ssconfig->setMaxEdgeDelay(_fu_fifo_len);
   _port_interf.initialize(_ssconfig);
   // FIXME: Is _sched initialized when it comes here? No
   // _port_interf.initialize(_ssconfig, _sched);
-  scratchpad.resize(SCRATCH_SIZE);
+ scratchpad.resize(SCRATCH_SIZE);
 
   //optionally used -- this is expensive
   scratchpad_readers.resize(SCRATCH_SIZE);
   scratchpad_writers.resize(SCRATCH_SIZE);
+
+  // FIXME: schedule the implicit network stream in the each accel
+  if(i==0) { // required only in 1st accel
+    remote_core_net_stream_t* implicit_stream = new remote_core_net_stream_t();
+
+	port_data_t* in_addr = &_port_interf.in_port(NET_ADDR_PORT);
+    port_data_t* in_val = &_port_interf.in_port(NET_VAL_PORT);
+    // assert(out_vp->can_take(LOC::PORT) && !blocked_ovp[NET_ADDR_PORT]);
+    // assert(out_vp2->can_take(LOC::PORT) && !blocked_ovp[NET_VAL_PORT]);
+    _scr_w_c.schedule_network_stream(*implicit_stream);
+    in_addr->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
+    in_val->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
+
+    // push_net_in_cmd_queue(implicit_stream);	
+  }
 
 }
 
@@ -1633,6 +1646,17 @@ void accel_t::print_stats() {
    pedantic_statistics(stat_file);
 }
 
+/*
+void scratch_write_controller_t::push_net_stream(remote_core_net_stream_t* stream){
+  printf("TRYUING TO PUSH IMPLICT STREAM\n");
+  _accel->push_net_in_cmd_queue(stream);
+}
+*/
+
+void accel_t::push_net_in_cmd_queue(base_stream_t* s) {
+  printf("TRYUING TO PUSH IMPLICT STREAM IN CMD QUEUE\n");
+  _ssim->add_bitmask_stream(s);
+}
 // --------------------------SCHEDULE STREAMS ONTO CONTROLLERS-----------------------
 // This is essentially the stream dispatcher
 void accel_t::schedule_streams() {
@@ -1648,6 +1672,7 @@ void accel_t::schedule_streams() {
   bool bar_scratch_read = false;  // These are set by scratch
   bool bar_scratch_write = false;
   bool bar_remote_scratch_write = false;
+
 
   //schedule for ports (these need to go in program order per-vp)
   for(auto i = _cmd_queue.begin();
@@ -1716,9 +1741,19 @@ void accel_t::schedule_streams() {
         bar_scratch_write |= stream->bar_scr_wr();
         bar_remote_scratch_write |= stream->bar_scr_wr_df();
       }
+    } else if(auto stream = dynamic_cast<remote_core_net_stream_t*>(ip)) {
+      // should I check if those ports not busy (Although they should not be)
+	  printf("Remote core net streams is being scheduled\n");
+      out_vp = &_port_interf.out_port(NET_ADDR_PORT);
+      out_vp2 = &_port_interf.out_port(NET_VAL_PORT);
+      assert(out_vp->can_take(LOC::PORT) && !blocked_ovp[NET_ADDR_PORT]);
+      assert(out_vp2->can_take(LOC::PORT) && !blocked_ovp[NET_VAL_PORT]);
+      scheduled = _scr_w_c.schedule_network_stream(*stream);
+      out_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
+      out_vp2->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
     } else if(auto stream = dynamic_cast<affine_read_stream_t*>(ip)) {
       if(ivps_can_take) {
-        if(unit == LOC::DMA) {
+    if(unit == LOC::DMA) {
           scheduled = _dma_c.schedule_dma_port(*stream);
         } else {
           scheduled = _scr_r_c.schedule_scr_port(*stream);
@@ -1992,6 +2027,13 @@ bool network_controller_t::schedule_direct_remote_scr(direct_remote_scr_stream_t
   auto* s = new direct_remote_scr_stream_t(new_s);
   _direct_remote_scr_streams.push_back(s);
   _remote_streams.push_back(s);
+  return true;
+}
+
+bool scratch_write_controller_t::schedule_network_stream(remote_core_net_stream_t& new_s) {
+  auto* s = new remote_core_net_stream_t(new_s);
+  _network_streams.push_back(s);
+  _write_streams.push_back(s);
   return true;
 }
 
@@ -2459,6 +2501,89 @@ int dma_controller_t::req_read(affine_read_stream_t& stream) {
   return words;
 }
 
+// It works for both direct/indirect network streams
+void scratch_write_controller_t::write_scratch_remote_ind(remote_core_net_stream_t& stream) {
+  port_data_t& addr_vp = _accel->port_interf().out_port(stream._addr_port);
+  port_data_t& val_vp = _accel->port_interf().out_port(stream._val_port);
+
+  int bytes_written=0;
+  SBDT val[8];
+  while(addr_vp.mem_size() && val_vp.mem_size() && stream.stream_active() &&
+      bytes_written < 64) {
+    int64_t meta_info = addr_vp.pop_out_data(); // no offset here
+    // this addr should have both num_bytes and addr info
+    addr_t addr = meta_info & 65535; // for 16-bits
+	cout << "addr is: " << addr << "\n";
+    int num_bytes = meta_info >> 16;
+    assert(num_bytes<=64);
+    // uint64_t val = val_vp.pop_out_data();
+    for(int j=0; j<num_bytes/8; ++j){
+      val[j] = val_vp.pop_out_data();
+	  cout << "val being written to scratchpad: " << val[j] << "\n";
+    }
+
+    _accel->write_scratchpad(addr, &val[0], num_bytes, stream.id());
+    // _remote_scr_writes+=num_bytes;
+    bytes_written += num_bytes;
+  }
+  _remote_scr_writes+=bytes_written;
+
+  bool is_empty = false; // stream.check_set_empty();
+  if(is_empty) {
+    _accel->process_stream_stats(stream);
+
+  if(SS_DEBUG::VP_SCORE2) {cout << "SOURCE: INDIRECT PORT -> SCR\n";}
+    addr_vp.set_status(port_data_t::STATUS::FREE);
+    val_vp.set_status(port_data_t::STATUS::FREE);
+  }
+
+  if(_accel->_ssim->in_roi()) {
+    add_bw(LOC::PORT, LOC::SCR, 1, bytes_written);
+    _accel->_stat_scratch_writes++;
+
+  }
+
+  _accel->_stat_scr_bytes_wr+=bytes_written;
+  _accel->_stat_scratch_write_bytes+=bytes_written;
+}
+
+/*
++void scratch_write_controller_t::write_scratch_remote_ind(remote_core_net_stream_t& stream) {
++  port_data_t& addr_vp = _accel->port_interf().out_port(stream._addr_port);
++  port_data_t& val_vp = _accel->port_interf().out_port(stream._val_port);
++
++  int bytes_written=0;
++
++  while(addr_vp.mem_size() && val_vp.mem_size() && stream.stream_active() &&
++      bytes_written < 64) {
++    addr_t addr = addr_vp.pop_out_data(); // no offset here
++    uint64_t val = val_vp.pop_out_data();
++
++    // push the entry into the write bank queues
++    _accel->write_scratchpad(addr, &val, stream._data_bytes,stream.id());
++    bytes_written += stream._data_bytes;
++  }
++
++  bool is_empty = false; // stream.check_set_empty();
++  if(is_empty) {
++    _accel->process_stream_stats(stream);
++
++    if(SS_DEBUG::VP_SCORE2) {cout << "SOURCE: INDIRECT PORT -> SCR\n";}
++    out_vp.set_status(port_data_t::STATUS::FREE);
++    ind_vp.set_status(port_data_t::STATUS::FREE);
++  }
++
++  // have the same bank queues thing here
++  if(_accel->_ssim->in_roi()) {
++    add_bw(LOC::PORT, LOC::SCR, 1, bytes_written);
++    _accel->_stat_scratch_writes++;
++
++  }
++
++  _accel->_stat_scr_bytes_wr+=bytes_written;
++  _accel->_stat_scratch_write_bytes+=bytes_written;
++}
+*/
 
 void scratch_write_controller_t::write_scratch_ind(indirect_wr_stream_t& stream) {
   port_data_t& out_vp = _accel->port_interf().out_port(stream._out_port);
@@ -2908,7 +3033,7 @@ vector<SBDT> scratch_read_controller_t::read_scratch(
 
   //go while stream and port does not run out
   // while(stream.stream_active() &&
-  while(stream.stream_active() && (is_banked & !isLinearSpad(addr)) &&
+  while(stream.stream_active() && (is_banked & !_accel->isLinearSpad(addr)) &&
       addr_valid_dir(stream.access_size(),addr,prev_addr,base_addr,max_addr)){
     // keep going while stream does not run out
     SBDT val=0;
@@ -2998,22 +3123,27 @@ void network_controller_t::multicast_data(
   int remote_in_port = stream._remote_port;
   uint64_t bytes_written=0;
   uint64_t remote_elem_sent=0;
-  while(stream.stream_active() //enough in dest
+  int8_t val[64]; // number of 8-byte elements to send
+  if(stream.stream_active()){
+    while(stream.stream_active() //enough in dest
                         && out_vp.mem_size() && bytes_written<64) { //enough in source (64-bytes)
-    // peek out and pop later if message buffer size was full?
-    SBDT val = out_vp.pop_out_data();
+      // peek out and pop later if message buffer size was full?
+      SBDT data = out_vp.pop_out_data();
+	  for(int i=0; i<8; i++){
+		val[i+remote_elem_sent*8] = (data >> (i*8)) & 255;
+	  }
 
-     _accel->_lsq->push_spu_req(remote_in_port, val, stream._core_mask);
+      bytes_written += DATA_WIDTH;
+      remote_elem_sent+=1;
+      stream._num_elements--;
 
-    bytes_written += DATA_WIDTH;
-    remote_elem_sent+=1;
-    stream._num_elements--;
-
-   	if(SS_DEBUG::NET_REQ){
-      timestamp(); cout << "POPPED b/c port->remote port WRITE: " << out_vp.port() << " " << out_vp.mem_size() << "\n";
-   	  printf("After issue: ");
-   	  stream.print_status();
+   	  if(SS_DEBUG::NET_REQ){
+        timestamp(); cout << "POPPED b/c port->remote port WRITE: " << out_vp.port() << " " << out_vp.mem_size() << "\n";
+   	    printf("After issue: ");
+   	    stream.print_status();
+      }
     }
+    _accel->_lsq->push_spu_req(remote_in_port, val, bytes_written, stream._core_mask);
   }
   if(_accel->_ssim->in_roi()) {
     // add_bw(stream.src(), stream.dest(), 1, bytes_written);
@@ -3021,7 +3151,10 @@ void network_controller_t::multicast_data(
   }
 }
 
+// indirect stream
+// TODO: incomplete
 void network_controller_t::write_remote_scr(remote_scr_stream_t& stream) {
+  /*
   port_data_t& val_vp = _accel->port_interf().out_port(stream._out_port);
   port_data_t& addr_vp = _accel->port_interf().out_port(stream._addr_port);
   int64_t base_addr = stream._remote_scr_base_addr;
@@ -3033,23 +3166,15 @@ void network_controller_t::write_remote_scr(remote_scr_stream_t& stream) {
     SBDT val = val_vp.pop_out_data();
     SBDT index = addr_vp.pop_out_data();
 
-	addr_t final_scr_addr = base_addr + index;
-	// TODO:FIXME: decide on addressing bits
-	// printf("val: %ld and addr: %ld\n",val,final_scr_addr);
+	  addr_t final_scr_addr = base_addr + index;
+	  // TODO:FIXME: decide on addressing bits
+	  // printf("val: %ld and addr: %ld\n",val,final_scr_addr);
     // Total address bits = log((linear_spad_size*C),2)
     int spad_offset_bits = 0;
-	uint64_t scr_offset=0;
+	  uint64_t scr_offset=0;
 
     spad_offset_bits = (int)log2(SCRATCH_SIZE+LSCRATCH_SIZE);
-	scr_offset = final_scr_addr & (SCRATCH_SIZE+LSCRATCH_SIZE-1);
-	// NO USE OF SCR TYPE IN SINGLE GLOBAL ADDRESS SPACE FOR BOTH SCRATCHPADS
-    // if(stream._scr_type==0) { // banked scratchpad
-    //   spad_offset_bits = (int)log2(SCRATCH_SIZE);
-	//   scr_offset = final_scr_addr & (SCRATCH_SIZE-1);
-    // } else {
-    //   spad_offset_bits = (int)log2(LSCRATCH_SIZE);
-	//   scr_offset = final_scr_addr & (LSCRATCH_SIZE-1);
-    // }
+	  scr_offset = final_scr_addr & (SCRATCH_SIZE+LSCRATCH_SIZE-1);
     // TODO: can i get num_cores info here somehow?
     int cores = 64;
 	int dest_core_id = (final_scr_addr >> spad_offset_bits) & (cores-1); // last bits?
@@ -3057,11 +3182,8 @@ void network_controller_t::write_remote_scr(remote_scr_stream_t& stream) {
 	  std::cout << "dest_core_id: " << dest_core_id << "\n";
 	  std::cout << "scr_offset: " << scr_offset << "\n";
 	}
-
-    // _accel->send_scr_wr_message(stream._scr_type, val, scr_offset, dest_core_id, index, stream.id());
-    // What I want to send?- <val, scr_offset, scr_type> (64+64/16+1=81-bits)(need 1 more field at least)
-    // _accel->_lsq->push_spu_scr_wr_message(stream._scr_type, val, scr_offset, dest_core_id, stream.id());
-    _accel->_lsq->push_spu_scr_wr_req(stream._scr_type, val, scr_offset, dest_core_id, stream.id());
+    // _accel->_lsq->push_spu_scr_wr_req(stream._scr_type, val, scr_offset, dest_core_id, stream.id());
+    // _accel->_lsq->push_spu_scr_wr_req(stream._scr_type, val, scr_offset, dest_core_id, stream.id());
 
     bytes_written += DATA_WIDTH;
     remote_elem_sent+=1;
@@ -3078,6 +3200,7 @@ void network_controller_t::write_remote_scr(remote_scr_stream_t& stream) {
     // add_bw(stream.src(), stream.dest(), 1, bytes_written);
     _accel->_stat_remote_scratch_writes+=remote_elem_sent;
   }
+  */
 }
 
 void network_controller_t::write_direct_remote_scr(direct_remote_scr_stream_t& stream) {
@@ -3086,49 +3209,50 @@ void network_controller_t::write_direct_remote_scr(direct_remote_scr_stream_t& s
   uint64_t bytes_written=0;
   uint64_t remote_elem_sent=0;
 
-  if(stream.stream_active() && val_vp.mem_size() > 0) {
+  int8_t val[64]; // there will be only 1 base address
+  int message_size = 8; // num of 64-bit elements to be written
+  if(stream._num_elements<8){
+	message_size=stream._num_elements;
+  }
+  if(stream.stream_active() && val_vp.mem_size() >= message_size) {
     addr_t final_scr_addr = stream.cur_addr();
     addr_t base_addr = final_scr_addr & SCR_MASK;
     addr_t max_addr = base_addr + SCR_WIDTH;
 
+    int spad_offset_bits = 0;
+    uint64_t scr_offset=0;
+    spad_offset_bits = (int)log2(SCRATCH_SIZE+LSCRATCH_SIZE);
+    int cores = 64;
+    int dest_core_id = (final_scr_addr >> spad_offset_bits) & (cores-1); // last bits?
+    if(SS_DEBUG::NET_REQ){
+      std::cout << "dest_core_id: " << dest_core_id << "\n";
+      std::cout << "scr_offset: " << scr_offset << "\n";
+	}
     while(final_scr_addr < max_addr && stream.stream_active() //enough in dest
-              && val_vp.mem_size() && bytes_written<64) { //enough in source (64-bytes)
+            && val_vp.mem_size() && bytes_written<64) { //enough in source (64-bytes)
       // peek out and pop later if message buffer size was full?
-      SBDT val = val_vp.pop_out_data();
-      	
+      SBDT data = val_vp.pop_out_data();
+	  for(int i=0; i<8; i++){
+	    val[remote_elem_sent*8+i] = (data >> (i*8)) & 255;
+	  }
+
 	  // addr_t final_scr_addr = base_addr + index;
       // printf("val: %ld and addr: %ld\n",val,final_scr_addr);
-      int spad_offset_bits = 0;
-      uint64_t scr_offset=0;
-      spad_offset_bits = (int)log2(SCRATCH_SIZE+LSCRATCH_SIZE);
-      scr_offset = final_scr_addr & (SCRATCH_SIZE+LSCRATCH_SIZE-1);
-      // if(stream._scr_type==0) { // banked scratchpad
-      //   spad_offset_bits = (int)log2(SCRATCH_SIZE);
-      //   scr_offset = final_scr_addr & (SCRATCH_SIZE-1);
-      // } else {
-      //   spad_offset_bits = (int)log2(LSCRATCH_SIZE);
-      //   scr_offset = final_scr_addr & (LSCRATCH_SIZE-1);
-      // }
-      int cores = 64;
-      int dest_core_id = (final_scr_addr >> spad_offset_bits) & (cores-1); // last bits?
-      if(SS_DEBUG::NET_REQ){
-        std::cout << "dest_core_id: " << dest_core_id << "\n";
-        std::cout << "scr_offset: " << scr_offset << "\n";
-      }
-     _accel->_lsq->push_spu_scr_wr_req(stream._scr_type, val, scr_offset, dest_core_id, stream.id());
-     final_scr_addr = stream.cur_addr();
-
+      // FIXME: check if this is correct
+      final_scr_addr = stream.cur_addr();
       bytes_written += DATA_WIDTH;
       remote_elem_sent+=1;
       stream._num_elements--;
 
-     	if(SS_DEBUG::NET_REQ){
-          timestamp(); cout << "POPPED b/c direct port->remote scr WRITE: " << val_vp.port() << " " << val_vp.mem_size() << "\n";
-
-     	  printf("After issue: ");
-     	  stream.print_status();
+      if(SS_DEBUG::NET_REQ){
+        timestamp(); cout << "POPPED b/c direct port->remote scr WRITE: " << val_vp.port() << " " << val_vp.mem_size() << "\n";
+        printf("After issue: ");
+        stream.print_status();
       }
     }
+    // _accel->_lsq->push_spu_scr_wr_req(stream._scr_type, val, scr_offset, dest_core_id, stream.id());
+    // num_bytes = remote_elem_sent*8
+    _accel->_lsq->push_spu_scr_wr_req(&val[0], remote_elem_sent*8, scr_offset, dest_core_id, stream.id());
   }
   if(_accel->_ssim->in_roi()) {
     // add_bw(stream.src(), stream.dest(), 1, bytes_written);
@@ -3418,27 +3542,6 @@ bool scratch_write_controller_t::crosssar_backpressureOn(){
   return false;
 }
 
-bool scratch_write_controller_t::isLinearSpad(addr_t addr){
-  // FIXME: this hsould be corrected everywhere (basically in message encoding
-  // and decoding)
-  // int spad_type = (addr >> 15) & 1; // max 15-bits allowed for scr address
-  int spad_offset_bits = log2(SCRATCH_SIZE+LSCRATCH_SIZE);
-  int spad_type = (addr >> spad_offset_bits) & 1;
-  return spad_type; // for 1, it is linear
-  // if(SPU_SCR==1){
-  //   return spad_type;
-  // }	
-  // return false;
-}
-
-bool scratch_read_controller_t::isLinearSpad(addr_t addr){
-  // int spad_type = (addr >> 15) & 1; // max 15-bits allowed for scr address
-
-  int spad_offset_bits = log2(SCRATCH_SIZE+LSCRATCH_SIZE);
-  int spad_type = (addr >> spad_offset_bits) & 1;
-  return spad_type; // for 1, it is linear
-}
-
 void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
     bool &performed_atomic_scr) {
 
@@ -3447,14 +3550,9 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
 
 
   // FOR THE BANKED SCRATCHPAD
-  for(unsigned i = 0; i < (_write_streams.size()+1); ++i) {
-    // _which_wr=(_which_wr+1)>=_write_streams.size() ? 0:_which_wr+1;
-    _which_wr=(_which_wr+1)>=(_write_streams.size()+1) ? 0:_which_wr+1; // 1 for the remote_wr buffers
-	// no stream associated with the last one
-	base_stream_t* s = NULL;
-	if(_which_wr<_write_streams.size()) {
-      s = _write_streams[_which_wr];
-	}
+  for(unsigned i = 0; i < _write_streams.size(); ++i) {
+    _which_wr=(_which_wr+1)>=_write_streams.size() ? 0:_which_wr+1;
+	base_stream_t* s = _write_streams[_which_wr];
 
     if(auto* sp = dynamic_cast<affine_write_stream_t*>(s)) { //write from port
       auto& stream = *sp;
@@ -3470,7 +3568,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
           //go while stream and port does not run out
           uint64_t bytes_written=0;
           // while(addr < max_addr && stream.stream_active() //enough in dest
-          while(isLinearSpad(addr) && addr < max_addr && stream.stream_active() //enough in dest
+          while(_accel->isLinearSpad(addr) && addr < max_addr && stream.stream_active() //enough in dest
                                 && out_vp.mem_size()) { //enough in source
             SBDT val = out_vp.pop_out_data();
             // timestamp(); cout << "POPPED b/c port->scratch WRITE: " << out_vp.port() << " " << out_vp.mem_size() << "\n";
@@ -3653,16 +3751,6 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
              _accel->_stat_scratch_bank_requests_pushed++;
              stream._num_strides--;
 
-             /*
-             if(!bank_conflicts[bank_id]){
-               bank_conflicts[bank_id]=true;
-               // _accel->_stat_total_scratch_bank_requests++;
-             } else {
-               _accel->_stat_total_scratch_bank_conflicts++;
-               // _accel->_stat_total_scratch_bank_requests++;
-             }
-             */
-
              if(SS_DEBUG::COMP) {
                std::cout << "\tvalues input: " << inc << "\tbank_id: " << bank_id << "\n";
                std::cout << "stream strides left are: " << stream._num_strides << "\n";
@@ -3713,7 +3801,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
          }
        }
 
-       //Don't release steam until all requests are served
+       //Don't release stream until all requests are served
        if(!atomic_scr_issued_requests_active()) {
          bool is_empty = stream.check_set_empty();
          if(is_empty) {
@@ -3778,33 +3866,23 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
         performed_atomic_scr = true;
         break;
       }
-    } else { // remote scr wr into buffer
-      // how do I know if there is an entry here? (it should be a queue)
-	  // printf("Came to check remote scr buffers\n");
-      int bytes_written=0;
-      while((!_remote_scr_w_buf.empty()) && bytes_written<64){
-        ind_write_req req = _remote_scr_w_buf.front();
-        addr_t addr = req.scr_addr;
-		addr *= 8; // that is supposed to be element ddress
-        int64_t val = req.val;
-        _accel->write_scratchpad(addr, &val, sizeof(SBDT),-1); // Will -1 work?
-        bytes_written += sizeof(SBDT);
-        _remote_scr_w_buf.pop();
-        _remote_scr_writes++;
+    } else if(auto* sp = dynamic_cast<remote_core_net_stream_t*>(s)) {
+      auto& stream = *sp;
+      // int bytes_written=0;
+      if(stream.stream_active()) { // should always be true
+        port_data_t& addr_port = _accel->port_interf().out_port(stream._addr_port);
+        port_data_t& val_port = _accel->port_interf().out_port(stream._val_port);
 
-		if(SS_DEBUG::NET_REQ){
-	      printf("ACCEL ID: %d\n",_accel->_lsq->getCpuId());
-		  std::cout << "The address we are writing to: " << addr << " and the value: " << val << "\n";
-		  printf("Current _remote_scr_writes: %ld\n",_remote_scr_writes);
-		}
+        if(addr_port.mem_size()>0 && val_port.mem_size()>0) {
+		  printf("COmes to check remote core net stream\n");
+          write_scratch_remote_ind(stream);
+          /*
+          if(stream.empty()) {
+            delete_stream(_which_wr,sp);
+          }
+          */
+          break;
       }
-
-	  /* TODO: added new bandwidth
-      if(_accel->_ssim->in_roi()) {
-        add_bw(stream.src(), stream.dest(), 1, bytes_written);
-      }
-	  */
-     break;
     }
   }
 
@@ -3831,7 +3909,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
 
             //go while stream and port does not run out
             uint64_t bytes_written=0;
-            while(isLinearSpad(addr) && addr < max_addr && stream.stream_active() //enough in dest
+            while(_accel->isLinearSpad(addr) && addr < max_addr && stream.stream_active() //enough in dest
                                   && out_vp.mem_size()) { //enough in source
               SBDT val = out_vp.pop_out_data();
               // timestamp(); cout << "POPPED b/c port->scratch WRITE: " << out_vp.port() << " " << out_vp.mem_size() << "\n";
@@ -3867,12 +3945,22 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
     }
   }
 }
+}
 
-void scratch_write_controller_t::push_remote_wr_req(SBDT val, addr_t scr_addr) {
-  // ind_wr_req req = new ind_wr_req(scr_addr, val);
-  // printf("Came here to push spu request after wakeup\n");
-  ind_write_req req(scr_addr, val);
-  _remote_scr_w_buf.push(req);
+void scratch_write_controller_t::push_remote_wr_req(int8_t* val, int num_bytes, addr_t scr_addr) {
+  port_data_t& addr_vp = _accel->port_interf().out_port(NET_ADDR_PORT);
+  port_data_t& val_vp = _accel->port_interf().out_port(NET_VAL_PORT);
+
+  assert(num_bytes%8==0);
+  int64_t meta_info = num_bytes << 16 | scr_addr; // Unnecessary encoding/decoding
+  // addr_vp.push_mem_data(meta_info);
+  addr_vp.push_data(meta_info);
+  // addr_vp.push_mem_data(addr);
+  // FIXME:CHECKME: This should work fine?
+  for(int i=0; i<num_bytes; i++){
+    val_vp.push_data_byte(val[i]);
+	// cout << "data_byte being pushed to net_in ports: " << val[i] << "\n";
+  }
 }
 
 
@@ -4231,7 +4319,7 @@ bool scratch_write_controller_t::const_scr_streams_active() {
 bool scratch_write_controller_t::done(bool show, int mask) {
   if(mask&WAIT_SCR_WR_DF) { // wait_all is for local streams only
     if(!release_df_barrier()) {
-	  if(show) cout << "PORT -> REMOTE SCR buffer Not Empty\n";
+	  if(show) cout << "PORT -> REMOTE SCR port Not Empty\n";
       return false;
     } else {
       _remote_scr_writes = 0;

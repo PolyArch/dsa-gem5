@@ -156,28 +156,24 @@ static inline int ilog2(const uint64_t x) {
   return y;
 }
 
-/*
-//This class represents a barrier (does not stall core)
-struct stream_barrier_t : public base_stream_t {
-  uint64_t _mask=0;
-
-  bool bar_scr_rd() {return _mask & WAIT_SCR_RD;}
-  bool bar_scr_wr() {return _mask & WAIT_SCR_WR;}
-
-  virtual bool stream_active() {return true;}
-
-  virtual void print_status() {
-    if(bar_scr_rd()) {
-      std::cout << " read_barrier";
-    }
-    if(bar_scr_wr()) {
-      std::cout << " write_barrier";
-    }
-    std::cout << std::hex << " mask=0x" << _mask << std::dec << "\n";
+//This class represents a network stream at the remote core
+struct remote_core_net_stream_t : public base_stream_t {
+  int _addr_port=21;
+  int64_t _val_port=22;
+  int64_t _num_elements;
+  // can be used later if we want separate ports for linear and banked scratchpad
+  remote_core_net_stream_t(){
+    _num_elements=1000; // TODO: see some other constants
   }
 
+  int addr_port() {return _addr_port;}
+  int64_t val_port() {return _val_port;}
+
+   virtual bool stream_active() {
+     return true;
+  }
 };
-*/
+
 //This class represents a barrier (does not stall core)
 struct stream_barrier_t : public base_stream_t {
   uint64_t _mask=0;
@@ -1016,7 +1012,7 @@ struct direct_remote_scr_stream_t : public remote_scr_stream_t {
   }
 
   // Oh, 2 dimensions?
-  virtual addr_t cur_addr() { 
+  virtual addr_t cur_addr() {
 	if(_count == 0) { // the first base addr
 	  _count++;
     } else if(_count <= _max_count) { // the next ones in acc_size dimension
@@ -1027,7 +1023,7 @@ struct direct_remote_scr_stream_t : public remote_scr_stream_t {
 	  _count = 0;
 	  // _num_strides--;
 	}
-	return _cur_addr; 
+	return _cur_addr;
   }
 
   virtual void cycle_status() {

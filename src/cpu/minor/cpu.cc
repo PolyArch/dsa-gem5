@@ -107,25 +107,28 @@ MinorCPU::MinorCPU(MinorCPUParams *params) :
 
 void MinorCPU::wakeup()
 {
-  if(SS_DEBUG::NET_REQ){
-    printf("Wake up accel at destination node: %d\n",cpuId());
-  }
   assert(!responseToSpu->isEmpty());
   // could do dynamic cast
   const RequestMsg* msg = (RequestMsg*)responseToSpu->peek();
   int64_t return_info = msg->m_addr;
-  if((*msg).m_Type == CoherenceRequestType_GETX) {
-    int64_t val = return_info >> 6;
-    int remote_port_id = return_info & 63;
-    pipeline->receiveSpuMessage(val, remote_port_id);
-    // printf("Comes back after updating SPU ports\n");  
-  } else {
-      int64_t val = return_info >> 17;
-      int16_t remote_scr_offset = (return_info >> 1) & 65535; // (pow(2,16)-1);
-      bool scr_type = return_info & 1;
-      pipeline->receiveSpuMessage(scr_type, val, remote_scr_offset);
+
+  int num_bytes = return_info >> 16;
+  int8_t data[num_bytes];
+  for(int i=0; i<num_bytes; ++i) {
+    data[i] = (*msg).m_DataBlk.getByte(i);
   }
-  
+  if(SS_DEBUG::NET_REQ){
+    printf("Wake up accel at destination node: %d and num_bytes: %d\n",cpuId(),num_bytes);
+  }
+  if((*msg).m_Type == CoherenceRequestType_GETX) {
+    int remote_port_id = return_info & 63;
+    pipeline->receiveSpuMessage(data, num_bytes, remote_port_id);
+    // printf("Comes back after updating SPU ports\n");
+  } else {
+      int16_t remote_scr_offset = return_info & 65535; // (pow(2,16)-1);
+      pipeline->receiveSpuMessage(data, num_bytes, remote_scr_offset);
+  }
+
   responseToSpu->dequeue(clockEdge());
   // printf("Request popped from the SPU buffer, success!!\n");
 }

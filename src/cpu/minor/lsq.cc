@@ -245,7 +245,7 @@ LSQ::SingleDataRequest::finish(const Fault &fault_, const RequestPtr &request_,
       fault->invoke(thread, StaticInst::nullStaticInstPtr);
     }
 
- 
+
     port.numAccessesInDTLB--;
 
     DPRINTFS(MinorMem, (&port), "Received translation response for"
@@ -1208,14 +1208,17 @@ LSQ::canSendToMemorySystem()
 }
 
 /* Push PORT MULTICAST request into the SPU network buffer, FIXME: it could directly push here also? */
-void LSQ::push_spu_req(int dest_port_id, uint64_t val, int64_t mask) 
+// void LSQ::push_spu_req(int dest_port_id, uint64_t val, int64_t mask)
+void LSQ::push_spu_req(int dest_port_id, int8_t* val, int num_bytes, int64_t mask)
 {
-  execute.send_spu_req(dest_port_id, val, mask);
+  execute.send_spu_req(dest_port_id, val, num_bytes, mask);
 }
 /* Push SCR WR request into the SPU network buffer */
-void LSQ::push_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id, int stream_id)
+// void LSQ::push_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id, int stream_id)
+void LSQ::push_spu_scr_wr_req(int8_t* val, int num_bytes, int64_t scr_offset, int dest_core_id, int stream_id)
 {
-  execute.send_spu_scr_wr_req(scr_type, val, scr_offset, dest_core_id);
+  // execute.send_spu_scr_wr_req(scr_type, val, scr_offset, dest_core_id);
+  execute.send_spu_scr_wr_req(val, num_bytes, scr_offset, dest_core_id);
 }
 
 bool
@@ -1358,7 +1361,7 @@ LSQ::LSQ(std::string name_, std::string dcache_port_name_,
      * 1. The number of streams supported (currently 100, too high)
      * 2. The size of each transfer queue (currently identical to transfers)
      */
-    for(int i = 0; i < 100; ++i) { 
+    for(int i = 0; i < 100; ++i) {
         //Logically this would be implemented with a single queue
       sd_transfers.emplace_back(name_ + ".sd_transfers", "addr", 22);
     }
@@ -1398,7 +1401,7 @@ LSQ::~LSQ()
 
 LSQ::LSQRequest::~LSQRequest()
 {
-    if (sdInfo) 
+    if (sdInfo)
         delete sdInfo;
     if (packet)
         delete packet;
@@ -1472,7 +1475,7 @@ LSQ::popResponse(int streamId) {
             *(response->inst));
 
         delete response;
-    } 
+    }
 }
 
 
