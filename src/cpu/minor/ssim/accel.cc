@@ -488,6 +488,10 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
     _back_cgra=true;
   }
 
+  const char* linear_spad_str = std::getenv("LINEAR_SCR");
+  if(linear_spad_str!=NULL) {
+    _linear_spad=true;
+  }
   _banked_spad_mapping_strategy = std::getenv("MAPPING");
 
   _ssconfig = new SSModel(ssconfig_file);
@@ -513,7 +517,7 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
     in_addr->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
     in_val->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
 
-    // push_net_in_cmd_queue(implicit_stream);	
+    // push_net_in_cmd_queue(implicit_stream);
   }
 
 }
@@ -2547,44 +2551,6 @@ void scratch_write_controller_t::write_scratch_remote_ind(remote_core_net_stream
   _accel->_stat_scratch_write_bytes+=bytes_written;
 }
 
-/*
-+void scratch_write_controller_t::write_scratch_remote_ind(remote_core_net_stream_t& stream) {
-+  port_data_t& addr_vp = _accel->port_interf().out_port(stream._addr_port);
-+  port_data_t& val_vp = _accel->port_interf().out_port(stream._val_port);
-+
-+  int bytes_written=0;
-+
-+  while(addr_vp.mem_size() && val_vp.mem_size() && stream.stream_active() &&
-+      bytes_written < 64) {
-+    addr_t addr = addr_vp.pop_out_data(); // no offset here
-+    uint64_t val = val_vp.pop_out_data();
-+
-+    // push the entry into the write bank queues
-+    _accel->write_scratchpad(addr, &val, stream._data_bytes,stream.id());
-+    bytes_written += stream._data_bytes;
-+  }
-+
-+  bool is_empty = false; // stream.check_set_empty();
-+  if(is_empty) {
-+    _accel->process_stream_stats(stream);
-+
-+    if(SS_DEBUG::VP_SCORE2) {cout << "SOURCE: INDIRECT PORT -> SCR\n";}
-+    out_vp.set_status(port_data_t::STATUS::FREE);
-+    ind_vp.set_status(port_data_t::STATUS::FREE);
-+  }
-+
-+  // have the same bank queues thing here
-+  if(_accel->_ssim->in_roi()) {
-+    add_bw(LOC::PORT, LOC::SCR, 1, bytes_written);
-+    _accel->_stat_scratch_writes++;
-+
-+  }
-+
-+  _accel->_stat_scr_bytes_wr+=bytes_written;
-+  _accel->_stat_scratch_write_bytes+=bytes_written;
-+}
-*/
-
 void scratch_write_controller_t::write_scratch_ind(indirect_wr_stream_t& stream) {
   port_data_t& out_vp = _accel->port_interf().out_port(stream._out_port);
   port_data_t& ind_vp = _accel->port_interf().out_port(stream._ind_port);
@@ -3033,28 +2999,29 @@ vector<SBDT> scratch_read_controller_t::read_scratch(
 
   //go while stream and port does not run out
   // while(stream.stream_active() &&
-  while(stream.stream_active() && (is_banked & !_accel->isLinearSpad(addr)) &&
-      addr_valid_dir(stream.access_size(),addr,prev_addr,base_addr,max_addr)){
-    // keep going while stream does not run out
-    SBDT val=0;
-    assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
-    //std::memcpy(&val, &_accel->scratchpad[addr], DATA_WIDTH);
-    _accel->read_scratchpad(&val, addr, DATA_WIDTH,stream.id());
+  if(_accel->_linear_spad) {
+    while(stream.stream_active() && (is_banked & !_accel->isLinearSpad(addr)) &&
+        addr_valid_dir(stream.access_size(),addr,prev_addr,base_addr,max_addr)){
+      // keep going while stream does not run out
+      SBDT val=0;
+      assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
+      //std::memcpy(&val, &_accel->scratchpad[addr], DATA_WIDTH);
+      _accel->read_scratchpad(&val, addr, DATA_WIDTH,stream.id());
 
-    if(SS_DEBUG::SCR_ACC) {
-      cout << "scr_addr:" << hex << addr << " read " << val
-           << " to port " << stream.first_in_port() << "\n";
-    }
-    data.push_back(val);
-    prev_addr=addr;
-    mask[(addr-base_addr)/DATA_WIDTH]=1;
-    addr = stream.pop_addr();
+      if(SS_DEBUG::SCR_ACC) {
+        cout << "scr_addr:" << hex << addr << " read " << val
+             << " to port " << stream.first_in_port() << "\n";
+      }
+      data.push_back(val);
+      prev_addr=addr;
+      mask[(addr-base_addr)/DATA_WIDTH]=1;
+      addr = stream.pop_addr();
 
-    if(stream.stride_fill() && stream.stride_hit()) {
-      break;
+      if(stream.stride_fill() && stream.stride_hit()) {
+        break;
+      }
     }
   }
-
   if(SS_DEBUG::VERIF_SCR) {
     _accel->scr_rd_verif << hex << setw(8) << setfill('0') << base_addr << " ";
     for(uint64_t i = base_addr; i < max_addr; ++i) {
@@ -3885,12 +3852,13 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
       }
     }
   }
+}
 
 
   // FOR LINEAR WR STREAMS ON THE LINEAR SCRATCHPAD (issues only if the address
   // belongs to linear spad)
   // if((!issued_linear_on_banked_scr) || (issued_linear_on_banked_scr && !is_linear_addr_banked)) {
-  {
+  if(_accel->_linear_spad) {
     for(unsigned i = 0; i < (_port_scr_streams.size()); ++i) {
       _which_linear_wr=(_which_linear_wr+1)>=(_port_scr_streams.size())?0:_which_linear_wr+1;
 
@@ -3944,7 +3912,6 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
       }
     }
   }
-}
 }
 
 void scratch_write_controller_t::push_remote_wr_req(int8_t* val, int num_bytes, addr_t scr_addr) {
