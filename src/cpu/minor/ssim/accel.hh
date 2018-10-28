@@ -29,7 +29,7 @@
 #include "stream.hh"
 #include "consts.hh"
 
-using namespace SB_CONFIG;
+using namespace SS_CONFIG;
 
 struct pair_hash {
     template <class T1, class T2>
@@ -74,11 +74,11 @@ public:
 
   std::vector<bool> cgra_in_ports_active;
 
-  //input pdg nodes for [group][vec][port]
-  std::vector<std::vector<std::vector<SbPDG_Input*>>>  input_pdg_node; 
-  std::vector<std::vector<std::vector<SbPDG_Output*>>> output_pdg_node;
+  //input dfg nodes for [group][vec][port]
+  std::vector<std::vector<std::vector<SSDfgInput*>>>  input_dfg_node;
+  std::vector<std::vector<std::vector<SSDfgOutput*>>> output_dfg_node;
 
-  std::map<SB_CONFIG::sb_inst_t,int> inst_histo;
+  std::map<SS_CONFIG::ss_inst_t,int> inst_histo;
 
   void reset();
 };
@@ -90,7 +90,7 @@ class port_data_t {
 public:
   enum class STATUS {FREE, COMPLETE, BUSY};
 
-  void initialize(SbModel* sbconfig, int port, bool isInput);
+  void initialize(SSModel* ssconfig, int port, bool isInput);
   void reset(); //reset if configuration happens
   unsigned port_cgra_elem() {
     int pm_size = _port_map.size();
@@ -395,7 +395,7 @@ private:
 class port_interf_t {
 public:
 
-  void initialize(SbModel* sbconfig);
+  void initialize(SSModel* ssconfig);
   void push_data(std::vector<SBDT>& data, int port) {
     for(SBDT i : data) {
       _in_port_data[port].push_data(i);
@@ -457,7 +457,7 @@ class dma_controller_t : public data_controller_t {
 
   public:
   static const int data_width=64; //data width in bytes
-  //static const int data_sbdts=data_width/SBDT; //data width in bytes
+  //static const int data_ssdts=data_width/SBDT; //data width in bytes
   std::vector<bool> mask;
 
   dma_controller_t(accel_t* host,
@@ -671,7 +671,7 @@ class scratch_write_controller_t : public data_controller_t {
     reset_stream_engines();
   }
 
-  bool crossbar_backpressureOn();
+  bool crosssar_backpressureOn();
 
   // void cycle();
   void cycle(bool can_perform_atomic_scr, bool &performed_atomic_scr);
@@ -966,7 +966,7 @@ public:
 
   void add_stream(std::shared_ptr<base_stream_t> s) {
 
-    /*if(_sbconfig->dispatch_inorder()) {
+    /*if (_ssconfig->dispatch_inorder()) {
       add_port_based_stream(s);
       return;
     }
@@ -1140,7 +1140,7 @@ private:
   }
 
   void do_cgra();
-  void execute_pdg(unsigned instance, int group);
+  void execute_dfg(unsigned instance, int group);
 
   void forward_progress() {
     _waiting_cycles=0; 
@@ -1197,9 +1197,9 @@ private:
 
   bool _in_config=false;
 
-  SbModel* _sbconfig = NULL;
+  SSModel* _ssconfig = NULL;
   Schedule* _sched   = NULL;
-  SbPDG*    _pdg     = NULL;
+  SSDfg*    _dfg     = NULL;
 
   int _fu_fifo_len=DEFAULT_FIFO_LEN;
   int _ind_rob_size=DEFAULT_IND_ROB_SIZE;
@@ -1277,10 +1277,10 @@ private:
   int _stat_mem_bytes_rd_sat=0;
   int _stat_cmds_issued=0;
   int _stat_cmds_complete=0;
-  int _stat_sb_insts=0;
+  int _stat_ss_insts=0;
   // for backcgra
-  double _stat_sb_dfg_util=0.0;
-  double _stat_sb_data_avail_ratio=0.0;
+  double _stat_ss_dfg_util=0.0;
+  double _stat_ss_data_avail_ratio=0.0;
   int _slot_avail[NUM_IN_PORTS] = {0};
   int _could_not_serve[NUM_IN_PORTS] = {0};
 
@@ -1289,7 +1289,7 @@ private:
   // newly added
   const char* _banked_spad_mapping_strategy = "";
 
-  std::map<SB_CONFIG::sb_inst_t,int> _total_histo;
+  std::map<SS_CONFIG::ss_inst_t,int> _total_histo;
   std::map<int,int> _vport_histo;
 
   stream_stats_t _stream_stats;  

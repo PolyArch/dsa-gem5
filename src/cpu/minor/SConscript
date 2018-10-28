@@ -69,8 +69,8 @@ if 'MinorCPU' in env['CPU_MODELS']:
     env.Append(CPPPATH=Dir(os.environ['RISCV']+'/include/'))
     env.Append(CPPPATH=Dir(os.environ['RISCV']+'/include/ss-scheduler'))
     env.Append(CPPPATH=Dir(os.environ['RISCV']+'/include/ss-config'))
-    env.Append(LIBS=['sbconfig'])
-    env.Append(LIBS=['sbscheduler'])
+    env.Append(LIBS=['ssconfig'])
+    env.Append(LIBS=['ssscheduler'])
     env.Append(LIBPATH=[Dir(os.environ['RISCV']+'/lib/')])
 
     env.Append(CPPPATH=Dir('ssim'))
