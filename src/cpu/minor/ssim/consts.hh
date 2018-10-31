@@ -47,6 +47,13 @@ typedef uint64_t addr_t;
 #define NET_ADDR_PORT (21)
 #define NET_VAL_PORT (22)
 
+// #define NET_ADDR_PORT (25)
+// #define NET_VAL_PORT (32)
+
+//Convenience ports for these functions
+// #define MEM_SCR_PORT (23)
+// #define SCR_MEM_PORT (24)
+
 #define REPEAT_FXPNT (3)
 
 #define MAX_WAIT (1000) //max cycles to wait for forward progress

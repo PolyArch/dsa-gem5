@@ -158,8 +158,8 @@ static inline int ilog2(const uint64_t x) {
 
 //This class represents a network stream at the remote core
 struct remote_core_net_stream_t : public base_stream_t {
-  int _addr_port=21;
-  int64_t _val_port=22;
+  int _addr_port=NET_ADDR_PORT;
+  int64_t _val_port=NET_VAL_PORT;
   int64_t _num_elements;
   // can be used later if we want separate ports for linear and banked scratchpad
   remote_core_net_stream_t(){
@@ -171,6 +171,10 @@ struct remote_core_net_stream_t : public base_stream_t {
 
    virtual bool stream_active() {
      return true;
+  }
+
+  virtual void print_status() {
+    std::cout << "remote core net stream _num_elem" << _num_elements << "\taddr_port= " << _addr_port << "\tval_port" << _val_port << "\n";
   }
 };
 

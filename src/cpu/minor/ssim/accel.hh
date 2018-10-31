@@ -526,7 +526,8 @@ public:
 
   void reset() {
     for(unsigned i = 0; i < _in_port_data.size(); ++i) {
-	  if(_in_port_data[i].port() == NET_VAL_PORT || _in_port_data[i].port() == NET_ADDR_PORT){
+	  // if(_in_port_data[i].port() == NET_VAL_PORT || _in_port_data[i].port() == NET_ADDR_PORT){
+	  if(i == NET_VAL_PORT || i == NET_ADDR_PORT){
 		// printf("Detected a network port\n");
 	  } else {
 		// printf("Index of in_port is: %d\n",i);
@@ -534,8 +535,16 @@ public:
 	  }
     }
     for(unsigned i = 0; i < _out_port_data.size(); ++i) {
-	  // printf("Index of out_port is: %d\n",i);
+	  // TODO: check if this was useful!
       _out_port_data[i].reset();
+	  /*
+	  if(_out_port_data[i].port() == MEM_SCR_PORT || _out_port_data[i].port() == SCR_MEM_PORT){
+		// printf("Detected a network port\n");
+	  } else {
+	  // printf("Index of out_port is: %d\n",i);
+        _out_port_data[i].reset();
+	  }
+	  */
     }
 
   }
@@ -1189,6 +1198,7 @@ public:
   void print_status();
 
   void cycle_status();
+  void cycle_status_backcgra();
   void clear_cycle();
 
   void request_reset_data();

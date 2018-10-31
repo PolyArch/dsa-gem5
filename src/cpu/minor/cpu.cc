@@ -118,6 +118,8 @@ void MinorCPU::wakeup()
     data[i] = (*msg).m_DataBlk.getByte(i);
   }
   if(SS_DEBUG::NET_REQ){
+	// timestamp();
+	std::cout << curCycle();
     printf("Wake up accel at destination node: %d and num_bytes: %d\n",cpuId(),num_bytes);
   }
   if((*msg).m_Type == CoherenceRequestType_GETX) {
