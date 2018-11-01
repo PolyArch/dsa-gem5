@@ -275,8 +275,9 @@ struct affine_base_stream_t : public base_stream_t {
       _num_strides--;
       _access_size+=_stretch; 
     }
-    assert((_bytes_in_access<abs_access_size()
-          || _access_size==0) && "something went wrong");
+	// FIXME:CHECKME: not using bytes in access anymore!!!
+     assert((_bytes_in_access<abs_access_size()
+           || _access_size==0) && "something went wrong");
 
     return cur_addr();
   }
