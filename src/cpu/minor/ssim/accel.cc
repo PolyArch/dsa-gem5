@@ -387,6 +387,7 @@ void port_data_t::reformat_out_work() {
       // if(valid) push_data(val); // don't push back if not valid
       // if(valid) push_data(get_custom_val(v,v.size())); // don't push back if not valid
       if(valid) push_data(v,v.size());
+      // if(valid) push_data(val); // don't push back if not valid
 
       _cgra_data[cgra_port].pop_front();
       _cgra_valid[cgra_port].pop_front();
@@ -409,7 +410,10 @@ void port_interf_t::initialize(SSModel* ssconfig) {
     // SSDfgVecInput* vec_in = dynamic_cast<SSDfgVecInput*>(
     //     sched->vportOf(make_pair(true/*input*/,port_index)));
     // _in_port_data[port_index].initialize(ssconfig,port_index,true,vec_in->get_port_width()); // port, isInput, port_width
+  }
 
+  for(auto& x : ssconfig->subModel()->io_interf().out_vports) {
+    _out_port_data[x.first].initialize(ssconfig,x.first,false);
   }
 }
 
@@ -515,6 +519,10 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
   // FIXME: Is _sched initialized when it comes here? No
   // _port_interf.initialize(_ssconfig, _sched);
  scratchpad.resize(SCRATCH_SIZE);
+  // Now, it should work with larger scratch size: have some mode
+  if(_linear_spad){
+    scratchpad.resize(SCRATCH_SIZE+LSCRATCH_SIZE);
+  }
 
   //optionally used -- this is expensive
   scratchpad_readers.resize(SCRATCH_SIZE);
@@ -1000,7 +1008,6 @@ void accel_t::cycle_cgra_backpressure() {
           _dfg->push_vector(vec_in, data, data_valid, print, true);
         // cout << "Let's check num_computed this time: "
         // << num_computed << endl;
-
         data.clear(); // clear the input data pushed to dfg
         data_valid.clear(); // clear the input data pushed to dfg
 
@@ -1403,7 +1410,6 @@ void accel_t::cycle_status_backcgra() {
 
   timestamp();
   cout << "cq" << _cmd_queue.size();
-
   auto& active_in_ports=_soft_config.in_ports_active_backcgra;
 
   if(active_in_ports.size()) {
@@ -1633,6 +1639,10 @@ void accel_t::print_statistics(std::ostream& out) {
    //   <<  avg_thr
    //   << ", CGRA outputs/cgra busy cycles: "
    //   <<  busy << "\n";
+   // out << "For backcgra, Average thoughput of all ports (overall): "
+   //   <<  ((double)_stat_comp_instances)/((double)roi_cycles()*_pdg->num_vec_output())
+   //   << ", CGRA outputs/cgra busy cycles: "
+   //   <<  ((double)_stat_comp_instances)/((double)_stat_cgra_busy_cycles)  <<  "\n";
    out << "CGRA Insts / Computation Instance: "
       << ((double)_stat_ss_insts)/((double)_stat_comp_instances) << "\n";
    out << "CGRA Insts / Cycle: "
@@ -3214,83 +3224,6 @@ void dma_controller_t::req_write(affine_write_stream_t& stream, port_data_t& ovp
   }
 }
 
-/*
-//Creates a write request for a contiguous chunk of data smaller than one cache line
-void dma_controller_t::req_write(affine_write_stream_t& stream, port_data_t& ovp) {
-  addr_t addr = stream.cur_addr();
-  addr_t init_addr = addr;
-  addr_t base_addr = addr & MEM_MASK;
-  addr_t max_addr = base_addr+MEM_WIDTH;
-
-  assert(addr!=0 && "cannot store to address 0x0");
-
-  unsigned elem_written = 0;
-
-  //std::fill(mask.begin(), mask.end(), 0);
-  //mask[(addr-base_addr)/DATA_WIDTH]=1;
-
-  int data_width = DATA_WIDTH;
-  if(stream._shift_bytes==2) {
-    data_width = 2;
-  }
-  addr_t prev_addr=addr-data_width;
-
-  std::vector<uint8_t> data;
-  data.resize(MEM_WIDTH);
-  uint8_t* data8 = data.data();
-  uint16_t* data16 = (uint16_t*)data8;
-  uint64_t* data64 = (uint64_t*)data8;
-
-  //go while stream and port does not run out
-  while(addr < max_addr && (addr == (prev_addr + data_width)) &&
-        stream.stream_active() && ovp.mem_size()>0) {
-    SBDT val = ovp.peek_out_data();
-
-    if(stream._shift_bytes==2) {
-      data16[elem_written++]=(uint16_t)(val&0xFFFF);
-    } else { //assuming data_width=64
-      data64[elem_written++]=val;
-    }
-    ovp.pop_out_data(); //pop the one we peeked
-    //timestamp(); cout << "POPPED b/c Mem Write: " << vp.port() << " " << vp.mem_size() << "\n";
-
-    prev_addr=addr;
-    addr = stream.pop_addr();
-  }
-
-  unsigned bytes_written = elem_written * data_width;
-  SSMemReqInfoPtr sdInfo = new SSMemReqInfo(stream.id(),
-                                            _accel->_accel_index, MEM_WR_STREAM);
-
-  //make store request
-   _accel->_lsq->pushRequest(stream.minst(),false, data8,
-             bytes_written, init_addr, 0, 0, sdInfo);
-
-
-  if(SS_DEBUG::MEM_REQ) {
-    _accel->timestamp();
-    cout << bytes_written << "-byte write request for port->dma, addr:"
-         << std::hex << init_addr <<", data:";
-    for(int i = 0; i < elem_written; ++i) {
-      cout << data64[i] << ", " ;
-    }
-    cout << "\n" << std::dec;
-  }
-
-  _accel->_stat_mem_bytes_wr+=bytes_written;
-
-  if(_accel->_ssim->in_roi()) {
-    add_bw(stream.src(), stream.dest(), 1, bytes_written);
-    _accel->_stat_tot_stores++;
-    _accel->_stat_tot_mem_stored+=bytes_written;
-    //bool l2_miss=(cycle_mem_complete-start_cycle)>5;
-    //if(l2_miss) {
-    //  _accel->_stat_tot_mem_load_acc++;
-    //}
-  }
-}
-*/
-
 static bool addr_valid_dir(int64_t acc_size, uint64_t addr,
     uint64_t prev_addr, uint64_t base_addr, uint64_t max_addr) {
   if(acc_size >= 0) {
@@ -3617,11 +3550,11 @@ void network_controller_t::cycle() {
         // we can send max of message_size*bus_wisth messages in 1 cycle or till the queue is full (Oh, this bus is also 512-bit bus)
 	    multicast_data(stream);
 
-       bool is_empty = stream.check_set_empty();
+        bool is_empty = stream.check_set_empty();
         if(is_empty) {
           _accel->process_stream_stats(stream);
           if(SS_DEBUG::VP_SCORE2) {
-           cout << "SOURCE: PORT->REMOTE PORT\n";
+            cout << "SOURCE: PORT->REMOTE PORT\n";
           }
 	      if(SS_DEBUG::NET_REQ){
 	        printf("Multicast stream empty\n");
@@ -4810,7 +4743,6 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
   for (int ind = 0; ind < _dfg->num_vec_input(); ++ind) {
       SSDfgVec* vec_in = _dfg->vec_in(ind);
       int i = _sched->vecPortOf(vec_in).second;
-
 	  _soft_config.in_ports_active.push_back(i); //activate input vector port
 
       // dgra
@@ -4854,7 +4786,6 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
       //for each mapped cgra port
       for(unsigned port_idx = 0; port_idx < cur_in_port.port_cgra_elem(); ++port_idx) {
         int cgra_port_num = cur_in_port.cgra_port_for_index(port_idx);
-
         SSDfgNode* dfg_node = vec_input->inputs()[port_idx];
 
         if (dfg_node != nullptr) {

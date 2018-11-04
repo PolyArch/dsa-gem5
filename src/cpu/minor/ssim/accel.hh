@@ -78,7 +78,6 @@ public:
   std::vector<std::vector<std::vector<SSDfgInput*>>>  input_dfg_node;
   std::vector<std::vector<std::vector<SSDfgOutput*>>> output_dfg_node;
   std::map<SS_CONFIG::ss_inst_t,int> inst_histo;
-
   void reset();
 };
 
@@ -316,6 +315,13 @@ public:
 // FIXME: check if this is ever called
   template <typename T>
   void push_data(std::vector<T> data, bool valid=true) {
+    _mem_data.push_back(data);
+    _valid_data.push_back(valid);
+    _total_pushed+=valid;
+  }
+
+
+  void push_data(std::vector<SBDT> data, bool valid=true) {
     for(auto i : data) push_data(i,valid);
   }
 
