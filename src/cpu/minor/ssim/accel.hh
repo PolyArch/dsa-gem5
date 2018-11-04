@@ -74,9 +74,9 @@ public:
 
   std::vector<bool> cgra_in_ports_active;
 
-  //input dsf nodes for [group][vec][port]
-  std::vector<std::vector<std::vector<SbDfg_Input*>>>  input_dfg_node;
-  std::vector<std::vector<std::vector<SbDfg_Output*>>> output_dfg_node;
+  //input dfg nodes for [group][vec][port]
+  std::vector<std::vector<std::vector<SSDfgInput*>>>  input_dfg_node;
+  std::vector<std::vector<std::vector<SSDfgOutput*>>> output_dfg_node;
   std::map<SS_CONFIG::ss_inst_t,int> inst_histo;
 
   void reset();
@@ -127,6 +127,11 @@ public:
     return size <= num_can_push();
   }
 
+  bool can_push_bytes_vp(int num_bytes) {
+	int num_elem = num_bytes/_port_width;
+    return num_elem <= num_can_push();
+  }
+
   int num_can_push() {
     if(_mem_data.size() < VP_LEN) {
       return VP_LEN-_mem_data.size();
@@ -170,6 +175,7 @@ public:
 	// std::cout << "while merging\n";
     for(int i=0; i<len; i++){
       val = val | ((v[i] & 0xFFFFFFFFFFFFFFFF) << (i*8));
+      // val = val | ((v[i] & ((uint64_t) 1 << 63) << (i*8));
     }
     return val;
   }
@@ -233,18 +239,41 @@ public:
      }
   }
 
+
+  // FIXME: find a neater way to do this
+  std::vector<uint8_t> slice(std::vector<uint8_t> &x, int start, int end) {
+	// auto first = x.cbegin()+start;
+	// auto last = x.cbegin()+end;
+	// std::vector<uint8_t> ret(first,last);
+	std::vector<uint8_t> ret;
+	for(int i=start; i<end; i++){
+	  ret.push_back(x[i]);
+	}
+	return ret;
+  }
+
   void push_data(std::vector<uint8_t> data, bool valid=true) {
-    int data_size = sizeof(data);
-    assert(data_size=_port_width && "data size doesn't match the port width in dfg");
+    int data_size = data.size();
+    assert((data_size%_port_width==0) && "weird data size returned");
+	int num_chunks = data_size/_port_width;
     /* --I don't know why is this here
     if(_bytes_in_word!=0) {
       std::cout << "It's not cool to leave random incomplete words in the port, "
            << "please be more tidy next time\n";
       assert(0);
     }*/
-    _mem_data.push_back(data);
-    _valid_data.push_back(valid);
-    _total_pushed+=valid;
+	std::cout << "Num_chunks while pushing to port in mem_data?: " << num_chunks << "\n";
+	for(int i=0; i<num_chunks;++i){
+      // _mem_data.push_back(data);
+	  std::vector<uint8_t> local_data = slice(data, i*_port_width, (i+1)*_port_width);
+      _mem_data.push_back(local_data);
+	  std::cout << "Local data pushed in the port is: " << get_sbdt_val(local_data,_port_width)  << "\n";
+      _valid_data.push_back(valid);
+      _total_pushed+=valid;
+	}
+    // _mem_data.push_back(data);
+    // _valid_data.push_back(valid);
+    // _total_pushed+=valid;
   }
 
   template <typename T>
@@ -257,12 +286,30 @@ public:
            << "please be more tidy next time\n";
       assert(0);
     }*/
-	// std::cout << "Data being pushed to a port from memory or cgra" << std::hex << data << std::endl;
-	std::vector<uint8_t> v = get_byte_vector(data,_port_width);
+ if(_bytes_in_word!=0) {
+      std::cout << "It's not cool to leave random incomplete words in the port, "
+           << "please be more tidy next time\n";
+      assert(0);
+    }
+ // Consider the case when it tries to push SBDT data but it's width is just
+ // 16-bits?
+    // std::cout << sizeof(T) << " " << _port_width << "\n";
+    int num_chunks = sizeof(T)/_port_width;
+    std::cout << "Data being pushed to a port from memory or cgra" << std::hex << data << std::endl;
+    for(int i=0; i<num_chunks; ++i){
+      // std::cout << "Scalar data beng sent" << std::hex << (data >> (i*_port_width*8)) << std::endl;
+      std::vector<uint8_t> v = get_byte_vector(data >> (i*_port_width*8),_port_width);
+    	// std::cout << "Data after conversion to vector and back" << std::hex << get_sbdt_val(v,_port_width) << std::endl;
+        _mem_data.push_back(v);
+        _valid_data.push_back(valid);
+        _total_pushed+=valid;
+    }
+
+	// std::vector<uint8_t> v = get_byte_vector(data,_port_width);
 	// std::cout << "Data after conversion to vector and back" << std::hex << get_sbdt_val(v,_port_width) << std::endl;
-    _mem_data.push_back(v);
-    _valid_data.push_back(valid);
-    _total_pushed+=valid;
+    // _mem_data.push_back(v);
+    // _valid_data.push_back(valid);
+    // _total_pushed+=valid;
   }
 
 
@@ -308,8 +355,20 @@ public:
     assert(data_size=_port_width && "data size doesn't match the port width in dfg");
 	// std::cout << "Data being pushed to cgra port" << std::hex << val << std::endl;
     // _cgra_data[cgra_port].push_back(val);
-    _cgra_data[cgra_port].push_back(get_byte_vector(val,_port_width));
-    _cgra_valid[cgra_port].push_back(valid);
+    // _cgra_data[cgra_port].push_back(get_byte_vector(val,_port_width));
+    // _cgra_valid[cgra_port].push_back(valid);
+
+    int num_chunks = sizeof(T)/_port_width;
+    // std::cout << "Data being pushed to cgra" << std::hex << val << std::endl;
+    for(int i=0; i<num_chunks; ++i){
+      // std::cout << "Scalar data beng sent to cgra" << std::hex << (data >> (i*_port_width*8)) << std::endl;
+      std::vector<uint8_t> v = get_byte_vector(val >> (i*_port_width*8),_port_width);
+      // std::cout << "Data after conversion to vector and back" << std::hex << get_sbdt_val(v,_port_width) << std::endl;
+        _cgra_data[cgra_port].push_back(v);
+        _cgra_valid[cgra_port].push_back(valid);
+        //_total_pushed+=valid;
+    }
+
   }
 
   void inc_ready(unsigned instances) {_num_ready+=instances;}
@@ -330,6 +389,8 @@ public:
   SBDT pop_in_data(); // pop one data from mem
 
   SBDT pop_out_data(); // pop one data from mem
+  template <typename T>
+  T pop_out_custom_data(); // pop one data from mem
   SBDT peek_out_data(); // peek one data from mem
   SBDT peek_out_data(int i); // peek one data from mem
 
@@ -597,7 +658,8 @@ class dma_controller_t : public data_controller_t {
     data_controller_t(host), _scr_r_c(scr_r_c), _scr_w_c(scr_w_c), _net_c(net_c) {
 
     _prev_port_cycle.resize(64); //resize to maximum conceivable ports
-    mask.resize(MEM_WIDTH/DATA_WIDTH);
+    // mask.resize(MEM_WIDTH/DATA_WIDTH);
+    mask.resize(MEM_WIDTH); // mask for all bytes
   }
 
 
@@ -789,7 +851,7 @@ class scratch_write_controller_t : public data_controller_t {
 
     // initialize a dummy network streams
     // remote_core_net_stream_t* implicit_stream = new remote_core_net_stream_t();
-    // push_net_stream(implicit_stream);	
+    // push_net_stream(implicit_stream);
 
     //if(is_shared()) {
     //  _scr_scr_streams.resize(NUM_ACCEL);
@@ -1387,9 +1449,9 @@ private:
 	/*
     // if(auto stream = dynamic_cast<remote_core_net_stream_t*>(s)) {
     if(auto stream = std::dynamic_pointer_cast<remote_core_net_stream_t>(s)) {
-       // printf("NETWORK STREAM\n"); 
+       // printf("NETWORK STREAM\n");
 	} else {
-       // printf("NOT A NETWORK STREAM\n"); 
+       // printf("NOT A NETWORK STREAM\n");
 	  assert(cur_minst());
       s->set_minst(cur_minst());
       forward_progress(); // done in the initialization stage
@@ -1399,7 +1461,7 @@ private:
 	assert(cur_minst());
     s->set_minst(cur_minst());
     _cmd_queue.push_back(s);
-    forward_progress(); 
+    forward_progress();
 	// forward progress later? this was also giving seg fault
 	// printf("stream pushed into the command queue\n");
     verif_cmd(s.get());

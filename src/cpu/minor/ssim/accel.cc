@@ -260,19 +260,38 @@ SBDT port_data_t::pop_in_data() {
   return val;
 }
 
-//pop data from output port
+//pop SBDT data from output port
 SBDT port_data_t::pop_out_data() {
   assert(_mem_data.size());
-  // SBDT val = _mem_data.front();
-  // vector<uint8_t> v = _mem_data.front();
-  // SBDT val = get_sbdt_val(v,_port_width);
+  /*
+  SBDT ret = 0;
+  int num_chunks = sizeof(SBDT)/_port_width;
+  for(int i=0; i<num_chunks; ++i){
+    SBDT val = peek_out_data();
+    _mem_data.pop_front();
+    _valid_data.pop_front();
+	ret = (ret << (_port_width*8)) | val;
+  }
+  return ret;
+  */
   SBDT val = peek_out_data();
+   _mem_data.pop_front();
+   _valid_data.pop_front(); //TODO: for now we ignore invalid, hope that's okay?
+   return val;
+}
+
+//pop T amount of data from output port
+template <typename T>
+T port_data_t::pop_out_custom_data() {
+  assert(_mem_data.size());
+  vector<int8_t> v = _mem_data.front();
+  T val = get_custom_val<T>(v,_port_width);
   _mem_data.pop_front();
-  _valid_data.pop_front(); //TODO: for now we ignore invalid, hope that's okay?
+  _valid_data.pop_front();
   return val;
 }
 
-//peek at output data
+//peek at output data (return original data typecasted to SBDT)
 SBDT port_data_t::peek_out_data() {
   assert(_mem_data.size());
   // SBDT val = _mem_data.front();
@@ -391,10 +410,6 @@ void port_interf_t::initialize(SSModel* ssconfig) {
     //     sched->vportOf(make_pair(true/*input*/,port_index)));
     // _in_port_data[port_index].initialize(ssconfig,port_index,true,vec_in->get_port_width()); // port, isInput, port_width
 
-  }
-
-  for(auto& x : sbconfig->subModel()->io_interf().out_vports) {
-    _out_port_data[x.first].initialize(sbconfig,x.first,false);
   }
 }
 
@@ -1050,7 +1065,7 @@ void accel_t::cycle_cgra_backpressure() {
       // push the data to the CGRA output port only if discard is not 0
 
       // cout << "Allowed to pop output: " << data[0] << " and next output: " << data[1] << "\n";
-      // cout << "Allowed to pop output: " << std::hex << data[0] << "\n";
+      cout << "Allowed to pop output: " << std::hex << data[0] << "\n";
 
       if(in_roi()) {
         _stat_comp_instances += 1;
@@ -1059,7 +1074,9 @@ void accel_t::cycle_cgra_backpressure() {
       int j = 0;
       for (j=0; j < len; ++j) {
         if(data_valid[j]) {
-          cur_out_port.push_data(data[j]);
+		  vector<uint8_t> v = cur_out_port.get_byte_vector(data[j], cur_out_port.get_port_width());
+          // cur_out_port.push_data(data[j]);
+          cur_out_port.push_data(v);
         } else{
           // std::cout << "Some invalid data at the output port\n";
         }
@@ -1386,7 +1403,7 @@ void accel_t::cycle_status_backcgra() {
 
   timestamp();
   cout << "cq" << _cmd_queue.size();
- 
+
   auto& active_in_ports=_soft_config.in_ports_active_backcgra;
 
   if(active_in_ports.size()) {
@@ -2207,12 +2224,24 @@ bool port_controller_t::schedule_const_port(const_port_stream_t& new_s) {
   return false;
 }
 
+/*
 void apply_mask(uint64_t* raw_data, vector<bool>  mask, std::vector<SBDT>& data) {
   assert(mask.size()==8);
   SBDT* u64data = (SBDT*)raw_data;
   for(int i = 0; i < mask.size(); ++i) {
     if(mask[i]) {
       data.push_back(u64data[i]);
+    }
+  }
+}
+*/
+
+void apply_mask(uint8_t* raw_data, vector<bool> mask, std::vector<uint8_t>& data) {
+  // assert(mask.size()==8);
+  uint8_t* u8data = (uint8_t*)raw_data;
+  for(int i = 0; i < mask.size(); ++i) {
+    if(mask[i]) {
+      data.push_back(u8data[i]);
     }
   }
 }
@@ -2228,7 +2257,90 @@ void apply_map(uint64_t* raw_data, const vector<int>& imap, std::vector<SBDT>& d
   }
 }
 
+void dma_controller_t::port_resp(unsigned cur_port) {
+  if(Minor::LSQ::LSQRequestPtr response = _accel->_lsq->findResponse(cur_port) ) {
 
+    //First check if we haven't discared the memory request
+    //this will only be the case if reqs are equal to zero
+    if(_accel->_cleanup_mode) {
+      _accel->_lsq->popResponse(cur_port);
+      _mem_read_reqs--;
+      return;
+    }
+
+    if(_accel->_accel_index == response->sdInfo->which_accel)  {
+
+      auto& pi = _accel->port_interf();
+
+      PacketPtr packet = response->packet;
+      if(packet->getSize()!=MEM_WIDTH) {
+        assert(0 && "weird memory response size");
+      }
+
+      vector<SBDT> data2; // for apply_map: I don't want to change now
+      vector<uint8_t> data;
+      if(response->sdInfo->mask.size() > 0) {
+		// applying mask on the whole cache line
+        // apply_mask(packet->getPtr<uint64_t>(), response->sdInfo->mask, data);
+		// cout << "mask size was greater than 0?\n";
+        apply_mask(packet->getPtr<uint8_t>(), response->sdInfo->mask, data);
+      } else if(response->sdInfo->map.size() > 0) {
+		// cout << "map size was greater than 0?\n";
+        apply_map(packet->getPtr<uint64_t>(),  response->sdInfo->map, data2);
+      }
+
+      bool port_in_okay = true;
+	  // push in byte-by-byte at the ports
+      for(int in_port : response->sdInfo->ports) {
+        port_data_t& in_vp = pi.in_port(in_port);
+        // port_in_okay = port_in_okay && (in_vp.can_push_vp(data.size()));
+        port_in_okay = port_in_okay && (in_vp.can_push_bytes_vp(data.size()));
+      }
+
+	  std::cout << "It was okay to push in values at the input ports? " << port_in_okay << "\n";
+
+      if(port_in_okay) {
+        bool last = response->sdInfo->last;
+
+        if(SS_DEBUG::MEM_REQ) {
+          _accel->timestamp();
+          std::cout << "response for " << std::hex << packet->getAddr() << std::dec
+                    << "for port " << cur_port << ", size in bytes: "
+                    << data.size() << " elements" << (last ? "(last)" : "") << "\n";
+        }
+
+        // _accel->_stat_mem_bytes_rd+=data.size()*DATA_WIDTH;
+        _accel->_stat_mem_bytes_rd+=data.size();
+
+        for(int in_port : response->sdInfo->ports) {
+          port_data_t& in_vp = pi.in_port(in_port);
+          in_vp.push_data(data);
+
+          if(response->sdInfo->stride_hit) {
+            if(response->sdInfo->fill_mode == STRIDE_ZERO_FILL ||
+               response->sdInfo->fill_mode == STRIDE_DISCARD_FILL) {
+              in_vp.fill(response->sdInfo->fill_mode);
+            }
+          }
+          if(last) {
+            if(SS_DEBUG::VP_SCORE2) {
+              cout << "SOURCE: DMA->PORT2 (port:" << cur_port << ")\n";
+            }
+
+            in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE,
+                response->sdInfo->fill_mode);
+          }
+        }
+
+        _accel->_lsq->popResponse(cur_port);
+        _mem_read_reqs--;
+        return;
+      }
+    }
+  }
+}
+
+/*
 void dma_controller_t::port_resp(unsigned cur_port) {
   if(Minor::LSQ::LSQRequestPtr response = _accel->_lsq->findResponse(cur_port) ) {
 
@@ -2301,6 +2413,7 @@ void dma_controller_t::port_resp(unsigned cur_port) {
     }
   }
 }
+*/
 
 /*
     if(get_ssim()->scratch_wr_free(response->_context_bitmask)) {
@@ -2547,20 +2660,28 @@ void dma_controller_t::make_read_request() {
 }
 
 int dma_controller_t::req_read(affine_read_stream_t& stream) {
+  int data_width = stream._data_width;
   addr_t prev_addr = 0;
   addr_t addr = stream.cur_addr();
   addr_t base_addr = addr & MEM_MASK;  //this is the request address...
   addr_t max_addr = base_addr+MEM_WIDTH;
 
   assert(addr!=0 && "cannot load address 0x0");
-    std::fill(mask.begin(), mask.end(), 0);
-  int words=0;
+  // mask.resize(MEM_WIDTH/data_width);
+  std::fill(mask.begin(), mask.end(), 0);
+  // int words=0;
+  int elems=0;
 
   while(addr < max_addr && addr > prev_addr  && stream.stream_active()) {
     prev_addr=addr;
-      mask[(addr-base_addr)/DATA_WIDTH]=1;
+    // mask[(addr-base_addr)/DATA_WIDTH]=1;
+	for(int i=0; i<data_width; ++i){
+      mask[addr-base_addr+i]=1;
+	}
+    // mask[(addr-base_addr)/data_width]=1;
     addr = stream.pop_addr();
-    words+=1;
+    // words+=1;
+    elems+=1;
     if(stream.stride_fill() && stream.stride_hit()) {
       break;
     }
@@ -2568,9 +2689,12 @@ int dma_controller_t::req_read(affine_read_stream_t& stream) {
 
   //TODO: add l2_miss statistics -- probably somewhere else....
   if(_accel->_ssim->in_roi()) {
-    add_bw(stream.src(), stream.dest(), 1, words*DATA_WIDTH);
+    // add_bw(stream.src(), stream.dest(), 1, words*DATA_WIDTH);
+    add_bw(stream.src(), stream.dest(), 1, elems*data_width);
 
-    _accel->_stat_tot_mem_fetched+=words*DATA_WIDTH;
+    // _accel->_stat_tot_mem_fetched+=words*DATA_WIDTH;
+    // _accel->_stat_tot_mem_fetched+=words*data_width;
+    _accel->_stat_tot_mem_fetched+=elems*data_width;
     _accel->_stat_tot_loads+=1;
   }
 
@@ -2591,13 +2715,14 @@ int dma_controller_t::req_read(affine_read_stream_t& stream) {
   if(SS_DEBUG::MEM_REQ) {
     _accel->timestamp();
       std::cout << "request for " << std::hex << base_addr << std::dec
-                    << " for " << words << " needed elements" << "\n";
+                    << " for " << elems << " needed elements" << "\n";
     std::cout  << " -- "; stream.print_status();
   }
 
   _mem_read_reqs++;
 
-  return words;
+  // return words;
+  return elems;
 }
 
 // It works for both direct/indirect network streams
@@ -3012,16 +3137,20 @@ void dma_controller_t::req_write(affine_write_stream_t& stream, port_data_t& ovp
   //std::fill(mask.begin(), mask.end(), 0);
   //mask[(addr-base_addr)/DATA_WIDTH]=1;
 
-  int data_width = DATA_WIDTH;
+  // int data_width = DATA_WIDTH;
+  int data_width = stream._data_width;
+  /*
   if(stream._shift_bytes==2) {
     data_width = 2;
   }
+  */
   addr_t prev_addr=addr-data_width;
 
   std::vector<uint8_t> data;
   data.resize(MEM_WIDTH);
   uint8_t* data8 = data.data();
   uint16_t* data16 = (uint16_t*)data8;
+  uint32_t* data32 = (uint32_t*)data8;
   uint64_t* data64 = (uint64_t*)data8;
 
   //go while stream and port does not run out
@@ -3029,11 +3158,23 @@ void dma_controller_t::req_write(affine_write_stream_t& stream, port_data_t& ovp
         stream.stream_active() && ovp.mem_size()>0) {
     SBDT val = ovp.peek_out_data();
 
+	if(data_width==1) {
+      data8[elem_written++]=(uint8_t)(val&0xFF);
+	} else if(data_width==2) {
+      data16[elem_written++]=(uint16_t)(val&0xFFFF);
+	} else if(data_width==4){ //assuming data_width=64
+      data32[elem_written++]=(uint32_t)(val&0xFFFFFFFF);
+    } else { //assuming data_width=64
+      data64[elem_written++]=val;
+    }
+
+	/*
     if(stream._shift_bytes==2) {
       data16[elem_written++]=(uint16_t)(val&0xFFFF);
     } else { //assuming data_width=64
       data64[elem_written++]=val;
     }
+	*/
     ovp.pop_out_data(); //pop the one we peeked
     //timestamp(); cout << "POPPED b/c Mem Write: " << vp.port() << " " << vp.mem_size() << "\n";
 
@@ -3072,6 +3213,83 @@ void dma_controller_t::req_write(affine_write_stream_t& stream, port_data_t& ovp
     //}
   }
 }
+
+/*
+//Creates a write request for a contiguous chunk of data smaller than one cache line
+void dma_controller_t::req_write(affine_write_stream_t& stream, port_data_t& ovp) {
+  addr_t addr = stream.cur_addr();
+  addr_t init_addr = addr;
+  addr_t base_addr = addr & MEM_MASK;
+  addr_t max_addr = base_addr+MEM_WIDTH;
+
+  assert(addr!=0 && "cannot store to address 0x0");
+
+  unsigned elem_written = 0;
+
+  //std::fill(mask.begin(), mask.end(), 0);
+  //mask[(addr-base_addr)/DATA_WIDTH]=1;
+
+  int data_width = DATA_WIDTH;
+  if(stream._shift_bytes==2) {
+    data_width = 2;
+  }
+  addr_t prev_addr=addr-data_width;
+
+  std::vector<uint8_t> data;
+  data.resize(MEM_WIDTH);
+  uint8_t* data8 = data.data();
+  uint16_t* data16 = (uint16_t*)data8;
+  uint64_t* data64 = (uint64_t*)data8;
+
+  //go while stream and port does not run out
+  while(addr < max_addr && (addr == (prev_addr + data_width)) &&
+        stream.stream_active() && ovp.mem_size()>0) {
+    SBDT val = ovp.peek_out_data();
+
+    if(stream._shift_bytes==2) {
+      data16[elem_written++]=(uint16_t)(val&0xFFFF);
+    } else { //assuming data_width=64
+      data64[elem_written++]=val;
+    }
+    ovp.pop_out_data(); //pop the one we peeked
+    //timestamp(); cout << "POPPED b/c Mem Write: " << vp.port() << " " << vp.mem_size() << "\n";
+
+    prev_addr=addr;
+    addr = stream.pop_addr();
+  }
+
+  unsigned bytes_written = elem_written * data_width;
+  SSMemReqInfoPtr sdInfo = new SSMemReqInfo(stream.id(),
+                                            _accel->_accel_index, MEM_WR_STREAM);
+
+  //make store request
+   _accel->_lsq->pushRequest(stream.minst(),false, data8,
+             bytes_written, init_addr, 0, 0, sdInfo);
+
+
+  if(SS_DEBUG::MEM_REQ) {
+    _accel->timestamp();
+    cout << bytes_written << "-byte write request for port->dma, addr:"
+         << std::hex << init_addr <<", data:";
+    for(int i = 0; i < elem_written; ++i) {
+      cout << data64[i] << ", " ;
+    }
+    cout << "\n" << std::dec;
+  }
+
+  _accel->_stat_mem_bytes_wr+=bytes_written;
+
+  if(_accel->_ssim->in_roi()) {
+    add_bw(stream.src(), stream.dest(), 1, bytes_written);
+    _accel->_stat_tot_stores++;
+    _accel->_stat_tot_mem_stored+=bytes_written;
+    //bool l2_miss=(cycle_mem_complete-start_cycle)>5;
+    //if(l2_miss) {
+    //  _accel->_stat_tot_mem_load_acc++;
+    //}
+  }
+}
+*/
 
 static bool addr_valid_dir(int64_t acc_size, uint64_t addr,
     uint64_t prev_addr, uint64_t base_addr, uint64_t max_addr) {

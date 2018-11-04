@@ -367,7 +367,9 @@ void ssim_t::load_dma_to_port(addr_t mem_addr,
   in_ports.push_back(in_port);
   affine_read_stream_t* s = new affine_read_stream_t(LOC::DMA, mem_addr, stride,
       access_size, stretch, num_strides, in_ports, repeat, repeat_str);
-
+  // FIXME: do for all accel
+  auto& in_vp = accel_arr[0]->port_interf().in_port(in_port);
+  s->_data_width = in_vp.get_port_width(); // added for dgra
   add_bitmask_stream(s);
 }
 
@@ -377,7 +379,9 @@ void ssim_t::write_dma(uint64_t garb_elem, int out_port,
 
   affine_write_stream_t* s = new affine_write_stream_t(LOC::DMA, mem_addr, stride,
       access_size, 0, num_strides, out_port, shift_bytes, garbage);
-
+  // FIXME: do for all accel
+  auto& out_vp = accel_arr[0]->port_interf().out_port(out_port);
+  s->_data_width = out_vp.get_port_width(); // added for dgra
   add_bitmask_stream(s);
 }
 

@@ -218,6 +218,7 @@ struct affine_base_stream_t : public base_stream_t {
   addr_t _mem_addr;     // CURRENT address of stride
   addr_t _num_strides=0;  // CURRENT strides left
   addr_t _orig_strides=0;
+  int _data_width=DATA_WIDTH; // SET this from the program
 
   affine_base_stream_t() {}
 
@@ -270,7 +271,8 @@ struct affine_base_stream_t : public base_stream_t {
       if(_access_size>=0) {
         return _mem_addr + _bytes_in_access;
       } else {
-        return _mem_addr - _bytes_in_access - DATA_WIDTH;
+        // return _mem_addr - _bytes_in_access - DATA_WIDTH;
+        return _mem_addr - _bytes_in_access - _data_width;
       }
     }
   }
@@ -293,7 +295,8 @@ struct affine_base_stream_t : public base_stream_t {
     if(_shift_bytes==2) {
       _bytes_in_access+=2;
     } else {
-      _bytes_in_access+=DATA_WIDTH;
+      // _bytes_in_access+=DATA_WIDTH;
+      _bytes_in_access+=_data_width;
     }
 
     if(_bytes_in_access==abs_access_size()) { // go to next stride
@@ -318,7 +321,8 @@ struct affine_base_stream_t : public base_stream_t {
     std::cout << " acc_size=" << _access_size
               << " stride=" << _stride << " bytes_comp=" << _bytes_in_access
               << " addr=" << std::hex << _mem_addr << std::dec
-              << " strides_left=" << _num_strides;
+              << " strides_left=" << _num_strides
+              << " data_width=" << _data_width;
   }
 
 
