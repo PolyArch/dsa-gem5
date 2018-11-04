@@ -325,7 +325,6 @@ struct affine_base_stream_t : public base_stream_t {
               << " data_width=" << _data_width;
   }
 
-
 };
 
 //.........STREAM DEFINITION.........
