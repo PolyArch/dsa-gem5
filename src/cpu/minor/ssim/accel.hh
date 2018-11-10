@@ -150,9 +150,14 @@ public:
       unsigned width = port_cgra_elem();
       unsigned remainder = _mem_data.size() % width;
       if(remainder != 0) {
+        std::vector<uint8_t> dummy_val;
+        for(int i=0; i<_port_width; ++i){
+          dummy_val.push_back(0);
+        }
         unsigned extra = width - remainder;
         for(int i = 0; i < extra; ++i) {
-          push_data(0,valid_flag);
+          // push_data((SBDT)0,valid_flag); // need typecast because of template
+          push_data(dummy_val,valid_flag);
         }
       }
     }
@@ -261,7 +266,7 @@ public:
            << "please be more tidy next time\n";
       assert(0);
     }*/
-	std::cout << "Num_chunks while pushing to port in mem_data?: " << num_chunks << "\n";
+	// std::cout << "Num_chunks while pushing to port in mem_data?: " << num_chunks << "\n";
 	for(int i=0; i<num_chunks;++i){
       // _mem_data.push_back(data);
 	  std::vector<uint8_t> local_data = slice(data, i*_port_width, (i+1)*_port_width);

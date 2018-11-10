@@ -367,9 +367,12 @@ void ssim_t::load_dma_to_port(addr_t mem_addr,
   in_ports.push_back(in_port);
   affine_read_stream_t* s = new affine_read_stream_t(LOC::DMA, mem_addr, stride,
       access_size, stretch, num_strides, in_ports, repeat, repeat_str);
-  // FIXME: do for all accel
-  auto& in_vp = accel_arr[0]->port_interf().in_port(in_port);
-  s->_data_width = in_vp.get_port_width(); // added for dgra
+   for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
+    if(_context_bitmask & b) {
+      auto& in_vp = accel_arr[0]->port_interf().in_port(in_port);
+      s->_data_width = in_vp.get_port_width(); // added for dgra
+    }
+  } 
   add_bitmask_stream(s);
 }
 
@@ -379,9 +382,13 @@ void ssim_t::write_dma(uint64_t garb_elem, int out_port,
 
   affine_write_stream_t* s = new affine_write_stream_t(LOC::DMA, mem_addr, stride,
       access_size, 0, num_strides, out_port, shift_bytes, garbage);
-  // FIXME: do for all accel
-  auto& out_vp = accel_arr[0]->port_interf().out_port(out_port);
-  s->_data_width = out_vp.get_port_width(); // added for dgra
+  
+  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
+    if(_context_bitmask & b) {
+      auto& out_vp = accel_arr[0]->port_interf().out_port(out_port);
+      s->_data_width = out_vp.get_port_width(); // added for dgra
+    }
+  }
   add_bitmask_stream(s);
 }
 
@@ -547,6 +554,13 @@ void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr
   if(scratch) s->_unit=LOC::SCR;
   else s->_unit=LOC::DMA;
   s->set_orig();
+
+  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
+    if(_context_bitmask & b) {
+      auto& in_vp = accel_arr[i]->port_interf().in_port(in_port);
+      s->_data_width = in_vp.get_port_width(); // added for dgra
+    }
+  }
 
   add_bitmask_stream(s);
 }

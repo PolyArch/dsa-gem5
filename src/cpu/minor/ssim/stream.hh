@@ -306,6 +306,7 @@ struct affine_base_stream_t : public base_stream_t {
       _access_size+=_stretch;
     }
 	// FIXME:CHECKME: not using bytes in access anymore!!!
+	 // std::cout << "bytes in access: " << _bytes_in_access << " abs_Access_size: " << abs_access_size() << " data_width: " << _data_width << "\n";
      assert((_bytes_in_access<abs_access_size()
            || _access_size==0) && "something went wrong");
 
@@ -696,6 +697,7 @@ struct indirect_base_stream_t : public base_stream_t {
   uint64_t _offset_list;
   uint64_t _ind_mult;
   std::vector<char> _offsets;
+  int _data_width=8; // 64-bit datatype by default
 
   addr_t _orig_elements;
   //These get set based on _type
@@ -727,11 +729,13 @@ struct indirect_base_stream_t : public base_stream_t {
       default: assert(0);
     }
 
-    _indices_in_word = DATA_WIDTH / _index_bytes;
+    // _indices_in_word = DATA_WIDTH / _index_bytes;
+    _indices_in_word = _data_width / _index_bytes;
 
     //set up offset list
     _offsets.push_back(0);
-    for(int i = 0; i < DATA_WIDTH; i++) {
+    // for(int i = 0; i < DATA_WIDTH; i++) {
+    for(int i = 0; i < _data_width; i++) {
       char offset = (_offset_list >> i*8) & 0xFF;
       if(offset != 0) {
         _offsets.push_back(offset);
@@ -757,7 +761,7 @@ struct indirect_base_stream_t : public base_stream_t {
 
   addr_t cur_addr(SBDT val) {
     uint64_t index =  (val >> (_index_in_word * _index_bytes * 8)) & _index_mask;
-	// std::cout << "index: " << index << " mult: " << _ind_mult << "\n";
+	  std::cout << "index: " << index << " mult: " << _ind_mult << "\n";
     return   _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes;
   }
 
@@ -804,7 +808,7 @@ struct indirect_stream_t : public indirect_base_stream_t {
   virtual int repeat_str() {return _repeat_str;}
 
   virtual void print_status() {
-    std::cout << "mem[ind_port]->in_port" << "\tind_port=" << _ind_port
+    std::cout << "mem[ind_port]->in_port" << "\tout_port width" << _data_width << "\tind_port=" << _ind_port
               << "\tind_type:" << _ind_type  << "\tind_addr:" << _index_addr
               << "\tnum_elem:" << _num_elements << "\tin_port:";
     print_in_ports();
@@ -837,7 +841,7 @@ struct indirect_wr_stream_t : public indirect_base_stream_t {
   }
 
   virtual void print_status() {
-    std::cout << "out_port->mem[ind_port]" << "\tind_port=" << _ind_port
+    std::cout << "out_port->mem[ind_port]" << "\tout_port width" << _data_width << "\tind_port=" << _ind_port // check this!
               << "\tind_type:" << _ind_type  << "\tind_addr:" << std::hex <<_index_addr
         << std::dec << "\tnum_elem:" << _num_elements << "\tout_port" << _out_port;
     base_stream_t::print_status();

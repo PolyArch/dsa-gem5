@@ -995,7 +995,7 @@ void accel_t::cycle_cgra_backpressure() {
            data_valid.push_back(valid);
            data.push_back(val);
         }
-        cout << "Allowed to push input: " << data[0] << "\n"; // " and next input: " << data[1] << "\n";
+        // cout << "Allowed to push input: " << data[0] << "\n"; // " and next input: " << data[1] << "\n";
         // cout << "Port name: " << vec_in->gamsName() << " ";
 		/*
 		if(SS_DEBUG::COMP) {
@@ -2256,6 +2256,18 @@ void apply_mask(uint8_t* raw_data, vector<bool> mask, std::vector<uint8_t>& data
   }
 }
 
+void apply_map(uint8_t* raw_data, const vector<int>& imap, std::vector<uint8_t>& data) {
+  //SBDT* u64data = (SBDT*)raw_data;
+
+  assert(imap.size() != 0);
+  data.resize(imap.size());
+  for(int i = 0; i < imap.size(); ++i) {
+    //cout << "at imap[" << imap[i] << "], data=" << raw_data[imap[i]] << "\n";
+    data[i] = raw_data[imap[i]];
+  }
+}
+
+/*
 void apply_map(uint64_t* raw_data, const vector<int>& imap, std::vector<SBDT>& data) {
   //SBDT* u64data = (SBDT*)raw_data;
 
@@ -2266,6 +2278,7 @@ void apply_map(uint64_t* raw_data, const vector<int>& imap, std::vector<SBDT>& d
     data[i] = raw_data[imap[i]];
   }
 }
+*/
 
 void dma_controller_t::port_resp(unsigned cur_port) {
   if(Minor::LSQ::LSQRequestPtr response = _accel->_lsq->findResponse(cur_port) ) {
@@ -2287,7 +2300,7 @@ void dma_controller_t::port_resp(unsigned cur_port) {
         assert(0 && "weird memory response size");
       }
 
-      vector<SBDT> data2; // for apply_map: I don't want to change now
+      // vector<SBDT> data2; // for apply_map: I don't want to change now
       vector<uint8_t> data;
       if(response->sdInfo->mask.size() > 0) {
 		// applying mask on the whole cache line
@@ -2296,7 +2309,8 @@ void dma_controller_t::port_resp(unsigned cur_port) {
         apply_mask(packet->getPtr<uint8_t>(), response->sdInfo->mask, data);
       } else if(response->sdInfo->map.size() > 0) {
 		// cout << "map size was greater than 0?\n";
-        apply_map(packet->getPtr<uint64_t>(),  response->sdInfo->map, data2);
+        // apply_map(packet->getPtr<uint64_t>(),  response->sdInfo->map, data);
+        apply_map(packet->getPtr<uint8_t>(),  response->sdInfo->map, data);
       }
 
       bool port_in_okay = true;
@@ -2307,7 +2321,7 @@ void dma_controller_t::port_resp(unsigned cur_port) {
         port_in_okay = port_in_okay && (in_vp.can_push_bytes_vp(data.size()));
       }
 
-	  std::cout << "It was okay to push in values at the input ports? " << port_in_okay << "\n";
+	  // std::cout << "It was okay to push in values at the input ports? " << port_in_okay << "\n";
 
       if(port_in_okay) {
         bool last = response->sdInfo->last;
@@ -3009,13 +3023,19 @@ void dma_controller_t::ind_read_req(indirect_stream_t& stream) {
 
     assert( ((addr & 0x7)==0) && "bottom 3 bits must be zero for word-loads");
 
-    int index = (addr - base_addr)     /8; //TODO: configurable data size please!
-    imap.push_back(index);
+    // int index = (addr - base_addr)     /8; //TODO: configurable data size please!
+    int index = addr - base_addr;
+    // number of values we want to read at that index is the port_width
+    // imap.push_back(index);
+    int data_width = stream._data_width;
+    for(int i=0; i<data_width; ++i){
+      imap.push_back(index+i);
+    }
 
     if(SS_DEBUG::MEM_REQ) {
       _accel->timestamp();
       cout << "indirect request for " << std::hex << base_addr << std::dec
-           << " for " << imap.size() << " needed elements" << "\n";
+           << " for " << imap.size() << " needed bytes" << "\n";
     }
 
     bool pop_ind_vp = stream.pop_elem();
