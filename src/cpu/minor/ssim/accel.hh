@@ -198,13 +198,13 @@ public:
   // FIXME: hack for now--create a map of data_width and datatype
   template <typename T>
   T get_custom_val(std::vector<uint8_t> v, int len){
-	if(len==8) {
+	if(len==1) {
 	  int8_t val=0;
 	  return merge_bytes(val,v,len);
-	} else if(len==16) {
+	} else if(len==2) {
 	  int16_t val=0;
 	  return merge_bytes(val,v,len);
-    } else if(len==32) {
+    } else if(len==4) {
 	  int32_t val=0;
 	  return merge_bytes(val,v,len);
     } else {
@@ -925,6 +925,7 @@ class scratch_write_controller_t : public data_controller_t {
 
   // void push_remote_wr_req(SBDT val, addr_t scr_addr);
   void push_remote_wr_req(int8_t *val, int num_bytes, addr_t scr_addr);
+  void scr_write(addr_t addr, affine_write_stream_t& stream, port_data_t& out_vp);
 
   bool release_df_barrier(){
     assert(_df_count!=-1);

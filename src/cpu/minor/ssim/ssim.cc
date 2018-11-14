@@ -25,12 +25,13 @@ ssim_t::ssim_t(Minor::LSQ* lsq) : _lsq(lsq) {
   //TODO: inform accel_arr
 
   // default things
-  port_data_t& cur_out_port = accel_arr[0]->_port_interf.out_port(23);
-  cur_out_port.set_port_width(8);
-  
-  port_data_t& cur_in_port = accel_arr[0]->_port_interf.in_port(23);
-  cur_in_port.set_port_width(8);
- 
+  for(int i=23; i<25; ++i) {
+    port_data_t& cur_out_port = accel_arr[0]->_port_interf.out_port(i);
+    cur_out_port.set_port_width(8);
+    
+    port_data_t& cur_in_port = accel_arr[0]->_port_interf.in_port(i);
+    cur_in_port.set_port_width(8);
+  }
 
 	/*
   for(int i=23; i<26; i++) {
@@ -402,10 +403,12 @@ void ssim_t::write_dma(uint64_t garb_elem, int out_port,
   affine_write_stream_t* s = new affine_write_stream_t(LOC::DMA, mem_addr, stride,
       access_size, 0, num_strides, out_port, shift_bytes, garbage);
 
+  std::cout << "In write dma from port, port number: " << out_port << " with data width: " << s->_data_width << "\n";
   for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
     if(_context_bitmask & b) {
       auto& out_vp = accel_arr[0]->port_interf().out_port(out_port);
       s->_data_width = out_vp.get_port_width(); // added for dgra
+	  std::cout << "In write dma from port, port number: " << out_port << " with data width: " << s->_data_width << "\n";
     }
   }
   add_bitmask_stream(s);
@@ -419,10 +422,13 @@ void ssim_t::load_scratch_to_port(addr_t scratch_addr,
   in_ports.push_back(in_port);
   affine_read_stream_t* s = new affine_read_stream_t(LOC::SCR, scratch_addr, stride,
       access_size, stretch, num_strides, in_ports, repeat, repeat_str);
+	  
+  std::cout << "In load scratch to port, port number: " << in_port << " with data width: " << s->_data_width << "\n";
 
   for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
     if(_context_bitmask & b) {
       auto& in_vp = accel_arr[0]->port_interf().in_port(in_port);
+	  std::cout << "In load scratch to port, port number: " << in_port << " with data width: " << s->_data_width << "\n";
       s->_data_width = in_vp.get_port_width(); // added for dgra
     }
   }
@@ -435,16 +441,16 @@ void ssim_t::write_scratchpad(int out_port,
   // affine_write_stream_t* s = new affine_write_stream_t(LOC::SCR,
   //    scratch_addr, 8, 8, 0, num_bytes/8, out_port, shift_bytes, 0);
 
-  affine_write_stream_t* s = new affine_write_stream_t(LOC::SCR,
-      scratch_addr, 1, 1, 0, num_bytes, out_port, shift_bytes, 0);
+   affine_write_stream_t* s = new affine_write_stream_t(LOC::SCR,
+      scratch_addr, num_bytes, num_bytes, 0, 1, out_port, shift_bytes, 0);
 
-  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
+
+   for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
     if(_context_bitmask & b) {
-      auto& out_vp = accel_arr[0]->port_interf().out_port(out_port);
+      auto& out_vp = accel_arr[i]->port_interf().out_port(out_port);
       s->_data_width = out_vp.get_port_width(); // added for dgra
     }
   }
-
   add_bitmask_stream(s);
 }
 

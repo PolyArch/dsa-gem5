@@ -895,7 +895,7 @@ void accel_t::cycle_indirect_interf() {
 
     //we only allow 8 words in the output vector port, since there's already
     //buffering in the input vector port, so it would be kindof cheating
-	if(i==23) {
+	if(i==23 || i==24) {
 	  while(ind_in_port.mem_size() && ind_out_port.mem_size() < 64) {
         ind_out_port.push_data(ind_in_port.pop_in_custom_data<uint8_t>());
       }
@@ -3831,6 +3831,24 @@ bool scratch_write_controller_t::crosssar_backpressureOn(){
   return false;
 }
 
+// TODO: Do it in a neater way!
+void scratch_write_controller_t::scr_write(addr_t addr, affine_write_stream_t& stream, port_data_t& out_vp) {
+  int data_width = out_vp.get_port_width();
+  if(data_width==1) {
+    uint8_t val = out_vp.pop_out_custom_data<uint8_t>(); // this is te SBDT form of data
+    _accel->write_scratchpad(addr, &val, data_width, stream.id());
+  } else if (data_width==2) {
+    uint16_t val = out_vp.pop_out_custom_data<uint16_t>(); // this is te SBDT form of data
+    _accel->write_scratchpad(addr, &val, data_width, stream.id());
+  } else if (data_width==4) {
+    uint32_t val = out_vp.pop_out_custom_data<uint32_t>(); // this is te SBDT form of data
+    _accel->write_scratchpad(addr, &val, data_width, stream.id());
+  } else {
+    uint64_t val = out_vp.pop_out_custom_data<uint64_t>(); // this is te SBDT form of data
+    _accel->write_scratchpad(addr, &val, data_width, stream.id());
+  }
+}
+
 void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
     bool &performed_atomic_scr) {
 
@@ -3860,19 +3878,20 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
           while(!_accel->isLinearSpad(addr) && addr < max_addr && stream.stream_active() //enough in dest
                                 && out_vp.mem_size()) { //enough in source
 
-            // data_width of this port is now 8-bit (or 1-byte)
+			int data_width = out_vp.get_port_width();
+            assert( ((int)addr >= 0) && (addr + data_width <= SCRATCH_SIZE));
+			scr_write(addr, stream, out_vp);
+            
+            // data_width of this port is now 8-bit (or 1-byte) -- should be
+			// variable
             // SBDT val = out_vp.pop_out_data();
-            uint8_t val = out_vp.pop_out_custom_data<uint8_t>(); // this is te SBDT form of data
+            // uint8_t val = out_vp.pop_out_custom_data<uint8_t>(); // this is te SBDT form of data
 
             if(SS_DEBUG::MEM_REQ){
                timestamp(); cout << "POPPED b/c port->scratch WRITE: " << out_vp.port() << " " << out_vp.mem_size() << "\n";
             }
 
-            int data_width = out_vp.get_port_width();
-            assert( ((int)addr >= 0) && (addr + data_width <= SCRATCH_SIZE));
-            //std::memcpy(&_accel->scratchpad[addr], &val, sizeof(SBDT));
-            // _accel->write_scratchpad(addr, &val, sizeof(SBDT),stream.id());
-            _accel->write_scratchpad(addr, &val, data_width, stream.id());
+            // _accel->write_scratchpad(addr, &val, data_width, stream.id());
 
             addr = stream.pop_addr();
 
@@ -4216,16 +4235,17 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
                                   && out_vp.mem_size()) { //enough in source
 
               int data_width=stream._data_width;
-              uint8_t val = out_vp.pop_out_custom_data<uint8_t>();
+              assert( ((int)addr >= 0) && (addr + data_width <= SCRATCH_SIZE+LSCRATCH_SIZE));
+			  scr_write(addr, stream, out_vp);
+              // uint8_t val = out_vp.pop_out_custom_data<uint8_t>();
 
               if(SS_DEBUG::SCR_ACC) {
                  // timestamp(); cout << "POPPED b/c port->linear scratch WRITE: " << out_vp.port() << " " << out_vp.mem_size() << "\n";
                  timestamp(); cout << "POPPED b/c port->linear scratch WRITE: " << stream._out_port << " with width: " << stream._data_width << " " << out_vp.mem_size() << "\n";
               }
 
-              assert( ((int)addr >= 0) && (addr + data_width <= SCRATCH_SIZE+LSCRATCH_SIZE));
               //std::memcpy(&_accel->scratchpad[addr], &val, sizeof(SBDT));
-              _accel->write_scratchpad(addr, &val, data_width,stream.id());
+              // _accel->write_scratchpad(addr, &val, data_width,stream.id());
 
               addr = stream.pop_addr();
 
@@ -4821,21 +4841,6 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
 
   _soft_config.in_ports_name.resize(64);
   _soft_config.out_ports_name.resize(64);
-
-  /*
-  // HACK
-  // port_data_t& cur_in_port = _port_interf.in_port(23);
-  // cur_in_port.set_port_width(8); // 1-byte
-
-  // CHECKME: for dedicated ports
-  for(int i=23; i<26; i++) {
-    // port_data_t& cur_in_port = _port_interf.in_port(i);
-	  // cur_in_port.set_port_width(8); // 1-byte
-	// cout << vec_input->name() << " : " << cur_in_port.get_port_width() << endl;
-	  port_data_t& cur_out_port = _port_interf.out_port(i);
-	  cur_out_port.set_port_width(8); // 1-byte
-  }
-  */
 
   for (int ind = 0; ind < _dfg->num_vec_input(); ++ind) {
       SSDfgVec* vec_in = _dfg->vec_in(ind);
