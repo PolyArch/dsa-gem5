@@ -258,6 +258,9 @@ public:
 
   void push_data(std::vector<uint8_t> data, bool valid=true) {
     int data_size = data.size();
+	if((data_size%_port_width!=0)) {
+	  std::cout << "DATA_SIZE: " << data_size << " PORT_WIDTH: " << _port_width << "\n";
+	}
     assert((data_size%_port_width==0) && "weird data size returned");
 	int num_chunks = data_size/_port_width;
     /* --I don't know why is this here
@@ -271,7 +274,7 @@ public:
       // _mem_data.push_back(data);
 	  std::vector<uint8_t> local_data = slice(data, i*_port_width, (i+1)*_port_width);
       _mem_data.push_back(local_data);
-	  std::cout << "Local data pushed in the port is: " << get_sbdt_val(local_data,_port_width)  << "\n";
+	  // std::cout << "Local data pushed in the port is: " << get_sbdt_val(local_data,_port_width)  << "\n";
       _valid_data.push_back(valid);
       _total_pushed+=valid;
 	}
@@ -299,7 +302,7 @@ public:
  // 16-bits?
     // std::cout << sizeof(T) << " " << _port_width << "\n";
     int num_chunks = sizeof(T)/_port_width;
-    std::cout << "Data being pushed to a port from memory or cgra" << std::hex << data << std::endl;
+    // std::cout << "Data being pushed to a port from memory or cgra" << std::hex << data << std::endl;
     for(int i=0; i<num_chunks; ++i){
       // std::cout << "Scalar data beng sent" << std::hex << (data >> (i*_port_width*8)) << std::endl;
       std::vector<uint8_t> v = get_byte_vector(data >> (i*_port_width*8),_port_width);
@@ -398,6 +401,8 @@ public:
   }
 
   SBDT pop_in_data(); // pop one data from mem
+  template <typename T>
+  T pop_in_custom_data(); // pop one data from mem
 
   SBDT pop_out_data(); // pop one data from mem
   template <typename T>
@@ -766,7 +771,8 @@ class scratch_read_controller_t : public data_controller_t {
     : data_controller_t(host) {
     _dma_c=d; //save this for later
 
-    mask.resize(SCR_WIDTH/DATA_WIDTH);
+    // mask.resize(SCR_WIDTH/DATA_WIDTH);
+    mask.resize(SCR_WIDTH);
 
     //if(is_shared()) {
     //  _scr_scr_streams.resize(NUM_ACCEL);
@@ -788,7 +794,8 @@ class scratch_read_controller_t : public data_controller_t {
   }
 
   // std::vector<SBDT> read_scratch(affine_read_stream_t& stream);
-  std::vector<SBDT> read_scratch(affine_read_stream_t& stream, bool is_banked);
+  // std::vector<SBDT> read_scratch(affine_read_stream_t& stream, bool is_banked);
+  std::vector<uint8_t> read_scratch(affine_read_stream_t& stream, bool is_banked);
   void read_scratch_ind(indirect_stream_t& stream, uint64_t scr_addr);
 
   float calc_min_port_ready();
@@ -854,7 +861,8 @@ class scratch_write_controller_t : public data_controller_t {
   scratch_write_controller_t(accel_t* host, dma_controller_t* d)
     : data_controller_t(host) {
     _dma_c=d;
-    mask.resize(SCR_WIDTH/DATA_WIDTH);
+    // mask.resize(SCR_WIDTH/DATA_WIDTH);
+    mask.resize(SCR_WIDTH);
     // _remote_scr_w_buf.resize(DEFAULT_FIFO_LEN); // same size as cgra port fifo's
     _atomic_scr_issued_requests.resize(NUM_SCRATCH_BANKS);
 
@@ -1489,11 +1497,17 @@ private:
 
   void read_scratchpad(void* dest, uint64_t scr_addr,
       std::size_t count, int id) {
-    assert(scr_addr < SCRATCH_SIZE);
+	if(_linear_spad){
+      assert(scr_addr < SCRATCH_SIZE+LSCRATCH_SIZE);
+	} else {
+      assert(scr_addr < SCRATCH_SIZE);
+	}
 
     std::memcpy(dest, &scratchpad[scr_addr], count);
+	// TODO: change this for linear spad case
     if(SS_DEBUG::CHECK_SCR_ALIAS) { //TODO: make this check work for unaligned
       for(int i = 0; i < count; i+=sizeof(SBDT)) {
+      // for(int i = 0; i < count; i++) {
         uint64_t running_addr=  scr_addr+i;
         if(scratchpad_writers[running_addr]) {
           std::cout << "WARNING: scr_addr: " << running_addr
@@ -1508,8 +1522,10 @@ private:
 
   void write_scratchpad(uint64_t scr_addr, const void* src,
       std::size_t count, int id) {
+	// std::cout << "NEW SCRATCHPAD SIZE: " << scratchpad.size() << "\n";
     std::memcpy(&scratchpad[scr_addr], src, count);
     if(SS_DEBUG::CHECK_SCR_ALIAS) {
+      // for(int i = 0; i < count; i++) {
       for(int i = 0; i < count; i+=sizeof(SBDT)) {
         uint64_t running_addr = scr_addr+i;
         if(scratchpad_writers[running_addr]) {
@@ -1552,9 +1568,20 @@ private:
   }
 
 bool isLinearSpad(addr_t addr){
-  int spad_offset_bits = log2(SCRATCH_SIZE+LSCRATCH_SIZE);
+  // int spad_offset_bits = log2(SCRATCH_SIZE+LSCRATCH_SIZE);
+  int spad_offset_bits = log2(SCRATCH_SIZE);
   int spad_type = (addr >> spad_offset_bits) & 1;
   return spad_type; // for 1, it is linear
+}
+
+// to debug
+void print_spad_addr(int start, int end){
+  uint16_t val = 0;
+  for(int i=start; i<end; i+=2){
+	memcpy(&val, &scratchpad[i], 2);
+	std::cout << "value is: " << val << "\n";
+  }
+
 }
 /*
   void send_scr_wr_message(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id, int stream_id) {

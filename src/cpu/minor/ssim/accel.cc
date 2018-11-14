@@ -251,10 +251,17 @@ SBDT port_data_t::pop_in_data() {
 SBDT port_data_t::pop_in_data() {
   assert(_mem_data.size());
   assert(_mem_data.size() == _valid_data.size());
-  // SBDT val = _mem_data.front();
-  // vector<uint8_t> v = _mem_data.front();
-  // SBDT val = get_sbdt_val(v,_port_width);
   SBDT val = peek_out_data();
+  _mem_data.pop_front();
+  _valid_data.pop_front();
+  return val;
+}
+
+template <typename T>
+T port_data_t::pop_in_custom_data() {
+  assert(_mem_data.size());
+  vector<uint8_t> v = _mem_data.front();
+  T val = get_custom_val<T>(v,_port_width);
   _mem_data.pop_front();
   _valid_data.pop_front();
   return val;
@@ -284,7 +291,7 @@ SBDT port_data_t::pop_out_data() {
 template <typename T>
 T port_data_t::pop_out_custom_data() {
   assert(_mem_data.size());
-  vector<int8_t> v = _mem_data.front();
+  vector<uint8_t> v = _mem_data.front();
   T val = get_custom_val<T>(v,_port_width);
   _mem_data.pop_front();
   _valid_data.pop_front();
@@ -516,17 +523,18 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
   _ssconfig = new SSModel(ssconfig_file);
   _ssconfig->setMaxEdgeDelay(_fu_fifo_len);
   _port_interf.initialize(_ssconfig);
-  // FIXME: Is _sched initialized when it comes here? No
-  // _port_interf.initialize(_ssconfig, _sched);
- scratchpad.resize(SCRATCH_SIZE);
-  // Now, it should work with larger scratch size: have some mode
+  
+  scratchpad.resize(SCRATCH_SIZE);
   if(_linear_spad){
     scratchpad.resize(SCRATCH_SIZE+LSCRATCH_SIZE);
+    // scratchpad_readers.resize(SCRATCH_SIZE+LSCRATCH_SIZE);
+    // scratchpad_writers.resize(SCRATCH_SIZE+LSCRATCH_SIZE);
   }
 
   //optionally used -- this is expensive
   scratchpad_readers.resize(SCRATCH_SIZE);
   scratchpad_writers.resize(SCRATCH_SIZE);
+
 
   // FIXME: schedule the implicit network stream in the each accel
   if(i==0) { // required only in 1st accel
@@ -887,9 +895,15 @@ void accel_t::cycle_indirect_interf() {
 
     //we only allow 8 words in the output vector port, since there's already
     //buffering in the input vector port, so it would be kindof cheating
-    while(ind_in_port.mem_size() && ind_out_port.mem_size() < 8) {
-      ind_out_port.push_data(ind_in_port.pop_in_data());
-    }
+	if(i==23) {
+	  while(ind_in_port.mem_size() && ind_out_port.mem_size() < 64) {
+        ind_out_port.push_data(ind_in_port.pop_in_custom_data<uint8_t>());
+      }
+	} else {
+      while(ind_in_port.mem_size() && ind_out_port.mem_size() < 8) {
+        ind_out_port.push_data(ind_in_port.pop_in_data());
+      }
+	}
   }
 }
 
@@ -1774,7 +1788,7 @@ void accel_t::print_stats() {
 
 /*
 void scratch_write_controller_t::push_net_stream(remote_core_net_stream_t* stream){
-  printf("TRYUING TO PUSH IMPLICT STREAM\n");
+  printf("TRYING TO PUSH IMPLICT STREAM\n");
   _accel->push_net_in_cmd_queue(stream);
 }
 */
@@ -3253,39 +3267,60 @@ static bool addr_valid_dir(int64_t acc_size, uint64_t addr,
   }
 }
 
-vector<SBDT> scratch_read_controller_t::read_scratch(
+// serve only when it comes from the requested location
+vector<uint8_t> scratch_read_controller_t::read_scratch(
                affine_read_stream_t& stream, bool is_banked) {
-  vector<SBDT> data;
+  vector<uint8_t> data;
   addr_t prev_addr = SCRATCH_SIZE;
   addr_t addr = stream.cur_addr(); //this is scratch addr
   addr_t base_addr = addr & SCR_MASK;
   addr_t max_addr = base_addr+SCR_WIDTH;
 
+
   if(SS_DEBUG::SCR_BARRIER) {
     _accel->timestamp();
     cout << "scr_rd " << hex << addr << " -> " << max_addr << "\n";
   }
+  int data_width = stream._data_width; // should be 2 for my case
 
   std::fill(mask.begin(), mask.end(), 0);
 
+  uint8_t val[8]; // maximum value that data width can be
+  for(int i=0; i<8; ++i){
+    val[i]=0;
+  }
   //go while stream and port does not run out
   // while(stream.stream_active() &&
   // if(_accel->_linear_spad) {
-  while(stream.stream_active() && (!_accel->_linear_spad || (is_banked ^ !_accel->isLinearSpad(addr))) &&
+  while(stream.stream_active() && (!_accel->_linear_spad || (is_banked ^ _accel->isLinearSpad(addr))) &&
       addr_valid_dir(stream.access_size(),addr,prev_addr,base_addr,max_addr)){
     // keep going while stream does not run out
-    SBDT val=0;
-    assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
-    //std::memcpy(&val, &_accel->scratchpad[addr], DATA_WIDTH);
-    _accel->read_scratchpad(&val, addr, DATA_WIDTH,stream.id());
+
+    for(int i=0; i<data_width; ++i){
+      val[i]=0;
+    }
+	if(is_banked) {
+      assert(addr + data_width <= SCRATCH_SIZE);
+	} else {
+      assert(addr + data_width >= SCRATCH_SIZE && addr + data_width <= SCRATCH_SIZE+LSCRATCH_SIZE);
+	}
+    
+	_accel->read_scratchpad(&val[0], addr, data_width, stream.id());
 
     if(SS_DEBUG::SCR_ACC) {
-      cout << "scr_addr:" << hex << addr << " read " << val
-           << " to port " << stream.first_in_port() << "\n";
+	  // assume 16-bit to debug just for now
+      cout << "scr_addr:" << hex << addr << " read " << (val[0]<<8|val[1])
+           << " to port " << stream.first_in_port() << " with input port width: " << data_width << "\n";
     }
-    data.push_back(val);
+    // data.push_back(val);
+    for(int i=0; i<data_width; ++i){
+      data.push_back(val[i]);
+    }
     prev_addr=addr;
-    mask[(addr-base_addr)/DATA_WIDTH]=1;
+    for(int i=0; i<data_width; ++i){
+      mask[addr-base_addr+i]=1;
+    }
+
     addr = stream.pop_addr();
 
     if(stream.stride_fill() && stream.stride_hit()) {
@@ -3300,20 +3335,19 @@ vector<SBDT> scratch_read_controller_t::read_scratch(
         (unsigned)_accel->scratchpad[i];
     }
     _accel->scr_rd_verif << " ";
-    for(unsigned i = 0; i < SCR_WIDTH/DATA_WIDTH; ++i) {
+    for(unsigned i = 0; i < SCR_WIDTH/data_width; ++i) {
       _accel->scr_rd_verif << setw(1) << setfill('0') << (unsigned)mask[i];
     }
     _accel->scr_rd_verif << "\n";
   }
 
-  _accel->_stat_scr_bytes_rd+=data.size()*DATA_WIDTH;
-  _accel->_stat_scratch_read_bytes+=data.size()*DATA_WIDTH;
+  _accel->_stat_scr_bytes_rd+=data.size()*data_width;
+  _accel->_stat_scratch_read_bytes+=data.size()*data_width;
 
   if(_accel->_ssim->in_roi()) {
-    add_bw(stream.src(), stream.dest(), 1, data.size()*DATA_WIDTH);
+    add_bw(stream.src(), stream.dest(), 1, data.size()*data_width);
     _accel->_stat_scratch_reads++;
   }
-
   return data;
 }
 
@@ -3344,7 +3378,8 @@ float scratch_read_controller_t::calc_min_port_ready() {
     auto& stream = *_scr_port_streams[i];
     if(stream.stream_active()) {
       auto& in_vp = _accel->port_interf().in_port(stream.first_in_port());
-      if(in_vp.can_push_vp(SCR_WIDTH/DATA_WIDTH)) {
+      int data_width = stream._data_width;
+      if(in_vp.can_push_vp(SCR_WIDTH/data_width)) {
         float num_ready = in_vp.instances_ready();
         if(num_ready < min_port_ready) {
           min_port_ready=num_ready;
@@ -3613,6 +3648,7 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
       auto& stream = *sp;
 
       if(stream.stream_active()) {
+        int data_width = stream._data_width;
         bool skip_check = SS_DEBUG::UNREAL_INPUTS;
 
         if(min_port_ready==-2) {
@@ -3624,15 +3660,17 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
         float num_ready = first_in_vp.instances_ready();
 
         // if(skip_check || (first_in_vp.can_push_vp(SCR_WIDTH/DATA_WIDTH)
-        if(skip_check || (first_in_vp.can_push_vp(SCR_WIDTH/DATA_WIDTH)
+        if(skip_check || (first_in_vp.can_push_vp(SCR_WIDTH/data_width)
               && num_ready == min_port_ready)) {
-          vector<SBDT> data = read_scratch(stream, true); // true means it is banked
+          // vector<SBDT> data = read_scratch(stream, true); // true means it is banked
+          vector<uint8_t> data = read_scratch(stream, true);
 
           for(int in_port : stream.in_ports()) {
             auto& in_vp = _accel->port_interf().in_port(in_port);
-            for(auto d : data) {
-              in_vp.push_data(d);
-            }
+            in_vp.push_data(data); // just push in the vector
+            /*for(auto d : data) {
+              in_vp.push_data_byte(d);
+            }*/
 
             if(stream.stride_fill() && stream.stride_hit()) {
               in_vp.fill(true);
@@ -3719,8 +3757,10 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
   }
 
   // FOR LINEAR SCRATCHPAD
-  for(i=0; i < _scr_port_streams.size(); ++i) {
-    _which_rd=(_which_rd+1)>=_scr_port_streams.size() ? 0:_which_rd+1;
+  // for(i=0; i < _scr_port_streams.size(); ++i) {
+  for(i=0; i < _read_streams.size(); ++i) {
+    _which_rd=(_which_rd+1)>=_read_streams.size() ? 0:_which_rd+1;
+    // _which_rd=(_which_rd+1)>=_scr_port_streams.size() ? 0:_which_rd+1;
     base_stream_t* s = _read_streams[_which_rd];
 
     if(auto* sp = dynamic_cast<affine_read_stream_t*>(s)) {
@@ -3736,16 +3776,19 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
 
         auto& first_in_vp = _accel->port_interf().in_port(stream.first_in_port());
         float num_ready = first_in_vp.instances_ready();
+        int data_width = first_in_vp.get_port_width();
 
-        if(skip_check || (first_in_vp.can_push_vp(SCR_WIDTH/DATA_WIDTH)
+        if(skip_check || (first_in_vp.can_push_vp(SCR_WIDTH/data_width)
               && num_ready == min_port_ready)) {
-          vector<SBDT> data = read_scratch(stream, false); // false means it is linear
+          // vector<SBDT> data = read_scratch(stream, false); // false means it is linear
+          vector<uint8_t> data = read_scratch(stream, false);
 
           for(int in_port : stream.in_ports()) {
             auto& in_vp = _accel->port_interf().in_port(in_port);
-            for(auto d : data) {
+            in_vp.push_data(data);
+            /*for(auto d : data) {
               in_vp.push_data(d);
-            }
+            }*/
 
             if(stream.stride_fill() && stream.stride_hit()) {
               in_vp.fill(true);
@@ -3816,18 +3859,26 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
           // while(addr < max_addr && stream.stream_active() //enough in dest
           while(!_accel->isLinearSpad(addr) && addr < max_addr && stream.stream_active() //enough in dest
                                 && out_vp.mem_size()) { //enough in source
-            SBDT val = out_vp.pop_out_data();
-            // timestamp(); cout << "POPPED b/c port->scratch WRITE: " << out_vp.port() << " " << out_vp.mem_size() << "\n";
 
-            assert( ((int)addr >= 0) && (addr + DATA_WIDTH <= SCRATCH_SIZE));
+            // data_width of this port is now 8-bit (or 1-byte)
+            // SBDT val = out_vp.pop_out_data();
+            uint8_t val = out_vp.pop_out_custom_data<uint8_t>(); // this is te SBDT form of data
+
+            if(SS_DEBUG::MEM_REQ){
+               timestamp(); cout << "POPPED b/c port->scratch WRITE: " << out_vp.port() << " " << out_vp.mem_size() << "\n";
+            }
+
+            int data_width = out_vp.get_port_width();
+            assert( ((int)addr >= 0) && (addr + data_width <= SCRATCH_SIZE));
             //std::memcpy(&_accel->scratchpad[addr], &val, sizeof(SBDT));
-            _accel->write_scratchpad(addr, &val, sizeof(SBDT),stream.id());
+            // _accel->write_scratchpad(addr, &val, sizeof(SBDT),stream.id());
+            _accel->write_scratchpad(addr, &val, data_width, stream.id());
 
             addr = stream.pop_addr();
 
-            bytes_written+=DATA_WIDTH;
-            _accel->_stat_scr_bytes_wr+=DATA_WIDTH;
-            _accel->_stat_scratch_write_bytes+=DATA_WIDTH;
+            bytes_written+=data_width;
+            _accel->_stat_scr_bytes_wr+=data_width;
+            _accel->_stat_scratch_write_bytes+=data_width;
           }
           if(_accel->_ssim->in_roi()) {
              add_bw(stream.src(), stream.dest(), 1, bytes_written);
@@ -3840,6 +3891,8 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
             if(SS_DEBUG::VP_SCORE2) {
               cout << "SOURCE: PORT->SCR\n";
             }
+			// to debug
+			// _accel->print_spad_addr(0,16);
             out_vp.set_status(port_data_t::STATUS::FREE);
             delete_stream(_which_wr,sp);
           }
@@ -4138,11 +4191,14 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
   // belongs to linear spad)
   // if((!issued_linear_on_banked_scr) || (issued_linear_on_banked_scr && !is_linear_addr_banked)) {
   if(_accel->_linear_spad) {
-    for(unsigned i = 0; i < (_port_scr_streams.size()); ++i) {
-      _which_linear_wr=(_which_linear_wr+1)>=(_port_scr_streams.size())?0:_which_linear_wr+1;
+    // for(unsigned i = 0; i < (_port_scr_streams.size()); ++i) {
+    for(unsigned i = 0; i < (_write_streams.size()); ++i) {
+      // _which_linear_wr=(_which_linear_wr+1)>=(_port_scr_streams.size())?0:_which_linear_wr+1;
+      _which_linear_wr=(_which_linear_wr+1)>=(_write_streams.size())?0:_which_linear_wr+1;
 
       base_stream_t* s = _write_streams[_which_linear_wr];
       if(auto* sp = dynamic_cast<affine_write_stream_t*>(s)) {
+      // if(auto* sp = dynamic_cast<affine_write_stream_t*>(s)) {
 
         auto& stream = *sp;
 
@@ -4158,18 +4214,24 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
             uint64_t bytes_written=0;
             while(_accel->isLinearSpad(addr) && addr < max_addr && stream.stream_active() //enough in dest
                                   && out_vp.mem_size()) { //enough in source
-              SBDT val = out_vp.pop_out_data();
-              // timestamp(); cout << "POPPED b/c port->scratch WRITE: " << out_vp.port() << " " << out_vp.mem_size() << "\n";
 
-              assert( ((int)addr >= 0) && (addr + DATA_WIDTH <= SCRATCH_SIZE));
+              int data_width=stream._data_width;
+              uint8_t val = out_vp.pop_out_custom_data<uint8_t>();
+
+              if(SS_DEBUG::SCR_ACC) {
+                 // timestamp(); cout << "POPPED b/c port->linear scratch WRITE: " << out_vp.port() << " " << out_vp.mem_size() << "\n";
+                 timestamp(); cout << "POPPED b/c port->linear scratch WRITE: " << stream._out_port << " with width: " << stream._data_width << " " << out_vp.mem_size() << "\n";
+              }
+
+              assert( ((int)addr >= 0) && (addr + data_width <= SCRATCH_SIZE+LSCRATCH_SIZE));
               //std::memcpy(&_accel->scratchpad[addr], &val, sizeof(SBDT));
-              _accel->write_scratchpad(addr, &val, sizeof(SBDT),stream.id());
+              _accel->write_scratchpad(addr, &val, data_width,stream.id());
 
               addr = stream.pop_addr();
 
-              bytes_written+=DATA_WIDTH;
-              _accel->_stat_scr_bytes_wr+=DATA_WIDTH;
-              _accel->_stat_scratch_write_bytes+=DATA_WIDTH;
+              bytes_written+=data_width;
+              _accel->_stat_scr_bytes_wr+=data_width;
+              _accel->_stat_scratch_write_bytes+=data_width;
             }
             if(_accel->_ssim->in_roi()) {
                add_bw(stream.src(), stream.dest(), 1, bytes_written);
@@ -4182,6 +4244,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
               if(SS_DEBUG::VP_SCORE2) {
                 cout << "SOURCE: PORT->SCR\n";
               }
+			  // _accel->print_spad_addr(SCRATCH_SIZE, SCRATCH_SIZE+16);
               out_vp.set_status(port_data_t::STATUS::FREE);
               delete_stream(_which_wr,sp);
             }
@@ -4759,6 +4822,20 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
   _soft_config.in_ports_name.resize(64);
   _soft_config.out_ports_name.resize(64);
 
+  /*
+  // HACK
+  // port_data_t& cur_in_port = _port_interf.in_port(23);
+  // cur_in_port.set_port_width(8); // 1-byte
+
+  // CHECKME: for dedicated ports
+  for(int i=23; i<26; i++) {
+    // port_data_t& cur_in_port = _port_interf.in_port(i);
+	  // cur_in_port.set_port_width(8); // 1-byte
+	// cout << vec_input->name() << " : " << cur_in_port.get_port_width() << endl;
+	  port_data_t& cur_out_port = _port_interf.out_port(i);
+	  cur_out_port.set_port_width(8); // 1-byte
+  }
+  */
 
   for (int ind = 0; ind < _dfg->num_vec_input(); ++ind) {
       SSDfgVec* vec_in = _dfg->vec_in(ind);
@@ -4786,9 +4863,8 @@ void accel_t::configure(addr_t addr, int size, uint64_t* bits) {
       port_data_t& cur_in_port = _port_interf.in_port(i);
 
 	  // dgra
-	  // cur_in_port._port_width = vec_in->get_port_width();
 	  cur_in_port.set_port_width(vec_in->get_port_width());
-	  cout << vec_input->name() << " : " << cur_in_port.get_port_width() << endl;
+	  // cout << vec_input->name() << " : " << cur_in_port.get_port_width() << endl;
 
       if(vec_input->is_temporal()) {
         cur_in_port.set_port_map(
