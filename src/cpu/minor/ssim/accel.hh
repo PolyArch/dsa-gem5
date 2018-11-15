@@ -952,6 +952,7 @@ class scratch_write_controller_t : public data_controller_t {
     SBDT _inc;
     int _opcode;
     int _value_bytes;
+    int _output_bytes;
   };
 
   // FIXME: how do we make it group? (val,addr)
