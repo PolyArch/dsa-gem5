@@ -523,7 +523,7 @@ accel_t::accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim) :
   _ssconfig = new SSModel(ssconfig_file);
   _ssconfig->setMaxEdgeDelay(_fu_fifo_len);
   _port_interf.initialize(_ssconfig);
-  
+
   scratchpad.resize(SCRATCH_SIZE);
   if(_linear_spad){
     scratchpad.resize(SCRATCH_SIZE+LSCRATCH_SIZE);
@@ -1086,7 +1086,7 @@ void accel_t::cycle_cgra_backpressure() {
       // push the data to the CGRA output port only if discard is not 0
 
       // cout << "Allowed to pop output: " << data[0] << " and next output: " << data[1] << "\n";
-      cout << "Allowed to pop output: " << std::hex << data[0] << "\n";
+      // cout << "Allowed to pop output: " << std::hex << data[0] << "\n";
 
       if(in_roi()) {
         _stat_comp_instances += 1;
@@ -3035,16 +3035,26 @@ void dma_controller_t::ind_read_req(indirect_stream_t& stream) {
       }
     }
 
-    assert( ((addr & 0x7)==0) && "bottom 3 bits must be zero for word-loads");
+    // assert( ((addr & 0x7)==0) && "bottom 3 bits must be zero for word-loads");
 
-    // int index = (addr - base_addr)     /8; //TODO: configurable data size please!
     int index = addr - base_addr;
     // number of values we want to read at that index is the port_width
     // imap.push_back(index);
+
+    /*
+    // TODO: only set to 8
     int data_width = stream._data_width;
     for(int i=0; i<data_width; ++i){
       imap.push_back(index+i);
     }
+    */
+
+    int data_bytes = stream._data_bytes;
+    for(int i=0; i<data_bytes; ++i){
+      imap.push_back(index+i);
+    }
+
+
 
     if(SS_DEBUG::MEM_REQ) {
       _accel->timestamp();
@@ -3304,7 +3314,7 @@ vector<uint8_t> scratch_read_controller_t::read_scratch(
 	} else {
       assert(addr + data_width >= SCRATCH_SIZE && addr + data_width <= SCRATCH_SIZE+LSCRATCH_SIZE);
 	}
-    
+
 	_accel->read_scratchpad(&val[0], addr, data_width, stream.id());
 
     if(SS_DEBUG::SCR_ACC) {
@@ -3881,7 +3891,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
 			int data_width = out_vp.get_port_width();
             assert( ((int)addr >= 0) && (addr + data_width <= SCRATCH_SIZE));
 			scr_write(addr, stream, out_vp);
-            
+
             // data_width of this port is now 8-bit (or 1-byte) -- should be
 			// variable
             // SBDT val = out_vp.pop_out_data();
@@ -3980,7 +3990,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
       // _atomic_scr_issued_requests
       auto& stream = *sp;
       SBDT loc; SBDT inc;
-      SBDT val = 0;
+      SBDT input_val = 0;
       addr_t scr_addr, max_addr;
       // int count_ops_val = 0, count_ops_addr = 0;
       int logical_banks = NUM_SCRATCH_BANKS;
@@ -4037,7 +4047,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
              // assert(scr_addr + DATA_WIDTH <= SCRATCH_SIZE);
              // assert(scr_addr + DATA_WIDTH/stream._addr_bytes <= SCRATCH_SIZE);
              // vidushi: don't know why it was showing 4000
-             assert(scr_addr + DATA_WIDTH/stream._value_bytes <= 16384);
+             assert(scr_addr + DATA_WIDTH/stream._value_bytes <= SCRATCH_SIZE);
 
              inc = out_val.peek_out_data();
              inc = stream.cur_val(inc);
@@ -4047,6 +4057,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
              temp_req._inc = inc;
              temp_req._opcode = stream._op_code;
              temp_req._value_bytes = stream._value_bytes;
+             temp_req._output_bytes = stream._output_bytes;
 
              // bank_id = (scr_addr >> (sizeof(addr_t)*8-(int)(log(logical_banks)/log(2)))) & (logical_banks-1);
              // this is because scratchpad is byte addressable and now we want
@@ -4147,23 +4158,23 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
                std::cout << "REAL EXECUTION, update at scr_addr: " << scr_addr << " at bankid: " << i << " with inc value: " << inc << "\n";
                std::cout << "Available requests at the bank queue are: " << _atomic_scr_issued_requests[i].size() << "\n";
             }
-            _accel->read_scratchpad(&val, scr_addr, request._value_bytes, stream.id());
-
-            // opcode = stream._op_code;
-
+            // uint8_t input_val[8] = {0};
+            _accel->read_scratchpad(&input_val+8-request._value_bytes, scr_addr, request._value_bytes, stream.id());
+            // SBDT mod_val = get_sbdt_val(input_val);
             switch(opcode){
-              case 0: val += inc;
+              case 0: input_val += inc;
                       break;
-              case 1: val = std::max(val, inc);
+              case 1: input_val = std::max(input_val, inc);
                       break;
-              case 2: val = std::min(val, inc);
+              case 2: input_val = std::min(input_val, inc);
                       break;
-              case 3: val = inc; // update
+              case 3: input_val = inc; // update
                       break;
               default: cout << "Invalid opcode\n";
                       break;
             }
-            _accel->write_scratchpad(scr_addr, &val, request._value_bytes,stream.id());
+            _accel->write_scratchpad(scr_addr, &input_val+8-request._output_bytes, request._output_bytes,stream.id());
+
             // _accel->_stat_total_scratch_bank_requests++;
             _accel->_stat_scratch_bank_requests_executed++;
 
