@@ -3757,59 +3757,59 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
   }
 
   // FOR LINEAR SCRATCHPAD
-  // for(i=0; i < _scr_port_streams.size(); ++i) {
-  for(i=0; i < _read_streams.size(); ++i) {
-    _which_rd=(_which_rd+1)>=_read_streams.size() ? 0:_which_rd+1;
-    // _which_rd=(_which_rd+1)>=_scr_port_streams.size() ? 0:_which_rd+1;
-    base_stream_t* s = _read_streams[_which_rd];
+  if(_accel->_linear_spad) {
+    for(i=0; i < _read_streams.size(); ++i) {
+      _which_rd=(_which_rd+1)>=_read_streams.size() ? 0:_which_rd+1;
+      // _which_rd=(_which_rd+1)>=_scr_port_streams.size() ? 0:_which_rd+1;
+      base_stream_t* s = _read_streams[_which_rd];
 
-    if(auto* sp = dynamic_cast<affine_read_stream_t*>(s)) {
-      auto& stream = *sp;
+      if(auto* sp = dynamic_cast<affine_read_stream_t*>(s)) {
+        auto& stream = *sp;
 
-      if(stream.stream_active()) {
-        bool skip_check = SS_DEBUG::UNREAL_INPUTS;
+        if(stream.stream_active()) {
+          bool skip_check = SS_DEBUG::UNREAL_INPUTS;
 
-        if(min_port_ready==-2) {
-          min_port_ready=calc_min_port_ready();
-        }
-        if(!skip_check && min_port_ready>=MAX_PORT_READY) continue;
-
-        auto& first_in_vp = _accel->port_interf().in_port(stream.first_in_port());
-        float num_ready = first_in_vp.instances_ready();
-        int data_width = first_in_vp.get_port_width();
-
-        if(skip_check || (first_in_vp.can_push_vp(SCR_WIDTH/data_width)
-              && num_ready == min_port_ready)) {
-          // vector<SBDT> data = read_scratch(stream, false); // false means it is linear
-          vector<uint8_t> data = read_scratch(stream, false);
-
-          for(int in_port : stream.in_ports()) {
-            auto& in_vp = _accel->port_interf().in_port(in_port);
-            in_vp.push_data(data);
-            /*for(auto d : data) {
-              in_vp.push_data(d);
-            }*/
-
-            if(stream.stride_fill() && stream.stride_hit()) {
-              in_vp.fill(true);
-            }
+          if(min_port_ready==-2) {
+            min_port_ready=calc_min_port_ready();
           }
+          if(!skip_check && min_port_ready>=MAX_PORT_READY) continue;
 
-          bool is_empty = stream.check_set_empty();
-          if(is_empty) {
-            _accel->process_stream_stats(stream);
+          auto& first_in_vp = _accel->port_interf().in_port(stream.first_in_port());
+          float num_ready = first_in_vp.instances_ready();
+          int data_width = first_in_vp.get_port_width();
 
-            if(SS_DEBUG::VP_SCORE2) {
-              cout << "SOURCE: SCR->PORT\n";
-            }
+          if(skip_check || (first_in_vp.can_push_vp(SCR_WIDTH/data_width)
+                && num_ready == min_port_ready)) {
+            vector<uint8_t> data = read_scratch(stream, false);
+
             for(int in_port : stream.in_ports()) {
               auto& in_vp = _accel->port_interf().in_port(in_port);
-              in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE,
-                  stream.fill_mode());
+              in_vp.push_data(data);
+              /*for(auto d : data) {
+                in_vp.push_data(d);
+              }*/
+
+              if(stream.stride_fill() && stream.stride_hit()) {
+                in_vp.fill(true);
+              }
             }
-            delete_stream(_which_rd,sp);
+
+            bool is_empty = stream.check_set_empty();
+            if(is_empty) {
+              _accel->process_stream_stats(stream);
+
+              if(SS_DEBUG::VP_SCORE2) {
+                cout << "SOURCE: SCR->PORT\n";
+              }
+              for(int in_port : stream.in_ports()) {
+                auto& in_vp = _accel->port_interf().in_port(in_port);
+                in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE,
+                    stream.fill_mode());
+              }
+              delete_stream(_which_rd,sp);
+            }
+            break;
           }
-          break;
         }
       }
     }
@@ -3887,7 +3887,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
             // SBDT val = out_vp.pop_out_data();
             // uint8_t val = out_vp.pop_out_custom_data<uint8_t>(); // this is te SBDT form of data
 
-            if(SS_DEBUG::MEM_REQ){
+            if(SS_DEBUG::SCR_ACC){
                timestamp(); cout << "POPPED b/c port->scratch WRITE: " << out_vp.port() << " " << out_vp.mem_size() << "\n";
             }
 
@@ -4235,7 +4235,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
                                   && out_vp.mem_size()) { //enough in source
 
               int data_width=stream._data_width;
-              assert( ((int)addr >= 0) && (addr + data_width <= SCRATCH_SIZE+LSCRATCH_SIZE));
+              assert( ((int)addr >= 0) && (addr + data_width >= SCRATCH_SIZE) && (addr + data_width <= SCRATCH_SIZE+LSCRATCH_SIZE));
 			  scr_write(addr, stream, out_vp);
               // uint8_t val = out_vp.pop_out_custom_data<uint8_t>();
 
