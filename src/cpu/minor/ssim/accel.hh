@@ -287,17 +287,13 @@ public:
   void push_data(T data, bool valid=true) {
     int data_size = sizeof(T);
     assert(data_size=_port_width && "data size doesn't match the port width in dfg");
-    /* --I don't know why is this here
+
     if(_bytes_in_word!=0) {
       std::cout << "It's not cool to leave random incomplete words in the port, "
            << "please be more tidy next time\n";
       assert(0);
-    }*/
- if(_bytes_in_word!=0) {
-      std::cout << "It's not cool to leave random incomplete words in the port, "
-           << "please be more tidy next time\n";
-      assert(0);
     }
+
  // Consider the case when it tries to push SBDT data but it's width is just
  // 16-bits?
     // std::cout << sizeof(T) << " " << _port_width << "\n";
@@ -544,8 +540,8 @@ public:
   uint64_t total_pushed() { return _total_pushed; }
 
   void set_port_width(int num_bits){
-	assert(num_bits%8==0);
-	_port_width=num_bits/8;
+    assert(num_bits%8==0);
+    _port_width=num_bits/8;
   }
 
   int get_port_width(){
