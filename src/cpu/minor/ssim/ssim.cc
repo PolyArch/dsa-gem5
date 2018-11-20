@@ -504,20 +504,18 @@ void ssim_t::multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_por
           s->set_orig();
           add_bitmask_stream(s);
 		} else { // inherited by the affine_base_stream
-		  // direct_remote_scr_stream_t* s = new direct_remote_scr_stream_t();
-		  direct_remote_scr_stream_t* s = new direct_remote_scr_stream_t(mask, access_size);
+		  int data_width = 8;
+		  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
+            if(_context_bitmask & b) {
+              auto& out_vp = accel_arr[i]->port_interf().out_port(out_port);
+              data_width = out_vp.get_port_width(); // added for dgra
+            }
+          }
+		  direct_remote_scr_stream_t* s = new direct_remote_scr_stream_t(mask, access_size, stride, data_width);
+		  s->_scr_type = spad_type; // this should not be required now?
           s->_num_elements = num_elem; // this is num_strides
           s->_out_port = out_port;
-          // s->_core_mask = -1;
-          // s->_remote_port = -1;
-	      // s->_addr_port = rem_port;
-          // s->_remote_scr_base_addr = mask; // this would now be scratch_base_addr
-          // s->_mem_addr = mask; // this would now be scratch_base_addr
-		  // TODO: add these things in the function declaration
-		  // s->_access_size = access_size;
-          s->_scr_type = spad_type; // this should not be required now?
-		  s->_stride = stride;
-          s->set_orig();
+		  s->set_orig();
           add_bitmask_stream(s);
 		}
     }
@@ -541,7 +539,15 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
   int core_d = (flags==1) ? -1 : 1;
 
   if(flags == 0) {
-    s = new port_port_stream_t(out_port,in_port,num_elem,repeat,repeat_str);
+	// TODO: put assert that the in_port data width should be less than the out_port
+    int data_width = 8;
+	for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
+      if(_context_bitmask & b) {
+        auto& in_vp = accel_arr[i]->port_interf().in_port(in_port);
+        data_width = in_vp.get_port_width(); // added for dgra
+      }
+    }
+    s = new port_port_stream_t(out_port,in_port,num_elem,repeat,repeat_str, data_width);
   } else {
     auto S = new remote_port_stream_t(out_port,in_port,num_elem,
         repeat,repeat_str,core_d,true);
@@ -670,6 +676,12 @@ void ssim_t::write_constant(int num_strides, int in_port,
                     uint64_t flags) { //new
 
   const_port_stream_t* s = new const_port_stream_t();
+  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
+    if(_context_bitmask & b) {
+      auto& in_vp = accel_arr[0]->port_interf().in_port(in_port);
+      s->_data_width = in_vp.get_port_width(); // added for dgra
+    }
+  }
   s->add_in_port(in_port);
 
   if((flags&1)==0) {

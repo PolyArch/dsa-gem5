@@ -2772,7 +2772,7 @@ void scratch_write_controller_t::write_scratch_remote_ind(remote_core_net_stream
   SBDT val[8];
   while(addr_vp.mem_size() && val_vp.mem_size() && stream.stream_active() &&
       bytes_written < 64) {
-    int64_t meta_info = addr_vp.pop_out_data(); // no offset here
+    uint64_t meta_info = addr_vp.pop_out_data(); // no offset here
     // this addr should have both num_bytes and addr info
     addr_t addr = meta_info & 65535; // for 16-bits
 	if(SS_DEBUG::NET_REQ){
@@ -3407,8 +3407,9 @@ void network_controller_t::multicast_data(
   uint64_t bytes_written=0;
   uint64_t remote_elem_sent=0;
 
-  int message_size = 8; // num of 64 64-bit elements to be written
-  if(stream._num_elements<8){
+  int data_width = out_vp.get_port_width();
+  int message_size = 64/data_width; // num of data_width elements to be written
+  if(stream._num_elements<64/data_width){
 	message_size=stream._num_elements;
   }
   int8_t val[64]; // number of 8-byte elements to send
@@ -3416,12 +3417,14 @@ void network_controller_t::multicast_data(
     while(stream.stream_active() //enough in dest
                         && out_vp.mem_size() && bytes_written<64) { //enough in source (64-bytes)
       // peek out and pop later if message buffer size was full?
+	  // POP data_width amount of data
       SBDT data = out_vp.pop_out_data();
-	  for(int i=0; i<8; i++){
-		val[i+remote_elem_sent*8] = (data >> (i*8)) & 255;
+	  for(int i=0; i<data_width; i++){
+		val[i+remote_elem_sent*data_width] = (data >> (i*8)) & 255;
+		// val[i+remote_elem_sent*data_width] = data[i];
 	  }
 
-      bytes_written += DATA_WIDTH;
+      bytes_written += data_width;
       remote_elem_sent+=1;
       stream._num_elements--;
 
@@ -3434,7 +3437,7 @@ void network_controller_t::multicast_data(
     // _accel->_lsq->push_spu_req(remote_in_port, val, bytes_written, stream._core_mask);
 	// // num_bytes = message_size*sizeof(int64_t)
     // _accel->_lsq->push_spu_req(remote_in_port, val, message_size*8, stream._core_mask);
-    _accel->_lsq->push_spu_req(remote_in_port, val, remote_elem_sent*8, stream._core_mask);
+    _accel->_lsq->push_spu_req(remote_in_port, val, remote_elem_sent*data_width, stream._core_mask);
   }
   if(_accel->_ssim->in_roi()) {
     // add_bw(stream.src(), stream.dest(), 1, bytes_written);
@@ -3501,8 +3504,8 @@ void network_controller_t::write_direct_remote_scr(direct_remote_scr_stream_t& s
   uint64_t remote_elem_sent=0;
 
   int8_t val[64]; // there will be only 1 base address
-  int message_size = 8; // num of 64-bit elements to be written
-  if(stream._num_elements<8){
+  int message_size = 64/stream._data_width; // num of data_width elements to be written
+  if(stream._num_elements<64/stream._data_width){
 	message_size=stream._num_elements;
   }
   if(stream.stream_active() && val_vp.mem_size() >= message_size) {
@@ -3513,7 +3516,8 @@ void network_controller_t::write_direct_remote_scr(direct_remote_scr_stream_t& s
     int spad_offset_bits = 0;
     uint64_t scr_offset=0;
     spad_offset_bits = (int)log2(SCRATCH_SIZE+LSCRATCH_SIZE);
-    int cores = 64;
+	// TODO: set thisas environment variable
+    int cores = NUM_SPU_CORES;
     int dest_core_id = (final_scr_addr >> spad_offset_bits) & (cores-1); // last bits?
     if(SS_DEBUG::NET_REQ){
       std::cout << "dest_core_id: " << dest_core_id << "\n";
@@ -3523,15 +3527,15 @@ void network_controller_t::write_direct_remote_scr(direct_remote_scr_stream_t& s
             && val_vp.mem_size() && bytes_written<64) { //enough in source (64-bytes)
       // peek out and pop later if message buffer size was full?
       SBDT data = val_vp.pop_out_data();
-	  for(int i=0; i<8; i++){
-	    val[remote_elem_sent*8+i] = (data >> (i*8)) & 255;
+	  for(int i=0; i<stream._data_width; i++){
+	    val[remote_elem_sent*stream._data_width+i] = (data >> (i*8)) & 255;
 	  }
 
 	  // addr_t final_scr_addr = base_addr + index;
       // printf("val: %ld and addr: %ld\n",val,final_scr_addr);
       // FIXME: check if this is correct
       final_scr_addr = stream.cur_addr();
-      bytes_written += DATA_WIDTH;
+      bytes_written += stream._data_width;
       remote_elem_sent+=1;
       stream._num_elements--;
 
@@ -3543,7 +3547,7 @@ void network_controller_t::write_direct_remote_scr(direct_remote_scr_stream_t& s
     }
     // _accel->_lsq->push_spu_scr_wr_req(stream._scr_type, val, scr_offset, dest_core_id, stream.id());
     // num_bytes = remote_elem_sent*8
-    _accel->_lsq->push_spu_scr_wr_req(&val[0], remote_elem_sent*8, scr_offset, dest_core_id, stream.id());
+    _accel->_lsq->push_spu_scr_wr_req(&val[0], remote_elem_sent*stream._data_width, scr_offset, dest_core_id, stream.id());
   }
   if(_accel->_ssim->in_roi()) {
     // add_bw(stream.src(), stream.dest(), 1, bytes_written);
@@ -3607,10 +3611,10 @@ void network_controller_t::cycle() {
       break;
         }
       } else if(auto* sp = dynamic_cast<remote_port_multicast_stream_t*>(s)) {
-      // remote_port_multicast_stream_t stream = *sp;
-      auto& stream = *sp;
-	  if(stream.stream_active()) {
-        port_data_t& out_vp = _accel->port_interf().out_port(stream._out_port);
+        // remote_port_multicast_stream_t stream = *sp;
+        auto& stream = *sp;
+	    if(stream.stream_active()) {
+          port_data_t& out_vp = _accel->port_interf().out_port(stream._out_port);
 
         // we can send max of message_size*bus_wisth messages in 1 cycle or till the queue is full (Oh, this bus is also 512-bit bus)
 	    multicast_data(stream);
@@ -4159,7 +4163,9 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
                std::cout << "Available requests at the bank queue are: " << _atomic_scr_issued_requests[i].size() << "\n";
             }
             // uint8_t input_val[8] = {0};
-            _accel->read_scratchpad(&input_val+8-request._value_bytes, scr_addr, request._value_bytes, stream.id());
+            // _accel->read_scratchpad(&input_val+8-request._value_bytes, scr_addr, request._value_bytes, stream.id());
+			// read the bitwidth of the output type from scratchpad
+            _accel->read_scratchpad(&input_val+8-request._output_bytes, scr_addr, request._value_bytes, stream.id());
             // SBDT mod_val = get_sbdt_val(input_val);
             switch(opcode){
               case 0: input_val += inc;
@@ -4332,15 +4338,17 @@ void port_controller_t::cycle() {
 
     if(vp_out.mem_size() && port_in_okay ) { // okay go for it
 
+	  int data_width = stream._data_width; 
       uint64_t total_pushed=0;
       for(int i = 0; i < PORT_WIDTH &&
-            vp_out.mem_size() && stream.stream_active();i+=DATA_WIDTH) {
+            vp_out.mem_size() && stream.stream_active();i+=data_width) {
         SBDT val = vp_out.pop_out_data();
         //timestamp(); cout << "POPPED b/c port->port WRITE: " << vp_out.port() << " " << vp_out.mem_size()  << "\n";
 
         for(int in_port : stream.in_ports()) {
           port_data_t& vp_in = pi.in_port(in_port);
-          vp_in.push_data(val);
+          // vp_in.push_data(val);
+		  vp_in.push_data(vp_in.get_byte_vector(val, data_width));
         }
 
         stream._num_elements--;
@@ -4388,13 +4396,17 @@ void port_controller_t::cycle() {
 
     if(first_vp_in.mem_size() < VP_LEN) { // enough space, so go for it
       uint64_t total_pushed=0;
+	  int data_width = stream._data_width;
 
       for(int i = 0; i < PORT_WIDTH && first_vp_in.mem_size() < VP_LEN
-                  && stream.stream_active(); i+=DATA_WIDTH) {
+                  && stream.stream_active(); i+=data_width) {
 
         for(int in_port : stream.in_ports()) {
           port_data_t& vp_in = pi.in_port(in_port);
-          vp_in.push_data(stream.pop_item());
+		  // should send vector version of that
+		  SBDT val = stream.pop_item();
+          vp_in.push_data(vp_in.get_byte_vector(val, data_width));
+          // vp_in.push_data(stream.pop_item());
         }
         total_pushed++;
       }

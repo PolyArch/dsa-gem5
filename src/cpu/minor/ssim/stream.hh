@@ -457,6 +457,7 @@ struct const_port_stream_t : public base_stream_t {
   addr_t _constant2;
   addr_t _num_elements2=0;
   addr_t _iters_left=0;
+  int _data_width=8;
 
   //running counters
   addr_t _elements_left;
@@ -575,13 +576,14 @@ struct port_port_stream_t : public base_stream_t {
     _num_elements=0;
   }
 
-  port_port_stream_t(int out_port, int in_port,
-                     uint64_t num_elem, int repeat, int repeat_str) {
+  port_port_stream_t(int out_port, int in_port, uint64_t num_elem, 
+					 int repeat, int repeat_str, int data_width) {
     _out_port=out_port;
     _in_ports.push_back(in_port);
     _num_elements=num_elem;
     _repeat_in=repeat;
     _repeat_str=repeat_str;
+	_data_width=data_width;
     set_orig();
   }
 
@@ -591,6 +593,7 @@ struct port_port_stream_t : public base_stream_t {
   virtual int repeat_str() {return _repeat_str;}
 
   int _out_port;
+  int _data_width=8; // 8 by default
   addr_t _num_elements=0;
   addr_t _orig_elements;
 
@@ -631,10 +634,11 @@ struct remote_port_stream_t : public port_port_stream_t {
   }
 
   //core describes relative core position (-1 or left, +1 for right)
+  // TODO: sending fix 8-byte for port->remote port, make it configurable
   remote_port_stream_t(int out_port, int in_port, uint64_t num_elem,
                        int repeat, int repeat_str, int core, bool is_source) :
                        port_port_stream_t(out_port,in_port,num_elem,
-                           repeat,repeat_str) {
+                           repeat,repeat_str, 8) {
 
     _in_ports.clear();
 
@@ -880,7 +884,7 @@ remote_port_multicast_stream_t(int out_port, int remote_in_port, uint64_t num_el
   int64_t _core_mask = 0;
   int64_t _remote_port = -1;
   int64_t _out_port;
-  addr_t _num_elements=0;
+  addr_t _num_elements=0; // TODO: this is num_bytes
   addr_t _orig_elements;
 
   virtual void set_orig() {
@@ -974,13 +978,15 @@ struct direct_remote_scr_stream_t : public remote_scr_stream_t {
   direct_remote_scr_stream_t() {
     _num_elements=0;
   }
-  direct_remote_scr_stream_t(addr_t base_addr, int64_t acc_size) {
+  direct_remote_scr_stream_t(addr_t base_addr, int64_t acc_size, int64_t stride, int data_width) {
     _num_elements=0;
 	_remote_scr_base_addr = base_addr;
 	_cur_addr = _remote_scr_base_addr;
-	assert(acc_size >= sizeof(SBDT));
+	_stride = stride;
+	_data_width = data_width;
+	assert(acc_size >= _data_width);
 	_access_size = acc_size;
-	_max_count = _access_size/sizeof(SBDT); // assuming we can send max 8-bytes at a time
+	_max_count = _access_size/_data_width; // assuming we can send max data width at a time
   }
 
   /*
@@ -1002,6 +1008,7 @@ struct direct_remote_scr_stream_t : public remote_scr_stream_t {
   addr_t _cur_addr = -1;
   int _count = 0;
   int _max_count = 0;
+  int _data_width = 8; // default is 8-byte
   // int _addr_port = -1;
   // out_port is val port
   // int64_t _out_port;
@@ -1027,7 +1034,7 @@ struct direct_remote_scr_stream_t : public remote_scr_stream_t {
 	if(_count == 0) { // the first base addr
 	  _count++;
     } else if(_count <= _max_count) { // the next ones in acc_size dimension
-	  _cur_addr += sizeof(SBDT);
+	  _cur_addr += _data_width;
 	  _count++;
 	} else {
 	  _cur_addr = _cur_addr - _access_size + _stride; // (_stride >= _access_size)
@@ -1046,6 +1053,7 @@ struct direct_remote_scr_stream_t : public remote_scr_stream_t {
     std::cout << "\tval_port=" << _out_port;
     // std::cout << "\tremote_scratch_base_addr:" << _mem_addr << "\telem_left=" << _num_elements;
     std::cout << "\telem_left=" << _num_elements;
+    std::cout << "\tdata_width=" << _data_width;
 
     base_stream_t::print_status(); // configuration may not have been done yet!
   }

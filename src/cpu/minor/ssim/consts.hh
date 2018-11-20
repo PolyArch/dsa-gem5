@@ -13,6 +13,7 @@ typedef uint64_t addr_t;
 #define NUM_SCRATCH_BANKS 64
 #define MAX_BANK_BUFFER_SIZE 8
 // #define NUM_SCRATCH_BANKS 1024
+#define NUM_SPU_CORES 64 // for global address space
 
 #define SB_TIMING
 

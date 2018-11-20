@@ -199,16 +199,16 @@ public:
   template <typename T>
   T get_custom_val(std::vector<uint8_t> v, int len){
 	if(len==1) {
-	  int8_t val=0;
+	  uint8_t val=0;
 	  return merge_bytes(val,v,len);
 	} else if(len==2) {
-	  int16_t val=0;
+	  uint16_t val=0;
 	  return merge_bytes(val,v,len);
     } else if(len==4) {
-	  int32_t val=0;
+	  uint32_t val=0;
 	  return merge_bytes(val,v,len);
     } else {
-	  int64_t val=0;
+	  uint64_t val=0;
 	  return merge_bytes(val,v,len);
 	}
 	assert(0);
@@ -929,7 +929,7 @@ class scratch_write_controller_t : public data_controller_t {
 
   bool release_df_barrier(){
     assert(_df_count!=-1);
-	printf("df_count: %ld current_writes: %ld\n",_df_count,_remote_scr_writes);
+	// printf("df_count: %ld current_writes: %ld\n",_df_count,_remote_scr_writes);
     return (_remote_scr_writes==_df_count);
   }
 
