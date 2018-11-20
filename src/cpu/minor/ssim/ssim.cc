@@ -533,7 +533,8 @@ void ssim_t::write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int 
 
 //The reroute function handles either local recurrence, or remote data transfer
 void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
-                     int repeat, int repeat_str, uint64_t flags) {
+                     int repeat, int repeat_str, uint64_t flags,
+                     uint64_t access_size) {
   base_stream_t* s=NULL, *r=NULL;
 
   int core_d = (flags==1) ? -1 : 1;
@@ -550,9 +551,9 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
     s = new port_port_stream_t(out_port,in_port,num_elem,repeat,repeat_str, data_width);
   } else {
     auto S = new remote_port_stream_t(out_port,in_port,num_elem,
-        repeat,repeat_str,core_d,true);
+        repeat,repeat_str,core_d,true, access_size);
     auto R = new remote_port_stream_t(out_port,in_port,num_elem,
-        repeat,repeat_str,core_d,false);
+        repeat,repeat_str,core_d,false, access_size);
     S->_remote_stream=R; // tie together <3
     R->_remote_stream=S;
     s=S;

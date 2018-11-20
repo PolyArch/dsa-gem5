@@ -548,7 +548,7 @@ class ExecContext : public ::ExecContext
                 thread.getSSReg(SS_OUT_PORT),      thread.getSSReg(SS_IN_PORT),
                 thread.getSSReg(SS_NUM_ELEM),      thread.getSSReg(SS_REPEAT), 
                 thread.getSSReg(SS_REPEAT_STRETCH),
-                thread.getSSReg(SS_FLAGS));     
+                thread.getSSReg(SS_FLAGS), thread.getSSReg(SS_ACCESS_SIZE));
             break;
             case SS_IND_PRT: ssim.indirect(
                 thread.getSSReg(SS_IND_PORT),      thread.getSSReg(SS_IND_TYPE),
@@ -581,31 +581,31 @@ class ExecContext : public ::ExecContext
                 thread.getSSReg(SS_SCRATCH_ADDR),  thread.getSSReg(SS_CONSTANT),
                 thread.getSSReg(SS_NUM_STRIDES));
             break;
-			case SS_REM_PORT: ssim.multicast_remote_port(
-				// thread.getSSReg(SS_NUM_ELEM), thread.getSSReg(SS_MASK),  
-                thread.getSSReg(SS_NUM_ELEM), thread.getSSReg(SS_SCRATCH_ADDR),  
+            case SS_REM_PORT: ssim.multicast_remote_port(
+                // thread.getSSReg(SS_NUM_ELEM), thread.getSSReg(SS_MASK),  
+                thread.getSSReg(SS_NUM_ELEM), thread.getSSReg(SS_SCRATCH_ADDR),
                 thread.getSSReg(SS_OUT_PORT), thread.getSSReg(SS_IN_PORT),
-				thread.getSSReg(SS_FLAGS), thread.getSSReg(SS_ADDR_TYPE),
-				thread.getSSReg(SS_STRIDE), thread.getSSReg(SS_ACCESS_SIZE));    
+                thread.getSSReg(SS_FLAGS), thread.getSSReg(SS_ADDR_TYPE),
+                thread.getSSReg(SS_STRIDE), thread.getSSReg(SS_ACCESS_SIZE));
             break;
-			case SS_WAIT_DF: ssim.insert_df_barrier(
+            case SS_WAIT_DF: ssim.insert_df_barrier(
                 thread.getSSReg(SS_NUM_ELEM), thread.getSSReg(SS_ADDR_TYPE));
-			break;
+            break;
             case SS_WAIT:
                 if(thread.getSSReg(SS_WAIT_MASK) == 0) {
-                    ssim.set_not_in_use();
-                    DPRINTF(SS, "Set SS Not in Use\n");
+                  ssim.set_not_in_use();
+                  DPRINTF(SS, "Set SS Not in Use\n");
                 } else if(thread.getSSReg(SS_WAIT_MASK) == 2) {
-                     DPRINTF(SS, "Wait Compute\n");         
+                  DPRINTF(SS, "Wait Compute\n");         
                 } else if(thread.getSSReg(SS_WAIT_MASK) == 16) {
-                     DPRINTF(SS, "Wait mem write\n");
+                  DPRINTF(SS, "Wait mem write\n");
                 } else {
-                     ssim.insert_barrier(thread.getSSReg(SS_WAIT_MASK));
+                  ssim.insert_barrier(thread.getSSReg(SS_WAIT_MASK));
                 }
             break;
             default:
                 DPRINTF(SS, "UNIMPLEMENTED COMMAND\n");
-                break;
+            break;
         }
         //RESET REPEAT to 1 -- since this is by far the most common case
         setSSReg(1,SS_REPEAT);

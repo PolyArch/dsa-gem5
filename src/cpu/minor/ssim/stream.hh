@@ -576,14 +576,18 @@ struct port_port_stream_t : public base_stream_t {
     _num_elements=0;
   }
 
-  port_port_stream_t(int out_port, int in_port, uint64_t num_elem, 
-					 int repeat, int repeat_str, int data_width) {
+  port_port_stream_t(int out_port, int in_port,
+                     uint64_t num_elem, int repeat, int repeat_str,
+                     uint64_t padding_size, int data_width) {
     _out_port=out_port;
     _in_ports.push_back(in_port);
     _num_elements=num_elem;
     _repeat_in=repeat;
     _repeat_str=repeat_str;
 	_data_width=data_width;
+    // For now we still assume CGRA, DGRA features for padding will be supported later...
+    // assert(padding_size % 8 == 0);
+    _padding_size = padding_size / 8;
     set_orig();
   }
 
@@ -597,8 +601,12 @@ struct port_port_stream_t : public base_stream_t {
   addr_t _num_elements=0;
   addr_t _orig_elements;
 
+  addr_t _padding_size;
+  addr_t _padding_cnt;
+
   virtual void set_orig() {
     _orig_elements = _num_elements;
+    _padding_cnt = 0;
   }
 
   virtual uint64_t data_volume() {return _num_elements * sizeof(SBDT);}
@@ -622,7 +630,9 @@ struct port_port_stream_t : public base_stream_t {
               << " in_port:";
     print_in_ports();
     std::cout  << " repeat:" << _repeat_in
-              << " elem_left=" << _num_elements;
+               << " elem_left=" << _num_elements;
+    std::cout << " padding_size=" << _padding_size
+              << " current_pad=" << _padding_cnt;
     base_stream_t::print_status();
   }
 };
@@ -636,9 +646,9 @@ struct remote_port_stream_t : public port_port_stream_t {
   //core describes relative core position (-1 or left, +1 for right)
   // TODO: sending fix 8-byte for port->remote port, make it configurable
   remote_port_stream_t(int out_port, int in_port, uint64_t num_elem,
-                       int repeat, int repeat_str, int core, bool is_source) :
+                       int repeat, int repeat_str, int core, bool is_source, int access_size) :
                        port_port_stream_t(out_port,in_port,num_elem,
-                           repeat,repeat_str, 8) {
+                           repeat,repeat_str, access_size, 8) {
 
     _in_ports.clear();
 
