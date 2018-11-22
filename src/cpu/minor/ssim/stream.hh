@@ -305,7 +305,6 @@ struct affine_base_stream_t : public base_stream_t {
       _num_strides--;
       _access_size+=_stretch;
     }
-	// FIXME:CHECKME: not using bytes in access anymore!!!
 	 // std::cout << "bytes in access: " << _bytes_in_access << " abs_Access_size: " << abs_access_size() << " data_width: " << _data_width << "\n";
      assert((_bytes_in_access<abs_access_size()
            || _access_size==0) && "something went wrong");
@@ -995,6 +994,7 @@ struct direct_remote_scr_stream_t : public remote_scr_stream_t {
 	_stride = stride;
 	_data_width = data_width;
 	assert(acc_size >= _data_width);
+	assert(acc_size%data_width==0);
 	_access_size = acc_size;
 	_max_count = _access_size/_data_width; // assuming we can send max data width at a time
   }
@@ -1040,16 +1040,19 @@ struct direct_remote_scr_stream_t : public remote_scr_stream_t {
   }
 
   // Oh, 2 dimensions?
+  // TODO: use the affine_base_stream for this
   virtual addr_t cur_addr() {
 	if(_count == 0) { // the first base addr
 	  _count++;
-    } else if(_count <= _max_count) { // the next ones in acc_size dimension
+    } else if(_count < _max_count) { // the next ones in acc_size dimension
 	  _cur_addr += _data_width;
 	  _count++;
 	} else {
-	  _cur_addr = _cur_addr - _access_size + _stride; // (_stride >= _access_size)
+	  _cur_addr = _cur_addr - _access_size + _stride + _data_width;
 	  _count = 0;
+	  _count++;
 	  // _num_strides--;
+	  _num_elements--;
 	}
 	return _cur_addr;
   }

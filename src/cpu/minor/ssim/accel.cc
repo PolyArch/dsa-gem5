@@ -906,7 +906,7 @@ void accel_t::cycle_indirect_interf() {
 
     // we only allow 8 words in the output vector port, since there's already
     // buffering in the input vector port, so it would be kindof cheating
-    if (i == 23 || i == 24) {
+    if (i == 23 || i == 24 || i == 25 || i == 26) { // dedicated ports
       while (ind_in_port.mem_size() && ind_out_port.mem_size() < 64) {
         ind_out_port.push_data(ind_in_port.pop_in_custom_data<uint8_t>());
       }
@@ -1009,6 +1009,7 @@ void accel_t::cycle_cgra_backpressure() {
         vector<bool> data_valid;
         SBDT val = 0;
         bool valid = false;
+		int npart = 64/vec_in->get_port_width(); // from scheduler
         for (unsigned port_idx = 0; port_idx < cur_in_port.port_cgra_elem();
              ++port_idx) { // port_idx are the scalar cgra nodes
           int cgra_port = cur_in_port.cgra_port_for_index(port_idx);
@@ -1017,18 +1018,17 @@ void accel_t::cycle_cgra_backpressure() {
           }
 
           // get the data of the instance of CGRA FIFO
-          val = cur_in_port.value_of(port_idx, 0); // Why 0?: check this out!
-          valid = cur_in_port.valid_of(port_idx, 0);
-          // validity.push_back(valid); and pass it to push_vector
-          data_valid.push_back(valid);
-          data.push_back(val);
+		  // go the local vec_size times
+		  for(int j=(port_idx*npart); j<vec_in->get_vp_size() && j<((port_idx+1)*npart); ++j) {
+            val = cur_in_port.value_of(port_idx, 0); // Why 0?: check this out!
+            valid = cur_in_port.valid_of(port_idx, 0);
+            data_valid.push_back(valid);
+            data.push_back(val);
+		  }
         }
-        // cout << "Allowed to push input: " << data[0] << "\n"; // " and next
-        // input: " << data[1] << "\n"; cout << "Port name: " <<
-        // vec_in->gamsName() << " ";
         /*
         if(SS_DEBUG::COMP) {
-  cout << "Allowed to push input: " << std::hex << data[0] << "\n";
+          cout << "Allowed to push input: " << std::hex << data[0] << "\n";
         }
         */
 
@@ -1080,12 +1080,14 @@ void accel_t::cycle_cgra_backpressure() {
   for (int i = 0; i < active_out_ports.size(); ++i) {
     int port_index = active_out_ports[i];
     auto &cur_out_port = _port_interf.out_port(port_index);
-    // cout << "OUTPUT PORT WIDTH: " << cur_out_port.get_port_width() << endl;
-    int len = cur_out_port.port_vec_elem();
+    
+	int len = cur_out_port.port_vec_elem();
     SSDfgVec *vec_out =
         _sched->vportOf(make_pair(false /*output*/, port_index));
     SSDfgVecOutput *vec_output = dynamic_cast<SSDfgVecOutput *>(vec_out);
     assert(vec_output != NULL && "output port pointer is null\n");
+
+	// len = vec_output->get_vp_size();
 
     if (_dfg->can_pop_output(vec_output, len)) {
       // cout << "Allowed to pop output\n";
@@ -1105,10 +1107,20 @@ void accel_t::cycle_cgra_backpressure() {
       int j = 0;
       for (j = 0; j < len; ++j) {
         if (data_valid[j]) {
-          vector<uint8_t> v = cur_out_port.get_byte_vector(
-              data[j], cur_out_port.get_port_width());
-          // cur_out_port.push_data(data[j]);
-          cur_out_port.push_data(v);
+          // vector<uint8_t> v = cur_out_port.get_byte_vector(
+          //     data[j], cur_out_port.get_port_width());
+          // cur_out_port.push_data(v);
+
+		  int n_times = 8/cur_out_port.get_port_width();
+		  n_times = min(n_times, vec_output->get_vp_size()-j*n_times);
+		  // n_times = min(n_times, len-j*n_times);
+
+		  // push vec_len number of elements
+		  for(int k=0; k<n_times; ++k) {
+			vector<uint8_t> v = cur_out_port.get_byte_vector(
+              data[j] >> (k*vec_output->get_port_width()), cur_out_port.get_port_width());
+            cur_out_port.push_data(v);
+		  }
         } else {
           // std::cout << "Some invalid data at the output port\n";
         }
@@ -3636,7 +3648,7 @@ void network_controller_t::write_direct_remote_scr(
       final_scr_addr = stream.cur_addr();
       bytes_written += stream._data_width;
       remote_elem_sent+=1;
-      stream._num_elements--;
+      // stream._num_elements--;
 
       if (SS_DEBUG::NET_REQ) {
         timestamp();
@@ -4123,7 +4135,6 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
       auto &stream = *sp;
       SBDT loc;
       SBDT inc;
-      SBDT input_val = 0;
       addr_t scr_addr, max_addr;
       // int count_ops_val = 0, count_ops_addr = 0;
       int logical_banks = NUM_SCRATCH_BANKS;
@@ -4272,6 +4283,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
         }
       }
 
+      SBDT input_val = 0;
       // Don't release stream until all requests are served
       if (!atomic_scr_issued_requests_active()) {
         bool is_empty = stream.check_set_empty();
@@ -4305,7 +4317,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
             // uint8_t input_val[8] = {0};
             // _accel->read_scratchpad(&input_val+8-request._value_bytes, scr_addr, request._value_bytes, stream.id());
 			// read the bitwidth of the output type from scratchpad
-            _accel->read_scratchpad(&input_val+8-request._output_bytes, scr_addr, request._value_bytes, stream.id());
+            _accel->read_scratchpad(&input_val+8-request._output_bytes, scr_addr, request._output_bytes, stream.id());
             // SBDT mod_val = get_sbdt_val(input_val);
             switch (opcode) {
             case 0:
@@ -4457,15 +4469,15 @@ void scratch_write_controller_t::push_remote_wr_req(int8_t *val, int num_bytes,
   port_data_t &addr_vp = _accel->port_interf().out_port(NET_ADDR_PORT);
   port_data_t &val_vp = _accel->port_interf().out_port(NET_VAL_PORT);
 
-  assert(num_bytes % 8 == 0);
+  // assert(num_bytes % 8 == 0);
   int64_t meta_info =
       num_bytes << 16 | scr_addr; // Unnecessary encoding/decoding
   // addr_vp.push_mem_data(meta_info);
-  addr_vp.push_data(meta_info);
+  addr_vp.push_data(meta_info); // this is by-default 8-bytes
   // addr_vp.push_mem_data(addr);
-  // FIXME:CHECKME: This should work fine?
   for (int i = 0; i < num_bytes; i++) {
-    val_vp.push_data_byte(val[i]);
+    // val_vp.push_data_byte(val[i]);
+	val_vp.push_data(val_vp.get_byte_vector(val[i],1));
     // cout << "data_byte being pushed to net_in ports: " << val[i] << "\n";
   }
 }
@@ -4525,7 +4537,6 @@ void port_controller_t::cycle() {
               vp_in.fill(stream.fill_mode());
             }
           }
-
         }
 
 
@@ -4589,7 +4600,7 @@ void port_controller_t::cycle() {
         }
         total_pushed++;
       }
-      add_bw(stream.src(), stream.dest(), 1, total_pushed * DATA_WIDTH);
+      add_bw(stream.src(), stream.dest(), 1, total_pushed * data_width);
 
       bool is_empty = stream.check_set_empty();
       if (is_empty) {
@@ -5126,6 +5137,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
 
     // dgra
     cur_in_port.set_port_width(vec_in->get_port_width());
+    cur_in_port.set_vec_len(vec_in->get_vp_size());
     // cout << vec_input->name() << " : " << cur_in_port.get_port_width() <<
     // endl;
 
@@ -5179,6 +5191,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
     // port mapping of 1 vector port - cgra_port_num: vector offset elements
     auto &cur_out_port = _port_interf.out_port(i);
     cur_out_port.set_port_width(vec_out->get_port_width());
+    cur_out_port.set_vec_len(vec_out->get_vp_size());
     cout << vec_output->name() << " : " << cur_out_port.get_port_width()
          << endl;
 

@@ -25,7 +25,7 @@ ssim_t::ssim_t(Minor::LSQ* lsq) : _lsq(lsq) {
   //TODO: inform accel_arr
 
   // default things
-  for(int i=23; i<25; ++i) {
+  for(int i=22; i<27; ++i) {
     port_data_t& cur_out_port = accel_arr[0]->_port_interf.out_port(i);
     cur_out_port.set_port_width(8);
     
@@ -386,10 +386,10 @@ void ssim_t::load_dma_to_port(addr_t mem_addr,
   in_ports.push_back(in_port);
   affine_read_stream_t* s = new affine_read_stream_t(LOC::DMA, mem_addr, stride,
       access_size, stretch, num_strides, in_ports, repeat, repeat_str);
+
    for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
     if(_context_bitmask & b) {
-
-      auto& in_vp = accel_arr[0]->port_interf().in_port(in_port);
+      auto& in_vp = accel_arr[i]->port_interf().in_port(in_port);
       s->_data_width = in_vp.get_port_width(); // added for dgra
     }
   }
@@ -512,7 +512,7 @@ void ssim_t::multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_por
             }
           }
 		  direct_remote_scr_stream_t* s = new direct_remote_scr_stream_t(mask, access_size, stride, data_width);
-		  s->_scr_type = spad_type; // this should not be required now?
+		  s->_scr_type = 0; // spad_type; // this should not be required now?
           s->_num_elements = num_elem; // this is num_strides
           s->_out_port = out_port;
 		  s->set_orig();
@@ -548,7 +548,7 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
         data_width = in_vp.get_port_width(); // added for dgra
       }
     }
-    s = new port_port_stream_t(out_port,in_port,num_elem,repeat,repeat_str, data_width);
+    s = new port_port_stream_t(out_port,in_port,num_elem,repeat,repeat_str, access_size, data_width);
   } else {
     auto S = new remote_port_stream_t(out_port,in_port,num_elem,
         repeat,repeat_str,core_d,true, access_size);

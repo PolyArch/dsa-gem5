@@ -96,6 +96,9 @@ public:
     return std::max(pm_size,1);
   } //num of pairs in mapping
 
+  void set_vec_len(int l) { _vec_len=l; }
+  int get_vec_len() { return _vec_len; }
+
   unsigned port_vec_elem(); //total size elements of the std::vector port
   unsigned port_depth() { return port_vec_elem() / port_cgra_elem();} //depth of queue
   unsigned cgra_port_for_index(unsigned i) { return _port_map[i].first;}
@@ -414,7 +417,6 @@ public:
     }
   }
   unsigned mem_size() {
-      // std::cout << "came to calculate mem_size\n";
       return _mem_data.size(); // size of the deque (_mem_data.size()*_port_width)
   }
   unsigned num_ready() {return _num_ready;}         //Num of ready instances
@@ -525,6 +527,12 @@ public:
     }
     _cgra_data.resize(port_cgra_elem());
     _cgra_valid.resize(port_cgra_elem());
+	// FIXME:TODO
+	// std::cout << "VECTOR SIZE IT RETURNED: " << port_cgra_elem() << "\n";
+    // _cgra_data.resize(port_cgra_elem()*8/_port_width);
+    // _cgra_valid.resize(port_cgra_elem()*8/_port_width);
+
+
     assert(_cgra_data.size() > 0);
   }
 
@@ -559,6 +567,7 @@ private:
   bool _isInput;
   int _port=-1;
   int _port_width=8; // take 8 bytes by default
+  int _vec_len=1; // 1 by default
   int _outstanding=0;
   STATUS _status=STATUS::FREE;
   LOC _loc=LOC::NONE;
