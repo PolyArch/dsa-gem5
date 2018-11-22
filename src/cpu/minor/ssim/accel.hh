@@ -420,6 +420,8 @@ public:
       return _mem_data.size(); // size of the deque (_mem_data.size()*_port_width)
   }
   unsigned num_ready() {return _num_ready;}         //Num of ready instances
+  void reduce_num_ready(unsigned val) { _num_ready = _num_ready - val; }
+  
   unsigned num_in_flight() {return _num_in_flight;}  //outputs in flight
 
   std::string status_string() {
@@ -499,6 +501,7 @@ public:
   STATUS status() {return _status;}
 
   void pop(unsigned instances);  //Throw away data in CGRA input ports
+  void pop_cgra_port(int cgra_port, unsigned instances);  //Throw away data in CGRA input ports
 
   //NOTE:TODO:FIXME: Right now we only support wide maps, so pm is not really
   //necessary -- we construct our own pm from the mask -- maybe fix this later
@@ -527,10 +530,7 @@ public:
     }
     _cgra_data.resize(port_cgra_elem());
     _cgra_valid.resize(port_cgra_elem());
-	// FIXME:TODO
 	// std::cout << "VECTOR SIZE IT RETURNED: " << port_cgra_elem() << "\n";
-    // _cgra_data.resize(port_cgra_elem()*8/_port_width);
-    // _cgra_valid.resize(port_cgra_elem()*8/_port_width);
 
 
     assert(_cgra_data.size() > 0);
