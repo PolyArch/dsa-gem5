@@ -132,24 +132,6 @@ void port_data_t::reset() {
   _total_pushed = 0;
 }
 
-/*
-template <typename T>
-vector<uint8_t> port_data_t::get_byte_vector(T val, int len){
-  std::vector<uint8_t> v;
-  for(int i=0; i<len; i++){
-    v.push_back((val >> (i*8))&255);
-  }
-  return v;
-}
-
-SBDT port_data_t::get_sbdt_val(vector<uint8_t> v, int len){
-  SBDT val = 0;
-  for(int i=0; i<len; i++){
-    val = val | (v << i*8);
-  }
-  return val;
-}
-*/
 
 // total size elements of the vector port
 unsigned port_data_t::port_vec_elem() {
@@ -234,17 +216,6 @@ void port_data_t::reformat_in_work() {
 }
 
 // pop data from input port
-/*
-SBDT port_data_t::pop_in_data() {
-  assert(_mem_data.size());
-  assert(_mem_data.size() == _valid_data.size());
-  SBDT val = _mem_data.front();
-  _mem_data.pop_front();
-  _valid_data.pop_front();
-  return val;
-}
-*/
-
 // It should be allowed to pop only _port_width data
 SBDT port_data_t::pop_in_data() {
   assert(_mem_data.size());
@@ -255,7 +226,8 @@ SBDT port_data_t::pop_in_data() {
   return val;
 }
 
-template <typename T> T port_data_t::pop_in_custom_data() {
+template <typename T> 
+T port_data_t::pop_in_custom_data() {
   assert(_mem_data.size());
   vector<uint8_t> v = _mem_data.front();
   T val = get_custom_val<T>(v, _port_width);
@@ -267,17 +239,6 @@ template <typename T> T port_data_t::pop_in_custom_data() {
 // pop SBDT data from output port
 SBDT port_data_t::pop_out_data() {
   assert(_mem_data.size());
-  /*
-  SBDT ret = 0;
-  int num_chunks = sizeof(SBDT)/_port_width;
-  for(int i=0; i<num_chunks; ++i){
-    SBDT val = peek_out_data();
-    _mem_data.pop_front();
-    _valid_data.pop_front();
-        ret = (ret << (_port_width*8)) | val;
-  }
-  return ret;
-  */
   SBDT val = peek_out_data();
   _mem_data.pop_front();
   _valid_data.pop_front(); // TODO: for now we ignore invalid, hope that's okay?
@@ -327,18 +288,6 @@ void port_data_t::pop(unsigned instances) {
   assert(_mem_data.size() == _valid_data.size());
 }
 
-// Throw away data in CGRA input port
-void port_data_t::pop_cgra_port(int cgra_port, unsigned reqd_to_delete) {
-  assert(_mem_data.size() == _valid_data.size());
-
-    assert(_cgra_data[cgra_port].size() == _cgra_valid[cgra_port].size());
-    assert(_cgra_data[cgra_port].size() >= reqd_to_delete);
-    _cgra_data[cgra_port].erase(_cgra_data[cgra_port].begin(),
-                                _cgra_data[cgra_port].begin() + reqd_to_delete);
-    _cgra_valid[cgra_port].erase(_cgra_valid[cgra_port].begin(),
-                                 _cgra_valid[cgra_port].begin() + reqd_to_delete);
-}
-
 // rearrange data from CGRA
 void port_data_t::reformat_out() {
   while (can_output()) {
@@ -348,9 +297,6 @@ void port_data_t::reformat_out() {
 
 void port_data_t::reformat_out_one_vec() {
   if (can_output() && _mem_data.size() + port_vec_elem() <= VP_LEN) {
-    // this size should be 2, right????
-    // cout << "first: " << _cgra_data[0].size() << " and num_ready: " <<
-    // _num_ready << "\n";
     assert(_cgra_data[0].size() >= _num_ready);
     assert(_cgra_data[0].size() >= 1);
     reformat_out_work();
@@ -393,18 +339,11 @@ void port_data_t::reformat_out_work() {
       assert(_cgra_data[cgra_port].size() > 0);
       assert(_cgra_data[cgra_port].size() == _cgra_valid[cgra_port].size());
 
-      // SBDT val = _cgra_data[cgra_port].front();
       vector<uint8_t> v = _cgra_data[cgra_port].front();
-      // SBDT val = get_sbdt_val(v,v.size());
-      // T val = get_custom_val(v,v.size());
       bool valid = _cgra_valid[cgra_port].front();
 
       // TODO: see if this makes sense later?
-      // if(valid) push_data(val); // don't push back if not valid
-      // if(valid) push_data(get_custom_val(v,v.size())); // don't push back if
-      // not valid
-      if (valid)
-        push_data(v, v.size());
+      if (valid) push_data(v, v.size());
       // if(valid) push_data(val); // don't push back if not valid
 
       _cgra_data[cgra_port].pop_front();
@@ -416,19 +355,12 @@ void port_data_t::reformat_out_work() {
 }
 
 // ----------------------------- Port Interface
-// ------------------------------------ void port_interf_t::initialize(SSModel*
-// ssconfig, Schedule* sched) {
 void port_interf_t::initialize(SSModel *ssconfig) {
   _in_port_data.resize(NUM_IN_PORTS);
   _out_port_data.resize(NUM_OUT_PORTS);
 
   for (auto &x : ssconfig->subModel()->io_interf().in_vports) {
     _in_port_data[x.first].initialize(ssconfig, x.first, true);
-    // int port_index=x.first;
-    // SSDfgVecInput* vec_in = dynamic_cast<SSDfgVecInput*>(
-    //     sched->vportOf(make_pair(true/*input*/,port_index)));
-    // _in_port_data[port_index].initialize(ssconfig,port_index,true,vec_in->get_port_width());
-    // // port, isInput, port_width
   }
 
   for (auto &x : ssconfig->subModel()->io_interf().out_vports) {
@@ -537,6 +469,7 @@ accel_t::accel_t(Minor::LSQ *lsq, int i, ssim_t *ssim)
   }
 
   // optionally used -- this is expensive
+  // TODO: make it compat with linear scr case
   scratchpad_readers.resize(SCRATCH_SIZE);
   scratchpad_writers.resize(SCRATCH_SIZE);
 
@@ -1021,7 +954,12 @@ void accel_t::cycle_cgra_backpressure() {
         vector<bool> data_valid;
         SBDT val = 0;
         bool valid = false;
-		// int npart = 64/vec_in->get_port_width(); // from scheduler
+
+		if(cur_in_port.port_cgra_elem()!=vec_in->get_vp_size()){
+		  cout << cur_in_port.port_cgra_elem() << " " << vec_in->get_vp_size() << " ( " << vec_in->name() << " ) "<< endl;
+		}
+		assert(cur_in_port.port_cgra_elem()==vec_in->get_vp_size() && "Vector size not same in scheduler and simulator");
+
         for (unsigned port_idx = 0; port_idx < cur_in_port.port_cgra_elem();
              ++port_idx) { // port_idx are the scalar cgra nodes
           int cgra_port = cur_in_port.cgra_port_for_index(port_idx);
@@ -1046,8 +984,7 @@ void accel_t::cycle_cgra_backpressure() {
 
         // pop input from CGRA port after it is pushed into the dfg node
         if (!vec_in->backPressureOn()) {
-          bool should_pop =
-              cur_in_port.inc_repeated();
+          bool should_pop = cur_in_port.inc_repeated();
           if (should_pop) {
             cur_in_port.pop(1);
           }
@@ -1065,7 +1002,6 @@ void accel_t::cycle_cgra_backpressure() {
   }
 
   // calling with the default parameters for now
-  // int num_computed = _dfg->cycle_store(print, true);
   num_computed = _dfg->cycle(print, true);
   if (num_computed) {
     _cgra_issued++;
@@ -1085,42 +1021,43 @@ void accel_t::cycle_cgra_backpressure() {
   for (int i = 0; i < active_out_ports.size(); ++i) {
     int port_index = active_out_ports[i];
     auto &cur_out_port = _port_interf.out_port(port_index);
-    
-	// int len = cur_out_port.port_vec_elem();
-	int len = ceil(cur_out_port.get_vec_len()*cur_out_port.get_port_width()/float(8));
-    SSDfgVec *vec_out =
+       
+	SSDfgVec *vec_out =
         _sched->vportOf(make_pair(false /*output*/, port_index));
     SSDfgVecOutput *vec_output = dynamic_cast<SSDfgVecOutput *>(vec_out);
     assert(vec_output != NULL && "output port pointer is null\n");
 
-	// len = vec_output->get_vp_size();
+	int data_width = cur_out_port.get_port_width();
+ 
+	// int len = cur_out_port.port_vec_elem();
+	// we need to send the real vec_outputs
+	// len = ceil(len*cur_out_port.get_port_width()/float(8));
+	// int len = ceil(cur_out_port.port_vec_elem()*cur_out_port.get_port_width()/float(8));
+	int len = ceil(cur_out_port.get_vec_len()*cur_out_port.get_port_width()/float(8));
 
     if (_dfg->can_pop_output(vec_output, len)) {
-      // cout << "Allowed to pop output\n";
       data.clear();       // make sure it is empty here
       data_valid.clear(); // make sure it is empty here
       _dfg->pop_vector_output(vec_output, data, data_valid, len, print, true);
-      // push the data to the CGRA output port only if discard is not 0
 
-      // cout << "Allowed to pop output: " << data[0] << " and next output: " <<
-      // data[1] << "\n"; cout << "Allowed to pop output: " << std::hex <<
-      // data[0] << "\n";
-
+      // cout << "Allowed to pop output: " << data[0] << "\n";
       if (in_roi()) {
         _stat_comp_instances += 1;
       }
 
-      int j = 0;
+      int j = 0, n_times=0;
       for (j = 0; j < len; ++j) {
+        // push the data to the CGRA output port only if discard is not 0
         if (data_valid[j]) {
 
-		  int n_times = 8/cur_out_port.get_port_width();
-		  n_times = min(n_times, vec_output->get_vp_size()-j*n_times);
-
-		  // push vec_len number of elements
+		  n_times = 8/data_width;
+		  if(vec_output->get_vp_size()-j*n_times>0) {
+		    n_times = min(n_times, vec_output->get_vp_size()-j*n_times);
+		  }
+		  // push elements from dfg output port
 		  for(int k=0; k<n_times; ++k) {
 			vector<uint8_t> v = cur_out_port.get_byte_vector(
-              data[j] >> (k*vec_output->get_port_width()), cur_out_port.get_port_width());
+              data[j] >> (k*data_width*8), data_width);
             cur_out_port.push_data(v);
 		  }
         } 
@@ -1442,7 +1379,7 @@ void accel_t::cycle_status() {
 }
 
 void accel_t::cycle_status_backcgra() {
-  if (_soft_config.in_ports_active.size() == 0) {
+  if (_soft_config.in_ports_active_backcgra.size() == 0) {
     return;
   }
 
@@ -5116,12 +5053,6 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
     int i = _sched->vecPortOf(vec_in).second;
     _soft_config.in_ports_active.push_back(i); // activate input vector port
 
-    // dgra
-    // auto& active_in_ports=_soft_config.in_ports_active_backcgra;
-    // auto &cur_in_port = _port_interf.in_port(active_in_ports[i]);
-    // auto &cur_in_port =
-    // _port_interf.in_port(_soft_config.in_ports_active[i]);
-
     SSDfgVecInput *vec_input = dynamic_cast<SSDfgVecInput *>(vec_in);
     assert(vec_input);
 
@@ -5139,38 +5070,36 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
     cur_in_port.set_port_width(vec_in->get_port_width());
     cur_in_port.set_vec_len(vec_in->get_vp_size());
  
+	vector<int> pm_dgra1 = _ssconfig->subModel()->io_interf().in_vports[i]->port_vec();
+	assert(mask.size()==pm_dgra1.size() && mask.size()!=0);
 	vector<bool> mask_dgra_in;
+	vector<int> pm_dgra_in;
 	int n_times=0;
 	// modify mask according to port width
 	for(int i=0; i<mask.size(); ++i) {
 	  n_times=8/cur_in_port.get_port_width();
-	  if(cur_in_port.get_vec_len()>(i*n_times)) {
+	  if(vec_in->get_vp_size()>i*n_times) { // I think this condition is not required
 	    n_times = min(n_times, vec_in->get_vp_size()-i*n_times);
 	  }
 	  for(int j=0; j<n_times; ++j) {
 		mask_dgra_in.push_back(mask[i]);
-	  }
-	}
-
-	vector<int> pm_dgra1 = _ssconfig->subModel()->io_interf().in_vports[i]->port_vec();
-	vector<int> pm_dgra_in;
-	for(int i=0; i<pm_dgra1.size(); ++i) {
-	  n_times=8/cur_in_port.get_port_width();
-	  if(vec_in->get_vp_size()>i*n_times) {
-	    n_times = min(n_times, vec_in->get_vp_size()-i*n_times);
-	  }
-	  for(int j=0; j<n_times; ++j) {
 		pm_dgra_in.push_back(pm_dgra1[i]);
 	  }
 	}
 
-    if (vec_input->is_temporal()) {
-      cur_in_port.set_port_map(
+    if (vec_input->is_temporal()) { // TODO: no support for dgra in temporal region currently
+       cur_in_port.set_port_map(
           _ssconfig->subModel()->io_interf().in_vports[i]->port_vec(), mask,
           vec_input->inputs().size());
     } else {
       cur_in_port.set_port_map(pm_dgra_in, mask_dgra_in, 0);
     }
+
+	// cout << "Final input for input mask size: " << mask.size() << vec_in->name() << endl;
+	// cout << "Final mask size: " << mask_dgra_in.size() << vec_in->name() << endl;
+
+	mask_dgra_in.clear();
+	pm_dgra_in.clear();
 
     // find corresponding dfg nodes
     std::vector<SSDfgInput *> dfg_inputs;
@@ -5218,7 +5147,13 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
     cur_out_port.set_vec_len(vec_out->get_vp_size());
     // cout << vec_output->name() << " : " << cur_out_port.get_port_width()  << endl;
 	
-	vector<bool> mask_dgra_out;
+	vector<int> pm_dgra2 = _ssconfig->subModel()->io_interf().out_vports[i]->port_vec();
+	assert(mask.size()!=0 && pm_dgra2.size()!=0);
+	assert(mask.size()==pm_dgra2.size());
+	vector<bool> mask_dgra_out; vector<int> pm_dgra_out;
+	
+	// cout << "Input for output mask size: " << mask.size() << endl;
+	// Oh, I took just the sequential one
 	for(int i=0; i<mask.size(); ++i) {
 	  int n_times = 8/cur_out_port.get_port_width();
 	  if(vec_out->get_vp_size()>i*n_times) {
@@ -5226,18 +5161,6 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
 	  }
 	  for(int j=0; j<n_times; ++j) {
 		mask_dgra_out.push_back(mask[i]);
-	  }
-	}
-
-	vector<int> pm_dgra2 = _ssconfig->subModel()->io_interf().out_vports[i]->port_vec();
-	vector<int> pm_dgra_out;
-	for(int i=0; i<pm_dgra2.size(); ++i) {
-	  int n_times = 8/cur_out_port.get_port_width();
-	  // n_times = min(n_times, vec_out->get_vp_size()-i*n_times);
-	  if(vec_out->get_vp_size()>i*n_times) {
-	    n_times = min(n_times, vec_out->get_vp_size()-i*n_times);
-	  }
-	  for(int j=0; j<n_times; ++j) {
 		pm_dgra_out.push_back(pm_dgra2[i]);
 	  }
 	}
@@ -5249,6 +5172,11 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
     } else {
       cur_out_port.set_port_map(pm_dgra_out, mask_dgra_out, 0);
     }
+
+	// cout << "Final output mask size: " << mask_dgra_out.size() << vec_output->name() << endl;
+	mask_dgra_out.clear();
+	pm_dgra_out.clear();
+
 
     // find corresponding dfg nodes
     std::vector<SSDfgOutput *> dfg_outputs;

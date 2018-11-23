@@ -89,15 +89,11 @@ public:
   enum class STATUS {FREE, COMPLETE, BUSY};
 
   void initialize(SSModel* ssconfig, int port, bool isInput);
-  // void initialize(SSModel* ssconfig, int port, bool isInput, int port_width);
   void reset(); //reset if configuration happens
   unsigned port_cgra_elem() {
     int pm_size = _port_map.size();
     return std::max(pm_size,1);
   } //num of pairs in mapping
-
-  void set_vec_len(int l) { _vec_len=l; }
-  int get_vec_len() { return _vec_len; }
 
   unsigned port_vec_elem(); //total size elements of the std::vector port
   unsigned port_depth() { return port_vec_elem() / port_cgra_elem();} //depth of queue
@@ -262,7 +258,7 @@ public:
   void push_data(std::vector<uint8_t> data, bool valid=true) {
     int data_size = data.size();
 	if((data_size%_port_width!=0)) {
-	  std::cout << "DATA_SIZE: " << data_size << " PORT_WIDTH: " << _port_width << "\n";
+	  // std::cout << "DATA_SIZE: " << data_size << " PORT_WIDTH: " << _port_width << "\n";
 	}
     assert((data_size%_port_width==0) && "weird data size returned");
 	int num_chunks = data_size/_port_width;
@@ -355,13 +351,7 @@ public:
 
   int port() {return _port;}
 
-/*
-  //Push one val into port
-  void push_cgra_port(unsigned cgra_port, SBDT val, bool valid) {
-    _cgra_data[cgra_port].push_back(val);
-    _cgra_valid[cgra_port].push_back(valid);
-  }
-  */
+  /*
   template <typename T>
   void push_cgra_port(unsigned cgra_port, T val, bool valid) {
     int data_size = sizeof(T);
@@ -383,15 +373,23 @@ public:
     }
 
   }
+  */
+
+  template <typename T>
+  void push_cgra_port(unsigned cgra_port, T val, bool valid) {
+    int data_size = sizeof(T);
+    assert(data_size=_port_width && "data size doesn't match the port width in dfg");
+    std::vector<uint8_t> v = get_byte_vector(val,_port_width);
+    _cgra_data[cgra_port].push_back(v);
+    _cgra_valid[cgra_port].push_back(valid);
+  }
 
   void inc_ready(unsigned instances) {_num_ready+=instances;}
 
   //get the value of an instance in cgra port
   SBDT value_of(unsigned port_idx, unsigned instance) {
     // return _cgra_data[port_idx][instance];
-    // return get_sbdt_val(_cgra_data[port_idx][instance],_port_width);
     SBDT val = get_sbdt_val(_cgra_data[port_idx][instance],_port_width);
-	// std::cout << "Data being read from port" << std::hex << val << std::endl;
 	return val;
   }
 
@@ -417,11 +415,10 @@ public:
     }
   }
   unsigned mem_size() {
-      return _mem_data.size(); // size of the deque (_mem_data.size()*_port_width)
+    // std::cout << "came to calculate mem_size\n";
+    return _mem_data.size(); // size of the deque (_mem_data.size()*_port_width)
   }
   unsigned num_ready() {return _num_ready;}         //Num of ready instances
-  void reduce_num_ready(unsigned val) { _num_ready = _num_ready - val; }
-  
   unsigned num_in_flight() {return _num_in_flight;}  //outputs in flight
 
   std::string status_string() {
@@ -501,7 +498,6 @@ public:
   STATUS status() {return _status;}
 
   void pop(unsigned instances);  //Throw away data in CGRA input ports
-  void pop_cgra_port(int cgra_port, unsigned instances);  //Throw away data in CGRA input ports
 
   //NOTE:TODO:FIXME: Right now we only support wide maps, so pm is not really
   //necessary -- we construct our own pm from the mask -- maybe fix this later
@@ -528,11 +524,9 @@ public:
         }
       }
     }
+	// std::cout << "CGRA ELEM SIZE: " << port_cgra_elem() << "\n";
     _cgra_data.resize(port_cgra_elem());
     _cgra_valid.resize(port_cgra_elem());
-	// std::cout << "VECTOR SIZE IT RETURNED: " << port_cgra_elem() << "\n";
-
-
     assert(_cgra_data.size() > 0);
   }
 
@@ -555,6 +549,13 @@ public:
   int get_port_width(){
 	return _port_width;
   }
+  void set_vec_len(int n){
+	_vec_len = n;
+  }
+
+  int get_vec_len(){
+	return _vec_len;
+  }
 
 private:
   //Programmable Repeat:
@@ -567,7 +568,7 @@ private:
   bool _isInput;
   int _port=-1;
   int _port_width=8; // take 8 bytes by default
-  int _vec_len=1; // 1 by default
+  int _vec_len=1;
   int _outstanding=0;
   STATUS _status=STATUS::FREE;
   LOC _loc=LOC::NONE;
@@ -608,11 +609,8 @@ public:
 
   void reset() {
     for(unsigned i = 0; i < _in_port_data.size(); ++i) {
-	  // if(_in_port_data[i].port() == NET_VAL_PORT || _in_port_data[i].port() == NET_ADDR_PORT){
 	  if(i == NET_VAL_PORT || i == NET_ADDR_PORT){
-		// printf("Detected a network port\n");
 	  } else {
-		// printf("Index of in_port is: %d\n",i);
         _in_port_data[i].reset();
 	  }
     }
