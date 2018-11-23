@@ -90,14 +90,25 @@ public:
 
   void initialize(SSModel* ssconfig, int port, bool isInput);
   void reset(); //reset if configuration happens
+
+  //This function is similar to port_vec_elem, but...
+  //For now, the *only* cases where we don't return vector length is
+  //1. this port is not assigned a vector, or
+  //2. temporal vector: all elements are mapped to the same cgra port
   unsigned port_cgra_elem() {
-    int pm_size = _port_map.size();
-    return std::max(pm_size,1);
-  } //num of pairs in mapping
+    if(_dfg_vec) {
+      if(_dfg_vec->is_temporal()) {
+        return 1;
+      } else {
+        return _dfg_vec->length();
+      }
+    }
+    return 1;
+  } 
 
   unsigned port_vec_elem(); //total size elements of the std::vector port
   unsigned port_depth() { return port_vec_elem() / port_cgra_elem();} //depth of queue
-  unsigned cgra_port_for_index(unsigned i) { return _port_map[i].first;}
+  unsigned cgra_port_for_index(unsigned i) { return i%port_cgra_elem();}
 
   //reset all data
   void reset_data() {
@@ -126,7 +137,7 @@ public:
   }
 
   bool can_push_bytes_vp(int num_bytes) {
-	int num_elem = num_bytes/_port_width;
+    int num_elem = num_bytes/_port_width;
     return num_elem <= num_can_push();
   }
 
@@ -165,7 +176,7 @@ public:
   //utility functions
   template <typename T>
   std::vector<uint8_t> get_byte_vector(T val, int len){
-	// std::cout << "value inside get_byte_vector is: " << val << " and length should be: " << len << "\n";
+    // std::cout << "value inside get_byte_vector is: " << val << " and length should be: " << len << "\n";
     std::vector<uint8_t> v;
     for(int i=0; i<len; i++){
       v.push_back((val >> (i*8)) & 255);
@@ -175,7 +186,7 @@ public:
 
   template <typename T>
   T merge_bytes(T val, std::vector<uint8_t> v, int len) {
-	// std::cout << "while merging\n";
+    // std::cout << "while merging\n";
     for(int i=0; i<len; i++){
       val = val | ((v[i] & 0xFFFFFFFFFFFFFFFF) << (i*8));
       // val = val | ((v[i] & ((uint64_t) 1 << 63) << (i*8));
@@ -185,45 +196,40 @@ public:
 
   SBDT get_sbdt_val(std::vector<uint8_t> v, int len){
     SBDT val = 0;
-	return merge_bytes(val,v,len);
-	/*
+    return merge_bytes(val,v,len);
+    /*
     for(int i=0; i<len; i++){
       val = val | (v[i] << i*8);
     }
     return val;
-	*/
+    */
   }
 
   // FIXME: hack for now--create a map of data_width and datatype
   template <typename T>
   T get_custom_val(std::vector<uint8_t> v, int len){
-	if(len==1) {
-	  uint8_t val=0;
-	  return merge_bytes(val,v,len);
-	} else if(len==2) {
-	  uint16_t val=0;
-	  return merge_bytes(val,v,len);
+    if(len==1) {
+      uint8_t val=0;
+      return merge_bytes(val,v,len);
+    } else if(len==2) {
+      uint16_t val=0;
+      return merge_bytes(val,v,len);
     } else if(len==4) {
-	  uint32_t val=0;
-	  return merge_bytes(val,v,len);
+      uint32_t val=0;
+      return merge_bytes(val,v,len);
     } else {
-	  uint64_t val=0;
-	  return merge_bytes(val,v,len);
-	}
-	assert(0);
-	return -1; // should not come here
+      uint64_t val=0;
+      return merge_bytes(val,v,len);
+    }
+    assert(0);
+    return -1; // should not come here
   }
 
-/*
-  void push_mem_data(SBDT data) {
-    _mem_data.push_back(data);
-  }
-  */
   template <typename T>
   void push_mem_data(T data) {
     int data_size = sizeof(T);
     assert(data_size=_port_width && "data size doesn't match the port width in dfg");
-	// std::cout << "Data being pushed from memory" << std::hex << data << std::endl;
+    // std::cout << "Data being pushed from memory" << std::hex << data << std::endl;
     _mem_data.push_back(get_byte_vector<T>(data,_port_width));
   }
 
@@ -242,41 +248,33 @@ public:
      }
   }
 
-
   // FIXME: find a neater way to do this
   std::vector<uint8_t> slice(std::vector<uint8_t> &x, int start, int end) {
-	// auto first = x.cbegin()+start;
-	// auto last = x.cbegin()+end;
-	// std::vector<uint8_t> ret(first,last);
-	std::vector<uint8_t> ret;
-	for(int i=start; i<end; i++){
-	  ret.push_back(x[i]);
-	}
-	return ret;
+    // auto first = x.cbegin()+start;
+    // auto last = x.cbegin()+end;
+    // std::vector<uint8_t> ret(first,last);
+    std::vector<uint8_t> ret;
+    for(int i=start; i<end; i++){
+      ret.push_back(x[i]);
+    }
+    return ret;
   }
 
   void push_data(std::vector<uint8_t> data, bool valid=true) {
     int data_size = data.size();
-	if((data_size%_port_width!=0)) {
-	  // std::cout << "DATA_SIZE: " << data_size << " PORT_WIDTH: " << _port_width << "\n";
-	}
+    if((data_size%_port_width!=0)) {
+      // std::cout << "DATA_SIZE: " << data_size << " PORT_WIDTH: " << _port_width << "\n";
+    }
     assert((data_size%_port_width==0) && "weird data size returned");
-	int num_chunks = data_size/_port_width;
-    /* --I don't know why is this here
-    if(_bytes_in_word!=0) {
-      std::cout << "It's not cool to leave random incomplete words in the port, "
-           << "please be more tidy next time\n";
-      assert(0);
-    }*/
-	// std::cout << "Num_chunks while pushing to port in mem_data?: " << num_chunks << "\n";
-	for(int i=0; i<num_chunks;++i){
+    int num_chunks = data_size/_port_width;
+    for(int i=0; i<num_chunks;++i){
       // _mem_data.push_back(data);
-	  std::vector<uint8_t> local_data = slice(data, i*_port_width, (i+1)*_port_width);
+      std::vector<uint8_t> local_data = slice(data, i*_port_width, (i+1)*_port_width);
       _mem_data.push_back(local_data);
-	  // std::cout << "Local data pushed in the port is: " << get_sbdt_val(local_data,_port_width)  << "\n";
+      // std::cout << "Local data pushed in the port is: " << get_sbdt_val(local_data,_port_width)  << "\n";
       _valid_data.push_back(valid);
       _total_pushed+=valid;
-	}
+    }
     // _mem_data.push_back(data);
     // _valid_data.push_back(valid);
     // _total_pushed+=valid;
@@ -301,31 +299,17 @@ public:
     for(int i=0; i<num_chunks; ++i){
       // std::cout << "Scalar data beng sent" << std::hex << (data >> (i*_port_width*8)) << std::endl;
       std::vector<uint8_t> v = get_byte_vector(data >> (i*_port_width*8),_port_width);
-    	// std::cout << "Data after conversion to vector and back" << std::hex << get_sbdt_val(v,_port_width) << std::endl;
+        // std::cout << "Data after conversion to vector and back" << std::hex << get_sbdt_val(v,_port_width) << std::endl;
         _mem_data.push_back(v);
         _valid_data.push_back(valid);
         _total_pushed+=valid;
     }
 
-	// std::vector<uint8_t> v = get_byte_vector(data,_port_width);
-	// std::cout << "Data after conversion to vector and back" << std::hex << get_sbdt_val(v,_port_width) << std::endl;
+    // std::vector<uint8_t> v = get_byte_vector(data,_port_width);
+    // std::cout << "Data after conversion to vector and back" << std::hex << get_sbdt_val(v,_port_width) << std::endl;
     // _mem_data.push_back(v);
     // _valid_data.push_back(valid);
     // _total_pushed+=valid;
-  }
-
-
-// FIXME: check if this is ever called
-  template <typename T>
-  void push_data(std::vector<T> data, bool valid=true) {
-    _mem_data.push_back(data);
-    _valid_data.push_back(valid);
-    _total_pushed+=valid;
-  }
-
-
-  void push_data(std::vector<SBDT> data, bool valid=true) {
-    for(auto i : data) push_data(i,valid);
   }
 
   void reformat_in();  //rearrange all data for CGRA
@@ -356,7 +340,7 @@ public:
   void push_cgra_port(unsigned cgra_port, T val, bool valid) {
     int data_size = sizeof(T);
     assert(data_size=_port_width && "data size doesn't match the port width in dfg");
-	// std::cout << "Data being pushed to cgra port" << std::hex << val << std::endl;
+    // std::cout << "Data being pushed to cgra port" << std::hex << val << std::endl;
     // _cgra_data[cgra_port].push_back(val);
     // _cgra_data[cgra_port].push_back(get_byte_vector(val,_port_width));
     // _cgra_valid[cgra_port].push_back(valid);
@@ -390,7 +374,7 @@ public:
   SBDT value_of(unsigned port_idx, unsigned instance) {
     // return _cgra_data[port_idx][instance];
     SBDT val = get_sbdt_val(_cgra_data[port_idx][instance],_port_width);
-	return val;
+    return val;
   }
 
   bool valid_of(unsigned port_idx, unsigned instance) {
@@ -499,37 +483,6 @@ public:
 
   void pop(unsigned instances);  //Throw away data in CGRA input ports
 
-  //NOTE:TODO:FIXME: Right now we only support wide maps, so pm is not really
-  //necessary -- we construct our own pm from the mask -- maybe fix this later
-  //when we are more ambitious
-  void set_port_map(std::vector<int> pm,
-                    std::vector<bool> mask, int temporal) {
-    assert(mask.size() == pm.size()); //masks should be the same!
-    assert(mask.size() != 0);
-    int total=0;
-    for(unsigned i = 0; i < mask.size(); ++i) {
-      if(mask[i]) {
-        if(temporal) {
-           for(unsigned i = 0; i < temporal; ++i) {
-             std::vector<int> v;
-            v.push_back(total);
-             ++total;
-            _port_map.push_back(std::make_pair(pm[i],v));
-           }
-        } else {
-          std::vector<int> v;
-          v.push_back(total);
-          _port_map.push_back(std::make_pair(pm[i],v));
-           ++total;
-        }
-      }
-    }
-	// std::cout << "CGRA ELEM SIZE: " << port_cgra_elem() << "\n";
-    _cgra_data.resize(port_cgra_elem());
-    _cgra_valid.resize(port_cgra_elem());
-    assert(_cgra_data.size() > 0);
-  }
-
   int repeat() {return _repeat;}
 
   void set_repeat(int r, int rs);
@@ -547,32 +500,33 @@ public:
   }
 
   int get_port_width(){
-	return _port_width;
-  }
-  void set_vec_len(int n){
-	_vec_len = n;
+    return _port_width;
   }
 
-  int get_vec_len(){
-	return _vec_len;
+  void set_dfg_vec(SSDfgVec* dfg_vec) {
+    _dfg_vec = dfg_vec;
+    // std::cout << "CGRA ELEM SIZE: " << port_cgra_elem() << "\n";
+    _cgra_data.resize(port_cgra_elem());
+    _cgra_valid.resize(port_cgra_elem());
+    assert(_cgra_data.size() > 0);
   }
-
+ 
 private:
   //Programmable Repeat:
   uint64_t _repeat=1, _repeat_stretch=0;
   int64_t _cur_repeat_lim=1;
   int64_t _num_times_repeated=0;
 
+  SSDfgVec* _dfg_vec = NULL; // null by default
+
   // cgra_port: vec_loc(offset)
   // 23: 1, 2   24: 3, 4
   bool _isInput;
   int _port=-1;
   int _port_width=8; // take 8 bytes by default
-  int _vec_len=1;
   int _outstanding=0;
   STATUS _status=STATUS::FREE;
   LOC _loc=LOC::NONE;
-  std::vector<std::pair<int, std::vector<int> > > _port_map;    //loc_map
   // std::deque<SBDT> _mem_data;
   std::deque<std::vector<uint8_t>> _mem_data;
   std::deque<bool> _valid_data;
@@ -609,22 +563,22 @@ public:
 
   void reset() {
     for(unsigned i = 0; i < _in_port_data.size(); ++i) {
-	  if(i == NET_VAL_PORT || i == NET_ADDR_PORT){
-	  } else {
+      if(i == NET_VAL_PORT || i == NET_ADDR_PORT){
+      } else {
         _in_port_data[i].reset();
-	  }
+      }
     }
     for(unsigned i = 0; i < _out_port_data.size(); ++i) {
-	  // TODO: check if this was useful!
+      // TODO: check if this was useful!
       _out_port_data[i].reset();
-	  /*
-	  if(_out_port_data[i].port() == MEM_SCR_PORT || _out_port_data[i].port() == SCR_MEM_PORT){
-		// printf("Detected a network port\n");
-	  } else {
-	  // printf("Index of out_port is: %d\n",i);
+      /*
+      if(_out_port_data[i].port() == MEM_SCR_PORT || _out_port_data[i].port() == SCR_MEM_PORT){
+        // printf("Detected a network port\n");
+      } else {
+      // printf("Index of out_port is: %d\n",i);
         _out_port_data[i].reset();
-	  }
-	  */
+      }
+      */
     }
 
   }
@@ -932,13 +886,13 @@ class scratch_write_controller_t : public data_controller_t {
 
   bool release_df_barrier(){
     assert(_df_count!=-1);
-	// printf("df_count: %ld current_writes: %ld\n",_df_count,_remote_scr_writes);
+    // printf("df_count: %ld current_writes: %ld\n",_df_count,_remote_scr_writes);
     return (_remote_scr_writes==_df_count);
   }
 
   void set_df_count(int64_t df_count){
-	// printf("Setting df count to be: %ld\n",df_count);
-	// printf("Current remote writes: %ld\n",_remote_scr_writes);
+    // printf("Setting df count to be: %ld\n",df_count);
+    // printf("Current remote writes: %ld\n",_remote_scr_writes);
     _df_count = df_count;
   }
 
@@ -999,7 +953,7 @@ class network_controller_t : public data_controller_t {
     : data_controller_t(host) {
     _dma_c=d; //save this for later
 
-	// it might be needed to port->spad things
+    // it might be needed to port->spad things
     // mask.resize(SCR_WIDTH/DATA_WIDTH);
     reset_stream_engines();
   }
@@ -1280,7 +1234,6 @@ public:
   void print_stats();
   void pedantic_statistics(std::ostream&);
   void print_statistics(std::ostream&);
-//  void reset_statistics();
   void print_status();
 
   void cycle_status();
@@ -1301,19 +1254,6 @@ public:
   bool can_add_stream();
 
   void add_stream(std::shared_ptr<base_stream_t> s) {
-
-    /*if (_ssconfig->dispatch_inorder()) {
-      add_port_based_stream(s);
-      return;
-    }
-    if(dma_scr_stream_t* s_d = dynamic_cast<dma_scr_stream_t*>(s)) {
-      add_dma_scr_stream(s_d);
-      return;
-    }
-    if(scr_dma_stream_t* s_d = dynamic_cast<scr_dma_stream_t*>(s)) {
-      add_scr_dma_stream(s_d);
-      return;
-    }*/
     add_port_based_stream(s);
   }
 
@@ -1381,15 +1321,6 @@ private:
   bool _cleanup_mode=false;
 
   std::ostream* _cgra_dbg_stream=NULL;
-
-  //softsim_interf_t* _sim_interf;
-  //SBDT ld_mem8(addr_t addr,uint64_t& cycle, Minor::MinorDynInstPtr m)
-  //  {return _sim_interf->ld_mem8(addr,cycle,m);}
-  //SBDT ld_mem(addr_t addr, uint64_t& cycle, Minor::MinorDynInstPtr m)
-  //  {return _sim_interf->ld_mem(addr,cycle,m);}
-  //void st_mem(addr_t addr, SBDT val, uint64_t& cycle, Minor::MinorDynInstPtr m)
-  //  {_sim_interf->st_mem(addr,val,cycle,m);}
-  //void st_mem16(addr_t addr, SBDT val, uint64_t& cycle, Minor::MinorDynInstPtr m)
 
   //***timing-related code***
   bool done_internal(bool show, int mask);
@@ -1468,26 +1399,26 @@ private:
 
   void add_port_based_stream(std::shared_ptr<base_stream_t> s) {
     sanity_check_stream(s.get());
-	s->set_soft_config(&_soft_config);
+    s->set_soft_config(&_soft_config);
 
-	/*
+    /*
     // if(auto stream = dynamic_cast<remote_core_net_stream_t*>(s)) {
     if(auto stream = std::dynamic_pointer_cast<remote_core_net_stream_t>(s)) {
        // printf("NETWORK STREAM\n");
-	} else {
+    } else {
        // printf("NOT A NETWORK STREAM\n");
-	  assert(cur_minst());
+      assert(cur_minst());
       s->set_minst(cur_minst());
       forward_progress(); // done in the initialization stage
-	}
-	// std::cout << "size of cmd queue: " << _cmd_queue.size() << "\n";
-	*/
-	assert(cur_minst());
+    }
+    // std::cout << "size of cmd queue: " << _cmd_queue.size() << "\n";
+    */
+    assert(cur_minst());
     s->set_minst(cur_minst());
     _cmd_queue.push_back(s);
     forward_progress();
-	// forward progress later? this was also giving seg fault
-	// printf("stream pushed into the command queue\n");
+    // forward progress later? this was also giving seg fault
+    // printf("stream pushed into the command queue\n");
     verif_cmd(s.get());
   }
 
@@ -1502,14 +1433,14 @@ private:
 
   void read_scratchpad(void* dest, uint64_t scr_addr,
       std::size_t count, int id) {
-	if(_linear_spad){
+    if(_linear_spad){
       assert(scr_addr < SCRATCH_SIZE+LSCRATCH_SIZE);
-	} else {
+    } else {
       assert(scr_addr < SCRATCH_SIZE);
-	}
+    }
 
     std::memcpy(dest, &scratchpad[scr_addr], count);
-	// TODO: change this for linear spad case
+    // TODO: change this for linear spad case
     if(SS_DEBUG::CHECK_SCR_ALIAS) { //TODO: make this check work for unaligned
       for(int i = 0; i < count; i+=sizeof(SBDT)) {
       // for(int i = 0; i < count; i++) {
@@ -1527,7 +1458,7 @@ private:
 
   void write_scratchpad(uint64_t scr_addr, const void* src,
       std::size_t count, int id) {
-	// std::cout << "NEW SCRATCHPAD SIZE: " << scratchpad.size() << "\n";
+    // std::cout << "NEW SCRATCHPAD SIZE: " << scratchpad.size() << "\n";
     std::memcpy(&scratchpad[scr_addr], src, count);
     if(SS_DEBUG::CHECK_SCR_ALIAS) {
       // for(int i = 0; i < count; i++) {
@@ -1568,8 +1499,8 @@ private:
 
   // void push_scratch_remote_buf(int64_t val, int16_t scr_addr){
   void push_scratch_remote_buf(int8_t* val, int num_bytes, int16_t scr_addr){
-	  // _scr_w_c.push_remote_wr_req(val,scr_addr);
-	  _scr_w_c.push_remote_wr_req(val, num_bytes, scr_addr);
+      // _scr_w_c.push_remote_wr_req(val,scr_addr);
+      _scr_w_c.push_remote_wr_req(val, num_bytes, scr_addr);
   }
 
 bool isLinearSpad(addr_t addr){
@@ -1583,15 +1514,15 @@ bool isLinearSpad(addr_t addr){
 void print_spad_addr(int start, int end){
   uint16_t val = 0;
   for(int i=start; i<end; i+=2){
-	memcpy(&val, &scratchpad[i], 2);
-	std::cout << "value is: " << val << "\n";
+    memcpy(&val, &scratchpad[i], 2);
+    std::cout << "value is: " << val << "\n";
   }
 
 }
 /*
   void send_scr_wr_message(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id, int stream_id) {
-	// TODO: write this function
-	// _lsq->push_spu_scr_wr();
+    // TODO: write this function
+    // _lsq->push_spu_scr_wr();
   }
   */
 

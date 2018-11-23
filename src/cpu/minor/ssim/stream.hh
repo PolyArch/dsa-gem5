@@ -108,6 +108,7 @@ struct base_stream_t {
   virtual uint64_t shift_bytes() {return 0;}
   virtual uint64_t offset_list() {return 0;}
   virtual uint64_t ind_mult()    {return 1;}
+  uint64_t data_width()    {return _data_width;}
 
   std::vector<int>& in_ports()      {return _in_ports;}
   int first_in_port()      {return _in_ports[0];}
@@ -136,9 +137,12 @@ struct base_stream_t {
   LOC unit() {return _unit;}
   LOC _unit = LOC::PORT;
 
+  virtual void set_data_width(int d) {_data_width=d;}
+
 protected:
   int      _id=0;
   uint32_t _fill_mode=0; //0: none, 1 post-zero fill, 2 pre-zero fill (not implemented)
+  int _data_width=DATA_WIDTH; 
   bool _empty=false; //presumably, when we create this, it won't be empty
   Minor::MinorDynInstPtr _minst;
   uint64_t _reqs=0;
@@ -218,7 +222,6 @@ struct affine_base_stream_t : public base_stream_t {
   addr_t _mem_addr;     // CURRENT address of stride
   addr_t _num_strides=0;  // CURRENT strides left
   addr_t _orig_strides=0;
-  int _data_width=DATA_WIDTH; // SET this from the program
 
   affine_base_stream_t() {}
 
@@ -305,7 +308,7 @@ struct affine_base_stream_t : public base_stream_t {
       _num_strides--;
       _access_size+=_stretch;
     }
-	 // std::cout << "bytes in access: " << _bytes_in_access << " abs_Access_size: " << abs_access_size() << " data_width: " << _data_width << "\n";
+     // std::cout << "bytes in access: " << _bytes_in_access << " abs_Access_size: " << abs_access_size() << " data_width: " << _data_width << "\n";
      assert((_bytes_in_access<abs_access_size()
            || _access_size==0) && "something went wrong");
 
@@ -456,7 +459,6 @@ struct const_port_stream_t : public base_stream_t {
   addr_t _constant2;
   addr_t _num_elements2=0;
   addr_t _iters_left=0;
-  int _data_width=8;
 
   //running counters
   addr_t _elements_left;
@@ -577,13 +579,12 @@ struct port_port_stream_t : public base_stream_t {
 
   port_port_stream_t(int out_port, int in_port,
                      uint64_t num_elem, int repeat, int repeat_str,
-                     uint64_t padding_size, int data_width) {
+                     uint64_t padding_size) {
     _out_port=out_port;
     _in_ports.push_back(in_port);
     _num_elements=num_elem;
     _repeat_in=repeat;
     _repeat_str=repeat_str;
-	_data_width=data_width;
     // For now we still assume CGRA, DGRA features for padding will be supported later...
     // assert(padding_size % 8 == 0);
     _padding_size = padding_size / 8;
@@ -596,7 +597,6 @@ struct port_port_stream_t : public base_stream_t {
   virtual int repeat_str() {return _repeat_str;}
 
   int _out_port;
-  int _data_width=8; // 8 by default
   addr_t _num_elements=0;
   addr_t _orig_elements;
 
@@ -645,9 +645,9 @@ struct remote_port_stream_t : public port_port_stream_t {
   //core describes relative core position (-1 or left, +1 for right)
   // TODO: sending fix 8-byte for port->remote port, make it configurable
   remote_port_stream_t(int out_port, int in_port, uint64_t num_elem,
-                       int repeat, int repeat_str, int core, bool is_source, int access_size) :
+       int repeat, int repeat_str, int core, bool is_source, int access_size) :
                        port_port_stream_t(out_port,in_port,num_elem,
-                           repeat,repeat_str, access_size, 8) {
+                           repeat,repeat_str, access_size) {
 
     _in_ports.clear();
 
@@ -710,7 +710,6 @@ struct indirect_base_stream_t : public base_stream_t {
   uint64_t _offset_list;
   uint64_t _ind_mult;
   std::vector<char> _offsets;
-  int _data_width=8; // 64-bit datatype by default
 
   addr_t _orig_elements;
   //These get set based on _type
@@ -774,7 +773,7 @@ struct indirect_base_stream_t : public base_stream_t {
 
   addr_t cur_addr(SBDT val) {
     uint64_t index =  (val >> (_index_in_word * _index_bytes * 8)) & _index_mask;
-	  std::cout << "index: " << index << " mult: " << _ind_mult << "\n";
+      std::cout << "index: " << index << " mult: " << _ind_mult << "\n";
     return   _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes;
   }
 
@@ -825,7 +824,7 @@ struct indirect_stream_t : public indirect_base_stream_t {
               << "\tind_type:" << _ind_type  << "\tind_addr:" << _index_addr
               << "\tnum_elem:" << _num_elements << "\tin_port:";
     print_in_ports();
-    std::cout << "\toffets:" << _offset_list;
+    std::cout << "\toffsets:" << _offset_list;
     base_stream_t::print_status();
   }
   virtual bool stream_active() {
@@ -885,7 +884,7 @@ remote_port_multicast_stream_t(int out_port, int remote_in_port, uint64_t num_el
     _core_mask = mask;
     // _is_ready=false;
   }
-	// _core_mask = mask;
+    // _core_mask = mask;
   // this was core_id instead of the mask
   // bool _is_ready = false;
   // int _which_core = 0;
@@ -940,7 +939,7 @@ struct remote_scr_stream_t : public remote_port_multicast_stream_t {
     // _is_ready=false;
     _remote_scr_base_addr = scratch_base_addr;
     _scr_type = spad_type;
-	_addr_port = addr_port;
+    _addr_port = addr_port;
   }
 
   addr_t _remote_scr_base_addr = -1;
@@ -987,16 +986,19 @@ struct direct_remote_scr_stream_t : public remote_scr_stream_t {
   direct_remote_scr_stream_t() {
     _num_elements=0;
   }
-  direct_remote_scr_stream_t(addr_t base_addr, int64_t acc_size, int64_t stride, int data_width) {
+  virtual void set_data_width(int data_width) override {
+    _data_width = data_width;
+    assert(_access_size >= _data_width);
+    assert(_access_size%_data_width==0);
+    _max_count = _access_size/_data_width; // assuming we can send max data width at a time
+  }
+
+  direct_remote_scr_stream_t(addr_t base_addr, int64_t acc_size, int64_t stride) {
     _num_elements=0;
-	_remote_scr_base_addr = base_addr;
-	_cur_addr = _remote_scr_base_addr;
-	_stride = stride;
-	_data_width = data_width;
-	assert(acc_size >= _data_width);
-	assert(acc_size%data_width==0);
-	_access_size = acc_size;
-	_max_count = _access_size/_data_width; // assuming we can send max data width at a time
+    _remote_scr_base_addr = base_addr;
+    _cur_addr = _remote_scr_base_addr;
+    _stride = stride;
+    _access_size = acc_size;
   }
 
   /*
@@ -1007,7 +1009,7 @@ struct direct_remote_scr_stream_t : public remote_scr_stream_t {
     // _is_ready=false;
     _remote_scr_base_addr = scratch_base_addr;
     _scr_type = spad_type;
-	_addr_port = addr_port;
+    _addr_port = addr_port;
   }
   */
 
@@ -1018,7 +1020,6 @@ struct direct_remote_scr_stream_t : public remote_scr_stream_t {
   addr_t _cur_addr = -1;
   int _count = 0;
   int _max_count = 0;
-  int _data_width = 8; // default is 8-byte
   // int _addr_port = -1;
   // out_port is val port
   // int64_t _out_port;
@@ -1042,19 +1043,19 @@ struct direct_remote_scr_stream_t : public remote_scr_stream_t {
   // Oh, 2 dimensions?
   // TODO: use the affine_base_stream for this
   virtual addr_t cur_addr() {
-	if(_count == 0) { // the first base addr
-	  _count++;
+    if(_count == 0) { // the first base addr
+      _count++;
     } else if(_count < _max_count) { // the next ones in acc_size dimension
-	  _cur_addr += _data_width;
-	  _count++;
-	} else {
-	  _cur_addr = _cur_addr - _access_size + _stride + _data_width;
-	  _count = 0;
-	  _count++;
-	  // _num_strides--;
-	  _num_elements--;
-	}
-	return _cur_addr;
+      _cur_addr += _data_width;
+      _count++;
+    } else {
+      _cur_addr = _cur_addr - _access_size + _stride + _data_width;
+      _count = 0;
+      _count++;
+      // _num_strides--;
+      _num_elements--;
+    }
+    return _cur_addr;
   }
 
   virtual void cycle_status() {

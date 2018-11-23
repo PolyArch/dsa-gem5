@@ -33,13 +33,13 @@ ssim_t::ssim_t(Minor::LSQ* lsq) : _lsq(lsq) {
     cur_in_port.set_port_width(8);
   }
 
-	/*
+    /*
   for(int i=23; i<26; i++) {
     // port_data_t& cur_in_port = accel_arr[0]->_port_interf.in_port(i);
-	// cur_in_port.set_port_width(8); // 1-byte
-	// cout << vec_input->name() << " : " << cur_in_port.get_port_width() << endl;
-	port_data_t& cur_out_port = accel_arr[0]->_port_interf.out_port(i);
-	cur_out_port.set_port_width(8);
+    // cur_in_port.set_port_width(8); // 1-byte
+    // cout << vec_input->name() << " : " << cur_in_port.get_port_width() << endl;
+    port_data_t& cur_out_port = accel_arr[0]->_port_interf.out_port(i);
+    cur_out_port.set_port_width(8);
   }
   */
 }
@@ -267,6 +267,16 @@ void ssim_t::add_bitmask_stream(base_stream_t* s, uint64_t ctx) {
       //if(debug && (SS_DEBUG::COMMAND)  ) {
       //  cout << i;
       //}
+      if(s->in_ports().size()!=0) {
+        auto& in_vp = accel_arr[0]->port_interf().in_port(s->first_in_port());
+        s->set_data_width(in_vp.get_port_width()); // added for dgra
+      } else if (s->out_port() != -1) {
+        auto& out_vp = accel_arr[0]->port_interf().out_port(s->out_port());
+        s->set_data_width(out_vp.get_port_width()); // added for dgra
+      } else {
+        s->set_data_width(8);
+      }
+
       accel_arr[i]->add_stream(s_shr);
     }
   }
@@ -387,12 +397,6 @@ void ssim_t::load_dma_to_port(addr_t mem_addr,
   affine_read_stream_t* s = new affine_read_stream_t(LOC::DMA, mem_addr, stride,
       access_size, stretch, num_strides, in_ports, repeat, repeat_str);
 
-   for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
-    if(_context_bitmask & b) {
-      auto& in_vp = accel_arr[i]->port_interf().in_port(in_port);
-      s->_data_width = in_vp.get_port_width(); // added for dgra
-    }
-  }
   add_bitmask_stream(s);
 }
 
@@ -403,12 +407,6 @@ void ssim_t::write_dma(uint64_t garb_elem, int out_port,
   affine_write_stream_t* s = new affine_write_stream_t(LOC::DMA, mem_addr, stride,
       access_size, 0, num_strides, out_port, shift_bytes, garbage);
 
-  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
-    if(_context_bitmask & b) {
-      auto& out_vp = accel_arr[0]->port_interf().out_port(out_port);
-      s->_data_width = out_vp.get_port_width(); // added for dgra
-    }
-  }
   add_bitmask_stream(s);
 }
 
@@ -420,13 +418,7 @@ void ssim_t::load_scratch_to_port(addr_t scratch_addr,
   in_ports.push_back(in_port);
   affine_read_stream_t* s = new affine_read_stream_t(LOC::SCR, scratch_addr, stride,
       access_size, stretch, num_strides, in_ports, repeat, repeat_str);
-	  
-  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
-    if(_context_bitmask & b) {
-      auto& in_vp = accel_arr[0]->port_interf().in_port(in_port);
-      s->_data_width = in_vp.get_port_width(); // added for dgra
-    }
-  }
+      
   add_bitmask_stream(s);
 }
 
@@ -439,13 +431,6 @@ void ssim_t::write_scratchpad(int out_port,
    affine_write_stream_t* s = new affine_write_stream_t(LOC::SCR,
       scratch_addr, num_bytes, num_bytes, 0, 1, out_port, shift_bytes, 0);
 
-
-   for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
-    if(_context_bitmask & b) {
-      auto& out_vp = accel_arr[i]->port_interf().out_port(out_port);
-      s->_data_width = out_vp.get_port_width(); // added for dgra
-    }
-  }
   add_bitmask_stream(s);
 }
 
@@ -477,7 +462,7 @@ void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_
 // TODO: make it neater
 void ssim_t::multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_port, int rem_port, bool dest_flag, bool spad_type, int64_t stride, int64_t access_size) {
     // remote_port_multicast_stream_t* s = NULL;
-	// 0 means port->port stream
+    // 0 means port->port stream
     if (dest_flag==0) {
       remote_port_multicast_stream_t* s = new remote_port_multicast_stream_t();
       s->_core_mask = mask;
@@ -486,38 +471,31 @@ void ssim_t::multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_por
       s->_remote_port = rem_port;
       // s->_unit=LOC::SCR; (probably add a flag for the destination to save a new opcode)
       s->set_orig();
-	    if(SS_DEBUG::NET_REQ){
+        if(SS_DEBUG::NET_REQ){
         printf("Remote stream initialized");
-	      s->print_status();
-	    }
+          s->print_status();
+        }
        add_bitmask_stream(s);
-	  } else {
-	    if(rem_port!=0) { // I hope it can never be 0
+      } else {
+        if(rem_port!=0) { // I hope it can never be 0
           remote_scr_stream_t* s = new remote_scr_stream_t();
           s->_num_elements = num_elem;
           s->_core_mask = -1;
           s->_out_port = out_port;
           s->_remote_port = -1;
-	      s->_addr_port = rem_port;
+          s->_addr_port = rem_port;
           s->_remote_scr_base_addr = mask; // this would now be scratch_base_addr
           s->_scr_type = spad_type;
           s->set_orig();
           add_bitmask_stream(s);
-		} else { // inherited by the affine_base_stream
-		  int data_width = 8;
-		  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
-            if(_context_bitmask & b) {
-              auto& out_vp = accel_arr[i]->port_interf().out_port(out_port);
-              data_width = out_vp.get_port_width(); // added for dgra
-            }
-          }
-		  direct_remote_scr_stream_t* s = new direct_remote_scr_stream_t(mask, access_size, stride, data_width);
-		  s->_scr_type = 0; // spad_type; // this should not be required now?
+        } else { // inherited by the affine_base_stream
+          direct_remote_scr_stream_t* s = new direct_remote_scr_stream_t(mask, access_size, stride);
+          s->_scr_type = 0; // spad_type; // this should not be required now?
           s->_num_elements = num_elem; // this is num_strides
           s->_out_port = out_port;
-		  s->set_orig();
+          s->set_orig();
           add_bitmask_stream(s);
-		}
+        }
     }
 }
 
@@ -540,15 +518,8 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
   int core_d = (flags==1) ? -1 : 1;
 
   if(flags == 0) {
-	// TODO: put assert that the in_port data width should be less than the out_port
-    int data_width = 8;
-	for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
-      if(_context_bitmask & b) {
-        auto& in_vp = accel_arr[i]->port_interf().in_port(in_port);
-        data_width = in_vp.get_port_width(); // added for dgra
-      }
-    }
-    s = new port_port_stream_t(out_port,in_port,num_elem,repeat,repeat_str, access_size, data_width);
+    s = new port_port_stream_t(out_port,in_port,num_elem,
+                               repeat,repeat_str, access_size);
   } else {
     auto S = new remote_port_stream_t(out_port,in_port,num_elem,
         repeat,repeat_str,core_d,true, access_size);
@@ -597,13 +568,6 @@ void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr
   if(scratch) s->_unit=LOC::SCR;
   else s->_unit=LOC::DMA;
   s->set_orig();
-
-  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
-    if(_context_bitmask & b) {
-      auto& in_vp = accel_arr[i]->port_interf().in_port(in_port);
-      s->_data_width = in_vp.get_port_width(); // added for dgra
-    }
-  }
 
   add_bitmask_stream(s);
 }
@@ -677,12 +641,6 @@ void ssim_t::write_constant(int num_strides, int in_port,
                     uint64_t flags) { //new
 
   const_port_stream_t* s = new const_port_stream_t();
-  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
-    if(_context_bitmask & b) {
-      auto& in_vp = accel_arr[0]->port_interf().in_port(in_port);
-      s->_data_width = in_vp.get_port_width(); // added for dgra
-    }
-  }
   s->add_in_port(in_port);
 
   if((flags&1)==0) {
