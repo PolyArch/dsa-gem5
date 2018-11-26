@@ -918,13 +918,13 @@ decode QUADRANT default Unknown::unknown() {
                     xc->setSSReg( (imm & 0x100) ? 1 : 0, SS_GARBAGE);
                     xc->callSSFunc(SS_PRT_MEM);
                 }}, IsSSStream, IsNonSpeculative, No_OpClass);
-                0x5: IOp::ss_wr_rd({{
+                0x5: ss_wr_rd({{
                     xc->setSSReg(Rs1,SS_NUM_ELEM);
-                    xc->setSSReg((imm >> 0) & 0x1f, SS_OUT_PORT);
-                    xc->setSSReg((imm >> 5) & 0x1f, SS_IN_PORT);
-                    xc->setSSReg(imm >> 10, SS_FLAGS);
+                    xc->setSSReg(Rs2,SS_FLAGS);
+                    xc->setSSReg((imm >> 0) & 31, SS_OUT_PORT);
+                    xc->setSSReg((imm >> 6) & 31, SS_IN_PORT);
                     xc->callSSFunc(SS_PRT_PRT);
-                }}, uint64_t, IsSSStream, IsNonSpeculative, No_OpClass);
+                }}, IsSSStream, IsNonSpeculative, No_OpClass);
                 0x6: IOp::ss_const_scr({{
                     xc->setSSReg(Rs1,SS_SCRATCH_ADDR);
                     xc->setSSReg(Rs2,SS_CONSTANT);

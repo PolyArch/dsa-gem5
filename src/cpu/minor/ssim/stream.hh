@@ -585,9 +585,10 @@ struct port_port_stream_t : public base_stream_t {
     _num_elements=num_elem;
     _repeat_in=repeat;
     _repeat_str=repeat_str;
+
     // For now we still assume CGRA, DGRA features for padding will be supported later...
-    // assert(padding_size % 8 == 0);
-    _padding_size = padding_size / 8;
+    _padding_size = padding_size == NO_PADDING ? padding_size : padding_size / 8;
+
     set_orig();
   }
 

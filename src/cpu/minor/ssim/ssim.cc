@@ -515,11 +515,12 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
                      uint64_t access_size) {
   base_stream_t* s=NULL, *r=NULL;
 
-  int core_d = (flags==1) ? -1 : 1;
 
-  if(flags == 0) {
-    s = new port_port_stream_t(out_port,in_port,num_elem,
-                               repeat,repeat_str, access_size);
+  int core_d = ((flags & 3) == 1) ? -1 : 1;
+  access_size = (flags >> 2) ? access_size : NO_PADDING;
+
+  if((flags & 3) == 0) {
+    s = new port_port_stream_t(out_port,in_port,num_elem,repeat,repeat_str, access_size);
   } else {
     auto S = new remote_port_stream_t(out_port,in_port,num_elem,
         repeat,repeat_str,core_d,true, access_size);
