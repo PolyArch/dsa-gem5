@@ -545,10 +545,10 @@ class ExecContext : public ::ExecContext
                 thread.getSSReg(SS_GARBAGE));
             break;
             case SS_PRT_PRT: ssim.reroute(
-                thread.getSSReg(SS_OUT_PORT),      thread.getSSReg(SS_IN_PORT),
-                thread.getSSReg(SS_NUM_ELEM),      thread.getSSReg(SS_REPEAT), 
-                thread.getSSReg(SS_REPEAT_STRETCH),
-                thread.getSSReg(SS_FLAGS), thread.getSSReg(SS_ACCESS_SIZE));
+                thread.getSSReg(SS_OUT_PORT),       thread.getSSReg(SS_IN_PORT),
+                thread.getSSReg(SS_NUM_ELEM),       thread.getSSReg(SS_REPEAT), 
+                thread.getSSReg(SS_REPEAT_STRETCH), thread.getSSReg(SS_FLAGS),
+                thread.getSSReg(SS_ACCESS_SIZE));
             break;
             case SS_IND_PRT: ssim.indirect(
                 thread.getSSReg(SS_IND_PORT),      thread.getSSReg(SS_IND_TYPE),
@@ -559,10 +559,10 @@ class ExecContext : public ::ExecContext
                 thread.getSSReg(SS_IS_SCRATCH));
             break;
             case SS_PRT_IND: ssim.indirect_write(
-                thread.getSSReg(SS_IND_PORT),       thread.getSSReg(SS_IND_TYPE),
-                thread.getSSReg(SS_OUT_PORT),       thread.getSSReg(SS_INDEX_ADDR),
-                thread.getSSReg(SS_NUM_ELEM),       thread.getSSReg(SS_OFFSET_LIST),
-                thread.getSSReg(SS_DTYPE),         thread.getSSReg(SS_IND_MULT),
+                thread.getSSReg(SS_IND_PORT), thread.getSSReg(SS_IND_TYPE),
+                thread.getSSReg(SS_OUT_PORT), thread.getSSReg(SS_INDEX_ADDR),
+                thread.getSSReg(SS_NUM_ELEM), thread.getSSReg(SS_OFFSET_LIST),
+                thread.getSSReg(SS_DTYPE),    thread.getSSReg(SS_IND_MULT),
                 thread.getSSReg(SS_IS_SCRATCH));
             break;
             case SS_CNS_PRT: ssim.write_constant(

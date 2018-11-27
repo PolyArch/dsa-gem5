@@ -4546,17 +4546,15 @@ void port_controller_t::cycle() {
         // << " " << vp_out.mem_size()  << "\n";
 
         stream._num_elements--;
-        if(stream._padding_size!=0) {
-        (++stream._padding_cnt) %= stream._padding_size;
-        } else {
-          stream._padding_cnt = 0;
+        if (stream._padding_size != NO_PADDING) {
+          (++stream._padding_cnt) %= stream._padding_size;
         }
 
-        for(int in_port : stream.in_ports()) {
-          port_data_t& vp_in = pi.in_port(in_port);
+        for (int in_port : stream.in_ports()) {
+          port_data_t &vp_in = pi.in_port(in_port);
           // vp_in.push_data(val);
           vp_in.push_data(vp_in.get_byte_vector(val, data_width));
-          if (stream._padding_cnt == 0) {
+          if (stream._padding_size != NO_PADDING && stream._padding_cnt == 0) {
             if (stream.fill_mode() == STRIDE_ZERO_FILL ||
                 stream.fill_mode() == STRIDE_DISCARD_FILL) {
               vp_in.fill(stream.fill_mode());
@@ -4684,15 +4682,17 @@ void port_controller_t::cycle() {
         // vp_out.port() << " " << vp_out.mem_size() <<  "\n";
 
         stream._num_elements--;
-        (++stream._padding_cnt) %= stream._padding_size;
+        if (stream._padding_size != NO_PADDING)
+          (++stream._padding_cnt) %= stream._padding_size;
 
         for (int in_port : stream.in_ports()) {
           port_data_t &in_vp = _accel->port_interf().in_port(in_port);
           in_vp.push_data(val);
-          if (stream._padding_cnt == 0) {
+          if (stream._padding_size != NO_PADDING && stream._padding_cnt == 0) {
             if (stream.fill_mode() == STRIDE_ZERO_FILL ||
-                stream.fill_mode() == STRIDE_DISCARD_FILL)
+                stream.fill_mode() == STRIDE_DISCARD_FILL) {
               in_vp.fill(stream.fill_mode());
+            }
           }
         }
 

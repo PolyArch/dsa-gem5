@@ -9,6 +9,7 @@ typedef uint64_t addr_t;
 #define SCRATCH_SIZE (16384) //size in bytes -- 16KB
 // FIXME: For AC circuit results, change it back later
 // #define SCRATCH_SIZE (32768) //size in bytes -- 32KB
+
 #define LSCRATCH_SIZE (16384) //size in bytes -- 16KB
 #define NUM_SCRATCH_BANKS 64
 #define MAX_BANK_BUFFER_SIZE 8
@@ -76,17 +77,19 @@ typedef uint64_t addr_t;
 
 
 //fill modes
-#define NO_FILL        0
-#define POST_ZERO_FILL 1
-#define PRE_ZERO_FILL  2
-#define STRIDE_ZERO_FILL 3
-#define STRIDE_DISCARD_FILL 4
+#define NO_FILL                0
+#define POST_ZERO_FILL         1
+#define PRE_ZERO_FILL          2
+#define STRIDE_ZERO_FILL       3
+#define STRIDE_DISCARD_FILL    4
 
 //datatype encodings
 #define T64 0
 #define T32 1
 #define T16 2
 #define T08 3
+
+#define NO_PADDING (~0ull)
 
 
 #endif

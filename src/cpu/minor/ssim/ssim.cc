@@ -516,15 +516,15 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
                      uint64_t access_size) {
   base_stream_t* s=NULL, *r=NULL;
 
-  int core_d = (flags==1) ? -1 : 1;
 
-  if(flags == 0) {
-    // specific to recurrence stream, FIXME: the accel_arr[0] thing
-    auto& out_vp = accel_arr[0]->port_interf().out_port(out_port);
-    int src_data_width = out_vp.get_port_width();
+  // specific to recurrence stream, FIXME: the accel_arr[0] thing
+  auto& out_vp = accel_arr[0]->port_interf().out_port(out_port);
+  int src_data_width = out_vp.get_port_width();
+  int core_d = ((flags & 3) == 1) ? -1 : 1;
+  access_size = (flags >> 2) ? access_size : NO_PADDING;
 
-    s = new port_port_stream_t(out_port,in_port,num_elem,
-                               repeat,repeat_str, src_data_width, access_size);
+  if((flags & 3) == 0) {
+    s = new port_port_stream_t(out_port,in_port,num_elem,repeat,repeat_str, src_data_width, access_size);
   } else {
     auto S = new remote_port_stream_t(out_port,in_port,num_elem,
         repeat,repeat_str,core_d,true, access_size);
