@@ -1209,9 +1209,9 @@ LSQ::canSendToMemorySystem()
 
 /* Push PORT MULTICAST request into the SPU network buffer, FIXME: it could directly push here also? */
 // void LSQ::push_spu_req(int dest_port_id, uint64_t val, int64_t mask)
-void LSQ::push_spu_req(int dest_port_id, int8_t* val, int num_bytes, int64_t mask)
+void LSQ::push_spu_req(int src_port_id, int dest_port_id, int8_t* val, int num_bytes, int64_t mask)
 {
-  execute.send_spu_req(dest_port_id, val, num_bytes, mask);
+  execute.send_spu_req(src_port_id, dest_port_id, val, num_bytes, mask);
 }
 /* Push SCR WR request into the SPU network buffer */
 // void LSQ::push_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id, int stream_id)

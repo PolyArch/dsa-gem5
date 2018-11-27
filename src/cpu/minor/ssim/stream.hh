@@ -274,7 +274,6 @@ struct affine_base_stream_t : public base_stream_t {
       if(_access_size>=0) {
         return _mem_addr + _bytes_in_access;
       } else {
-        // return _mem_addr - _bytes_in_access - DATA_WIDTH;
         return _mem_addr - _bytes_in_access - _data_width;
       }
     }
@@ -298,7 +297,6 @@ struct affine_base_stream_t : public base_stream_t {
     if(_shift_bytes==2) {
       _bytes_in_access+=2;
     } else {
-      // _bytes_in_access+=DATA_WIDTH;
       _bytes_in_access+=_data_width;
     }
 
@@ -308,7 +306,8 @@ struct affine_base_stream_t : public base_stream_t {
       _num_strides--;
       _access_size+=_stretch;
     }
-     // std::cout << "bytes in access: " << _bytes_in_access << " abs_Access_size: " << abs_access_size() << " data_width: " << _data_width << "\n";
+    
+    // std::cout << "bytes in access: " << _bytes_in_access << " abs_Access_size: " << abs_access_size() << " num_strides left: " << _num_strides << "\n";
      assert((_bytes_in_access<abs_access_size()
            || _access_size==0) && "something went wrong");
 
@@ -579,12 +578,13 @@ struct port_port_stream_t : public base_stream_t {
 
   port_port_stream_t(int out_port, int in_port,
                      uint64_t num_elem, int repeat, int repeat_str,
-                     uint64_t padding_size) {
+                     int src_data_width, uint64_t padding_size) {
     _out_port=out_port;
     _in_ports.push_back(in_port);
     _num_elements=num_elem;
     _repeat_in=repeat;
     _repeat_str=repeat_str;
+    _src_data_width=src_data_width;
     // For now we still assume CGRA, DGRA features for padding will be supported later...
     // assert(padding_size % 8 == 0);
     _padding_size = padding_size / 8;
@@ -596,9 +596,15 @@ struct port_port_stream_t : public base_stream_t {
   virtual int repeat_in() {return _repeat_in;}
   virtual int repeat_str() {return _repeat_str;}
 
+  int src_data_width() {
+    return _src_data_width;
+  }
+
   int _out_port;
   addr_t _num_elements=0;
   addr_t _orig_elements;
+  // TODO: make it general (Read from out_vp)
+  int _src_data_width=8; // 8-byte by default
 
   addr_t _padding_size;
   addr_t _padding_cnt;
@@ -628,6 +634,7 @@ struct port_port_stream_t : public base_stream_t {
     std::cout << "port->port" << "\tout_port=" << _out_port
               << " in_port:";
     print_in_ports();
+    std::cout << " data_width: " << _data_width;
     std::cout  << " repeat:" << _repeat_in
                << " elem_left=" << _num_elements;
     std::cout << " padding_size=" << _padding_size
@@ -647,7 +654,7 @@ struct remote_port_stream_t : public port_port_stream_t {
   remote_port_stream_t(int out_port, int in_port, uint64_t num_elem,
        int repeat, int repeat_str, int core, bool is_source, int access_size) :
                        port_port_stream_t(out_port,in_port,num_elem,
-                           repeat,repeat_str, access_size) {
+                           repeat,repeat_str, 8, access_size) { // send default p.w. to be 1
 
     _in_ports.clear();
 
@@ -773,7 +780,9 @@ struct indirect_base_stream_t : public base_stream_t {
 
   addr_t cur_addr(SBDT val) {
     uint64_t index =  (val >> (_index_in_word * _index_bytes * 8)) & _index_mask;
+    if(SS_DEBUG::MEM_REQ) {
       std::cout << "index: " << index << " mult: " << _ind_mult << "\n";
+    }
     return   _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes;
   }
 

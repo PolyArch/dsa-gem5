@@ -1584,8 +1584,7 @@ void Execute::send_spu_scr_wr_req(int8_t* val, int num_bytes, int64_t scr_offset
 }
 
 // multicast, TODO: change names
-// void Execute::send_spu_req(int dest_port_id, uint64_t val, int64_t mask){
-void Execute::send_spu_req(int dest_port_id, int8_t* val, int num_bytes, int64_t mask){
+void Execute::send_spu_req(int src_port_id, int dest_port_id, int8_t* val, int num_bytes, int64_t mask){
 
   std::shared_ptr<RequestMsg> msg = std::make_shared<RequestMsg>(cpu.clockEdge());
   (*msg).m_MessageSize = MessageSizeType_Control;
@@ -1602,11 +1601,19 @@ void Execute::send_spu_req(int dest_port_id, int8_t* val, int num_bytes, int64_t
   for(int i=0; i<core_mask.size(); ++i){
 	  if(core_mask.test(i)){
 	    dest_core_id = i+1; // because of 1 offset with tid
-	    // printf("dest core id is: %d\n",dest_core_id);
-      (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
 	    if(SS_DEBUG::NET_REQ){
-		    printf("output destinations: %d\n",dest_core_id);
+		  printf("output destinations: %d at core: %d\n",dest_core_id,cpu.cpuId());
 	    }
+        if(dest_core_id==cpu.cpuId() && dest_port_id!=src_port_id) { // this should be an asser actually
+          // send val to the dest port id
+          ssim.push_in_accel_port(0, val, num_bytes, dest_port_id);
+          if(SS_DEBUG::NET_REQ){
+		      printf("Local write at port_id: %d\n", dest_port_id);
+	      }
+        } else {
+	      // printf("dest core id is: %d\n",dest_core_id);
+          (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
+        }
 	  }
   }
   cpu.pushReqFromSpu(msg);

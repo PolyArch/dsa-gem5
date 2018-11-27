@@ -100,7 +100,8 @@ public:
       if(_dfg_vec->is_temporal()) {
         return 1;
       } else {
-        return _dfg_vec->length();
+        // return _dfg_vec->length();
+        return _dfg_vec->get_vp_len();
       }
     }
     return 1;
@@ -108,7 +109,13 @@ public:
 
   unsigned port_vec_elem(); //total size elements of the std::vector port
   unsigned port_depth() { return port_vec_elem() / port_cgra_elem();} //depth of queue
-  unsigned cgra_port_for_index(unsigned i) { return i%port_cgra_elem();}
+  // unsigned cgra_port_for_index(unsigned i) { return i%port_cgra_elem();}
+  // it should return same output for a range of i (might be an issue for dgra
+  // temporal)
+  unsigned cgra_port_for_index(unsigned i) { 
+    int x = i*8/_port_width;
+    return x%port_cgra_elem();
+  }
 
   //reset all data
   void reset_data() {
@@ -142,8 +149,10 @@ public:
   }
 
   int num_can_push() {
-    if(_mem_data.size() < VP_LEN) {
-      return VP_LEN-_mem_data.size();
+    // effective buffer size should be more here
+    if(_mem_data.size() < VP_LEN*8/_port_width) {
+      // return VP_LEN-_mem_data.size();
+      return VP_LEN*8/_port_width-_mem_data.size();
     } else {
       return 0;
     }
@@ -263,7 +272,7 @@ public:
   void push_data(std::vector<uint8_t> data, bool valid=true) {
     int data_size = data.size();
     if((data_size%_port_width!=0)) {
-      // std::cout << "DATA_SIZE: " << data_size << " PORT_WIDTH: " << _port_width << "\n";
+      std::cout << "DATA_SIZE: " << data_size << " PORT_WIDTH: " << _port_width << "\n";
     }
     assert((data_size%_port_width==0) && "weird data size returned");
     int num_chunks = data_size/_port_width;
@@ -271,13 +280,9 @@ public:
       // _mem_data.push_back(data);
       std::vector<uint8_t> local_data = slice(data, i*_port_width, (i+1)*_port_width);
       _mem_data.push_back(local_data);
-      // std::cout << "Local data pushed in the port is: " << get_sbdt_val(local_data,_port_width)  << "\n";
       _valid_data.push_back(valid);
       _total_pushed+=valid;
     }
-    // _mem_data.push_back(data);
-    // _valid_data.push_back(valid);
-    // _total_pushed+=valid;
   }
 
   template <typename T>
@@ -751,9 +756,10 @@ class scratch_read_controller_t : public data_controller_t {
   }
 
   // std::vector<SBDT> read_scratch(affine_read_stream_t& stream);
-  // std::vector<SBDT> read_scratch(affine_read_stream_t& stream, bool is_banked);
   std::vector<uint8_t> read_scratch(affine_read_stream_t& stream, bool is_banked);
   void read_scratch_ind(indirect_stream_t& stream, uint64_t scr_addr);
+  void read_linear_scratch_ind(indirect_stream_t& stream, uint64_t scr_addr);
+  bool checkLinearSpadStream(indirect_stream_t& stream);
 
   float calc_min_port_ready();
   // void cycle();
@@ -773,7 +779,6 @@ class scratch_read_controller_t : public data_controller_t {
   void cycle_status();
 
   bool scr_port_streams_active();
-  // bool isLinearSpad(addr_t addr);
 
   private:
   int _which_rd=0;
@@ -895,10 +900,6 @@ class scratch_write_controller_t : public data_controller_t {
     // printf("Current remote writes: %ld\n",_remote_scr_writes);
     _df_count = df_count;
   }
-
-  // returns true if the address belongs to the second local storage (if it
-  // exists)
-  // bool isLinearSpad(addr_t addr);
 
   private:
   int _which_wr=0; // for banked scratchpad
@@ -1485,16 +1486,18 @@ private:
   void receive_message(int8_t* data, int num_bytes, int remote_in_port) {
     port_data_t& in_vp = _port_interf.in_port(remote_in_port);
     // TODO: Check the max port size here and apply backpressure
-    assert(num_bytes%8==0); // CURRENT LIMITATION
-    int num_words=num_bytes/8;
-    SBDT val=0; int id=0;
-    for(int i=0; i<num_words; ++i){
-      id=i*8; val=0;
-      for(int j=0; j<8; ++j){
-        val |= data[id+j] << j;
-      }
-      in_vp.push_data(val);
+    
+    assert(num_bytes%in_vp.get_port_width()==0);
+    std::vector<uint8_t> temp;
+    // TODO: make it uint everywhere on n/w side
+    for(int i=0; i<num_bytes; ++i){
+      if(data[i]<0) { temp.push_back(data[i]+256); }
+      else temp.push_back(data[i]);
     }
+    if(SS_DEBUG::NET_REQ) {
+      std::cout << "Received value: " << in_vp.get_sbdt_val(temp, in_vp.get_port_width()) << " at remote port: " << remote_in_port << "\n";
+    }
+    in_vp.push_data(temp);
   }
 
   // void push_scratch_remote_buf(int64_t val, int16_t scr_addr){

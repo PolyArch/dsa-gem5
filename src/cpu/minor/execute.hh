@@ -443,8 +443,8 @@ class Execute : public Named
     void evaluate();
 
 	/* push the multicast request on the message buffer */
-    // void send_spu_req(int dest_port_id, uint64_t val, int64_t mask);
-    void send_spu_req(int dest_port_id, int8_t* val, int num_bytes, int64_t mask);
+    // void send_spu_req(int dest_port_id, int8_t* val, int num_bytes, int64_t mask);
+    void send_spu_req(int src_port_id, int dest_port_id, int8_t* val, int num_bytes, int64_t mask);
 
     /* push the port->scr request on the message buffer */
     void send_spu_scr_wr_req(int8_t* val, int num_bytes, int64_t scr_offset, int dest_core_id);

@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iomanip>
 #include <memory>
+#include <assert.h>
 
 #include "ssim.hh"
 #include "cpu/minor/cpu.hh"
@@ -25,7 +26,7 @@ ssim_t::ssim_t(Minor::LSQ* lsq) : _lsq(lsq) {
   //TODO: inform accel_arr
 
   // default things
-  for(int i=22; i<27; ++i) {
+  for(int i=22; i<28; ++i) {
     port_data_t& cur_out_port = accel_arr[0]->_port_interf.out_port(i);
     cur_out_port.set_port_width(8);
     
@@ -268,10 +269,10 @@ void ssim_t::add_bitmask_stream(base_stream_t* s, uint64_t ctx) {
       //  cout << i;
       //}
       if(s->in_ports().size()!=0) {
-        auto& in_vp = accel_arr[0]->port_interf().in_port(s->first_in_port());
+        auto& in_vp = accel_arr[i]->port_interf().in_port(s->first_in_port());
         s->set_data_width(in_vp.get_port_width()); // added for dgra
       } else if (s->out_port() != -1) {
-        auto& out_vp = accel_arr[0]->port_interf().out_port(s->out_port());
+        auto& out_vp = accel_arr[i]->port_interf().out_port(s->out_port());
         s->set_data_width(out_vp.get_port_width()); // added for dgra
       } else {
         s->set_data_width(8);
@@ -518,8 +519,12 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
   int core_d = (flags==1) ? -1 : 1;
 
   if(flags == 0) {
+    // specific to recurrence stream, FIXME: the accel_arr[0] thing
+    auto& out_vp = accel_arr[0]->port_interf().out_port(out_port);
+    int src_data_width = out_vp.get_port_width();
+
     s = new port_port_stream_t(out_port,in_port,num_elem,
-                               repeat,repeat_str, access_size);
+                               repeat,repeat_str, src_data_width, access_size);
   } else {
     auto S = new remote_port_stream_t(out_port,in_port,num_elem,
         repeat,repeat_str,core_d,true, access_size);
