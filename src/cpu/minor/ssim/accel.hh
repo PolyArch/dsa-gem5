@@ -120,6 +120,7 @@ public:
   //reset all data
   void reset_data() {
     _mem_data.clear();
+    _valid_data.clear(); // FIXME:CHECKME: check if this is true!
     _status = STATUS::FREE;
     _repeat=1, _repeat_stretch=0;
     _cur_repeat_lim=1;
@@ -240,6 +241,7 @@ public:
     assert(data_size=_port_width && "data size doesn't match the port width in dfg");
     // std::cout << "Data being pushed from memory" << std::hex << data << std::endl;
     _mem_data.push_back(get_byte_vector<T>(data,_port_width));
+    _valid_data.push_back(true);
   }
 
   uint8_t _incomplete_word[8]={0};
@@ -687,6 +689,10 @@ class dma_controller_t : public data_controller_t {
   bool schedule_indirect(indirect_stream_t&s);
   bool schedule_indirect_wr(indirect_wr_stream_t&s);
 
+  //----------------------
+  float calc_min_port_ready();
+  //---------------------------
+
   int mem_reqs() {return _mem_read_reqs + _mem_write_reqs;}
 
   scratch_read_controller_t*  scr_r_c() {return _scr_r_c;}
@@ -760,10 +766,14 @@ class scratch_read_controller_t : public data_controller_t {
   void read_scratch_ind(indirect_stream_t& stream, uint64_t scr_addr);
   void read_linear_scratch_ind(indirect_stream_t& stream, uint64_t scr_addr);
   bool checkLinearSpadStream(indirect_stream_t& stream);
+  bool checkLinearSpadStream(affine_read_stream_t& stream);
 
-  float calc_min_port_ready();
+  // float calc_min_port_ready();
+  float calc_min_port_ready(bool is_banked);
+  float calc_min_ind_port_ready();
   // void cycle();
   void cycle(bool &performed_read);
+  void linear_scratch_cycle();
   // banked scratchpad read buffers
   bool indirect_scr_read_requests_active();
 
@@ -1508,6 +1518,7 @@ private:
 
 bool isLinearSpad(addr_t addr){
   // int spad_offset_bits = log2(SCRATCH_SIZE+LSCRATCH_SIZE);
+  assert(addr < (SCRATCH_SIZE+LSCRATCH_SIZE));
   int spad_offset_bits = log2(SCRATCH_SIZE);
   int spad_type = (addr >> spad_offset_bits) & 1;
   return spad_type; // for 1, it is linear

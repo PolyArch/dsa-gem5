@@ -829,7 +829,8 @@ struct indirect_stream_t : public indirect_base_stream_t {
   virtual int repeat_str() {return _repeat_str;}
 
   virtual void print_status() {
-    std::cout << "mem[ind_port]->in_port" << "\tout_port width" << _data_width << "\tind_port=" << _ind_port
+    std::cout << "mem[ind_port]->in_port" << "\tscratch? " << scratch()
+      << "\tout_port width" << _data_width << "\tind_port=" << _ind_port
               << "\tind_type:" << _ind_type  << "\tind_addr:" << _index_addr
               << "\tnum_elem:" << _num_elements << "\tin_port:";
     print_in_ports();
@@ -1194,7 +1195,7 @@ struct atomic_scr_stream_t : public base_stream_t {
   virtual void print_status() {
     std::cout << "atomic_scr " << "\tval_port=" << _val_port
               << "\taddr_port:" << _out_port  << "\top_code:" << _op_code << "\titers left: " << _num_strides
-         << std::dec << "\tinput_type:" << _value_type << "\toutput_type:" << _output_type << "\taddr_type:" << _addr_type;
+         << std::dec << "\tinput_type:" << _value_type << "\toutput_type:" << _output_type << "\taddr_type:" << _addr_type << "\n";
        };
 
     // base_stream_t::print_status();

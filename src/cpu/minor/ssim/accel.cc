@@ -742,6 +742,8 @@ void accel_t::tick() {
     _scr_w_c.cycle(!performed_read, performed_atomic_scr);
   }
   _scr_ctrl_turn = (_scr_ctrl_turn + 1) % 2;
+  // TODO: remove this after removing the above logic
+  _scr_r_c.linear_scratch_cycle();
 
   _port_c.cycle();
   _net_c.cycle();
@@ -2586,7 +2588,12 @@ void dma_controller_t::make_write_request() {
   }
 }
 
+#define MAX_PORT_READY 100000
+
 void dma_controller_t::make_read_request() {
+  //--------------------------
+  float min_port_ready = -2;
+  //----------------------------
 
   for (unsigned i = 0; i < _read_streams.size(); ++i) {
     _which_rd = (_which_rd + 1) >= _read_streams.size() ? 0 : _which_rd + 1;
@@ -2595,6 +2602,18 @@ void dma_controller_t::make_read_request() {
     if (auto *sp = dynamic_cast<affine_read_stream_t *>(s)) {
       auto &stream = *sp;
       if (stream.stream_active()) {
+
+        //-----------------------------
+        bool skip_check = SS_DEBUG::UNREAL_INPUTS;
+
+        if (min_port_ready == -2) {
+          min_port_ready = calc_min_port_ready();
+        }
+        if (!skip_check && min_port_ready >= MAX_PORT_READY)
+          continue;
+        //--------------------------------
+
+
         int in_port = stream.first_in_port();
         auto &in_vp = _accel->port_interf().in_port(in_port);
 
@@ -2622,6 +2641,21 @@ void dma_controller_t::make_read_request() {
       int in_port = stream.first_in_port();
 
       if (stream.stream_active()) {
+
+
+        //-----------------------------
+        bool skip_check = SS_DEBUG::UNREAL_INPUTS;
+
+        if (min_port_ready == -2) {
+          min_port_ready = calc_min_port_ready();
+        }
+        if (!skip_check && min_port_ready >= MAX_PORT_READY)
+          continue;
+        //--------------------------------
+
+
+
+
         if (ind_vp.mem_size() > 0 &&
             _accel->_lsq->sd_transfers[in_port].unreservedRemainingSpace() >
                 0 &&
@@ -3368,6 +3402,10 @@ vector<uint8_t> scratch_read_controller_t::read_scratch(affine_read_stream_t &st
     if (is_banked) {
       assert(addr + data_width <= SCRATCH_SIZE);
     } else {
+      if(!(addr + data_width >= SCRATCH_SIZE &&
+             addr + data_width <= SCRATCH_SIZE + LSCRATCH_SIZE)) {
+        cout << "Addr: " << addr << " data_width: " << data_width << endl;
+      }
       assert(addr + data_width >= SCRATCH_SIZE &&
              addr + data_width <= SCRATCH_SIZE + LSCRATCH_SIZE);
     }
@@ -3419,31 +3457,50 @@ vector<uint8_t> scratch_read_controller_t::read_scratch(affine_read_stream_t &st
   return data;
 }
 
-// send a multicast message
-// TODO: copy the things from write message (we need to parse
-// whole stream to collect all data in read)
-// TODO: we should have configurability
-// TODO: put this also in accel_t
-/*
-void network_controller_t::send_multicast_message(
-               int dest_port_id, SBDT val, SBDT mask, int stream_id) {
-               }
-      // TODO: use this code in the execute
-     // std::bitset<64> core_mask(mask);
-     // int num_dest = core_mask.count();
-     // printf("number of cores we want to send is: %d\n",num_dest);
-     // It should take these parameters and push the request to queue
-     _lsq.push_spu_req(dest_port_id, val, mask);
-}
-*/
-
-#define MAX_PORT_READY 100000
-
 // Figure out which port is the most needy
-float scratch_read_controller_t::calc_min_port_ready() {
+// this has linear read streams as well!
+float scratch_read_controller_t::calc_min_port_ready(bool is_banked) {
   float min_port_ready = MAX_PORT_READY;
   for (int i = 0; i < _scr_port_streams.size(); ++i) {
     auto &stream = *_scr_port_streams[i];
+    if (stream.stream_active() && (is_banked ^ checkLinearSpadStream(stream))) {
+      auto &in_vp = _accel->port_interf().in_port(stream.first_in_port());
+      int data_width = stream.data_width();
+      if (in_vp.can_push_vp(SCR_WIDTH / data_width)) {
+        float num_ready = in_vp.instances_ready();
+        if (num_ready < min_port_ready) {
+          min_port_ready = num_ready;
+        }
+      }
+    }
+  }
+  return min_port_ready;
+}
+
+// considering ind banked read streams
+float scratch_read_controller_t::calc_min_ind_port_ready() {
+  float min_port_ready = MAX_PORT_READY;
+  for (int i = 0; i < _ind_port_streams.size(); ++i) {
+    auto &stream = *_ind_port_streams[i];
+    port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
+    if ((ind_vp.mem_size() && stream.stream_active() && !checkLinearSpadStream(stream)) || indirect_scr_read_requests_active()) {
+      auto &in_vp = _accel->port_interf().in_port(stream.first_in_port());
+      int data_width = stream.data_width();
+      if (in_vp.can_push_vp(SCR_WIDTH / data_width)) {
+        float num_ready = in_vp.instances_ready();
+        if (num_ready < min_port_ready) {
+          min_port_ready = num_ready;
+        }
+      }
+    }
+  }
+  return min_port_ready;
+}
+
+float dma_controller_t::calc_min_port_ready() {
+  float min_port_ready = MAX_PORT_READY;
+  for (int i = 0; i < _read_streams.size(); ++i) {
+    auto &stream = *_read_streams[i];
     if (stream.stream_active()) {
       auto &in_vp = _accel->port_interf().in_port(stream.first_in_port());
       int data_width = stream.data_width();
@@ -3728,8 +3785,14 @@ bool scratch_read_controller_t::checkLinearSpadStream(indirect_stream_t& stream)
   return _accel->isLinearSpad(addr);
 }
 
+bool scratch_read_controller_t::checkLinearSpadStream(affine_read_stream_t& stream) {
+  addr_t addr = stream.cur_addr(); // this is scratch addr
+  return _accel->isLinearSpad(addr);
+}
+
 void scratch_read_controller_t::cycle(bool &performed_read) {
   float min_port_ready = -2;
+  float min_ind_port_ready = -2;
 
   cycle_read_queue();
 
@@ -3747,7 +3810,7 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
         bool skip_check = SS_DEBUG::UNREAL_INPUTS;
 
         if (min_port_ready == -2) {
-          min_port_ready = calc_min_port_ready();
+          min_port_ready = calc_min_port_ready(true);
         }
         if (!skip_check && min_port_ready >= MAX_PORT_READY)
           continue;
@@ -3757,8 +3820,8 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
         float num_ready = first_in_vp.instances_ready();
 
         // if(skip_check || (first_in_vp.can_push_vp(SCR_WIDTH/DATA_WIDTH)
-        if (skip_check || (first_in_vp.can_push_vp(SCR_WIDTH / data_width) &&
-                           num_ready == min_port_ready)) {
+        if ((skip_check || (first_in_vp.can_push_vp(SCR_WIDTH / data_width) &&
+                           num_ready == min_port_ready)) && !checkLinearSpadStream(stream)) {
           // vector<SBDT> data = read_scratch(stream, true); // true means it is
           // banked
           vector<uint8_t> data = read_scratch(stream, true);
@@ -3798,10 +3861,20 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
       port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
 
       // if(ind_vp.mem_size() && stream.stream_active()) {
-      if ((ind_vp.mem_size() && stream.stream_active()) ||
+      if ((ind_vp.mem_size() && stream.stream_active() && !checkLinearSpadStream(stream)) ||
           indirect_scr_read_requests_active()) {
-        // TODO: make sure the address belongs to the banked scratchpad only
-        if(checkLinearSpadStream(stream)) continue;
+        //-----------------------------------
+        bool skip_check = SS_DEBUG::UNREAL_INPUTS;
+
+        if (min_ind_port_ready == -2) {
+          min_ind_port_ready = calc_min_ind_port_ready();
+        }
+        if (!skip_check && min_ind_port_ready >= MAX_PORT_READY)
+          continue;
+        //-------------------------------------
+
+
+        // if(checkLinearSpadStream(stream)) continue;
         read_scratch_ind(stream, -1 /*scratch*/);
         if (stream.empty()) {
           delete_stream(_which_rd, sp);
@@ -3851,14 +3924,21 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
     //}
   }
   if (i < _read_streams.size()) {
-    performed_read = false;
-  } else {
+    // performed_read = false;
     performed_read = true;
+  } else {
+    // performed_read = true;
+    performed_read = false;
   }
+}
 
+// FIXME: have to do this because of weird atomic scr logic, TODO: combine scratch
+// read and write controllers
+void scratch_read_controller_t::linear_scratch_cycle() {
   // FOR LINEAR SCRATCHPAD
   if (_accel->_linear_spad) {
-    for (i = 0; i < _read_streams.size(); ++i) {
+    float min_port_ready=-2;
+    for (int i = 0; i < _read_streams.size(); ++i) {
       _which_rd = (_which_rd + 1) >= _read_streams.size() ? 0 : _which_rd + 1;
       // _which_rd=(_which_rd+1)>=_scr_port_streams.size() ? 0:_which_rd+1;
       base_stream_t *s = _read_streams[_which_rd];
@@ -3870,7 +3950,7 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
           bool skip_check = SS_DEBUG::UNREAL_INPUTS;
 
           if (min_port_ready == -2) {
-            min_port_ready = calc_min_port_ready();
+            min_port_ready = calc_min_port_ready(false);
           }
           if (!skip_check && min_port_ready >= MAX_PORT_READY)
             continue;
@@ -3880,8 +3960,8 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
           float num_ready = first_in_vp.instances_ready();
           int data_width = first_in_vp.get_port_width();
 
-          if (skip_check || (first_in_vp.can_push_vp(SCR_WIDTH / data_width) &&
-                             num_ready == min_port_ready)) {
+          if ((skip_check || (first_in_vp.can_push_vp(SCR_WIDTH / data_width) &&
+                             num_ready == min_port_ready)) && checkLinearSpadStream(stream)) {
             vector<uint8_t> data = read_scratch(stream, false);
 
             for (int in_port : stream.in_ports()) {
@@ -3913,10 +3993,10 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
         auto &stream = *sp;
         port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
 
-        if ((ind_vp.mem_size() && stream.stream_active()) ||
-            indirect_scr_read_requests_active()) {
+        if (ind_vp.mem_size() && stream.stream_active() && checkLinearSpadStream(stream)) {
+          // || indirect_scr_read_requests_active()) {
           // TODO: check the address belongs to the linear spad
-          if(!checkLinearSpadStream(stream)) continue;
+          // if(!checkLinearSpadStream(stream)) continue;
           read_linear_scratch_ind(stream, -1 /*scratch*/);
 
           bool is_empty = stream.check_set_empty();
@@ -4133,6 +4213,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
       uint64_t bytes_written = 0;
       // added to correct bank conflict calculation
       int num_addr_pops = 0;
+      int num_val_pops = 0;
 
       port_data_t &out_addr = _accel->port_interf().out_port(stream._out_port);
       port_data_t &out_val = _accel->port_interf().out_port(stream._val_port);
@@ -4153,6 +4234,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
           }
 
           num_addr_pops = 0;
+          num_val_pops = 0;
           loc = out_addr.peek_out_data();
           if (SS_DEBUG::COMP) {
             std::cout << "1 cycle execution : "
@@ -4201,7 +4283,8 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
           // num_value_pops should be less than 64 bytes?
           while (scr_addr < max_addr && stream._num_strides > 0 &&
                  out_addr.mem_size() && out_val.mem_size() &&
-                 num_addr_pops < 64) {
+                 num_val_pops < 64) {
+                 // num_addr_pops < 64) {
             if (SS_DEBUG::COMP) {
               std::cout << "\tupdate at index location: " << loc
                         << " and scr_addr: " << scr_addr
@@ -4211,6 +4294,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
             // assert(scr_addr + DATA_WIDTH <= SCRATCH_SIZE);
             // assert(scr_addr + DATA_WIDTH/stream._addr_bytes <= SCRATCH_SIZE);
             // assert(scr_addr + DATA_WIDTH / stream._value_bytes <= SCRATCH_SIZE);
+            if(scr_addr + stream._output_bytes > SCRATCH_SIZE) { cout << "scratch_addr: " << scr_addr << endl; }
             assert(scr_addr + stream._output_bytes <= SCRATCH_SIZE);
 
             inc = out_val.peek_out_data();
@@ -4237,6 +4321,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
             if (_accel->_banked_spad_mapping_strategy &&
                 (strcmp(_accel->_banked_spad_mapping_strategy, "COL") == 0)) {
               bank_id = (scr_addr >> 9) & (logical_banks - 1);
+              // bank_id = (scr_addr >> 8) & (logical_banks - 1);
             } else {
               bank_id = (scr_addr >> 1) & (logical_banks - 1);
             }
@@ -4259,6 +4344,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
             // pop only if index in word is last?
             if (stream.can_pop_val()) {
               stream._cur_val_index = 0;
+              num_val_pops++;
               out_val.pop_out_data();
               if (SS_DEBUG::COMP) {
                 std::cout << "\tpopped data from val port";
@@ -4313,7 +4399,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
         }
       }
 
-      // cout << "CAN PERFORM ATOMIC SCR: " << can_perform_atomic_scr << " and are streams active: " << atomic_scr_issued_requests_active() << "\n";
+      // cout << "CAN PERFORM ATOMIC SCR: " << can_perform_atomic_scr << " and are stream buffers active: " << atomic_scr_issued_requests_active() << "\n";
       // if requests are available in the bank queues
       if (atomic_scr_issued_requests_active() && can_perform_atomic_scr) {
         for (int i = 0; i < logical_banks; ++i) {
