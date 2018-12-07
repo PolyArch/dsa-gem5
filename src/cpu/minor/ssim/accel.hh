@@ -271,12 +271,23 @@ public:
     return ret;
   }
 
+  std::vector<uint8_t> leftover;
+
   void push_data(std::vector<uint8_t> data, bool valid=true) {
-    int data_size = data.size();
-    if((data_size%_port_width!=0)) {
-      std::cout << "DATA_SIZE: " << data_size << " PORT_WIDTH: " << _port_width << "\n";
+    //TODO: HACK FIX: THIS IS BAD: PLEASE DON'T LEAVE THIS HERE
+    for(uint8_t item : data) {
+      leftover.push_back(item);
     }
-    assert((data_size%_port_width==0) && "weird data size returned");
+    data=leftover;
+    leftover.clear();
+    //END TODO HACK FIXME BAD
+
+    int data_size = data.size();
+//    if((data_size%_port_width!=0)) {
+//      std::cout << "DATA_SIZE: " << data_size << " PORT_WIDTH: " << _port_width << "\n";
+//    }
+//    assert((data_size%_port_width==0) && "weird data size returned");
+
     int num_chunks = data_size/_port_width;
     for(int i=0; i<num_chunks;++i){
       // _mem_data.push_back(data);
@@ -285,6 +296,13 @@ public:
       _valid_data.push_back(valid);
       _total_pushed+=valid;
     }
+
+    //HACK AGAIN
+    if(num_chunks * _port_width != data_size) {
+      leftover = slice(data, num_chunks*_port_width, data_size);
+    }
+    //END HACK
+
   }
 
   template <typename T>
