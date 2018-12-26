@@ -10,6 +10,7 @@ void base_stream_t::set_empty(bool b) {
 
   if(SS_DEBUG::COMMAND_O) {
     if(b == true) {
+      // timestamp();
       std::cout << "COMPLETED: "; 
     } 
     print_status();

@@ -1656,6 +1656,9 @@ void push_net_in_cmd_queue(base_stream_t* s);
   int _slot_avail[NUM_IN_PORTS] = {0};
   int _could_not_serve[NUM_IN_PORTS] = {0};
 
+  //FIXME: just for debug, fix later
+  int _num_cycles_issued=0;
+
   bool _back_cgra=false;
   bool _linear_spad=false;
 

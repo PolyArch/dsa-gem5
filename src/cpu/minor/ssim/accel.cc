@@ -1610,6 +1610,11 @@ void accel_t::print_statistics(std::ostream &out) {
       << ((double)_stat_ss_dfg_util) / ((double)roi_cycles()) << "\n";
   out << "Data availability ratio: "
       << ((double)_stat_ss_data_avail_ratio) / ((double)roi_cycles()) << "\n";
+  // out << "Atomic scr executed cycles: "
+  //     << _stat_cycles_atomic_scr_executed << "\n";
+  // out << "Atomic scr issued cycles: "
+  //     << _num_cycles_issued << "\n";
+ 
   out << "Percentage bank conflicts: "
       << ((double)_stat_cycles_atomic_scr_executed) /
              _stat_cycles_atomic_scr_pushed
@@ -4224,9 +4229,13 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
         logical_banks = NUM_SCRATCH_BANKS / stream._value_bytes;
 
         addr_t base_addr = stream._mem_addr; // this is like offset
+        int n=0;
 
         if (out_addr.mem_size() > 0 && out_val.mem_size() > 0 &&
+            // number of pushes should be max 
+            stream._value_bytes*n < 64 && 
             !crosssar_backpressureOn()) { // enough in src and dest
+          n++;
 
           // hopefully it pushes data here
           if (_accel->_ssim->in_roi()) {
@@ -4320,7 +4329,8 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
 
             if (_accel->_banked_spad_mapping_strategy &&
                 (strcmp(_accel->_banked_spad_mapping_strategy, "COL") == 0)) {
-              bank_id = (scr_addr >> 9) & (logical_banks - 1);
+              // bank_id = (scr_addr >> 9) & (logical_banks - 1);
+              bank_id = (scr_addr >> 6) & (logical_banks - 1); // log64 = 6 = log2(k)
               // bank_id = (scr_addr >> 8) & (logical_banks - 1);
             } else {
               bank_id = (scr_addr >> 1) & (logical_banks - 1);
@@ -4399,6 +4409,12 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
         }
       }
 
+      if (_accel->_ssim->in_roi()) {
+        _accel->_num_cycles_issued++;
+      }
+
+
+
       // cout << "CAN PERFORM ATOMIC SCR: " << can_perform_atomic_scr << " and are stream buffers active: " << atomic_scr_issued_requests_active() << "\n";
       // if requests are available in the bank queues
       if (atomic_scr_issued_requests_active() && can_perform_atomic_scr) {
@@ -4410,11 +4426,14 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
             opcode = request._opcode;
 
             if (SS_DEBUG::COMP) {
-              std::cout << "REAL EXECUTION, update at scr_addr: " << scr_addr
+              // std::cout << (_accel->now()-_accel->_ssim->_stat_start_cycle) << " ";
+              timestamp();
+              printf("ACCEL ID: %d", _accel->_lsq->getCpuId());
+              std::cout << " REAL EXECUTION, update at scr_addr: " << scr_addr
                         << " at bankid: " << i << " with inc value: " << inc
                         << "\n";
-              std::cout << "Available requests at the bank queue are: "
-                        << _atomic_scr_issued_requests[i].size() << "\n";
+              // std::cout << "Available requests at the bank queue are: "
+              //           << _atomic_scr_issued_requests[i].size() << "\n";
             }
             // uint8_t input_val[8] = {0};
             // _accel->read_scratchpad(&input_val+8-request._value_bytes, scr_addr, request._value_bytes, stream.id());
