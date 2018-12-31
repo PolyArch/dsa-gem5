@@ -76,12 +76,8 @@ Topology::Topology(uint32_t num_routers,
 
         int machine_base_idx = MachineType_base_number(abs_cntrl->getType());
         int ext_idx1 = machine_base_idx + abs_cntrl->getVersion(); // input link id
-		// printf("base index of ctrl: %d and m_version+first: %d\n",machine_base_idx, ext_idx1);
-		// printf("id of the controllers: %d\n",ext_idx1);
         int ext_idx2 = ext_idx1 + m_nodes; // output link id (different thing taking output?)
         int int_idx = router->params()->router_id + 2*m_nodes; // router id
-
-		// printf("Controller external node is %d, should be less than %u\n",ext_idx1, ctrl_nodes);
 
         // create the internal uni-directional links in both directions
         // ext to int
@@ -95,25 +91,18 @@ Topology::Topology(uint32_t num_routers,
     // External Links from SPU
 	// printf("Controller nodes: %d\n",ctrl_nodes);
 	// TODO: temp hack for now!
-	int temp=ctrl_nodes;
+	int temp=ctrl_nodes; // can i do num_dirs?
     for (vector<SpuExtLink*>::const_iterator i = spu_ext_links.begin();
          i != spu_ext_links.end(); ++i) {
         SpuExtLink *spu_ext_link = (*i);
+        BasicRouter *router = spu_ext_link->params()->spu_int_node;
 		// TODO: use it to get the coreid later on
-        // RubySequencer *nse_seq = spu_ext_link->params()->spu_ext_node;
-        // BasicRouter *router = spu_ext_link->params()->spu_int_node;
-		// FIXME: otherwise, I will have to do that hack, create this machine
-		// in the controller somehow
         int machine_base_idx = temp;
-        // int machine_base_idx = MachineType_base_number(MachineType_Accel);
-        // int machine_base_idx = MachineType_base_number(MachineType:Accel);
+        // machine_base_idx = MachineType_base_number(MachineType_Accel);
         int ext_idx1 = machine_base_idx;
         int ext_idx2 = ext_idx1 + m_nodes;
-		// HACK!
-        int int_idx = 2*m_nodes + temp - ctrl_nodes;
+        int int_idx = 2*m_nodes + router->params()->router_id;
 
-		// printf("SPu external node is %d, should be greater than %u and less than %u\n",ext_idx1, ctrl_nodes, m_nodes);
-		// printf("SPu int node is %d\n", int_idx);
         // create the internal uni-directional links in both directions
         // ext to int
         addLink(ext_idx1, int_idx, spu_ext_link);

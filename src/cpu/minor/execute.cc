@@ -89,6 +89,7 @@ Execute::Execute(const std::string &name_,
     setTraceTimeOnIssue(params.executeSetTraceTimeOnIssue),
     allowEarlyMemIssue(params.executeAllowEarlyMemoryIssue),
     noCostFUIndex(fuDescriptions.funcUnits.size() + 1),
+    // noCostFUIndex(16),
     lsq(name_ + ".lsq", name_ + ".dcache_port",
         cpu_, *this,
         params.executeMaxAccessesInMemory,
@@ -1276,6 +1277,10 @@ Execute::commit(ThreadID thread_id, bool only_commit_microops, bool discard,
             /* Try to commit from the memory responses next */
             discard_inst = inst->id.streamSeqNum !=
                            ex_info.streamSeqNum || discard;
+
+DPRINTF(MinorExecute, "inst: %s seq number: %d"
+                    " , expected: %d\n",
+                    *inst, inst->id.streamSeqNum, ex_info.streamSeqNum);
 
             DPRINTF(MinorExecute, "Trying to commit mem response: %s\n",
                 *inst);

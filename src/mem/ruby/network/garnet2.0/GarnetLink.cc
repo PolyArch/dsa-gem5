@@ -92,3 +92,34 @@ GarnetExtLinkParams::create()
 {
     return new GarnetExtLink(this);
 }
+
+GarnetSpuExtLink::GarnetSpuExtLink(const Params *p)
+    : SpuExtLink(p)
+{
+    // Bi-directional
+
+    // In
+    m_network_links[0] = p->network_links[0];
+    m_credit_links[0] = p->credit_links[0];
+
+    // Out
+    m_network_links[1] = p->network_links[1];
+    m_credit_links[1] = p->credit_links[1];
+}
+
+void
+GarnetSpuExtLink::init()
+{
+}
+
+void
+GarnetSpuExtLink::print(std::ostream& out) const
+{
+    out << name();
+}
+
+GarnetSpuExtLink *
+GarnetSpuExtLinkParams::create()
+{
+    return new GarnetSpuExtLink(this);
+}

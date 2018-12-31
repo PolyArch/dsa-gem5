@@ -211,6 +211,7 @@ PerfectSwitch::operateMessageBuffer(MessageBuffer *buffer, int incoming,
             NetDest dst = m_routing_table[link];
             DPRINTF(RubyNetwork, "dst: %s\n", dst);
 
+            // if this is not in the current dst
             if (!msg_dsts.intersectionIsNotEmpty(dst))
                 continue;
 
@@ -245,6 +246,7 @@ PerfectSwitch::operateMessageBuffer(MessageBuffer *buffer, int incoming,
 
         // There were not enough resources
         if (!enough) {
+            // printf("NOT ENOUGH RESOURCES PRESENT\n");
             scheduleEvent(Cycles(1));
             DPRINTF(RubyNetwork, "Can't deliver message since a node "
                     "is blocked\n");

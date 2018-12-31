@@ -103,6 +103,8 @@ GarnetNetwork::init()
 {
     Network::init();
 
+    // TODO: check this thing
+    printf("m_nodes here: %d\n",m_nodes);
     for (int i=0; i < m_nodes; i++) {
         m_nis[i]->addNode(m_toNetQueues[i], m_fromNetQueues[i]);
     }
@@ -210,19 +212,57 @@ GarnetNetwork::makeExtOutLink(SwitchID src, NodeID dest, BasicLink* link,
     m_nis[dest]->addInPort(net_link, credit_link);
 }
 
-// FIXME: hack, remove later!!
 void
 GarnetNetwork::makeSpuExtInLink(NodeID src, SwitchID dest, BasicLink* link,
                             const NetDest& routing_table_entry)
 {
+    assert(src < m_nodes);
+
+    GarnetSpuExtLink* garnet_link = safe_cast<GarnetSpuExtLink*>(link);
+
+    // GarnetSpuExtLink is bi-directional
+    NetworkLink* net_link = garnet_link->m_network_links[LinkDirection_In];
+    net_link->setType(EXT_IN_);
+    CreditLink* credit_link = garnet_link->m_credit_links[LinkDirection_In];
+
+    m_networklinks.push_back(net_link);
+    m_creditlinks.push_back(credit_link);
+
+    PortDirection dst_inport_dirn = "Local";
+    m_routers[dest]->addInPort(dst_inport_dirn, net_link, credit_link);
+    m_nis[src]->addOutPort(net_link, credit_link, dest);
 }
+
+/*
+ * This function creates a link from the Network to a NI.
+ * It creates a Network Link from a Router to the NI and
+ * a Credit Link from NI to the Router
+*/
 
 void
 GarnetNetwork::makeSpuExtOutLink(SwitchID src, NodeID dest, BasicLink* link,
                              const NetDest& routing_table_entry)
 {
-}
+    assert(dest < m_nodes);
+    assert(src < m_routers.size());
+    assert(m_routers[src] != NULL);
 
+    GarnetSpuExtLink* garnet_link = safe_cast<GarnetSpuExtLink*>(link);
+
+    // GarnetSpuExtLink is bi-directional
+    NetworkLink* net_link = garnet_link->m_network_links[LinkDirection_Out];
+    net_link->setType(EXT_OUT_);
+    CreditLink* credit_link = garnet_link->m_credit_links[LinkDirection_Out];
+
+    m_networklinks.push_back(net_link);
+    m_creditlinks.push_back(credit_link);
+
+    PortDirection src_outport_dirn = "Local";
+    m_routers[src]->addOutPort(src_outport_dirn, net_link,
+                               routing_table_entry,
+                               link->m_weight, credit_link);
+    m_nis[dest]->addInPort(net_link, credit_link);
+}
 
 /*
  * This function creates an internal network link between two routers.

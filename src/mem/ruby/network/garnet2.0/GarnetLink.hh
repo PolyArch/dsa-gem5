@@ -42,6 +42,7 @@
 #include "mem/ruby/network/garnet2.0/CreditLink.hh"
 #include "mem/ruby/network/garnet2.0/NetworkLink.hh"
 #include "params/GarnetExtLink.hh"
+#include "params/GarnetSpuExtLink.hh"
 #include "params/GarnetIntLink.hh"
 
 class GarnetIntLink : public BasicIntLink
@@ -88,6 +89,32 @@ class GarnetExtLink : public BasicExtLink
 
 inline std::ostream&
 operator<<(std::ostream& out, const GarnetExtLink& obj)
+{
+    obj.print(out);
+    out << std::flush;
+    return out;
+}
+
+// DONE: create SPU ext link here
+class GarnetSpuExtLink : public SpuExtLink
+{
+  public:
+    typedef GarnetSpuExtLinkParams Params;
+    GarnetSpuExtLink(const Params *p);
+
+    void init();
+
+    void print(std::ostream& out) const;
+
+    friend class GarnetNetwork;
+
+  protected:
+    NetworkLink* m_network_links[2];
+    CreditLink* m_credit_links[2];
+};
+
+inline std::ostream&
+operator<<(std::ostream& out, const GarnetSpuExtLink& obj)
 {
     obj.print(out);
     out << std::flush;

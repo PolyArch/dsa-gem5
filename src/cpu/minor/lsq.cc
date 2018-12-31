@@ -491,6 +491,8 @@ LSQ::SplitDataRequest::makeFragmentPackets()
         fragmentPackets.push_back(fragment_packet);
         /* Accumulate flags in parent request */
         request->setFlags(fragment->getFlags());
+        // FIXME
+        // request->setFlags(Request::UNCACHEABLE);
     }
 
     /* Might as well make the overall/response packet here */
@@ -1590,17 +1592,33 @@ LSQ::pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
                  unsigned int size, Addr addr, Request::Flags flags,
                  uint64_t *res,  SSMemReqInfoPtr sdInfo)
 {
+
+
     bool needs_burst = transferNeedsBurst(addr, size, lineWidth);
+    // printf("does this need burst? %d\n",needs_burst);
+    // if(sdInfo!=NULL && isLoad) {
+    //   printf("Pushing request (%s) addr: 0x%ud size: %d flags:"
+    //     " 0x%ud%s lineWidth : 0x%ud\n",
+    //     (isLoad ? "load" : "store"), addr, size, flags,
+    //         (needs_burst ? " (needs burst)" : ""), lineWidth);
+    // }
     LSQRequestPtr request;
+
+    // if it comes from the accel
+    // if(sdInfo!=NULL) {
+    //   request->setFlags(Request::UNCACHEABLE);
+    // }
 
     /* Copy given data into the request.  The request will pass this to the
      *  packet and then it will own the data */
     uint8_t *request_data = NULL;
 
+    if(sdInfo!=NULL && isLoad) {
     DPRINTF(MinorMem, "Pushing request (%s) addr: 0x%x size: %d flags:"
         " 0x%x%s lineWidth : 0x%x\n",
         (isLoad ? "load" : "store"), addr, size, flags,
             (needs_burst ? " (needs burst)" : ""), lineWidth);
+    }
 
     if (!isLoad) {
         /* request_data becomes the property of a ...DataRequest (see below)
@@ -1632,6 +1650,10 @@ LSQ::pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
         /* I've no idea why we need the PC, but give it */
         inst->pc.instAddr());
 
+    // remove this after debugging multi-thread
+    // if(isLoad) {
+    //   printf("New request pushed in load queue\n");
+    // }
     requests.push(request);
     request->startAddrTranslation();
 }

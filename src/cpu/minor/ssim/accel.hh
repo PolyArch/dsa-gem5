@@ -271,9 +271,11 @@ public:
     return ret;
   }
 
+  // not used for only read (should be just for port_resp from dma)
+  // associated with each port
   std::vector<uint8_t> leftover;
-
   void push_data(std::vector<uint8_t> data, bool valid=true) {
+    // std::cout << "INCOMING DATA_SIZE: " << data.size() << "\n";
     //TODO: HACK FIX: THIS IS BAD: PLEASE DON'T LEAVE THIS HERE
     for(uint8_t item : data) {
       leftover.push_back(item);
@@ -283,6 +285,7 @@ public:
     //END TODO HACK FIXME BAD
 
     int data_size = data.size();
+    // std::cout << "DATA_SIZE: " << data_size << " PORT_WIDTH: " << _port_width << "\n";
 //    if((data_size%_port_width!=0)) {
 //      std::cout << "DATA_SIZE: " << data_size << " PORT_WIDTH: " << _port_width << "\n";
 //    }
@@ -301,6 +304,7 @@ public:
     if(num_chunks * _port_width != data_size) {
       leftover = slice(data, num_chunks*_port_width, data_size);
     }
+    // std::cout << "LEFTOVER SIZE: " << leftover.size() << "\n";
     //END HACK
 
   }
@@ -535,6 +539,10 @@ public:
     _cgra_valid.resize(port_cgra_elem());
     assert(_cgra_data.size() > 0);
   }
+
+  // stats info (see if I need it)
+  void inc_rem_wr(int x) { _num_rem_wr+=x; }
+  unsigned get_rem_wr() { return _num_rem_wr; }
  
 private:
   //Programmable Repeat:
@@ -560,6 +568,8 @@ private:
   std::vector<std::deque<bool>> _cgra_valid; //data per port
   unsigned _num_in_flight=0;
   unsigned _num_ready=0;
+
+  unsigned _num_rem_wr=0;
 
   uint64_t _total_pushed=0;
 };
@@ -709,6 +719,7 @@ class dma_controller_t : public data_controller_t {
 
   //----------------------
   float calc_min_port_ready();
+  int straddle_bytes=0;
   //---------------------------
 
   int mem_reqs() {return _mem_read_reqs + _mem_write_reqs;}
@@ -1002,7 +1013,6 @@ class network_controller_t : public data_controller_t {
   void write_direct_remote_scr(direct_remote_scr_stream_t& stream);
 
   void cycle();
-  // void cycle(bool &performed_read);
   bool remote_port_multicast_requests_active();
   bool remote_scr_requests_active();
   bool direct_remote_scr_requests_active();
@@ -1510,12 +1520,11 @@ private:
     }
   }
 
-  // void receive_message(SBDT data, int remote_in_port) {
   void receive_message(int8_t* data, int num_bytes, int remote_in_port) {
     port_data_t& in_vp = _port_interf.in_port(remote_in_port);
     // TODO: Check the max port size here and apply backpressure
     
-    assert(num_bytes%in_vp.get_port_width()==0);
+    // assert(num_bytes%in_vp.get_port_width()==1);
     std::vector<uint8_t> temp;
     // TODO: make it uint everywhere on n/w side
     for(int i=0; i<num_bytes; ++i){
@@ -1526,6 +1535,8 @@ private:
       std::cout << "Received value: " << in_vp.get_sbdt_val(temp, in_vp.get_port_width()) << " at remote port: " << remote_in_port << "\n";
     }
     in_vp.push_data(temp);
+    // inc remote values received at this port
+    in_vp.inc_rem_wr(num_bytes/in_vp.get_port_width());
   }
 
   // void push_scratch_remote_buf(int64_t val, int16_t scr_addr){
@@ -1559,6 +1570,10 @@ void print_spad_addr(int start, int end){
   */
 
 void push_net_in_cmd_queue(base_stream_t* s);
+
+int get_core_id() {
+  return _lsq->getCpuId();
+}
 
   //members------------------------
   soft_config_t _soft_config;

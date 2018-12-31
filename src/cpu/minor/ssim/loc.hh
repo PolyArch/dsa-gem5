@@ -20,6 +20,7 @@ ENUM_FLAGS(LOC) {NONE=0x000,
                REMOTE_SCR=0x010, 
               REMOTE_PORT=0x020, 
                   REC_BUS=0x040,
+                  NETWORK=0x080,
                     TOTAL=0x07F}; 
 
 //using T = std::underlying_type<LOC>::type;

@@ -82,6 +82,7 @@ def create_network(options, ruby):
         NetworkClass = GarnetNetwork
         IntLinkClass = GarnetIntLink
         ExtLinkClass = GarnetExtLink
+        SpuExtLinkClass = GarnetSpuExtLink
         RouterClass = GarnetRouter
         InterfaceClass = GarnetNetworkInterface
 

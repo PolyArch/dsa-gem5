@@ -103,6 +103,10 @@ def config_cache(options, system):
                                   assoc=options.l1i_assoc)
             dcache = dcache_class(size=options.l1d_size,
                                   assoc=options.l1d_assoc)
+            # dcache = NoncoherentCache(size = '16kB', assoc = 2, tag_latency = 1,
+            #             data_latency = 2, sequential_access = False,
+            #             response_latency = 2, tgts_per_mshr = 8,
+            #             mshrs = 2)
 
             # If we have a walker cache specified, instantiate two
             # instances here
@@ -148,7 +152,8 @@ def config_cache(options, system):
             if buildEnv['TARGET_ISA'] in ['x86', 'arm']:
                 system.cpu[i].addPrivateSplitL1Caches(
                         ExternalCache("cpu%d.icache" % i),
-                        ExternalCache("cpu%d.dcache" % i),
+                        # ExternalCache("cpu%d.dcache" % i),
+                        NonCoherentCache("cpu%d.dcache" % i),
                         ExternalCache("cpu%d.itb_walker_cache" % i),
                         ExternalCache("cpu%d.dtb_walker_cache" % i))
             else:

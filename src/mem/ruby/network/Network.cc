@@ -58,38 +58,21 @@ Network::Network(const Params *p)
     m_control_msg_size = p->control_msg_size;
 
     // Total nodes/controllers in network
-    // Must make sure this is called after the State Machine constructors
-	// base_number has to be updated with every new creating of type
     m_nodes = MachineType_base_number(MachineType_NUM);
-	// printf("m_nodes is: %d and machine type num %d\n",m_nodes,MachineType_NUM);
-	// printf("base number of controller: %d\n",MachineType_base_number(MachineType_Directory));
-	// printf("base number of accel: %d\n",MachineType_base_number(MachineType_Accel));
-    // m_nodes = p->ext_links.size();
-    m_nodes = p->ext_links.size() + p->spu_ext_links.size();
-    ctrl_nodes = p->ext_links.size();
-
-    // printf("m_nodes from machine number is: %d\n",m_nodes);
-    // printf("m_nodes from ext links is: %lu\n",p->ext_links.size());
-	//
-	//
-	// TODO: next step can be to update m_nodes
-
     assert(m_nodes != 0);
     assert(m_virtual_networks != 0);
 
     m_topology_ptr = new Topology(p->routers.size(), p->ext_links,
                                   p->spu_ext_links, p->int_links);
 
-	int mem_ctrl_size = p->ext_links.size();
-	printf("NUMBER OF MEMORY CONTROLLERS: %d\n",mem_ctrl_size);
+	// int mem_ctrl_size = p->ext_links.size();
+	// printf("NUMBER OF MEMORY CONTROLLERS: %d\n",mem_ctrl_size);
     // Allocate to and from queues
     // Queues that are getting messages from protocol
     m_toNetQueues.resize(m_nodes);
-    // m_toNetQueues.resize(mem_ctrl_size);
 
     // Queues that are feeding the protocol
     m_fromNetQueues.resize(m_nodes);
-    // m_fromNetQueues.resize(mem_ctrl_size);
 
     m_ordered.resize(m_virtual_networks);
     m_vnet_type_names.resize(m_virtual_networks);
@@ -124,20 +107,14 @@ Network::Network(const Params *p)
         it->params()->ext_node->initNetQueues();
     }
 
-    // Just for test
-	int n_spu_cores = p->spu_ext_links.size();
-	printf("NUMBER OF SPU CORES: %d\n",n_spu_cores);
-	// s_toNetQueues.resize(n_spu_cores);
-    // s_fromNetQueues.resize(n_spu_cores);
+	// int n_spu_cores = p->spu_ext_links.size();
+	// printf("NUMBER OF SPU CORES: %d\n",n_spu_cores);
 
-	// int core_id=0;
 	for (std::vector<SpuExtLink*>::const_iterator i = p->spu_ext_links.begin();
          i != p->spu_ext_links.end(); ++i) {
         SpuExtLink *spu_ext_link = (*i);
 	    MinorCPU *accel = spu_ext_link->params()->spu_ext_node;
-        // accel->initNetworkPtr(this, core_id);
         accel->initNetworkPtr(this);
-	    // core_id++;
     }
 
 	for (auto &it : dynamic_cast<Network *>(this)->params()->spu_ext_links) {
@@ -149,9 +126,7 @@ Network::Network(const Params *p)
 
 Network::~Network()
 {
-     // printf("VALUE OF M_NODES HERE IS: %d\n",m_nodes);
     for (int node = 0; node < m_nodes; node++) {
-    // for (int node = 0; node < ctrl_nodes; node++) {
 
         // Delete the Message Buffers
         for (auto& it : m_toNetQueues[node]) {
@@ -162,20 +137,6 @@ Network::~Network()
             delete it;
         }
     }
-	/*
-    for (int node = 0; node < (m_nodes-ctrl_nodes); node++) {
-
-        // Delete the Message Buffers
-        for (auto& it : s_toNetQueues[node]) {
-            delete it;
-        }
-
-        for (auto& it : s_fromNetQueues[node]) {
-            delete it;
-        }
-    }
-	*/
-
     delete m_topology_ptr;
 }
 
@@ -255,35 +216,6 @@ Network::setFromNetQueue(NodeID id, bool ordered, int network_num,
     }
     m_fromNetQueues[id][network_num] = b;
 }
-
-/*
-void
-Network::setSpuToNetQueue(NodeID id, bool ordered, int network_num,
-                                 std::string vnet_type, MessageBuffer *b)
-{
-  printf("CHECK NETWORK NUM AT NETWORK.CC:setSpuQueue %d, IT SHOULD BE 2 FOR 2 virtual networks, with node_id: %d\n", network_num, id);
-  // TODO: create new net allocation check and thus, variables
-  // it's size is basically network_num+1
-    checkNetworkAllocation(id, ordered, network_num, vnet_type);
-    while (m_toNetQueues[id].size() <= network_num) {
-        m_toNetQueues[id].push_back(nullptr);
-    }
-    s_toNetQueues[id][network_num] = b;
-  printf("CHECK NETWORK NUM AT end %d, with node_id: %d\n", network_num, id);
-}
-
-void
-Network::setSpuFromNetQueue(NodeID id, bool ordered, int network_num,
-                                   std::string vnet_type, MessageBuffer *b)
-{
-  // TODO: create new net allocation check and thus, variables
-    checkNetworkAllocation(id, ordered, network_num, vnet_type);
-    while (s_fromNetQueues[id].size() <= network_num) {
-        s_fromNetQueues[id].push_back(nullptr);
-    }
-    s_fromNetQueues[id][network_num] = b;
-}
-*/
 
 NodeID
 Network::addressToNodeID(Addr addr, MachineType mtype)

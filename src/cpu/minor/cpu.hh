@@ -192,11 +192,19 @@ class MinorCPU : public BaseCPU, public Consumer
 	  // spu_net_ptr->setFromNetQueue(base+core_id, true, 2, "request", responseToSpu);
 	  // spu_net_ptr->setFromNetQueue(base+core_id, true, 0, "request", dummy3);
 
-	  spu_net_ptr->setToNetQueue(base+cpuId(), true, 4, "response", requestFromSpu);
-	  spu_net_ptr->setToNetQueue(base+cpuId(), true, 3, "forward", dummy1);
-	  spu_net_ptr->setToNetQueue(base+cpuId(), true, 1, "response", dummy2);
+
+	  spu_net_ptr->setToNetQueue(base+cpuId(), true, 0, "response", requestFromSpu);
+	  // spu_net_ptr->setToNetQueue(base+cpuId(), true, 3, "forward", dummy1);
+	  // spu_net_ptr->setToNetQueue(base+cpuId(), true, 1, "response", dummy2);
 	  spu_net_ptr->setFromNetQueue(base+cpuId(), true, 0, "request", responseToSpu);
-	  spu_net_ptr->setFromNetQueue(base+cpuId(), true, 2, "request", dummy3);
+	  // spu_net_ptr->setFromNetQueue(base+cpuId(), true, 2, "request", dummy3);
+
+
+	  // spu_net_ptr->setToNetQueue(base+cpuId(), true, 4, "response", requestFromSpu);
+	  // spu_net_ptr->setToNetQueue(base+cpuId(), true, 3, "forward", dummy1);
+	  // spu_net_ptr->setToNetQueue(base+cpuId(), true, 1, "response", dummy2);
+	  // spu_net_ptr->setFromNetQueue(base+cpuId(), true, 0, "request", responseToSpu);
+	  // spu_net_ptr->setFromNetQueue(base+cpuId(), true, 2, "request", dummy3);
 
 	}
 

@@ -31,7 +31,7 @@
 from m5.params import *
 from m5.proxy import *
 from ClockedObject import ClockedObject
-from BasicLink import BasicIntLink, BasicExtLink
+from BasicLink import BasicIntLink, BasicExtLink, SpuExtLink
 
 class NetworkLink(ClockedObject):
     type = 'NetworkLink'
@@ -59,6 +59,29 @@ class GarnetIntLink(BasicIntLink):
 # Exterior fixed pipeline links between a router and a controller
 class GarnetExtLink(BasicExtLink):
     type = 'GarnetExtLink'
+    cxx_header = "mem/ruby/network/garnet2.0/GarnetLink.hh"
+    # The external link is bi-directional.
+    # It includes two forward links (for flits)
+    # and two backward flow-control links (for credits),
+    # one per direction
+    _nls = []
+    # In uni-directional link
+    _nls.append(NetworkLink());
+    # Out uni-directional link
+    _nls.append(NetworkLink());
+    network_links = VectorParam.NetworkLink(_nls, "forward links")
+
+    _cls = []
+    # In uni-directional link
+    _cls.append(CreditLink());
+    # Out uni-directional link
+    _cls.append(CreditLink());
+    credit_links = VectorParam.CreditLink(_cls, "backward flow-control links")
+
+# DONE: create SPU ext link here
+# Exterior fixed pipeline links between a router and a controller
+class GarnetSpuExtLink(SpuExtLink):
+    type = 'GarnetSpuExtLink'
     cxx_header = "mem/ruby/network/garnet2.0/GarnetLink.hh"
     # The external link is bi-directional.
     # It includes two forward links (for flits)

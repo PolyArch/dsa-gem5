@@ -326,6 +326,7 @@ class DRAMCtrl(AbstractMemory):
 class DDR3_1600_8x8(DRAMCtrl):
     # size of device in bytes
     device_size = '512MB'
+    # device_size = '1024MB'
 
     # 8x8 configuration, 8 devices each with an 8-bit interface
     device_bus_width = 8

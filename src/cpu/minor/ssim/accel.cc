@@ -1469,6 +1469,7 @@ void accel_t::print_status() {
   _scr_r_c.print_status();
   _scr_w_c.print_status();
   _port_c.print_status();
+  _net_c.print_status();
 
   cout << "Waiting SEs: (" << _cmd_queue.size() << ")\n";
   for (auto i : _cmd_queue) {
@@ -1482,6 +1483,7 @@ void accel_t::print_status() {
     std::cout << "In Port " << cur_p << " " << s << ": ";
     std::cout << "  Mem Size: " << _port_interf.in_port(cur_p).mem_size() << "";
     std::cout << "  Num Ready: " << _port_interf.in_port(cur_p).num_ready()
+              << " Rem writes: " << _port_interf.in_port(cur_p).get_rem_wr() // remove this!
               << "\n";
   }
 
@@ -1491,6 +1493,7 @@ void accel_t::print_status() {
     std::cout << "Ind In Port " << cur_p << ": ";
     std::cout << "  Mem Size: " << _port_interf.in_port(cur_p).mem_size() << "";
     std::cout << "  Num Ready: " << _port_interf.in_port(cur_p).num_ready()
+              << " Rem writes: " << _port_interf.in_port(cur_p).get_rem_wr() // remove this!
               << "\n";
   }
 
@@ -1723,6 +1726,7 @@ void accel_t::print_statistics(std::ostream &out) {
   print_src("DMA_LOAD:\t", LOC::DMA);
   print_dest("DMA_STORE:\t", LOC::DMA);
   print_dest("REC_BUS_READ:\t", LOC::REC_BUS);
+  print_dest("NETWORK:\t", LOC::NETWORK);
 }
 
 // wait and print stats
@@ -2698,25 +2702,41 @@ void dma_controller_t::make_read_request() {
   }
 }
 
+// this works only when stride is less than 64 (straddle is for just the next cache line) -- basically stride should be equal to the data type or does aligned malloc not work?
 int dma_controller_t::req_read(affine_read_stream_t &stream) {
   int data_width = stream.data_width();
   addr_t prev_addr = 0;
   addr_t addr = stream.cur_addr();
   addr_t base_addr = addr & MEM_MASK; // this is the request address...
+
+  // base_addr is base of cache line
   addr_t max_addr = base_addr + MEM_WIDTH;
 
   assert(addr != 0 && "cannot load address 0x0");
   // mask.resize(MEM_WIDTH/data_width);
   std::fill(mask.begin(), mask.end(), 0);
+  for(int i=0; i<stream.straddle_bytes(); ++i) {
+    mask[i]=1;
+  }
+  // cout << addr << " " << base_addr << " " << straddle_bytes << endl;
+  // cout << (addr-base_addr) << " " << straddle_bytes << endl;
+  // assert((addr-base_addr)>(straddle_bytes-1));
+  stream.set_straddle_bytes(0);
   // int words=0;
   int elems = 0;
 
   while (addr < max_addr && addr > prev_addr && stream.stream_active()) {
     prev_addr = addr;
     // mask[(addr-base_addr)/DATA_WIDTH]=1;
+    // cout << "MASK OFFSET: " << (addr-base_addr+data_width) << endl;
+    if(addr-base_addr+data_width>64) {
+      stream.set_straddle_bytes(addr-base_addr+data_width-64);
+    }
     for (int i = 0; i < data_width; ++i) {
       mask[addr - base_addr + i] = 1;
+      // mask[addr - base_addr - prev_addr + i] = 1;
     }
+    // prev_addr = addr;
     // mask[(addr-base_addr)/data_width]=1;
     addr = stream.pop_addr();
     // words+=1;
@@ -2725,6 +2745,16 @@ int dma_controller_t::req_read(affine_read_stream_t &stream) {
       break;
     }
   }
+
+  /*
+  int x=0;
+  for(int i=0; i<64; ++i) {
+    if(mask[i]==1) {
+      x++;
+    }
+  }
+  cout << "NUMBER OF 1s in the mask: " << x << endl;
+  */
 
   // TODO: add l2_miss statistics -- probably somewhere else....
   if (_accel->_ssim->in_roi()) {
@@ -3096,10 +3126,20 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
   port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
 
   bool first = true;
-  addr_t base_addr = 0;
+  addr_t base_addr = stream.cur_base_addr;
   addr_t max_addr = 0;
 
   vector<int> imap;
+  
+  if (stream.straddle_bytes()>0) { 
+    first=false; 
+    for (int i = 0; i < stream.straddle_bytes(); ++i) {
+      imap.push_back(i);
+    }
+    stream.set_straddle_bytes(0);
+  }
+  else { stream.cur_base_addr = 0; }
+  
 
   while (ind_vp.mem_size() && stream.stream_active()) {
     // addr_t idx  = stream.calc_index(ind_vp.peek_out_data());
@@ -3117,23 +3157,25 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
       }
     }
 
-    // assert( ((addr & 0x7)==0) && "bottom 3 bits must be zero for
-    // word-loads");
-
     int index = addr - base_addr;
-    // number of values we want to read at that index is the port_width
-    // imap.push_back(index);
-
-    /*
-    // TODO: only set to 8
-    int data_width = stream._data_width;
-    for(int i=0; i<data_width; ++i){
-      imap.push_back(index+i);
-    }
-    */
 
     int data_bytes = stream._data_bytes;
-    for (int i = 0; i < data_bytes; ++i) {
+
+    // if index+i>64, then what? (send 2 cache line requests)
+    // cout << "Max map in the cache line: " << index+data_bytes;
+    
+    if(index + data_bytes > 64) { 
+      cout << "STRADDLING CACHE LINES\n";
+      stream.set_straddle_bytes(index+data_bytes-64);
+      stream.cur_base_addr=max_addr; 
+    }
+   
+  // if(index + data_bytes > 64) { 
+  //   cout << "STRADDLING CACHE LINES\n";
+  // }
+ 
+    // for (int i = 0; i < data_bytes; ++i) {
+    for (int i = 0; i < data_bytes && (index+i < 64); ++i) {
       imap.push_back(index + i);
     }
 
@@ -3527,25 +3569,25 @@ void network_controller_t::multicast_data(
   uint64_t bytes_written = 0;
   uint64_t remote_elem_sent = 0;
 
-  int data_width = out_vp.get_port_width();
+  int data_width = out_vp.get_port_width(); // in bytes
   int message_size = 64/data_width; // num of data_width elements to be written
   if(stream._num_elements<64/data_width){
     message_size=stream._num_elements;
   }
-  // case when size of the stream is unknown, it should send all the current
-  // elements there
+  // case when size of the stream is unknown, it should send all the current elements there [out_vp.size(),64]
   message_size = out_vp.mem_size() < message_size ? out_vp.mem_size() : message_size;
   int8_t val[64]; // number of 8-byte elements to send
+
   if (stream.stream_active() && out_vp.mem_size() >= message_size && out_vp.mem_size()) {
     while (stream.stream_active() // enough in dest
            && out_vp.mem_size() &&
            bytes_written < 64) { // enough in source (64-bytes)
-      // peek out and pop later if message buffer size was full?
+      // TODO: peek out and pop later if message buffer size was full?
+      
       // POP data_width amount of data
       SBDT data = out_vp.pop_out_data();
       for(int i=0; i<data_width; i++){
         val[i+remote_elem_sent*data_width] = (data >> (i*8)) & 255;
-        // val[i+remote_elem_sent*data_width] = data[i];
       }
 
       bytes_written += data_width;
@@ -3560,12 +3602,12 @@ void network_controller_t::multicast_data(
         stream.print_status();
       }
     }
-    // _accel->_lsq->push_spu_req(remote_in_port, val, remote_elem_sent*data_width, stream._core_mask);
+    // if(stream._out_port==7) { cout << "Core id: " << _accel->get_core_id() << " REMOTE BYTES SENT: " << (remote_elem_sent*data_width) << endl; }
     _accel->_lsq->push_spu_req(stream._out_port, remote_in_port, val, remote_elem_sent*data_width, stream._core_mask);
   }
   // TODO: do we need n/w ctrl bus bandwidth util
   if (_accel->_ssim->in_roi()) {
-    // add_bw(stream.src(), stream.dest(), 1, bytes_written);
+    add_bw(stream.src(), stream.dest(), 1, bytes_written);
     _accel->_stat_port_multicast += remote_elem_sent;
   }
 }
@@ -3684,7 +3726,7 @@ void network_controller_t::write_direct_remote_scr(
                                       scr_offset, dest_core_id, stream.id());
   }
   if (_accel->_ssim->in_roi()) {
-    // add_bw(stream.src(), stream.dest(), 1, bytes_written);
+    add_bw(stream.src(), stream.dest(), 1, bytes_written);
     _accel->_stat_remote_scratch_writes += remote_elem_sent;
   }
 }
@@ -3755,7 +3797,7 @@ void network_controller_t::cycle() {
         // we can send max of message_size*bus_wisth messages in 1 cycle or till
         // the queue is full (Oh, this bus is also 512-bit bus)
         multicast_data(stream);
-
+        
         bool is_empty = stream.check_set_empty();
         if (is_empty) {
           _accel->process_stream_stats(stream);
@@ -4601,6 +4643,7 @@ void scratch_write_controller_t::finish_cycle() {}
 
 void scratch_write_controller_t::print_status() {
   for (auto &i : _write_streams) {
+    if (dynamic_cast<remote_core_net_stream_t*>(i)) continue;
     if (!i->empty()) {
       i->print_status();
     }

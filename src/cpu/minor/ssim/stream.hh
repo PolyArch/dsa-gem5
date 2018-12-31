@@ -109,6 +109,7 @@ struct base_stream_t {
   virtual uint64_t offset_list() {return 0;}
   virtual uint64_t ind_mult()    {return 1;}
   uint64_t data_width()    {return _data_width;}
+  uint64_t straddle_bytes()    {return _straddle_bytes;}
 
   std::vector<int>& in_ports()      {return _in_ports;}
   int first_in_port()      {return _in_ports[0];}
@@ -138,11 +139,13 @@ struct base_stream_t {
   LOC _unit = LOC::PORT;
 
   virtual void set_data_width(int d) {_data_width=d;}
+  virtual void set_straddle_bytes(int d) {_straddle_bytes=d;}
 
 protected:
   int      _id=0;
   uint32_t _fill_mode=0; //0: none, 1 post-zero fill, 2 pre-zero fill (not implemented)
   int _data_width=DATA_WIDTH; 
+  int _straddle_bytes=0; // bytes straddling over cache lines (used only in mem streams as of now!)
   bool _empty=false; //presumably, when we create this, it won't be empty
   Minor::MinorDynInstPtr _minst;
   uint64_t _reqs=0;
@@ -824,6 +827,7 @@ struct indirect_base_stream_t : public base_stream_t {
 //Indirect Read Port -> Port
 struct indirect_stream_t : public indirect_base_stream_t {
   int _repeat_in=1, _repeat_str=0;
+  addr_t cur_base_addr = 0;
 
   virtual int repeat_in() {return _repeat_in;}
   virtual int repeat_str() {return _repeat_str;}
@@ -894,6 +898,10 @@ remote_port_multicast_stream_t(int out_port, int remote_in_port, uint64_t num_el
     _core_mask = mask;
     // _is_ready=false;
   }
+
+  LOC src() {return LOC::PORT;}
+  LOC dest() {return LOC::NETWORK;}
+
     // _core_mask = mask;
   // this was core_id instead of the mask
   // bool _is_ready = false;
@@ -932,8 +940,8 @@ remote_port_multicast_stream_t(int out_port, int remote_in_port, uint64_t num_el
     base_stream_t::print_status();
   }
 
-  virtual LOC src() {return LOC::PORT;}
-  virtual LOC dest() {return LOC::REMOTE_PORT;}
+  // virtual LOC src() {return LOC::PORT;}
+  // virtual LOC dest() {return LOC::REMOTE_PORT;}
 };
 
 struct remote_scr_stream_t;
@@ -951,6 +959,10 @@ struct remote_scr_stream_t : public remote_port_multicast_stream_t {
     _scr_type = spad_type;
     _addr_port = addr_port;
   }
+
+  // LOC src() {return LOC::PORT;}
+  // LOC dest() {return LOC::NETWORK;}
+
 
   addr_t _remote_scr_base_addr = -1;
   bool _scr_type = 0; // 0 means banked scr
