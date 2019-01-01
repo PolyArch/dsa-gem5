@@ -267,7 +267,10 @@ SBDT port_data_t::peek_out_data() {
 }
 
 SBDT port_data_t::peek_out_data(int i) {
-  // SBDT val = _mem_data[i];
+  if(!(i>0 && _mem_data.size()>i)) {
+    cout << i << " " << _mem_data.size() << endl;
+  }
+  assert(_mem_data.size()>i);
   vector<uint8_t> v = _mem_data[i];
   SBDT val = get_sbdt_val(v, _port_width);
   return val;
@@ -717,6 +720,7 @@ void accel_t::whos_to_blame(
 }
 
 void accel_t::tick() {
+
   _cgra_issued = 0; // for statistics reasons
   _dedicated_cgra_issued = 0;
   _backcgra_issued = 0;
@@ -827,10 +831,17 @@ void accel_t::cycle_indirect_interf() {
                                                                 // ports
     auto &ind_in_port = _port_interf.in_port(i);
     auto &ind_out_port = _port_interf.out_port(i);
-
+    
     // we only allow 8 words in the output vector port, since there's already
     // buffering in the input vector port, so it would be kindof cheating
-    if (i == 23 || i == 24 || i == 25 || i == 26) { // dedicated ports
+    while (ind_in_port.mem_size() && ind_out_port.mem_size() < 64) {
+      ind_out_port.push_data(ind_in_port.pop_in_custom_data<uint8_t>());
+    }
+
+    /*
+    // we only allow 8 words in the output vector port, since there's already
+    // buffering in the input vector port, so it would be kindof cheating
+    if (i == 23 || i == 24 || i == 25 || i == 26 || i == 31) { // dedicated ports
       while (ind_in_port.mem_size() && ind_out_port.mem_size() < 64) {
         ind_out_port.push_data(ind_in_port.pop_in_custom_data<uint8_t>());
       }
@@ -839,6 +850,7 @@ void accel_t::cycle_indirect_interf() {
         ind_out_port.push_data(ind_in_port.pop_in_data());
       }
     }
+    */
   }
 }
 
@@ -2857,13 +2869,23 @@ void scratch_write_controller_t::write_scratch_ind(
 
   int bytes_written = 0;
 
-  while (ind_vp.mem_size() && out_vp.mem_size() && stream.stream_active() &&
+  while (ind_vp.mem_size()>=stream._index_bytes && out_vp.mem_size() && stream.stream_active() &&
          bytes_written < 64) {
-    addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
+    
+    uint64_t ind=0;
+    for(int i=0; i<stream._index_bytes; ++i) {
+      uint8_t temp = ind_vp.peek_out_data(i);
+      ind = ind | (temp << i*8);
+    }
+    addr_t addr = stream.cur_addr(ind);
+    // addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
 
     bool pop_ind_vp = stream.pop_elem();
     if (pop_ind_vp) { // this is for sub-word granularity reads
-      ind_vp.pop_out_data();
+      for(int i=0; i<stream._index_bytes; ++i) {
+        ind_vp.pop_out_data();
+      }
+      // ind_vp.pop_out_data();
     }
 
     uint64_t val = stream.cur_value(out_vp.peek_out_data());
@@ -2914,8 +2936,16 @@ void scratch_read_controller_t::read_linear_scratch_ind(
   // vector<int> imap;
   int bytes_read=0;
 
-  while (ind_vp.mem_size() && stream.stream_active()) {
-    addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
+  while (ind_vp.mem_size()>=stream._index_bytes && stream.stream_active()) {
+
+    uint64_t ind=0;
+    for(int i=0; i<stream._index_bytes; ++i) {
+      uint8_t temp = ind_vp.peek_out_data(i); // this will always return first elem?
+      // cout << "Value in the port: " << (temp&0xFFFFFFFFFFFFFFFF) << endl;
+      ind = ind | (temp << i*8); // FIXME:CHECKME
+    }
+    addr_t addr = stream.cur_addr(ind);
+    // addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
 
     // cout << "idx:" << idx << "\taddr:" << hex << addr << dec << "\n";
     if (first) {
@@ -2947,7 +2977,10 @@ void scratch_read_controller_t::read_linear_scratch_ind(
 
     bool pop_ind_vp = stream.pop_elem();
     if (pop_ind_vp) {
-      ind_vp.pop_out_data();
+      for(int i=0; i<stream._index_bytes; ++i) {
+        ind_vp.pop_out_data();
+      }
+      // ind_vp.pop_out_data();
     }
 
     bytes_read += data_bytes;
@@ -2980,7 +3013,7 @@ void scratch_read_controller_t::read_scratch_ind(
   port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
 
   // STAGE 1: Push the requests to ports
-  if (stream.stream_active() && ind_vp.mem_size() &&
+  if (stream.stream_active() && ind_vp.mem_size()>=stream._index_bytes &&
       _ind_ROB.size() < _accel->_ind_rob_size) {
     // don't use this anymore because data goes into the request instead
     // uint8_t* raw_ptr = (uint8_t*)&stream._cur_ind_val;
@@ -2995,14 +3028,23 @@ void scratch_read_controller_t::read_scratch_ind(
     reorder_entry->last = false;
 
     // just distribute the elements to the queues
-    while (ind_vp.mem_size() && stream.stream_active() &&
+    while (ind_vp.mem_size()>=stream._index_bytes && stream.stream_active() &&
            reorder_entry->size < 64) {
 
-      addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
+      uint64_t ind=0;
+       for(int i=0; i<stream._index_bytes; ++i) {
+         uint8_t temp = ind_vp.peek_out_data(i);
+         ind = ind | (temp << i*8);
+       }
+       addr_t addr = stream.cur_addr(ind);
+      // addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
 
       bool pop_ind_vp = stream.pop_elem();
       if (pop_ind_vp) { // this is for sub-word granularity reads
-        ind_vp.pop_out_data();
+        for(int i=0; i<stream._index_bytes; ++i) {
+          ind_vp.pop_out_data();
+        }
+        // ind_vp.pop_out_data();
       }
 
       // push the entry into the read bank queues
@@ -3141,12 +3183,18 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
   else { stream.cur_base_addr = 0; }
   
 
-  while (ind_vp.mem_size() && stream.stream_active()) {
-    // addr_t idx  = stream.calc_index(ind_vp.peek_out_data());
-    // addr_t addr = stream._index_addr + idx * stream.index_size();
-    addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
+  while (ind_vp.mem_size()>=stream._index_bytes && stream.stream_active()) {
 
-    // cout << "idx:" << idx << "\taddr:" << hex << addr << dec << "\n";
+    uint64_t ind=0;
+    for(int i=0; i<stream._index_bytes; ++i) {
+      uint8_t temp = ind_vp.peek_out_data(i);
+      // cout << "Value in the port: " << (temp&0xFFFFFFFFFFFFFFFF) << endl;
+      ind = ind | (temp << i*8);
+    }
+    addr_t addr = stream.cur_addr(ind);
+    // addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
+ 
+
     if (first) {
       first = false;
       base_addr = addr & MEM_MASK;
@@ -3163,16 +3211,11 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
 
     // if index+i>64, then what? (send 2 cache line requests)
     // cout << "Max map in the cache line: " << index+data_bytes;
-    
     if(index + data_bytes > 64) { 
       cout << "STRADDLING CACHE LINES\n";
       stream.set_straddle_bytes(index+data_bytes-64);
       stream.cur_base_addr=max_addr; 
     }
-   
-  // if(index + data_bytes > 64) { 
-  //   cout << "STRADDLING CACHE LINES\n";
-  // }
  
     // for (int i = 0; i < data_bytes; ++i) {
     for (int i = 0; i < data_bytes && (index+i < 64); ++i) {
@@ -3187,8 +3230,11 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
     }
 
     bool pop_ind_vp = stream.pop_elem();
-    if (pop_ind_vp) {
-      ind_vp.pop_out_data();
+    if (pop_ind_vp) { // FIXME: pop data_width num of elems
+      for(int i=0; i<stream._index_bytes; ++i) {
+        ind_vp.pop_out_data();
+      }
+      // ind_vp.pop_out_data();
     }
   }
   bool last = stream.check_set_empty();
@@ -3210,14 +3256,16 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
     add_bw(stream.src(), stream.dest(), 1, imap.size() * DATA_WIDTH);
 
     _accel->_stat_tot_mem_fetched +=
-        imap.size() * DATA_WIDTH; // TODO: fix once the stream size is fixed
+        imap.size() * DATA_WIDTH; // need to change to stream.data_width()
     _accel->_stat_tot_loads += 1;
   }
 
   _mem_read_reqs++;
 }
 
+// FIXME: check if it works for dgra output port
 void dma_controller_t::ind_write_req(indirect_wr_stream_t &stream) {
+ 
   port_data_t &out_vp = _accel->port_interf().out_port(stream._out_port);
   port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
 
@@ -3234,17 +3282,20 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t &stream) {
   uint64_t *data64 = (uint64_t *)data8;
 
   // FIXME: The size of the indirect stream should be made configurable!
+  // Also, check what is this?
   int stream_size = 8;
 
   int index = 0;
-  while (out_vp.mem_size() && ind_vp.mem_size() && stream.stream_active()) {
-    // addr_t idx  = stream.calc_index(ind_vp.peek_out_data());
-    // addr_t addr = stream._index_addr + idx * stream.index_size();
+  while (out_vp.mem_size() && ind_vp.mem_size()>=stream._index_bytes && stream.stream_active()) {
 
-    addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
-
-    // cout << "idx:" << idx << "\taddr:" << hex << addr << dec << "\n";
-
+    uint64_t ind=0;
+    for(int i=0; i<stream._index_bytes; ++i) {
+      uint8_t temp = ind_vp.peek_out_data(i);
+      ind = ind | (temp << i*8);
+    }
+    addr_t addr = stream.cur_addr(ind);
+    // addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
+ 
     if (first) {
       first = false;
       // base_addr = addr & MEM_MASK;
@@ -3257,6 +3308,7 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t &stream) {
       }
     }
 
+    // FIXME: data-type of the output port
     SBDT val = out_vp.peek_out_data();
 
     prev_addr = addr;
@@ -3269,7 +3321,10 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t &stream) {
 
     bool pop_ind_vp = stream.pop_elem();
     if (pop_ind_vp) {
-      ind_vp.pop_out_data();
+      for(int i=0; i<stream._index_bytes; ++i) {
+        ind_vp.pop_out_data();
+      }
+      // ind_vp.pop_out_data();
     }
   }
 
@@ -4250,6 +4305,19 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
       }
     } else if (auto *sp = dynamic_cast<atomic_scr_stream_t *>(s)) {
       auto &stream = *sp;
+      /*
+      port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
+
+      // if(ind_vp.mem_size() && stream.stream_active()) {
+      if ((ind_vp.mem_size() && stream.stream_active() && || atomic_scr_issued_requests()) {
+        atomic_scratch_update(stream);
+        if (stream.empty()) {
+          delete_stream(_which_wr, sp);
+        }
+        break;
+      }
+      */
+ 
       SBDT loc;
       SBDT inc;
       addr_t scr_addr, max_addr;

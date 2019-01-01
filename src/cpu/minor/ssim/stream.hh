@@ -491,7 +491,8 @@ struct const_port_stream_t : public base_stream_t {
   virtual LOC dest() {return LOC::PORT;}
 
   virtual uint64_t data_volume() {
-    return (_num_elements + _num_elements2) * _num_iters * sizeof(SBDT);
+    // return (_num_elements + _num_elements2) * _num_iters * sizeof(SBDT);
+    return (_num_elements + _num_elements2) * _num_iters * _data_width;
   }
   virtual STR_PAT stream_pattern() {
     return STR_PAT::CONST;
@@ -617,7 +618,8 @@ struct port_port_stream_t : public base_stream_t {
     _padding_cnt = 0;
   }
 
-  virtual uint64_t data_volume() {return _num_elements * sizeof(SBDT);}
+  // virtual uint64_t data_volume() {return _num_elements * sizeof(SBDT);}
+  virtual uint64_t data_volume() {return _num_elements * _data_width;}
   virtual STR_PAT stream_pattern() {return STR_PAT::REC;}
 
   int64_t out_port()    {return _out_port;}
@@ -714,7 +716,7 @@ struct remote_port_stream_t : public port_port_stream_t {
 //Indirect Read Port -> Port
 struct indirect_base_stream_t : public base_stream_t {
   int _ind_port;
-  int _ind_type, _dtype; //index and data types, TODO: data type must be T64
+  int _ind_type, _dtype; //index and data types
   addr_t _num_elements;
   addr_t _index_addr;
   uint64_t _offset_list;
@@ -723,17 +725,17 @@ struct indirect_base_stream_t : public base_stream_t {
 
   addr_t _orig_elements;
   //These get set based on _type
-  unsigned _index_bytes, _data_bytes, _indices_in_word;
+  unsigned _index_bytes, _data_bytes; // , _indices_in_word;
   uint64_t _index_mask, _data_mask;
 
-  //Note: since ports hold 64-bits, this is the adapter
+  //Note: since ports hold 1-bit, this is the adapter
   //for indirect read so that it works regardless
-  uint64_t _cur_ind_val=0;
+  // uint64_t _cur_ind_val=0;
   int _ind_bytes_complete=0;
 
   virtual void set_orig() { //like constructor but lazier
     _orig_elements = _num_elements;
-    _index_in_word=0;
+    // _index_in_word=0;
     _index_in_offsets=0;
 
     switch(_ind_type) {
@@ -752,9 +754,9 @@ struct indirect_base_stream_t : public base_stream_t {
     }
 
     // _indices_in_word = DATA_WIDTH / _index_bytes;
-    _indices_in_word = _data_width / _index_bytes;
+    // _indices_in_word = _data_width / _index_bytes;
 
-    //set up offset list
+    // FIXME: set up offset list: confirm: ask Tony
     _offsets.push_back(0);
     // for(int i = 0; i < DATA_WIDTH; i++) {
     for(int i = 0; i < _data_width; i++) {
@@ -774,15 +776,17 @@ struct indirect_base_stream_t : public base_stream_t {
 
   bool scratch()     {return _unit==LOC::SCR;}
 
-  virtual uint64_t data_volume() {return _num_elements * sizeof(SBDT);} //TODO: config
+  // virtual uint64_t data_volume() {return _num_elements * sizeof(SBDT);} //TODO: config
+  virtual uint64_t data_volume() { return _num_elements; }
   virtual STR_PAT stream_pattern() {return STR_PAT::IND;}
 
   //if index < 64 bit, the index into the word from the port
-  unsigned _index_in_word=0;
+  // unsigned _index_in_word=0;
   unsigned _index_in_offsets=0;
 
   addr_t cur_addr(SBDT val) {
-    uint64_t index =  (val >> (_index_in_word * _index_bytes * 8)) & _index_mask;
+    // uint64_t index =  (val >> (_index_in_word * _index_bytes * 8)) & _index_mask;
+    uint64_t index =  val & _index_mask;
     if(SS_DEBUG::MEM_REQ) {
       std::cout << "index: " << index << " mult: " << _ind_mult << "\n";
     }
@@ -807,6 +811,9 @@ struct indirect_base_stream_t : public base_stream_t {
       _num_elements--;
       //std::cout << _num_elements << " ";
 
+      // HACK
+      return true;
+      /*
       _index_in_word++;
       if(_index_in_word >= _indices_in_word) {
         _index_in_word=0;
@@ -814,6 +821,8 @@ struct indirect_base_stream_t : public base_stream_t {
 
         return true;
       }
+      */
+      // END HACK
     }
     //std::cout << "\n";
 

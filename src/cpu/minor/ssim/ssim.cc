@@ -26,7 +26,8 @@ ssim_t::ssim_t(Minor::LSQ* lsq) : _lsq(lsq) {
   //TODO: inform accel_arr
 
   // default things
-  for(int i=22; i<28; ++i) {
+  // for(int i=22; i<28; ++i) {
+  for(int i=22; i<32; ++i) {
     port_data_t& cur_out_port = accel_arr[0]->_port_interf.out_port(i);
     cur_out_port.set_port_width(8);
     

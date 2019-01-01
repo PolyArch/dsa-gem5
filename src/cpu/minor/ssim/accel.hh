@@ -428,7 +428,6 @@ public:
     }
   }
   unsigned mem_size() {
-    // std::cout << "came to calculate mem_size\n";
     return _mem_data.size(); // size of the deque (_mem_data.size()*_port_width)
   }
   unsigned num_ready() {return _num_ready;}         //Num of ready instances
