@@ -41,19 +41,11 @@ from BaseTopology import SimpleTopology
 class Mesh_XY(SimpleTopology):
     description='Mesh_XY'
 
-    # TODO: can we try this without adding extra parameter in init? or I will
-    # have to do setup
-    # def __init__(self, controllers, spu_ports):
     def __init__(self, controllers):
         self.nodes = controllers
-        # FIXME: actually they are not initialized here
-        # self.spu_ports = VectorParam.RubyPort
-        # self.spu_ports = ruby_ports
-        # self.spu_ports = system.cpu_sequencers
 
     # Makes a generic mesh
     # assuming an equal number of cache and directory cntrls
-
     def makeTopology(self, options, network, IntLink, ExtLink, SpuExtLink,
             Router, accel):
         nodes = self.nodes
@@ -118,11 +110,6 @@ class Mesh_XY(SimpleTopology):
 
         network.ext_links = ext_links
 
-        # Connect each spu node to the appropriate router (TODO: check, added
-        # in code only)
-        # FIXME: these nodes should not be controllers
-
-        # print("COMES TO THE CONFIG FILES TO CREATE TOPOLOGY- HOW TO CHANGE?")
         spu_nodes = []
         # print len(self.spu_ports)
         # print options.num_cpus

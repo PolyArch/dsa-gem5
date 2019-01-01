@@ -66,10 +66,8 @@ public:
   void multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_port, int rem_port, bool dest_flag, bool spad_type, int64_t stride, int64_t access_size);
   void write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int num_elem);
 
-  // void push_in_accel_port(int accel_id, int64_t val, int in_port);
-  void push_in_accel_port(int accel_id, int8_t* val, int num_bytes, int in_port);
-  void write_remote_banked_scratchpad(int8_t* val, int num_bytes, int16_t scr_addr);
-  // void write_remote_banked_scratchpad(int64_t val, int16_t scr_addr);
+  void push_in_accel_port(int accel_id, uint8_t* val, int num_bytes, int in_port);
+  void write_remote_banked_scratchpad(uint8_t* val, int num_bytes, uint16_t scr_addr);
 
   void insert_barrier(uint64_t mask);
 

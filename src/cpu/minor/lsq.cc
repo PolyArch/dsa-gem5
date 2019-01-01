@@ -1211,13 +1211,13 @@ LSQ::canSendToMemorySystem()
 
 /* Push PORT MULTICAST request into the SPU network buffer, FIXME: it could directly push here also? */
 // void LSQ::push_spu_req(int dest_port_id, uint64_t val, int64_t mask)
-void LSQ::push_spu_req(int src_port_id, int dest_port_id, int8_t* val, int num_bytes, int64_t mask)
+void LSQ::push_spu_req(int src_port_id, int dest_port_id, uint8_t* val, int num_bytes, uint64_t mask)
 {
   execute.send_spu_req(src_port_id, dest_port_id, val, num_bytes, mask);
 }
 /* Push SCR WR request into the SPU network buffer */
 // void LSQ::push_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id, int stream_id)
-void LSQ::push_spu_scr_wr_req(int8_t* val, int num_bytes, int64_t scr_offset, int dest_core_id, int stream_id)
+void LSQ::push_spu_scr_wr_req(uint8_t* val, int num_bytes, uint64_t scr_offset, int dest_core_id, int stream_id)
 {
   // execute.send_spu_scr_wr_req(scr_type, val, scr_offset, dest_core_id);
   execute.send_spu_scr_wr_req(val, num_bytes, scr_offset, dest_core_id);
@@ -1650,10 +1650,6 @@ LSQ::pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
         /* I've no idea why we need the PC, but give it */
         inst->pc.instAddr());
 
-    // remove this after debugging multi-thread
-    // if(isLoad) {
-    //   printf("New request pushed in load queue\n");
-    // }
     requests.push(request);
     request->startAddrTranslation();
 }

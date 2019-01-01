@@ -428,7 +428,6 @@ public:
     }
   }
   unsigned mem_size() {
-    // std::cout << "came to calculate mem_size\n";
     return _mem_data.size(); // size of the deque (_mem_data.size()*_port_width)
   }
   unsigned num_ready() {return _num_ready;}         //Num of ready instances
@@ -880,11 +879,13 @@ class scratch_write_controller_t : public data_controller_t {
     //}
   }
 
-  // void push_net_stream(remote_core_net_stream_t* stream);
   void write_scratch_ind(indirect_wr_stream_t& stream);
   void write_scratch_remote_ind(remote_core_net_stream_t& stream);
   void write_scratch_remote_direct(direct_remote_scr_stream_t& stream);
-
+  void atomic_scratch_update(atomic_scr_stream_t& stream);
+  void serve_atomic_requests(atomic_scr_stream_t& stream, bool &performed_atomic_scr);
+  void push_remote_wr_req(uint8_t *val, int num_bytes, addr_t scr_addr);
+  void scr_write(addr_t addr, affine_write_stream_t& stream, port_data_t& out_vp);
 
   void reset_stream_engines() {
     _port_scr_streams.clear();
@@ -913,21 +914,14 @@ class scratch_write_controller_t : public data_controller_t {
   void print_status();
   void cycle_status();
 
-  // for atomic_stream
   bool atomic_scr_streams_active();
-  // streams issued but not executed because of bank conflicts
   bool atomic_scr_issued_requests_active();
-
   bool port_scr_streams_active();
   bool const_scr_streams_active();
 
   bool schedule_port_scr(affine_write_stream_t& s);
   bool schedule_const_scr(const_scr_stream_t& s);
-
-  // void push_remote_wr_req(SBDT val, addr_t scr_addr);
-  void push_remote_wr_req(int8_t *val, int num_bytes, addr_t scr_addr);
-  void scr_write(addr_t addr, affine_write_stream_t& stream, port_data_t& out_vp);
-
+  
   bool release_df_barrier(){
     assert(_df_count!=-1);
     // printf("df_count: %ld current_writes: %ld\n",_df_count,_remote_scr_writes);
@@ -1008,7 +1002,7 @@ class network_controller_t : public data_controller_t {
     reset_stream_engines();
   }
 
-  void multicast_data(remote_port_multicast_stream_t& stream);
+  void multicast_data(remote_port_multicast_stream_t& stream, int message_size);
   void write_remote_scr(remote_scr_stream_t& stream);
   void write_direct_remote_scr(direct_remote_scr_stream_t& stream);
 
@@ -1520,7 +1514,7 @@ private:
     }
   }
 
-  void receive_message(int8_t* data, int num_bytes, int remote_in_port) {
+  void receive_message(uint8_t* data, int num_bytes, int remote_in_port) {
     port_data_t& in_vp = _port_interf.in_port(remote_in_port);
     // TODO: Check the max port size here and apply backpressure
     
@@ -1528,8 +1522,7 @@ private:
     std::vector<uint8_t> temp;
     // TODO: make it uint everywhere on n/w side
     for(int i=0; i<num_bytes; ++i){
-      if(data[i]<0) { temp.push_back(data[i]+256); }
-      else temp.push_back(data[i]);
+      temp.push_back(data[i]);
     }
     if(SS_DEBUG::NET_REQ) {
       std::cout << "Received value: " << in_vp.get_sbdt_val(temp, in_vp.get_port_width()) << " at remote port: " << remote_in_port << "\n";
@@ -1540,7 +1533,7 @@ private:
   }
 
   // void push_scratch_remote_buf(int64_t val, int16_t scr_addr){
-  void push_scratch_remote_buf(int8_t* val, int num_bytes, int16_t scr_addr){
+  void push_scratch_remote_buf(uint8_t* val, int num_bytes, uint16_t scr_addr){
       // _scr_w_c.push_remote_wr_req(val,scr_addr);
       _scr_w_c.push_remote_wr_req(val, num_bytes, scr_addr);
   }

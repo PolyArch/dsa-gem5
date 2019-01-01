@@ -1566,7 +1566,7 @@ Execute::isInbetweenInsts(ThreadID thread_id) const
 // TODO: see how to set custom messages
 // pack the message to send request on the SPU network to write on remote scratchpad
 // void Execute::send_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id) {
-void Execute::send_spu_scr_wr_req(int8_t* val, int num_bytes, int64_t scr_offset, int dest_core_id) {
+void Execute::send_spu_scr_wr_req(uint8_t* val, int num_bytes, uint64_t scr_offset, int dest_core_id) {
 
   std::shared_ptr<RequestMsg> msg = std::make_shared<RequestMsg>(cpu.clockEdge());
   (*msg).m_MessageSize = MessageSizeType_Control;
@@ -1589,7 +1589,7 @@ void Execute::send_spu_scr_wr_req(int8_t* val, int num_bytes, int64_t scr_offset
 }
 
 // multicast, TODO: change names
-void Execute::send_spu_req(int src_port_id, int dest_port_id, int8_t* val, int num_bytes, int64_t mask){
+void Execute::send_spu_req(int src_port_id, int dest_port_id, uint8_t* val, int num_bytes, uint64_t mask){
 
   std::shared_ptr<RequestMsg> msg = std::make_shared<RequestMsg>(cpu.clockEdge());
   (*msg).m_MessageSize = MessageSizeType_Control;

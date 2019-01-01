@@ -113,7 +113,7 @@ void MinorCPU::wakeup()
   int64_t return_info = msg->m_addr;
 
   int num_bytes = return_info >> 16;
-  int8_t data[num_bytes];
+  uint8_t data[num_bytes];
   for(int i=0; i<num_bytes; ++i) {
     data[i] = (*msg).m_DataBlk.getByte(i);
   }
