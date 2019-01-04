@@ -657,7 +657,6 @@ class dma_controller_t : public data_controller_t {
   //static const int data_ssdts=data_width/SBDT; //data width in bytes
   std::vector<bool> mask;
 
-  // FIXME: why do they need references to scratch controllers?
   dma_controller_t(accel_t* host,
       scratch_read_controller_t* scr_r_c,
       scratch_write_controller_t* scr_w_c,
@@ -665,10 +664,8 @@ class dma_controller_t : public data_controller_t {
     data_controller_t(host), _scr_r_c(scr_r_c), _scr_w_c(scr_w_c), _net_c(net_c) {
 
     _prev_port_cycle.resize(64); //resize to maximum conceivable ports
-    // mask.resize(MEM_WIDTH/DATA_WIDTH);
     mask.resize(MEM_WIDTH); // mask for all bytes
   }
-
 
   void reset_stream_engines() {
     _read_streams.clear();
@@ -718,7 +715,8 @@ class dma_controller_t : public data_controller_t {
 
   //----------------------
   float calc_min_port_ready();
-  int straddle_bytes=0;
+  // for initiation interval
+  // bool first_entry = true; 
   //---------------------------
 
   int mem_reqs() {return _mem_read_reqs + _mem_write_reqs;}
@@ -1244,8 +1242,6 @@ struct pipeline_stats_t {
 
 };
 
-
-
 class accel_t
 {
   friend class ssim_t;
@@ -1316,7 +1312,7 @@ public:
     p.first += times;
     p.second += bytes;
 
-    //inneficient (can be done at the end), but improve later : )
+    //inefficient (can be done at the end), but improve later : )
     auto& ps = _bw_map[std::make_pair(l1,LOC::TOTAL)];
     ps.first += times;
     ps.second += bytes;
@@ -1564,9 +1560,11 @@ void print_spad_addr(int start, int end){
 
 void push_net_in_cmd_queue(base_stream_t* s);
 
-int get_core_id() {
-  return _lsq->getCpuId();
-}
+int get_cur_cycle();
+
+// int get_core_id() {
+//   return _lsq->getCpuId();
+// }
 
   //members------------------------
   soft_config_t _soft_config;
@@ -1658,7 +1656,12 @@ int get_core_id() {
   int _stat_cmds_issued=0;
   int _stat_cmds_complete=0;
   int _stat_ss_insts=0;
+  // int _stat_tot_mem_wait_cycles=0;
+  int _stat_hit_bytes_rd=0;
+  int _stat_miss_bytes_rd=0;
   // for backcgra
+  // int _stat_mem_initiation_interval = 10000;
+  double _stat_port_imbalance=0;
   double _stat_ss_dfg_util=0.0;
   double _stat_ss_data_avail_ratio=0.0;
   int _slot_avail[NUM_IN_PORTS] = {0};
@@ -1687,5 +1690,6 @@ int get_core_id() {
   std::vector<int> scratchpad_readers;
 
 };
+
 
 #endif

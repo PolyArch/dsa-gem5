@@ -6,3 +6,4 @@
 #include "dbg.h"
 
 std::string SS_DEBUG::verif_name = std::string("");
+bool SS_DEBUG::pred = true;

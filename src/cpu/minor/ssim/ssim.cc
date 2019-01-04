@@ -17,7 +17,12 @@ using namespace std;
 // Vector-Stream Commands (all of these are context-dependent)
 
 ssim_t::ssim_t(Minor::LSQ* lsq) : _lsq(lsq) {
-  SS_DEBUG::check_env();
+  const char *req_core_id_str = std::getenv("DBG_CORE_ID");
+  if (req_core_id_str != nullptr) {
+    _req_core_id = atoi(req_core_id_str);
+  }
+  // cout << "DEBUG PRED FOR CORE " << get_core_id() << ": " << debug_pred() << endl;
+  SS_DEBUG::check_env(debug_pred());
 
   for(int i = 0; i < NUM_ACCEL_TOTAL; ++i) {
     accel_arr[i] = new accel_t(lsq, i, this);

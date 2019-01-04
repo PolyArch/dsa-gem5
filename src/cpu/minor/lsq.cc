@@ -1583,7 +1583,7 @@ void
 LSQ::pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
                  unsigned int size, Addr addr, Request::Flags flags,
                  uint64_t *res) {
-    pushRequest(inst,  isLoad,data,size,addr,flags,res, NULL /*no sd info*/);
+    pushRequest(inst,isLoad,data,size,addr,flags,res, NULL /*no sd info*/);
 }
 
 

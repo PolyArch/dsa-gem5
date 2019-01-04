@@ -10,6 +10,10 @@
 
 using namespace std;
 
+int accel_t::get_cur_cycle() {
+  return _ssim->now()-_ssim->roi_enter_cycle();
+}
+
 Minor::MinorDynInstPtr accel_t::cur_minst() { return _ssim->cur_minst(); }
 
 void accel_t::sanity_check_stream(base_stream_t *s) {
@@ -411,15 +415,17 @@ accel_t::accel_t(Minor::LSQ *lsq, int i, ssim_t *ssim)
   }
 
   const char *ssconfig_file = std::getenv("SBCONFIG");
-
-  if (!SS_DEBUG::SUPRESS_STATS) {
-    static bool printed_this_before = false;
-    if (!printed_this_before) {
+ 
+  // if (!SS_DEBUG::SUPRESS_STATS) {
+  if (SS_DEBUG::SUPRESS_STATS==0) {
+    // static bool printed_this_before = false;
+    if (!_ssim->printed_this_before()) {
       std::cout << "Loading SS Config (env SBCONFIG): \"" << ssconfig_file
                 << "\"\n";
       std::cout << "FU_FIFO_LEN:" << _fu_fifo_len << "\n";
       std::cout << "IND_ROB_SIZE:" << _ind_rob_size << "\n";
-      printed_this_before = true;
+      _ssim->set_printed_this_before(true);
+      // printed_this_before=true;
     }
   }
 
@@ -427,7 +433,7 @@ accel_t::accel_t(Minor::LSQ *lsq, int i, ssim_t *ssim)
   if (back_cgra_str != NULL) {
     _back_cgra = true;
   }
-
+ 
   const char *linear_spad_str = std::getenv("LINEAR_SCR");
   if (linear_spad_str != NULL) {
     _linear_spad = true;
@@ -1032,6 +1038,11 @@ void accel_t::cycle_cgra_backpressure() {
       }
     }
   }
+
+  // Statistics to measure port imbalance
+  if(_ssim->in_roi() && _ssim->in_use()) { // would measure only when something was issued
+    _stat_port_imbalance += _dfg->count_starving_nodes();
+  }
 }
 
 void accel_t::cycle_cgra_fixedtiming() {
@@ -1590,17 +1601,31 @@ void accel_t::print_statistics(std::ostream &out) {
       << " (overall activity factor)\n";
   out << "Mapped DFG utilization: "
       << ((double)_stat_ss_dfg_util) / ((double)roi_cycles()) << "\n";
+  // FIXME: see it's use
   out << "Data availability ratio: "
       << ((double)_stat_ss_data_avail_ratio) / ((double)roi_cycles()) << "\n";
   // out << "Atomic scr executed cycles: "
   //     << _stat_cycles_atomic_scr_executed << "\n";
   // out << "Atomic scr issued cycles: "
   //     << _num_cycles_issued << "\n";
- 
-  out << "Percentage bank conflicts: "
+  
+  // out << "Memory initiation interval: "
+  //   << _stat_mem_initiation_interval << "\n";
+   
+  out << "input port imbalance (%age dgra nodes could not fire): "
+      << ((double)_stat_port_imbalance) / ((double)_stat_cgra_busy_cycles) << "\n";
+      // << ((double)_stat_port_imbalance) / ((double)roi_cycles()) << "\n";
+   out << "Percentage bank conflicts: "
       << ((double)_stat_cycles_atomic_scr_executed) /
              _stat_cycles_atomic_scr_pushed
       << "\n";
+  out << "L1 cache hit rate: "
+      << ((double)_stat_hit_bytes_rd) / ((double)(_stat_hit_bytes_rd+_stat_miss_bytes_rd)) << "\n";
+  // out << "Avg wait cycles on a byte read: "
+  //     << ((double)_stat_tot_mem_wait_cycles) / ((double)_stat_mem_bytes_rd) << "\n";
+
+
+
   // out << "Allowed input port consumption rate: ";
   // for (int i = 0; i < NUM_OUT_PORTS; ++i) {
   //   out << ((double)_slot_avail[i] / (double)roi_cycles()) << ", ";
@@ -2211,9 +2236,16 @@ void apply_map(uint8_t *raw_data, const vector<int> &imap,
 }
 
 void dma_controller_t::port_resp(unsigned cur_port) {
+  // see if initiation interval can be useful
+  /*
+  if(first_entry) {
+    _accel->_stat_mem_initiation_interval = _accel->_ssim->now()-_accel->_ssim->_roi_enter_cycle;
+    first_entry=false;
+  }
+  */
   if (Minor::LSQ::LSQRequestPtr response =
           _accel->_lsq->findResponse(cur_port)) {
-
+  
     // First check if we haven't discared the memory request
     // this will only be the case if reqs are equal to zero
     if (_accel->_cleanup_mode) {
@@ -2233,12 +2265,22 @@ void dma_controller_t::port_resp(unsigned cur_port) {
 
       vector<uint8_t> data;
       if (response->sdInfo->mask.size() > 0) {
-        // apply_mask(packet->getPtr<uint64_t>(), response->sdInfo->mask, data);
         apply_mask(packet->getPtr<uint8_t>(), response->sdInfo->mask, data);
       } else if (response->sdInfo->map.size() > 0) {
-        // apply_map(packet->getPtr<uint64_t>(),  response->sdInfo->map, data);
         apply_map(packet->getPtr<uint8_t>(), response->sdInfo->map, data);
       }
+
+      // cache hit stats collection
+      if(_accel->_ssim->in_roi()) {
+        // _accel->_stat_tot_mem_wait_cycles += (_accel->get_cur_cycle()-response->sdInfo->request_cycle);
+        _accel->_stat_mem_bytes_rd += data.size();
+        if(_accel->get_cur_cycle()-response->sdInfo->request_cycle<10) { // probably L1 hit
+          _accel->_stat_hit_bytes_rd += data.size();
+        } else {
+          _accel->_stat_miss_bytes_rd += data.size();
+        } 
+      }
+      //-----------------
 
       bool port_in_okay = true;
       // push in byte-by-byte at the ports
@@ -2257,8 +2299,9 @@ void dma_controller_t::port_resp(unsigned cur_port) {
                     << ", size in bytes: " << data.size() << " elements"
                     << (last ? "(last)" : "") << "\n";
         }
-
-        _accel->_stat_mem_bytes_rd += data.size();
+        
+        // FIXME: check if stats are reset at roi
+        // _accel->_stat_mem_bytes_rd += data.size();
 
         for (int in_port : response->sdInfo->ports) {
           port_data_t &in_vp = pi.in_port(in_port);
@@ -2370,6 +2413,7 @@ void dma_controller_t::finish_cycle() {}
 template <typename T>
 void delete_stream_internal(int i, T *s, std::vector<T *> &vec,
                             std::vector<base_stream_t *> &base_vec) {
+ 
   base_vec.erase(base_vec.begin() + i);
   vec.erase(std::remove(vec.begin(), vec.end(), s), vec.end());
 }
@@ -2636,7 +2680,8 @@ int dma_controller_t::req_read(affine_read_stream_t &stream) {
   SSMemReqInfoPtr sdInfo = NULL;
   sdInfo =
       new SSMemReqInfo(stream.id(), _accel->_accel_index, stream.in_ports(),
-                       mask, last, stream.fill_mode(), stream.stride_hit());
+                       mask, _accel->get_cur_cycle(), last, stream.fill_mode(), stream.stride_hit());
+                       // mask, _accel->_ssim->now(), last, stream.fill_mode(), stream.stride_hit());
 
   // make request
   _accel->_lsq->pushRequest(_accel->cur_minst(), true /*isLoad*/, NULL /*data*/,
@@ -3074,7 +3119,8 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
 
   SSMemReqInfoPtr sdInfo = NULL;
   sdInfo = new SSMemReqInfo(stream.id(), _accel->_accel_index,
-                            stream.in_ports(), imap, last, stream.fill_mode());
+                            stream.in_ports(), imap, _accel->get_cur_cycle(), last, stream.fill_mode());
+                            // stream.in_ports(), imap, _accel->_ssim->now(), last, stream.fill_mode());
 
   // make request
   _accel->_lsq->pushRequest(stream.minst(), true /*isLoad*/, NULL /*data*/,
@@ -3082,12 +3128,11 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
                             0 /*res*/, sdInfo);
 
   if (_accel->_ssim->in_roi()) {
-    add_bw(stream.src(), stream.dest(), 1, imap.size() * DATA_WIDTH);
-
-    _accel->_stat_tot_mem_fetched +=
-        imap.size() * 8;
+    add_bw(stream.src(), stream.dest(), 1, imap.size());
+    _accel->_stat_tot_mem_fetched += imap.size();
     _accel->_stat_tot_loads += 1;
   }
+  // imap.clear();
 
   _mem_read_reqs++;
 }
@@ -3665,7 +3710,12 @@ void network_controller_t::cycle() {
         if(stream._num_elements<64/data_width){
           message_size=stream._num_elements;
         }
-        message_size = out_vp.mem_size() < message_size ? out_vp.mem_size() : message_size;
+       if(stream.timeout()) {
+          message_size = out_vp.mem_size() < message_size ? out_vp.mem_size() : message_size;
+        } else if(out_vp.mem_size() < message_size) { // this should be here if no timeout
+          stream.inc_wait_cycles();
+          continue;
+        }
       }
       if (stream.stream_active() && out_vp.mem_size() >= message_size) {
 
@@ -4037,9 +4087,7 @@ void scratch_write_controller_t::serve_atomic_requests(atomic_scr_stream_t& stre
                                &input_val + 8 - request._output_bytes,
                                request._output_bytes, stream.id());
 
-      // _accel->_stat_total_scratch_bank_requests++;
       _accel->_stat_scratch_bank_requests_executed++;
-
       bytes_written += request._value_bytes;
       _accel->_stat_scr_bytes_wr += request._value_bytes;
       _accel->_stat_scratch_write_bytes += request._value_bytes;
@@ -4054,8 +4102,6 @@ void scratch_write_controller_t::serve_atomic_requests(atomic_scr_stream_t& stre
   }
   // to implement the functionality of common scratch controller
   performed_atomic_scr = true;
-  // break;
-
 }
 
 void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stream) {

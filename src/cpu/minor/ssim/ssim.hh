@@ -26,6 +26,8 @@ public:
   //Simulator Interface
   ssim_t(Minor::LSQ* lsq);
 
+  uint64_t roi_enter_cycle() { return _roi_enter_cycle; }
+
   // Interface from instructions to streams
   // IF SB_TIMING, these just send the commands to the respective controllers
   // ELSE, they carry out all operations that are possible at that point
@@ -193,9 +195,23 @@ public:
   //  }
   //  return true;
   //}
+  
+  int get_core_id() {
+    return _lsq->getCpuId();
+  }
+
+  bool debug_pred() {
+    if(_req_core_id==-1) return true;
+    else return (_req_core_id==get_core_id());
+  }
+   
+  bool printed_this_before() { return _printed_this_before; }
+  void set_printed_this_before(bool f) { _printed_this_before=f; }
 
 private:
 
+  int _req_core_id=-1;
+  bool _printed_this_before=false;
   unsigned _which_shr=0;
 
   Minor::MinorDynInstPtr _cur_minst;

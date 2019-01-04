@@ -7,8 +7,6 @@ typedef uint64_t addr_t;
 #define SSWORD uint8_t          //dgra datatype
 #define DATA_WIDTH sizeof(SBDT)
 #define SCRATCH_SIZE (16384) //size in bytes -- 16KB
-// FIXME: For AC circuit results, change it back later
-// #define SCRATCH_SIZE (32768) //size in bytes -- 32KB
 
 #define LSCRATCH_SIZE (16384) //size in bytes -- 16KB
 #define NUM_SCRATCH_BANKS 64

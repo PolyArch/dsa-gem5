@@ -110,6 +110,15 @@ struct base_stream_t {
   virtual uint64_t ind_mult()    {return 1;}
   uint64_t data_width()    {return _data_width;}
   uint64_t straddle_bytes()    {return _straddle_bytes;}
+  uint64_t wait_cycles()    {return _wait_cycles;} // waiting for whole cache line
+
+  bool timeout() {
+    if(_wait_cycles > 30) {
+      _wait_cycles = 0;
+      return true;
+    }
+    return false;
+  }
 
   std::vector<int>& in_ports()      {return _in_ports;}
   int first_in_port()      {return _in_ports[0];}
@@ -140,12 +149,15 @@ struct base_stream_t {
 
   virtual void set_data_width(int d) {_data_width=d;}
   virtual void set_straddle_bytes(int d) {_straddle_bytes=d;}
+  virtual void inc_wait_cycles() {_wait_cycles++;}
 
 protected:
   int      _id=0;
   uint32_t _fill_mode=0; //0: none, 1 post-zero fill, 2 pre-zero fill (not implemented)
   int _data_width=DATA_WIDTH; 
   int _straddle_bytes=0; // bytes straddling over cache lines (used only in mem streams as of now!)
+  // TODO: add this in all streams
+  int _wait_cycles=0; // cycles to wait to get whole cache line at ports for write streams 
   bool _empty=false; //presumably, when we create this, it won't be empty
   Minor::MinorDynInstPtr _minst;
   uint64_t _reqs=0;
@@ -854,9 +866,12 @@ struct indirect_stream_t : public indirect_base_stream_t {
     return indirect_base_stream_t::stream_active();
   }
 
+  // FIXME:CHECKME: this consumes both port->dma_ctrl and dma->port b/w
   virtual LOC src() {
     if(!scratch()) {
-      return LOC::PORT|LOC::DMA;
+      // FIXME:CHECKME
+      // return LOC::PORT|LOC::DMA;
+      return LOC::DMA;
     } else {
       return LOC::PORT|LOC::SCR;
     }
@@ -1120,7 +1135,7 @@ struct atomic_scr_stream_t : public base_stream_t {
   int _addr_type;
   uint64_t _num_strides;
   uint64_t _mem_addr;
-  uint8_t _value_bytes, _addr_bytes, _output_bytes; //, _indices_in_word;
+  uint8_t _value_bytes, _addr_bytes, _output_bytes;
   uint64_t _value_mask, _addr_mask, _output_mask;
   uint64_t _values_in_word;
   uint64_t _addr_in_word;
@@ -1156,12 +1171,6 @@ struct atomic_scr_stream_t : public base_stream_t {
     _addr_in_word = DATA_WIDTH / _addr_bytes;
   }
 
-
-  // it's datatypes?
-  // uint64_t ind_port()     {return _ind_port;} // this is out addr port
-  // uint64_t ind_type()     {return _type;}
-  // uint64_t num_strides() {return _num_elements;} // iters
-  // uint64_t index_addr() {return _index_addr;} // this is offset
   int64_t out_port()     {return _out_port;}
   int64_t val_port()     {return _val_port;} // this is the inc
   int op_code()     {return _op_code;} // opcode
@@ -1170,18 +1179,14 @@ struct atomic_scr_stream_t : public base_stream_t {
   uint64_t mem_addr()    {return _mem_addr;}
 
   uint64_t cur_offset(){
-    // return (loc >> ((_addr_in_word - _cur_addr_index - 1)*_value_bytes*8)) & _addr_mask;
     // extracting from right (least significant bits)
     return (mem_addr() >> (_cur_addr_index*_addr_bytes*8)) & _addr_mask;
   }
   uint64_t cur_addr(uint64_t loc){
-    // return (loc >> ((_addr_in_word - _cur_addr_index - 1)*_value_bytes*8)) & _addr_mask;
     // extracting from right (least significant bits)
-    // return (loc >> (_cur_addr_index*_value_bytes*8)) & _addr_mask;
     return (loc >> (_cur_addr_index*_addr_bytes*8)) & _addr_mask;
   }
   uint64_t cur_val(uint64_t val){
-    // return (val >> ((_values_in_word - _cur_val_index - 1)*_value_bytes*8)) & _value_mask;
     return (val >> (_cur_val_index*_value_bytes*8)) & _value_mask;
   }
   void inc_val_index(){
@@ -1194,13 +1199,11 @@ struct atomic_scr_stream_t : public base_stream_t {
   bool can_pop_val(){
     // std::cout << "_cur_val_index: " << _cur_val_index << " values in word: " << _values_in_word << "\n";
     bool can_pop = (_cur_val_index==_values_in_word);
-    // if(can_pop) { _cur_val_index=0; }
     return can_pop;
   }
   bool can_pop_addr(){
     // std::cout << "_cur_addr_index: " << _cur_addr_index << " values in word: " << _addr_in_word << "\n";
     bool can_pop = (_cur_addr_index==_addr_in_word);
-    // if(can_pop) { _cur_addr_index=0; }
     return can_pop;
 
   }
@@ -1208,8 +1211,6 @@ struct atomic_scr_stream_t : public base_stream_t {
   virtual bool stream_active() {
     return _num_strides!=0;
   }
-  // set both src and dest
-
   virtual LOC src() {return LOC::PORT;}
   virtual LOC dest() {return LOC::SCR;}
 
