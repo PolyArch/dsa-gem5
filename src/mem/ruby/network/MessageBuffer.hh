@@ -95,12 +95,12 @@ class MessageBuffer : public SimObject
     }
 
     Consumer* getConsumer() { return m_consumer; }
-
     bool getOrdered() { return m_strict_fifo; }
 
     //! Function for extracting the message at the head of the
     //! message queue.  The function assumes that the queue is nonempty.
     const Message* peek() const;
+    bool isSpuMessage();
 
     const MsgPtr &peekMsgPtr() const { return m_prio_heap.front(); }
 

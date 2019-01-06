@@ -58,7 +58,7 @@
 #include <bits/stdc++.h>
 
 #include "mem/protocol/SequencerMsg.hh"
-#include "mem/protocol/RequestMsg.hh"
+#include "mem/protocol/SpuRequestMsg.hh"
 #include "mem/ruby/slicc_interface/RubySlicc_Util.hh"
 #include "mem/ruby/network/Network.hh"
 #include "mem/ruby/system/RubySystem.hh"
@@ -1568,10 +1568,9 @@ Execute::isInbetweenInsts(ThreadID thread_id) const
 // void Execute::send_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id) {
 void Execute::send_spu_scr_wr_req(uint8_t* val, int num_bytes, uint64_t scr_offset, int dest_core_id) {
 
-  std::shared_ptr<RequestMsg> msg = std::make_shared<RequestMsg>(cpu.clockEdge());
+  std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
   (*msg).m_MessageSize = MessageSizeType_Control;
-  // (*msg).m_Type = CoherenceRequestType_GETX; // TODO: can I do it different type to check during wakeup?
-  (*msg).m_Type = CoherenceRequestType_PUTX;
+  (*msg).m_Type = SpuRequestType_ST;
   (*msg).m_Requestor = cpu.get_m_version();
   (*msg).m_addr = 0;
   for(int j=0; j<num_bytes; ++j){
@@ -1591,9 +1590,9 @@ void Execute::send_spu_scr_wr_req(uint8_t* val, int num_bytes, uint64_t scr_offs
 // multicast, TODO: change names
 void Execute::send_spu_req(int src_port_id, int dest_port_id, uint8_t* val, int num_bytes, uint64_t mask){
 
-  std::shared_ptr<RequestMsg> msg = std::make_shared<RequestMsg>(cpu.clockEdge());
+  std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
   (*msg).m_MessageSize = MessageSizeType_Control;
-  (*msg).m_Type = CoherenceRequestType_GETX;
+  (*msg).m_Type = SpuRequestType_LD;
   (*msg).m_Requestor = cpu.get_m_version();
   for(int i=0; i<num_bytes; ++i){
     (*msg).m_DataBlk.setByte(i,val[i]);

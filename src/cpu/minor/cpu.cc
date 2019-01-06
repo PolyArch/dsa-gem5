@@ -49,7 +49,6 @@
 #include "mem/ruby/slicc_interface/RubySlicc_ComponentMapping.hh"
 #include "mem/protocol/MachineType.hh"
 #include "mem/ruby/slicc_interface/RubySlicc_Util.hh"
-// #include "mem/ruby/common/Consumer.hh"
 
 // FIXME: should not have any effect?
 #include "mem/ruby/network/MessageBuffer.hh"
@@ -109,7 +108,7 @@ void MinorCPU::wakeup()
 {
   assert(!responseToSpu->isEmpty());
   // could do dynamic cast
-  const RequestMsg* msg = (RequestMsg*)responseToSpu->peek();
+  const SpuRequestMsg* msg = (SpuRequestMsg*)responseToSpu->peek();
   int64_t return_info = msg->m_addr;
 
   int num_bytes = return_info >> 16;
@@ -122,10 +121,9 @@ void MinorCPU::wakeup()
 	std::cout << curCycle();
     printf("Wake up accel at destination node: %d and num_bytes: %d\n",cpuId(),num_bytes);
   }
-  if((*msg).m_Type == CoherenceRequestType_GETX) {
+  if((*msg).m_Type == SpuRequestType_LD) {
     int remote_port_id = return_info & 63;
     pipeline->receiveSpuMessage(data, num_bytes, remote_port_id);
-    // printf("Comes back after updating SPU ports\n");
   } else {
       int16_t remote_scr_offset = return_info & 65535; // (pow(2,16)-1);
       pipeline->receiveSpuMessage(data, num_bytes, remote_scr_offset);

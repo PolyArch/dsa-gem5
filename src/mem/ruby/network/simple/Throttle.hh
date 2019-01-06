@@ -67,6 +67,9 @@ class Throttle : public Consumer
     // The average utilization (a fraction) since last clearStats()
     const Stats::Scalar & getUtilization() const
     { return m_link_utilization; }
+    const Stats::Scalar & getSpuUtilization() const
+    { return m_spu_link_utilization; }
+ 
     const Stats::Vector & getMsgCount(unsigned int type) const
     { return m_msg_counts[type]; }
 
@@ -106,11 +109,13 @@ class Throttle : public Consumer
     RubySystem *m_ruby_system;
 
     // Statistical variables
+    Stats::Scalar m_spu_link_utilization;
     Stats::Scalar m_link_utilization;
     Stats::Vector m_msg_counts[MessageSizeType_NUM];
     Stats::Formula m_msg_bytes[MessageSizeType_NUM];
 
     double m_link_utilization_proxy;
+    double m_spu_link_utilization_proxy;
 };
 
 inline std::ostream&

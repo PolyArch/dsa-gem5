@@ -1656,7 +1656,7 @@ int get_cur_cycle();
   int _stat_cmds_issued=0;
   int _stat_cmds_complete=0;
   int _stat_ss_insts=0;
-  // int _stat_tot_mem_wait_cycles=0;
+  int _stat_tot_mem_wait_cycles=0;
   int _stat_hit_bytes_rd=0;
   int _stat_miss_bytes_rd=0;
   // for backcgra

@@ -38,6 +38,7 @@
 #include "mem/ruby/network/simple/Switch.hh"
 #include "mem/ruby/slicc_interface/Message.hh"
 #include "mem/ruby/system/RubySystem.hh"
+#include "mem/protocol/SpuRequestMsg.hh"
 
 using namespace std;
 
@@ -64,6 +65,7 @@ Throttle::Throttle(int sID, RubySystem *rs, NodeID node, Cycles link_latency,
 
     m_wakeups_wo_switch = 0;
     m_link_utilization_proxy = 0;
+    m_spu_link_utilization_proxy = 0;
 }
 
 void
@@ -98,8 +100,7 @@ Throttle::operateVnet(int vnet, int &bw_remaining, bool &schedule_wakeup,
                       MessageBuffer *in, MessageBuffer *out)
 {
 
-  // printf("CAME HERE TO OPERATE THE VIRTUAL NETWORK\n");
-  // consumer of in link should be switch and out should be controller
+    // consumer of in link should be switch and out should be controller
     if (out == nullptr || in == nullptr) {
         return;
     }
@@ -163,6 +164,7 @@ Throttle::wakeup()
     // Limits the number of message sent to a limited number of bytes/cycle.
     assert(getLinkBandwidth() > 0);
     int bw_remaining = getLinkBandwidth();
+    int spu_bw_remaining = getLinkBandwidth(); // FIXME: do I have any info about this message type?
 
     m_wakeups_wo_switch++;
     bool schedule_wakeup = false;
@@ -177,15 +179,26 @@ Throttle::wakeup()
         iteration_direction = true;
     }
 
+    // TODO: add for getting message info
     if (iteration_direction) {
         for (int vnet = 0; vnet < m_vnets; ++vnet) {
+          if(!m_in[vnet]->isSpuMessage()) { 
             operateVnet(vnet, bw_remaining, schedule_wakeup,
                         m_in[vnet], m_out[vnet]);
+         } else {
+            operateVnet(vnet, spu_bw_remaining, schedule_wakeup,
+                        m_in[vnet], m_out[vnet]);
+         }
         }
     } else {
         for (int vnet = m_vnets-1; vnet >= 0; --vnet) {
+          if(!m_in[vnet]->isSpuMessage()) { 
             operateVnet(vnet, bw_remaining, schedule_wakeup,
                         m_in[vnet], m_out[vnet]);
+          } else {
+            operateVnet(vnet, spu_bw_remaining, schedule_wakeup,
+                        m_in[vnet], m_out[vnet]);
+         }
         }
     }
 
@@ -195,9 +208,11 @@ Throttle::wakeup()
 
     // Record that we used some or all of the link bandwidth this cycle
     double ratio = 1.0 - (double(bw_remaining) / double(getLinkBandwidth()));
+    double spu_req_ratio = 1.0 - (double(spu_bw_remaining) / double(getLinkBandwidth()));
 
     // If ratio = 0, we used no bandwidth, if ratio = 1, we used all
     m_link_utilization_proxy += ratio;
+    m_spu_link_utilization_proxy += spu_req_ratio;
 
     if (bw_remaining > 0 && !schedule_wakeup) {
         // We have extra bandwidth and our output buffer was
@@ -218,6 +233,8 @@ Throttle::regStats(string parent)
 {
     m_link_utilization
         .name(parent + csprintf(".throttle%i", m_node) + ".link_utilization");
+    m_spu_link_utilization
+        .name(parent + csprintf(".throttle%i", m_node) + ".spu_link_utilization");
 
     for (MessageSizeType type = MessageSizeType_FIRST;
          type < MessageSizeType_NUM; ++type) {
@@ -242,6 +259,7 @@ void
 Throttle::clearStats()
 {
     m_link_utilization_proxy = 0;
+    m_spu_link_utilization_proxy = 0;
 }
 
 void
@@ -251,6 +269,7 @@ Throttle::collateStats()
                                m_ruby_system->getStartCycle());
 
     m_link_utilization = 100.0 * m_link_utilization_proxy / time_delta;
+    m_spu_link_utilization = 100.0 * m_spu_link_utilization_proxy / time_delta;
 }
 
 void

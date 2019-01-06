@@ -30,25 +30,15 @@ ssim_t::ssim_t(Minor::LSQ* lsq) : _lsq(lsq) {
   //accel_arr[SHARED_SP] = new accel_t(lsq, SHARED_SP, this);
   //TODO: inform accel_arr
 
-  // default things
-  // for(int i=22; i<28; ++i) {
-  for(int i=22; i<32; ++i) {
+  // set indirect ports to be 1-byte by default
+  // for(int i=22; i<32; ++i) {
+  for(int i=START_IND_PORTS; i<STOP_IND_PORTS; ++i) {
     port_data_t& cur_out_port = accel_arr[0]->_port_interf.out_port(i);
     cur_out_port.set_port_width(8);
     
     port_data_t& cur_in_port = accel_arr[0]->_port_interf.in_port(i);
     cur_in_port.set_port_width(8);
   }
-
-    /*
-  for(int i=23; i<26; i++) {
-    // port_data_t& cur_in_port = accel_arr[0]->_port_interf.in_port(i);
-    // cur_in_port.set_port_width(8); // 1-byte
-    // cout << vec_input->name() << " : " << cur_in_port.get_port_width() << endl;
-    port_data_t& cur_out_port = accel_arr[0]->_port_interf.out_port(i);
-    cur_out_port.set_port_width(8);
-  }
-  */
 }
 void ssim_t::req_config(addr_t addr, int size) {
   if(addr==0 && size==0) {

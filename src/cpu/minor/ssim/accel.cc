@@ -1621,8 +1621,8 @@ void accel_t::print_statistics(std::ostream &out) {
       << "\n";
   out << "L1 cache hit rate: "
       << ((double)_stat_hit_bytes_rd) / ((double)(_stat_hit_bytes_rd+_stat_miss_bytes_rd)) << "\n";
-  // out << "Avg wait cycles on a byte read: "
-  //     << ((double)_stat_tot_mem_wait_cycles) / ((double)_stat_mem_bytes_rd) << "\n";
+  out << "Avg wait cycles on a byte read: "
+      << ((double)_stat_tot_mem_wait_cycles) / ((double)_stat_mem_bytes_rd) << "\n";
 
 
 
@@ -2272,9 +2272,9 @@ void dma_controller_t::port_resp(unsigned cur_port) {
 
       // cache hit stats collection
       if(_accel->_ssim->in_roi()) {
-        // _accel->_stat_tot_mem_wait_cycles += (_accel->get_cur_cycle()-response->sdInfo->request_cycle);
+        _accel->_stat_tot_mem_wait_cycles += (_accel->get_cur_cycle()-response->sdInfo->request_cycle);
         _accel->_stat_mem_bytes_rd += data.size();
-        if(_accel->get_cur_cycle()-response->sdInfo->request_cycle<10) { // probably L1 hit
+        if(_accel->get_cur_cycle()-response->sdInfo->request_cycle<20) { // probably L1 hit
           _accel->_stat_hit_bytes_rd += data.size();
         } else {
           _accel->_stat_miss_bytes_rd += data.size();
@@ -4577,6 +4577,7 @@ void port_controller_t::cycle() {
     assert(stream.data_width()%stream.src_data_width()==0 && "Dest datatype not a multiple of src datatype");
     int n = stream.data_width()/stream.src_data_width();
 
+    // FIXME:CHECKME: Should i mot nodel the recurrence bus bandwidth as well?
     if (vp_out.mem_size() >= n && port_in_okay) { // okay go for it
 
       int data_width = stream.data_width(); 

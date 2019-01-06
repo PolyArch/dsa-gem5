@@ -257,6 +257,7 @@ enumeration(MessageSizeType, desc="...") {
   Unblock_Control, desc="Unblock control";
   Persistent_Control, desc="Persistent request activation messages";
   Completion_Control, desc="Completion messages";
+  SpuIndirect_Data, desc="remote indirect messages";
 }
 
 // AccessType

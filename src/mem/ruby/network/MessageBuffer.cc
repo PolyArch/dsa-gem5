@@ -36,6 +36,7 @@
 #include "base/stl_helpers.hh"
 #include "debug/RubyQueue.hh"
 #include "mem/ruby/system/RubySystem.hh"
+#include "mem/protocol/SpuRequestMsg.hh"
 
 using namespace std;
 using m5::stl_helpers::operator<<;
@@ -125,6 +126,21 @@ MessageBuffer::peek() const
 
     DPRINTF(RubyQueue, "Message: %s\n", (*msg_ptr));
     return msg_ptr;
+}
+
+bool
+MessageBuffer::isSpuMessage()
+{
+    DPRINTF(RubyQueue, "Peeking at head of queue to check for SPU message.\n");
+    Message* msg_ptr = m_prio_heap.front().get();
+    assert(msg_ptr);
+    // if(msg_ptr->getType() == SpuRequestMsg) return true;
+    if(auto msg = dynamic_cast<SpuRequestMsg*>(msg_ptr)) {
+      uint64_t x = msg->getMsgCounter(); // FIXME:get a better information
+      DPRINTF(RubyQueue, "SPU message counter: %d\n", x);
+      return true;
+    }
+    return false;
 }
 
 // FIXME - move me somewhere else

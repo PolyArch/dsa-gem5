@@ -26,6 +26,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// SpuRequestType
+enumeration(SpuRequestType, desc="...") {
+  LD,      desc="Get eXclusive";
+  ST,      desc="Get Shared";
+}
+
 // CoherenceRequestType
 enumeration(CoherenceRequestType, desc="...") {
   GETX,      desc="Get eXclusive";
@@ -47,6 +53,32 @@ enumeration(CoherenceResponseType, desc="...") {
   WRITEBACK_CLEAN,   desc="Clean writeback (no data)";
   WRITEBACK_DIRTY,   desc="Dirty writeback (contains data)";
   WRITEBACK,         desc="Generic writeback (contains data)";
+}
+
+// SpuRequestMsg (and also forwarded requests)
+structure(SpuRequestMsg, desc="...", interface="Message") {
+  Addr addr,             desc="Physical address for this request";
+  SpuRequestType Type,   desc="Type of request (GetS, GetX, PutX, etc)";
+  MachineID Requestor,            desc="Node who initiated the request";
+  NetDest Destination,             desc="Multicast destination mask";
+  DataBlock DataBlk,           desc="data for the cache line";
+  MessageSizeType MessageSize, desc="size category of the message";
+
+  bool functionalRead(Packet *pkt) {
+    // Valid data block is only present in PUTX messages
+    // if (Type == CoherenceRequestType:PUTX) {
+    // if (Type == SpuRequestType:LD) {
+    //     return testAndRead(addr, DataBlk, pkt);
+    // }
+    return false;
+  }
+
+  bool functionalWrite(Packet *pkt) {
+    // No check on message type required since the protocol should read
+    // data block from only those messages that contain valid data
+    // return testAndWrite(addr, DataBlk, pkt);
+    return false;
+  }
 }
 
 // RequestMsg (and also forwarded requests)

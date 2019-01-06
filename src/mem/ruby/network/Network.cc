@@ -169,6 +169,8 @@ Network::MessageSizeType_to_int(MessageSizeType size_type)
       case MessageSizeType_ResponseL2hit_Data:
       case MessageSizeType_Writeback_Data:
         return m_data_msg_size;
+      case MessageSizeType_SpuIndirect_Data:
+            return m_data_msg_size; // this is currently cache block size (I can vary it) -- but not sure how network responds to it
       default:
         panic("Invalid range for type MessageSizeType");
         break;
