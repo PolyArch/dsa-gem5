@@ -95,6 +95,8 @@ public:
   //For now, the *only* cases where we don't return vector length is
   //1. this port is not assigned a vector, or
   //2. temporal vector: all elements are mapped to the same cgra port
+  // TODO: rename it to logical length and cgra port length
+  // FIXME: dgra logical ports doesn't work with the temporal region
   unsigned port_cgra_elem() {
     if(_dfg_vec) {
       if(_dfg_vec->is_temporal()) {

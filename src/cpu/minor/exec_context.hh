@@ -556,7 +556,9 @@ class ExecContext : public ::ExecContext
                 thread.getSSReg(SS_NUM_ELEM),      thread.getSSReg(SS_REPEAT),
                 thread.getSSReg(SS_REPEAT_STRETCH),thread.getSSReg(SS_OFFSET_LIST),
                 thread.getSSReg(SS_DTYPE),         thread.getSSReg(SS_IND_MULT),
-                thread.getSSReg(SS_IS_SCRATCH));
+                thread.getSSReg(SS_IS_SCRATCH), thread.getSSReg(SS_FLAGS),
+                thread.getSSReg(SS_STRIDE), thread.getSSReg(SS_ACCESS_SIZE),
+                thread.getSSReg(SS_STRETCH)); // changed interpretation of stretch here
             break;
             case SS_PRT_IND: ssim.indirect_write(
                 thread.getSSReg(SS_IND_PORT), thread.getSSReg(SS_IND_TYPE),

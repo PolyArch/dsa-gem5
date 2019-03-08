@@ -553,7 +553,7 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
 //Configure an indirect stream with params
 void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
     uint64_t num_elem, int repeat, int repeat_str,uint64_t offset_list,
-    int dtype, uint64_t ind_mult, bool scratch) {
+    int dtype, uint64_t ind_mult, bool scratch, bool stream, int sstride, int sacc_size, int sn_port) {
   indirect_stream_t* s = new indirect_stream_t();
   s->_ind_port=ind_port;
   s->_ind_type=ind_type;
@@ -565,6 +565,12 @@ void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr
   s->_offset_list=offset_list;
   s->_dtype=dtype;
   s->_ind_mult=ind_mult;
+  s->_is_2d_stream=stream;
+  if(stream) { // set sub-stream parameters here (read from ss_stride)
+    s->_sstride = sstride;
+    s->_sacc_size = sacc_size;
+    s->_sn_port = sn_port;
+  }
   if(scratch) s->_unit=LOC::SCR;
   else s->_unit=LOC::DMA;
   s->set_orig();

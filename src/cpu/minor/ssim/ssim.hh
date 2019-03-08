@@ -54,7 +54,7 @@ public:
                int repeat, int repeat_str,  uint64_t flags, uint64_t access_size);
   void indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
     uint64_t num_elem, int repeat, int repeat_str, uint64_t offset_list,
-    int dtype, uint64_t ind_mult, bool scratch);
+    int dtype, uint64_t ind_mult, bool scratch, bool stream, int sstride, int sacc_size, int sn_port);
   void indirect_write(int ind_port, int ind_type, int out_port,
     addr_t index_addr, uint64_t num_elem, uint64_t offset_list,
     int dtype, uint64_t ind_mult, bool scratch);

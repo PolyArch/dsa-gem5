@@ -734,6 +734,11 @@ struct indirect_base_stream_t : public base_stream_t {
   uint64_t _offset_list;
   uint64_t _ind_mult;
   std::vector<char> _offsets;
+  int _sstream_size=1; // size of sub-stream: should be extracted from the num_elem port
+  int _ssind=0;
+  int _sstride=-1, _sacc_size=-1, _sn_port=1; // to prevent NULL (check in assert)
+  bool _is_2d_stream=false;
+  bool _first_ss_access=true;
 
   addr_t _orig_elements;
   //These get set based on _type
@@ -800,9 +805,10 @@ struct indirect_base_stream_t : public base_stream_t {
     // uint64_t index =  (val >> (_index_in_word * _index_bytes * 8)) & _index_mask;
     uint64_t index =  val & _index_mask;
     if(SS_DEBUG::MEM_REQ) {
-      std::cout << "index: " << index << " mult: " << _ind_mult << "\n";
+      std::cout << "index: " << index << " mult: " << _ind_mult << " ss_ind: " << _ssind << "\n";
     }
-    return   _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes;
+    // return   _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes;
+    return   _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes + (_ssind*_sstride*_ind_mult/8);
   }
 
   virtual LOC src() {return LOC::PORT;}
@@ -813,28 +819,19 @@ struct indirect_base_stream_t : public base_stream_t {
   }
 
   //return value: should pop vector port
+  // FIXME: currently offset list might not work in combination with 2d stream
   bool pop_elem() {
+    _ssind++;
+    if(_sstream_size!=_ssind) return false;
+    _ssind=0;
     _index_in_offsets++;
     //std::cout << "pop ";
 
     if(_index_in_offsets >= _offsets.size()) {
       _index_in_offsets=0;
-
       _num_elements--;
       //std::cout << _num_elements << " ";
-
-      // HACK
       return true;
-      /*
-      _index_in_word++;
-      if(_index_in_word >= _indices_in_word) {
-        _index_in_word=0;
-        //std::cout << "\n";
-
-        return true;
-      }
-      */
-      // END HACK
     }
     //std::cout << "\n";
 
@@ -849,7 +846,7 @@ struct indirect_base_stream_t : public base_stream_t {
 struct indirect_stream_t : public indirect_base_stream_t {
   int _repeat_in=1, _repeat_str=0;
   addr_t cur_base_addr = 0;
-
+  
   virtual int repeat_in() {return _repeat_in;}
   virtual int repeat_str() {return _repeat_str;}
 
@@ -857,7 +854,14 @@ struct indirect_stream_t : public indirect_base_stream_t {
     std::cout << "mem[ind_port]->in_port" << "\tscratch? " << scratch()
       << "\tout_port width" << _data_width << "\tind_port=" << _ind_port
               << "\tind_type:" << _ind_type  << "\tind_addr:" << _index_addr
-              << "\tnum_elem:" << _num_elements << "\tin_port:";
+              << "\tnum_elem:" << _num_elements << "\tin_port:" 
+              << "\tmult: " << _ind_mult
+              << "\t2d_stream? " << _is_2d_stream
+              << "\tnum_elem_port: " << _sn_port
+              << "\tstride: " << _sstride
+              << "\taccess_size: " << _sacc_size
+              << "\tcur_ss_ind: " << _ssind
+              << "\tsstream_size: " << _sstream_size << std::endl;
     print_in_ports();
     std::cout << "\toffsets:" << _offset_list;
     base_stream_t::print_status();

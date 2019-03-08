@@ -1045,6 +1045,7 @@ void accel_t::cycle_cgra_backpressure() {
   }
 }
 
+// FIXME: this doesn't work with dgra
 void accel_t::cycle_cgra_fixedtiming() {
   uint64_t cur_cycle = now();
   for (int group = 0; group < NUM_GROUPS; ++group) {
@@ -2579,6 +2580,7 @@ void dma_controller_t::make_read_request() {
       indirect_stream_t &stream = *sp;
 
       auto &ind_vp = _accel->port_interf().out_port(stream._ind_port);
+      auto &subsize_vp = _accel->port_interf().out_port(stream._sn_port);
       int in_port = stream.first_in_port();
 
       if (stream.stream_active()) {
@@ -2592,8 +2594,9 @@ void dma_controller_t::make_read_request() {
         if (!skip_check && min_port_ready >= MAX_PORT_READY)
           continue;
         //--------------------------------
-
-        if (ind_vp.mem_size() >= stream._index_bytes &&
+        
+        if (ind_vp.mem_size() >= stream._index_bytes && 
+           (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes)) && 
             _accel->_lsq->sd_transfers[in_port].unreservedRemainingSpace() >
                 0 &&
             _accel->_lsq->canRequest()) {
@@ -2817,6 +2820,10 @@ void scratch_read_controller_t::read_linear_scratch_ind(
     uint64_t scr_addr /*if scr is dest, also todo*/) {
 
   port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
+  auto &subsize_vp = _accel->port_interf().out_port(stream._sn_port);
+  if(!stream._is_2d_stream) { 
+    assert(stream._sn_port==1);
+  }
 
   bool first = true;
   addr_t base_addr = 0;
@@ -2825,7 +2832,23 @@ void scratch_read_controller_t::read_linear_scratch_ind(
   // vector<int> imap;
   int bytes_read=0;
 
-  while (ind_vp.mem_size() >= stream._index_bytes && stream.stream_active()) {
+  while (ind_vp.mem_size() >= stream._index_bytes && stream.stream_active()
+     && (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes))) {
+
+
+    if(stream._is_2d_stream && stream._first_ss_access) {
+      uint64_t ind2=0;
+      for(int i=0; i<stream._index_bytes; ++i) {
+        uint8_t temp = subsize_vp.peek_out_data(i);
+        ind2 = ind2 | (temp << i*8);
+      }
+      
+      stream._sstream_size = ind2; // should be done only in the first size
+      // cout << "UPDATED SSTREAM SIZE TO: " << stream._sstream_size << endl;
+      stream._first_ss_access=false;
+    }
+
+
 
     uint64_t ind=0;
     for(int i=0; i<stream._index_bytes; ++i) {
@@ -2852,6 +2875,7 @@ void scratch_read_controller_t::read_linear_scratch_ind(
     _accel->read_scratchpad(&val, addr, data_bytes, stream.id());
     // assert: port's data width should be equal to the data_bytes to access
     for (int in_port : stream.in_ports()) {
+      // cout << "PUSHING DATA TO THE INPUT PORTS: " << data_bytes << " bytes\n";
       port_data_t &in_vp = _accel->port_interf().in_port(in_port);
       in_vp.push_data(in_vp.get_byte_vector(val,data_bytes));
     }
@@ -2860,13 +2884,16 @@ void scratch_read_controller_t::read_linear_scratch_ind(
       _accel->timestamp();
       cout << "linear scr indirect read for " << std::hex << base_addr << std::dec
            << " for " << data_bytes << " needed bytes"
+           << " and size of stream: " << stream._num_elements
            << "\n";
     }
 
     bool pop_ind_vp = stream.pop_elem();
     if (pop_ind_vp) {
+      stream._first_ss_access=true;
       for(int i=0; i<stream._index_bytes; ++i) {
         ind_vp.pop_out_data();
+        if(stream._is_2d_stream) subsize_vp.pop_out_data();
       }
       // ind_vp.pop_out_data();
     }
@@ -3033,7 +3060,6 @@ void scratch_read_controller_t::read_scratch_ind(
 // TODO:FIXME: This function actually can send data on the bus to the
 // ports... so it should really be arbitrated
 int scratch_read_controller_t::cycle_read_queue() {
-
   // First, check if we can commit one request from the reorder buffer
   int bytes_pushed = 0;
 
@@ -3042,12 +3068,17 @@ int scratch_read_controller_t::cycle_read_queue() {
 
 void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
   port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
+  auto &subsize_vp = _accel->port_interf().out_port(stream._sn_port);
+  if(!stream._is_2d_stream) { 
+    assert(stream._sn_port==1);
+  }
 
   bool first = true;
   addr_t base_addr = stream.cur_base_addr;
   addr_t max_addr = 0;
 
   vector<int> imap;
+  // bool first_ss_access=true; // used for 2d stream
   
   if (stream.straddle_bytes()>0) { 
     first=false; 
@@ -3058,7 +3089,20 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
   }
   else { stream.cur_base_addr = 0; }
 
-  while (ind_vp.mem_size() >= stream._index_bytes && stream.stream_active()) {
+  while (ind_vp.mem_size() >= stream._index_bytes && stream.stream_active()
+     && (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes))) {
+
+    if(stream._is_2d_stream && stream._first_ss_access) {
+      uint64_t ind2=0;
+      for(int i=0; i<stream._index_bytes; ++i) {
+        uint8_t temp = subsize_vp.peek_out_data(i);
+        ind2 = ind2 | (temp << i*8);
+      }
+      
+      stream._sstream_size = ind2; // should be done only in the first size
+      // cout << "UPDATED SSTREAM SIZE TO: " << stream._sstream_size << endl;
+      stream._first_ss_access=false;
+    }
 
     uint64_t ind=0;
     for(int i=0; i<stream._index_bytes; ++i) {
@@ -3098,10 +3142,11 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
 
     bool pop_ind_vp = stream.pop_elem();
     if (pop_ind_vp) {
+      stream._first_ss_access=true;
       for(int i=0; i<stream._index_bytes; ++i) {
         ind_vp.pop_out_data();
+        if(stream._is_2d_stream) subsize_vp.pop_out_data();
       }
-      // ind_vp.pop_out_data();
     }
   }
   bool last = stream.check_set_empty();
@@ -3835,6 +3880,7 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
       if ((ind_vp.mem_size() >= stream._index_bytes && stream.stream_active() && !checkLinearSpadStream(stream)) ||
           indirect_scr_read_requests_active()) {
         //-----------------------------------
+        // cout << "Detected as a banked scratchpad\n";
         bool skip_check = SS_DEBUG::UNREAL_INPUTS;
 
         if (min_ind_port_ready == -2) {
@@ -3963,11 +4009,14 @@ void scratch_read_controller_t::linear_scratch_cycle() {
       } else if (auto *sp = dynamic_cast<indirect_stream_t *>(s)) {
         auto &stream = *sp;
         port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
+        auto &subsize_vp = _accel->port_interf().out_port(stream._sn_port);
 
-        if (ind_vp.mem_size() && stream.stream_active() && checkLinearSpadStream(stream)) {
+        if (ind_vp.mem_size() && stream.stream_active() && checkLinearSpadStream(stream)
+     && (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes))) {
           // || indirect_scr_read_requests_active()) {
           // TODO: check the address belongs to the linear spad
           // if(!checkLinearSpadStream(stream)) continue;
+          // cout << "Detected as a linear scratchpad\n";
           read_linear_scratch_ind(stream, -1 /*scratch*/);
 
           bool is_empty = stream.check_set_empty();

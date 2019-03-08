@@ -941,7 +941,8 @@ decode QUADRANT default Unknown::unknown() {
                 0x0: ss_stride({{
                     xc->setSSReg(Rs1,SS_STRIDE);
                     xc->setSSReg(Rs2,SS_ACCESS_SIZE);
-                    xc->setSSReg(imm,SS_STRETCH);
+                    xc->setSSReg(imm & 0x3FF,SS_STRETCH);
+                    xc->setSSReg(imm >> 10, SS_FLAGS);
                 }}, IsSSParam, No_OpClass);
                 0x2: ss_set_iter({{
                     xc->setSSReg(Rs1, SS_NUM_STRIDES);
@@ -959,7 +960,7 @@ decode QUADRANT default Unknown::unknown() {
                     xc->setSSReg(Rs1,SS_INDEX_ADDR);
                     xc->setSSReg(Rs2,SS_NUM_ELEM);
                     xc->setSSReg(imm & 0x1F, SS_IND_PORT); //only 5 bits
-                    xc->setSSReg((imm >> 5) & 0x1F, SS_IN_PORT);
+                    xc->setSSReg((imm >> 5) & 0x1F, SS_IN_PORT); // 5 bits
                     xc->setSSReg(imm >> 10, SS_IS_SCRATCH);
                     xc->callSSFunc(SS_IND_PRT);
                 }}, IsSSStream, IsNonSpeculative, No_OpClass);
