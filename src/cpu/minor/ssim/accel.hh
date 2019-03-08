@@ -514,8 +514,12 @@ public:
   void pop(unsigned instances);  //Throw away data in CGRA input ports
 
   int repeat() {return _repeat;}
+  int num_times_repeated() {return _num_times_repeated;}
+  bool repeat_flag() {return _repeat_flag;}
+  void set_cur_repeat_lim(int64_t x) {_cur_repeat_lim=x;}
 
-  void set_repeat(int r, int rs);
+  // void set_repeat(int r, int rs);
+  void set_repeat(int r, int rs, bool rf);
 
   // Increase the times of data repeated.
   // Return true if the value should be popped.
@@ -547,7 +551,7 @@ public:
  
 private:
   //Programmable Repeat:
-  uint64_t _repeat=1, _repeat_stretch=0;
+  uint64_t _repeat=1, _repeat_stretch=0; bool _repeat_flag=false;
   int64_t _cur_repeat_lim=1;
   int64_t _num_times_repeated=0;
 

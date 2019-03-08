@@ -125,6 +125,7 @@ struct base_stream_t {
 
   virtual int repeat_in()   {return 1;}
   virtual int repeat_str()   {return 0;}
+  virtual bool repeat_flag()   {return false;}
   virtual uint32_t fill_mode() {return _fill_mode;}
   virtual bool stride_fill() {return _fill_mode == STRIDE_DISCARD_FILL ||
                                      _fill_mode == STRIDE_ZERO_FILL;}
@@ -347,6 +348,7 @@ struct affine_base_stream_t : public base_stream_t {
 //.........STREAM DEFINITION.........
 struct affine_read_stream_t : public affine_base_stream_t {
   int _repeat_in=1, _repeat_str=0;
+  bool _repeat_flag=false; // assume by-default not a port
 
   affine_read_stream_t(LOC unit, addr_t mem_addr, uint64_t stride,
     uint64_t acc_size, int stretch, uint64_t num_strides,
@@ -361,6 +363,7 @@ struct affine_read_stream_t : public affine_base_stream_t {
 
   virtual int repeat_in() {return _repeat_in;}
   virtual int repeat_str() {return _repeat_str;}
+  virtual bool repeat_flag() {return _repeat_flag;}
 
   virtual LOC src() {return _unit;}
   virtual LOC dest() {return LOC::PORT;}

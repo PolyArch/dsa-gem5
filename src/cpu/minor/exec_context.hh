@@ -522,7 +522,9 @@ class ExecContext : public ::ExecContext
                 thread.getSSReg(SS_MEM_ADDR),      thread.getSSReg(SS_STRIDE),
                 thread.getSSReg(SS_ACCESS_SIZE),   thread.getSSReg(SS_STRETCH), 
                 thread.getSSReg(SS_NUM_STRIDES),   thread.getSSReg(SS_IN_PORT),
-                thread.getSSReg(SS_REPEAT), thread.getSSReg(SS_REPEAT_STRETCH));
+                thread.getSSReg(SS_REPEAT), thread.getSSReg(SS_REPEAT_STRETCH));//,
+                // thread.getSSReg(SS_IS_PORT));
+                // thread.getSSReg(SS_FLAGS));
             break;
             case SS_ADD_PRT: ssim.add_port(thread.getSSReg(SS_IN_PORT));
                 return; //don't clear other vars
@@ -531,7 +533,9 @@ class ExecContext : public ::ExecContext
                 thread.getSSReg(SS_SCRATCH_ADDR), thread.getSSReg(SS_STRIDE),
                 thread.getSSReg(SS_ACCESS_SIZE),  thread.getSSReg(SS_STRETCH),   
                 thread.getSSReg(SS_NUM_STRIDES),  thread.getSSReg(SS_IN_PORT),
-                thread.getSSReg(SS_REPEAT), thread.getSSReg(SS_REPEAT_STRETCH));
+                thread.getSSReg(SS_REPEAT), thread.getSSReg(SS_REPEAT_STRETCH));//,
+                // thread.getSSReg(SS_IS_PORT));
+                // thread.getSSReg(SS_FLAGS));
             break;
             case SS_PRT_SCR: ssim.write_scratchpad(
                 thread.getSSReg(SS_OUT_PORT), thread.getSSReg(SS_SCRATCH_ADDR),  
@@ -616,6 +620,7 @@ class ExecContext : public ::ExecContext
         setSSReg(0,SS_IND_TYPE);
         setSSReg(0,SS_DTYPE);
         setSSReg(1,SS_IND_MULT);
+        // setSSReg(0,SS_IS_PORT);
 
     }
 #endif

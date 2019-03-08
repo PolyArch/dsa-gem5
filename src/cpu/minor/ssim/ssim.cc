@@ -387,12 +387,17 @@ void ssim_t::add_port(int in_port) {
 
 void ssim_t::load_dma_to_port(addr_t mem_addr,
      uint64_t stride, uint64_t access_size, int stretch, uint64_t num_strides,
-     int in_port, int repeat, int repeat_str) {
+     int in_port, int repeat, int repeat_str) { // , bool repeat_flag) {
+  int new_repeat_str = repeat_str & (0x3FF);
+  bool repeat_flag = repeat_str & (1<<10);
 
   std::vector<int> in_ports;
   in_ports.push_back(in_port);
   affine_read_stream_t* s = new affine_read_stream_t(LOC::DMA, mem_addr, stride,
-      access_size, stretch, num_strides, in_ports, repeat, repeat_str);
+      access_size, stretch, num_strides, in_ports, repeat, new_repeat_str);
+  s->_repeat_flag = repeat_flag;
+  // cout << "REPEAT FLAG: " << repeat_flag << endl;
+  // cout << "repeat: " << repeat << " repeat_str: " << new_repeat_str << endl;
 
   add_bitmask_stream(s);
 }
@@ -409,12 +414,16 @@ void ssim_t::write_dma(uint64_t garb_elem, int out_port,
 
 void ssim_t::load_scratch_to_port(addr_t scratch_addr,
   uint64_t stride, uint64_t access_size, int stretch, uint64_t num_strides,
-  int in_port, int repeat, int repeat_str) {
+  int in_port, int repeat, int repeat_str) {//, bool repeat_flag) {
+  int new_repeat_str = repeat_str & (0x3FF);
+  bool repeat_flag = repeat_str & (1<<10);
+
 
   std::vector<int> in_ports;
   in_ports.push_back(in_port);
   affine_read_stream_t* s = new affine_read_stream_t(LOC::SCR, scratch_addr, stride,
-      access_size, stretch, num_strides, in_ports, repeat, repeat_str);
+      access_size, stretch, num_strides, in_ports, repeat, new_repeat_str);
+  s->_repeat_flag = repeat_flag;
       
   add_bitmask_stream(s);
 }

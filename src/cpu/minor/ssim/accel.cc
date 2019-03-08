@@ -158,10 +158,11 @@ unsigned port_data_t::port_vec_elem() {
   }
 }
 
-void port_data_t::set_repeat(int r, int rs) {
+void port_data_t::set_repeat(int r, int rs, bool rf) {
   _repeat = r;
   _cur_repeat_lim = r;
   _repeat_stretch = rs;
+  _repeat_flag = rf;
   if (r != _repeat || rs != _repeat_stretch) {
     // we are safe to reset times_repeated if these have changed, since no
     // stream can be active while these are changing
@@ -170,11 +171,24 @@ void port_data_t::set_repeat(int r, int rs) {
 }
 
 bool port_data_t::inc_repeated() {
+  // cout << "Came here to increase repeated with cur_repeat_lim: " << _cur_repeat_lim << "\n";
   auto repeat_lim = (_cur_repeat_lim - 1) / (1 << REPEAT_FXPNT) + 1;
   if (++_num_times_repeated >= repeat_lim) {
+    // cout << "NUM TIMES REPEATED: " << _num_times_repeated << " REPEAT LIM: " << repeat_lim << endl;
     assert(_num_times_repeated == repeat_lim &&
            "Repeat time cannot be more than repeat limit!");
     _num_times_repeated = 0;
+    // TODO: need to change here for data-dependent repeat
+    // load the value and add the condition if not available, port cannot issue
+    /*if(_repeat_flag) { 
+      _cur_repeat_lim = -1; // pop from that port
+       // port_data_t *repeat_prt = &_port_interf.in_port(_repeat);
+       // auto &repeat_prt = _accel->port_interf().out_port(_repeat);
+       auto &repeat_prt = port_interf().out_port(_repeat);
+       if(repeat_prt.mem_size()) {
+         _cur_repeat_lim = repeat_prt.pop_out_data();
+       }
+    } */
     _cur_repeat_lim += _repeat_stretch;
   }
   return _num_times_repeated == 0;
@@ -917,8 +931,18 @@ void accel_t::cycle_cgra_backpressure() {
   for (int i = 0; i < active_in_ports.size(); ++i) {
     int port_index = active_in_ports[i];
     auto &cur_in_port = _port_interf.in_port(port_index);
-    
-    if (cur_in_port.num_ready()) {
+   
+    // cout << "REPEAT FLAG: " << cur_in_port.repeat_flag() << " and num_repeated_till_now: " << cur_in_port.num_times_repeated() << endl;
+    if(cur_in_port.repeat_flag() && cur_in_port.num_times_repeated()==0) { // need to pop to set it
+      auto &repeat_prt = port_interf().out_port(cur_in_port.repeat());
+      if(repeat_prt.mem_size()) {
+        cur_in_port.set_cur_repeat_lim(repeat_prt.pop_out_data());
+      } else if(cur_in_port.repeat_flag() && cur_in_port.num_times_repeated()!=0) {
+        cur_in_port.set_cur_repeat_lim(-1);
+      }
+    }
+
+    if (cur_in_port.num_ready() && cur_in_port.repeat()) {
       auto *port = _sched->vportOf(make_pair(true /*input*/, port_index));
       auto *vec_in = dynamic_cast<SSDfgVecInput *>(port);
       assert(vec_in != NULL && "input port pointer is null\n");
@@ -960,6 +984,14 @@ void accel_t::cycle_cgra_backpressure() {
         // pop input from CGRA port after it is pushed into the dfg node
         if (!vec_in->backPressureOn()) {
           bool should_pop = cur_in_port.inc_repeated();
+          /*if(!cur_in_port.repeat_flag() && cur_in_port.num_times_repeated()==0) { // need to pop to set it
+            auto &repeat_prt = port_interf().out_port(cur_in_port.repeat());
+            if(repeat_prt.mem_size()) {
+              cur_in_port.set_cur_repeat_lim(repeat_prt.pop_out_data());
+            } else {
+              cur_in_port.set_cur_repeat_lim(-1);
+            }
+          }*/
           if (should_pop) {
             cur_in_port.pop(1);
           }
@@ -1591,7 +1623,7 @@ void accel_t::print_statistics(std::ostream &out) {
       << ((double)_stat_comp_instances) / ((double)roi_cycles()) << "\n";
   out << "For backcgra, Average thoughput of all ports (overall): "
     <<
-    ((double)_stat_comp_instances)/((double)roi_cycles()*_dfg->num_vec_output())
+    ((double)_stat_comp_instances)/((double)roi_cycles()*_dfg->num_vec_output()) // gives seg fault when no dfg
     << ", CGRA outputs/cgra busy cycles: "
     <<  ((double)_stat_comp_instances)/((double)_stat_cgra_busy_cycles)  <<
     "\n";
@@ -1782,9 +1814,11 @@ void accel_t::schedule_streams() {
     bool scheduled = false;
     int repeat = ip->repeat_in();
     int repeat_str = ip->repeat_str();
+    bool repeat_flag = ip->repeat_flag();
     LOC unit = ip->unit();
 
     bool ivps_can_take = true;
+    // FIXME: check is this needs to be changed with repeat_flag!
     for (int in_port : ip->in_ports()) {
       port_data_t *in_vp = &_port_interf.in_port(in_port);
       ivps_can_take = ivps_can_take && (!blocked_ivp[in_port]) &&
@@ -2013,7 +2047,7 @@ void accel_t::schedule_streams() {
       for (int in_port : ip->in_ports()) {
         port_data_t *in_vp = &_port_interf.in_port(in_port);
         in_vp->set_status(port_data_t::STATUS::BUSY, ip->unit());
-        in_vp->set_repeat(repeat, repeat_str);
+        in_vp->set_repeat(repeat, repeat_str, repeat_flag);
       }
 
       str_issued++;

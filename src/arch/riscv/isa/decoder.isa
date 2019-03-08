@@ -830,8 +830,10 @@ decode QUADRANT default Unknown::unknown() {
                 0x1: ss_cfg_port({{
                     xc->setSSReg(Rs1,SS_REPEAT);
                     xc->setSSReg(imm,SS_REPEAT_STRETCH);
+                    // xc->setSSReg(imm & 0x3FF,SS_REPEAT_STRETCH);
+					// xc->setSSReg(imm >> 10,SS_IS_PORT);
                     //xc->setSSReg(imm,SS_IN_PORT);
-                    //xc->callSSFunc(SS_CFG_PORT);
+                    // xc->callSSFunc(imm >> 10,SS_CFG_PORT);
                 }}, IsSSParam, IsNonSpeculative, No_OpClass);
                 0x2: ss_cfg_ctx({{
                     if(imm == 0) {
