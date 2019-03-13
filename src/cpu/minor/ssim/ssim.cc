@@ -396,8 +396,11 @@ void ssim_t::load_dma_to_port(addr_t mem_addr,
   affine_read_stream_t* s = new affine_read_stream_t(LOC::DMA, mem_addr, stride,
       access_size, stretch, num_strides, in_ports, repeat, new_repeat_str);
   s->_repeat_flag = repeat_flag;
-  // cout << "REPEAT FLAG: " << repeat_flag << endl;
-  // cout << "repeat: " << repeat << " repeat_str: " << new_repeat_str << endl;
+  // set the cur_repeat_lim to -1
+  if(repeat_flag) {
+    auto &prt = accel_arr[0]->port_interf().out_port(repeat);
+    prt.set_cur_repeat_lim(-1);
+  }
 
   add_bitmask_stream(s);
 }
@@ -424,6 +427,10 @@ void ssim_t::load_scratch_to_port(addr_t scratch_addr,
   affine_read_stream_t* s = new affine_read_stream_t(LOC::SCR, scratch_addr, stride,
       access_size, stretch, num_strides, in_ports, repeat, new_repeat_str);
   s->_repeat_flag = repeat_flag;
+  if(repeat_flag) {
+    auto &prt = accel_arr[0]->port_interf().out_port(repeat);
+    prt.set_cur_repeat_lim(-1);
+  }
       
   add_bitmask_stream(s);
 }

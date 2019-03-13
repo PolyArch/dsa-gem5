@@ -103,7 +103,7 @@ public:
         return 1;
       } else {
         // return _dfg_vec->length();
-        return _dfg_vec->get_vp_len();
+        return _dfg_vec->logical_len();
       }
     }
     return 1;
@@ -515,6 +515,7 @@ public:
 
   int repeat() {return _repeat;}
   int num_times_repeated() {return _num_times_repeated;}
+  int cur_repeat_lim() {return _cur_repeat_lim;}
   bool repeat_flag() {return _repeat_flag;}
   void set_cur_repeat_lim(int64_t x) {_cur_repeat_lim=x;}
 
@@ -533,6 +534,7 @@ public:
     _port_width=num_bits/8;
   }
 
+  // in bytes
   int get_port_width(){
     return _port_width;
   }
@@ -569,7 +571,9 @@ private:
   std::deque<std::vector<uint8_t>> _mem_data;
   std::deque<bool> _valid_data;
   // std::vector<std::deque<SBDT>> _cgra_data; //data per port
-  std::vector<std::deque<std::vector<uint8_t>>> _cgra_data; //data per port
+  // outermost for number of scalar ports, and innermost is for datatype of the
+  // port
+  std::vector<std::deque<std::vector<uint8_t>>> _cgra_data; //data per scalar port
   std::vector<std::deque<bool>> _cgra_valid; //data per port
   unsigned _num_in_flight=0;
   unsigned _num_ready=0;
@@ -887,7 +891,7 @@ class scratch_write_controller_t : public data_controller_t {
   void write_scratch_remote_ind(remote_core_net_stream_t& stream);
   void write_scratch_remote_direct(direct_remote_scr_stream_t& stream);
   void atomic_scratch_update(atomic_scr_stream_t& stream);
-  void serve_atomic_requests(atomic_scr_stream_t& stream, bool &performed_atomic_scr);
+  void serve_atomic_requests(bool &performed_atomic_scr);
   void push_remote_wr_req(uint8_t *val, int num_bytes, addr_t scr_addr);
   void scr_write(addr_t addr, affine_write_stream_t& stream, port_data_t& out_vp);
 
@@ -966,6 +970,7 @@ class scratch_write_controller_t : public data_controller_t {
   void delete_stream(int i, atomic_scr_stream_t* s);
   void delete_stream(int i, indirect_wr_stream_t* s);
 
+  int _logical_banks = NUM_SCRATCH_BANKS;
   int64_t _remote_scr_writes=0;
   int64_t _df_count=-1; // only 1 active at a time
   std::vector<base_stream_t*> _write_streams;
@@ -1675,6 +1680,8 @@ int get_cur_cycle();
 
   //FIXME: just for debug, fix later
   int _num_cycles_issued=0;
+
+  // int _bytes_rd5=0;
 
   bool _back_cgra=false;
   bool _linear_spad=false;

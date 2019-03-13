@@ -807,11 +807,13 @@ struct indirect_base_stream_t : public base_stream_t {
   addr_t cur_addr(SBDT val) {
     // uint64_t index =  (val >> (_index_in_word * _index_bytes * 8)) & _index_mask;
     uint64_t index =  val & _index_mask;
+    // addr_t x = _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes + _ssind*_sstride;
     if(SS_DEBUG::MEM_REQ) {
-      std::cout << "index: " << index << " mult: " << _ind_mult << " ss_ind: " << _ssind << "\n";
+      std::cout << "index: " << index << " mult: " << _ind_mult << " ss_ind: " << _ssind << " offset: " << unsigned(_offsets[_index_in_offsets]) << " sstream size: " << _sstream_size << "\n";
+      // std::cout << "The computed address is: " << x << "\n";
     }
     // return   _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes;
-    return   _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes + (_ssind*_sstride*_ind_mult/8);
+    return   _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes + _ssind*_sstride;
   }
 
   virtual LOC src() {return LOC::PORT;}
@@ -822,16 +824,15 @@ struct indirect_base_stream_t : public base_stream_t {
   }
 
   //return value: should pop vector port
-  // FIXME: currently offset list might not work in combination with 2d stream
   bool pop_elem() {
-    _ssind++;
-    if(_sstream_size!=_ssind) return false;
-    _ssind=0;
     _index_in_offsets++;
-    //std::cout << "pop ";
+    // std::cout << "index in offsets: " << _index_in_offsets << " and offset size: " << _offsets.size() << std::endl;
 
     if(_index_in_offsets >= _offsets.size()) {
       _index_in_offsets=0;
+      _ssind++;
+      if(_sstream_size!=_ssind) return false;
+      _ssind=0;
       _num_elements--;
       //std::cout << _num_elements << " ";
       return true;
@@ -1185,6 +1186,8 @@ struct atomic_scr_stream_t : public base_stream_t {
   uint64_t num_strides() {return _num_strides;} // iters
   uint64_t mem_addr()    {return _mem_addr;}
 
+  // FIXME: this should from most significant (Although doesn't matter much
+  // because our operations our idempotent)
   uint64_t cur_offset(){
     // extracting from right (least significant bits)
     return (mem_addr() >> (_cur_addr_index*_addr_bytes*8)) & _addr_mask;

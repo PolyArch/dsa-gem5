@@ -152,7 +152,7 @@ void port_data_t::reset() {
 unsigned port_data_t::port_vec_elem() {
   if(_dfg_vec) {
     // return _dfg_vec->length();
-    return _dfg_vec->get_vp_len();
+    return _dfg_vec->logical_len();
   } else {
     return 1;
   }
@@ -278,15 +278,17 @@ template <typename T> T port_data_t::pop_out_custom_data() {
 // peek at output data (return original data typecasted to SBDT)
 SBDT port_data_t::peek_out_data() {
   assert(_mem_data.size());
-  // SBDT val = _mem_data.front();
   vector<uint8_t> v = _mem_data.front();
   SBDT val = get_sbdt_val(v, _port_width);
   return val;
 }
 
+// send ith byte of the data
+// FIXME: seems wrong to me
 SBDT port_data_t::peek_out_data(int i) {
   assert(i>=0 && _mem_data.size()>i);
   vector<uint8_t> v = _mem_data[i];
+  // vector<uint8_t> v = _mem_data.front();
   SBDT val = get_sbdt_val(v, _port_width);
   return val;
 }
@@ -297,9 +299,12 @@ void port_data_t::pop(unsigned instances) {
   _num_ready -= instances;
   assert(_mem_data.size() == _valid_data.size());
 
+  // cout << "Size of vector port in pop is: " << _cgra_data.size() << endl;
   for (unsigned cgra_port = 0; cgra_port < _cgra_data.size(); ++cgra_port) {
     assert(_cgra_data[cgra_port].size() == _cgra_valid[cgra_port].size());
     assert(_cgra_data[cgra_port].size() >= instances);
+    // SBDT val = get_sbdt_val(_cgra_data[cgra_port].front(),_port_width);
+    // cout << "Currently deleting: " << val << endl;
     _cgra_data[cgra_port].erase(_cgra_data[cgra_port].begin(),
                                 _cgra_data[cgra_port].begin() + instances);
     _cgra_valid[cgra_port].erase(_cgra_valid[cgra_port].begin(),
@@ -786,6 +791,7 @@ void accel_t::tick() {
 
     if (SS_DEBUG::CYC_STAT && _accel_index == SS_DEBUG::ACC_INDEX) {
       if (_back_cgra) {
+        // cout << "NEW CYCLE: " << _stat_mem_bytes_rd << "\n";
         cycle_status_backcgra();
       } else {
         cycle_status();
@@ -931,20 +937,31 @@ void accel_t::cycle_cgra_backpressure() {
   for (int i = 0; i < active_in_ports.size(); ++i) {
     int port_index = active_in_ports[i];
     auto &cur_in_port = _port_interf.in_port(port_index);
-   
+        
+    auto *port = _sched->vportOf(make_pair(true /*input*/, port_index));
+    auto *vec_in = dynamic_cast<SSDfgVecInput *>(port); 
     // cout << "REPEAT FLAG: " << cur_in_port.repeat_flag() << " and num_repeated_till_now: " << cur_in_port.num_times_repeated() << endl;
     if(cur_in_port.repeat_flag() && cur_in_port.num_times_repeated()==0) { // need to pop to set it
       auto &repeat_prt = port_interf().out_port(cur_in_port.repeat());
       if(repeat_prt.mem_size()) {
-        cur_in_port.set_cur_repeat_lim(repeat_prt.pop_out_data());
+        uint64_t x = repeat_prt.pop_out_data();
+        if(SS_DEBUG::MEM_REQ) {
+          cout << "Port details: " << cur_in_port.port_cgra_elem() << " " << vec_in->logical_len() << " ( " << vec_in->name() << " ) "<< endl;
+          cout << "NEW REPEAT COUNT: " << x << endl;
+        }
+        cur_in_port.set_cur_repeat_lim(x);
+        // cur_in_port.set_cur_repeat_lim(repeat_prt.pop_out_data());
       } else if(cur_in_port.repeat_flag() && cur_in_port.num_times_repeated()!=0) {
         cur_in_port.set_cur_repeat_lim(-1);
       }
     }
 
-    if (cur_in_port.num_ready() && cur_in_port.repeat()) {
-      auto *port = _sched->vportOf(make_pair(true /*input*/, port_index));
-      auto *vec_in = dynamic_cast<SSDfgVecInput *>(port);
+        
+    // cout << "Port details: " << cur_in_port.port_cgra_elem() << " " << vec_in->logical_len() << " ( " << vec_in->name() << " ) " << " cur_repeat_lim: " << cur_in_port.cur_repeat_lim() << endl;
+    
+    if (cur_in_port.num_ready() && cur_in_port.cur_repeat_lim()>0) {
+      // auto *port = _sched->vportOf(make_pair(true /*input*/, port_index));
+      // auto *vec_in = dynamic_cast<SSDfgVecInput *>(port);
       assert(vec_in != NULL && "input port pointer is null\n");
 
       if (_dfg->can_push_input(vec_in)) {
@@ -957,11 +974,13 @@ void accel_t::cycle_cgra_backpressure() {
         bool valid = false;
 
         // if(cur_in_port.port_cgra_elem()!=vec_in->length()){
-        if(cur_in_port.port_cgra_elem()!=vec_in->get_vp_len()){
-          cout << cur_in_port.port_cgra_elem() << " " << vec_in->get_vp_len() << " ( " << vec_in->name() << " ) "<< endl;
+        if(cur_in_port.port_cgra_elem()!=vec_in->logical_len()){
+          cout << cur_in_port.port_cgra_elem() << " " << vec_in->logical_len() << " ( " << vec_in->name() << " ) "<< endl;
         }
-        assert(cur_in_port.port_cgra_elem()==vec_in->get_vp_len() && "Vector size not same in scheduler and simulator");
+        assert(cur_in_port.port_cgra_elem()==vec_in->logical_len() && "Vector size not same in scheduler and simulator");
+        // cout << "Logical length: " << vec_in->logical_len() << " ( " << vec_in->name() << " ) "<< endl;
 
+        // cout << "Initial size in dgra connector: " << cur_in_port.port_cgra_elem() << endl;
         for (unsigned port_idx = 0; port_idx < cur_in_port.port_cgra_elem();
              ++port_idx) { // port_idx are the scalar cgra nodes
           int cgra_port = cur_in_port.cgra_port_for_index(port_idx);
@@ -984,28 +1003,20 @@ void accel_t::cycle_cgra_backpressure() {
         // pop input from CGRA port after it is pushed into the dfg node
         if (!vec_in->backPressureOn()) {
           bool should_pop = cur_in_port.inc_repeated();
-          /*if(!cur_in_port.repeat_flag() && cur_in_port.num_times_repeated()==0) { // need to pop to set it
-            auto &repeat_prt = port_interf().out_port(cur_in_port.repeat());
-            if(repeat_prt.mem_size()) {
-              cur_in_port.set_cur_repeat_lim(repeat_prt.pop_out_data());
-            } else {
-              cur_in_port.set_cur_repeat_lim(-1);
-            }
-          }*/
           if (should_pop) {
             cur_in_port.pop(1);
           }
         }
-        
 
-        /*
         if(SS_DEBUG::COMP) {
-          cout << "Allowed to push input: " << std::hex << data[0] << "\n";
+          cout << "Vec name: " << vec_in->name() << "Allowed to push input: " << data[0] << " " << data[1] << " " << data[2] << " " << data[3] << "\n";
         }
-        */
 
       }
-    }
+    } else if(cur_in_port.num_ready() && cur_in_port.cur_repeat_lim()==0) { // when the element has to be repeated 0 times (discard)
+      // cout << "Came inside repeat=0 for Vec name: " << vec_in->name() << "\n";
+      cur_in_port.pop(1);
+      }
   }
 
   // calling with the default parameters for now
@@ -1056,9 +1067,9 @@ void accel_t::cycle_cgra_backpressure() {
 
           n_times = 8/data_width;
           // if(vec_output->length()-j*n_times>0) {
-          if(vec_output->get_vp_len()-j*n_times>0) {
+          if(vec_output->logical_len()-j*n_times>0) {
             // n_times = std::min(n_times, (int)vec_output->length()-j*n_times);
-            n_times = std::min(n_times, (int)vec_output->get_vp_len()-j*n_times);
+            n_times = std::min(n_times, (int)vec_output->logical_len()-j*n_times);
           }
           // push elements from dfg output port
           for(int k=0; k<n_times; ++k) {
@@ -1615,6 +1626,7 @@ void accel_t::print_statistics(std::ostream &out) {
   out << dec;
   // out << "Start Cycle: " << _stat_start_cycle << "\n";
   // out << "Stop  Cycle: " << _stat_stop_cycle << "\n\n";
+  // out << "BYTES READ AT PORT 5: " << _bytes_rd5 << "\n";
 
   out << "Commands Issued: " << _stat_commands_issued << "\n";
   out << "CGRA Instances: " << _stat_comp_instances << " -- Activity Ratio: "
@@ -2305,16 +2317,7 @@ void dma_controller_t::port_resp(unsigned cur_port) {
         apply_map(packet->getPtr<uint8_t>(), response->sdInfo->map, data);
       }
 
-      // cache hit stats collection
-      if(_accel->_ssim->in_roi()) {
-        _accel->_stat_tot_mem_wait_cycles += (_accel->get_cur_cycle()-response->sdInfo->request_cycle);
-        _accel->_stat_mem_bytes_rd += data.size();
-        if(_accel->get_cur_cycle()-response->sdInfo->request_cycle<20) { // probably L1 hit
-          _accel->_stat_hit_bytes_rd += data.size();
-        } else {
-          _accel->_stat_miss_bytes_rd += data.size();
-        } 
-      }
+
       //-----------------
 
       bool port_in_okay = true;
@@ -2358,7 +2361,23 @@ void dma_controller_t::port_resp(unsigned cur_port) {
           }
         }
 
+        // cache hit stats collection
+        /*if(_accel->_ssim->in_roi()) {
+          _accel->_stat_tot_mem_wait_cycles += (_accel->get_cur_cycle()-response->sdInfo->request_cycle);
+          _accel->_stat_mem_bytes_rd += data.size();
+          if(_accel->get_cur_cycle()-response->sdInfo->request_cycle<20) { // probably L1 hit
+            _accel->_stat_hit_bytes_rd += data.size();
+          } else {
+            _accel->_stat_miss_bytes_rd += data.size();
+          } 
+        }*/
+
+        if(_accel->_ssim->in_roi()) {
+          _accel->_stat_mem_bytes_rd += data.size();
+        }
+        data.clear();
         _accel->_lsq->popResponse(cur_port);
+
         _mem_read_reqs--;
         return;
       }
@@ -2628,12 +2647,19 @@ void dma_controller_t::make_read_request() {
         if (!skip_check && min_port_ready >= MAX_PORT_READY)
           continue;
         //--------------------------------
+        // cout << "CAME HERE TO CHECK IF IND STREAM COULD BE ISSUED\n";
+        // cout << "memory in ind_vp: " << ind_vp.mem_size() << "\n"; 
+        // cout << "susize mem: " << subsize_vp.mem_size() << "\n";
         
-        if (ind_vp.mem_size() >= stream._index_bytes && 
-           (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes)) && 
+//        if (ind_vp.mem_size() >= stream._index_bytes && 
+  //         (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes)) && 
+          if (ind_vp.mem_size() >= stream._index_bytes/ind_vp.get_port_width() && 
+           (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes/subsize_vp.get_port_width())) && 
+     
             _accel->_lsq->sd_transfers[in_port].unreservedRemainingSpace() >
                 0 &&
             _accel->_lsq->canRequest()) {
+          // cout << "OK GOOD PASSED THE FIRST TEST\n";
 
           auto &in_vp = _accel->port_interf().in_port(in_port);
           if (in_vp.num_can_push() > 8) { // FIXME:CHECKME: make sure vp isn't full
@@ -3123,28 +3149,45 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
   }
   else { stream.cur_base_addr = 0; }
 
-  while (ind_vp.mem_size() >= stream._index_bytes && stream.stream_active()
-     && (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes))) {
+  // while (ind_vp.mem_size() >= stream._index_bytes && stream.stream_active()
+     //&& (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes))) {
+  while (ind_vp.mem_size() >= stream._index_bytes/ind_vp.get_port_width() && stream.stream_active()
+     && (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes/subsize_vp.get_port_width()))) {
+
 
     if(stream._is_2d_stream && stream._first_ss_access) {
       uint64_t ind2=0;
-      for(int i=0; i<stream._index_bytes; ++i) {
+      for(int i=0; i<stream._index_bytes/subsize_vp.get_port_width(); ++i) {
         uint8_t temp = subsize_vp.peek_out_data(i);
         ind2 = ind2 | (temp << i*8);
       }
       
-      stream._sstream_size = ind2; // should be done only in the first size
-      // cout << "UPDATED SSTREAM SIZE TO: " << stream._sstream_size << endl;
-      stream._first_ss_access=false;
+      // If sub-stream size is 0, then pop the corresponding element from ind
+      // port, also again set first ss access
+      if(ind2==0) {
+        for(int i=0; i<stream._index_bytes/ind_vp.get_port_width(); ++i) {
+          ind_vp.pop_out_data();
+        }
+        for(int i=0; i<stream._index_bytes/subsize_vp.get_port_width(); ++i) {
+          subsize_vp.pop_out_data();
+        }
+        continue;
+      } else {
+        stream._sstream_size = ind2; // should be done only in the first size
+        // cout << "SIZE PORT NUMBER: " << stream._sn_port << " config bytes: " << stream._index_bytes << endl;
+        // cout << "UPDATED SSTREAM SIZE TO: " << stream._sstream_size << endl;
+        stream._first_ss_access=false;
+      }
     }
 
     uint64_t ind=0;
-    for(int i=0; i<stream._index_bytes; ++i) {
+    for(int i=0; i<stream._index_bytes/ind_vp.get_port_width(); ++i) {
       uint8_t temp = ind_vp.peek_out_data(i);
       // cout << "Value in the port: " << (temp&0xFFFFFFFFFFFFFFFF) << endl;
       ind = ind | (temp << i*8);
     }
     addr_t addr = stream.cur_addr(ind);
+    // cout << "Current indirect address sent is: " << std::hex << addr << endl;
     // addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
 
     if (first) {
@@ -3177,17 +3220,26 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
     bool pop_ind_vp = stream.pop_elem();
     if (pop_ind_vp) {
       stream._first_ss_access=true;
-      for(int i=0; i<stream._index_bytes; ++i) {
+      // need to consider data width of indirect port as well
+      for(int i=0; i<stream._index_bytes/ind_vp.get_port_width(); ++i) {
         ind_vp.pop_out_data();
-        if(stream._is_2d_stream) subsize_vp.pop_out_data();
+      }
+      if(stream._is_2d_stream) {
+        for(int i=0; i<stream._index_bytes/subsize_vp.get_port_width(); ++i) {
+          subsize_vp.pop_out_data();
+        }
       }
     }
+
+    // if(stream._is_2d_stream) stream.print_status();
   }
   bool last = stream.check_set_empty();
 
   if (last) {
     _accel->process_stream_stats(stream);
   }
+
+  if(imap.size()==0) return; // case when data-dependent sub-stream size was 0
 
   if (SS_DEBUG::MEM_REQ) {
     _accel->timestamp();
@@ -4126,15 +4178,16 @@ void scratch_write_controller_t::scr_write(addr_t addr,
   }
 }
 
-void scratch_write_controller_t::serve_atomic_requests(atomic_scr_stream_t& stream, bool &performed_atomic_scr) {
+void scratch_write_controller_t::serve_atomic_requests(bool &performed_atomic_scr) {
   SBDT input_val=0;
   addr_t scr_addr; 
   int opcode = 0;
   SBDT inc, bytes_written=0;
-  int logical_banks = NUM_SCRATCH_BANKS / stream._value_bytes;
-  for (int i = 0; i < logical_banks; ++i) {
+  // int logical_banks = NUM_SCRATCH_BANKS / stream._value_bytes;
+  for (int i = 0; i < _logical_banks; ++i) {
     if (!_atomic_scr_issued_requests[i].empty()) {
       atomic_scr_op_req request = _atomic_scr_issued_requests[i].front();
+      input_val = 0; // reset
       scr_addr = request._scr_addr;
       inc = request._inc;
       opcode = request._opcode;
@@ -4149,26 +4202,28 @@ void scratch_write_controller_t::serve_atomic_requests(atomic_scr_stream_t& stre
         // std::cout << "Available requests at the bank queue are: "
         //           << _atomic_scr_issued_requests[i].size() << "\n";
       }
-      // uint8_t input_val[8] = {0};
-      // _accel->read_scratchpad(&input_val+8-request._value_bytes, scr_addr, request._value_bytes, stream.id());
-      // read the bitwidth of the output type from scratchpad
-      _accel->read_scratchpad(&input_val+8-request._output_bytes, scr_addr, request._output_bytes, stream.id());
-      // SBDT mod_val = get_sbdt_val(input_val);
+      // _accel->read_scratchpad(&input_val+8-request._output_bytes, scr_addr, request._output_bytes, stream.id());
+      // FIXME: confirm if I can fix the ID of atomic scr
+      _accel->read_scratchpad(&input_val+8-request._output_bytes, scr_addr, request._output_bytes, 0);
       switch (opcode) {
-      case 0: input_val += inc;
-              break;
-      case 1: input_val = std::max(input_val, inc);
-              break;
-      case 2: input_val = std::min(input_val, inc);
-              break;
-      case 3: input_val = inc; // update
-              break;
-      default: cout << "Invalid opcode\n";
-               break;
+        case 0: input_val += inc;
+                break;
+        case 1: input_val = std::max(input_val, inc);
+                break;
+        case 2: input_val = std::min(input_val, inc);
+                break;
+        case 3: input_val = inc; // update
+                break;
+        default: cout << "Invalid opcode\n";
+                 break;
       }
+
+      // SBDT val = *(&input_val) && 0x000000000000FFFF;
+      // cout << "FInal output of atomic scr: " << val << endl;
       _accel->write_scratchpad(scr_addr,
                                &input_val + 8 - request._output_bytes,
-                               request._output_bytes, stream.id());
+                               request._output_bytes, 0);
+                               // request._output_bytes, stream.id());
 
       _accel->_stat_scratch_bank_requests_executed++;
       bytes_written += request._value_bytes;
@@ -4179,7 +4234,8 @@ void scratch_write_controller_t::serve_atomic_requests(atomic_scr_stream_t& stre
   }
 
   if (_accel->_ssim->in_roi()) {
-    add_bw(stream.src(), stream.dest(), 1, bytes_written);
+    // add_bw(stream.src(), stream.dest(), 1, bytes_written);
+    add_bw(LOC::PORT, LOC::SCR, 1, bytes_written);
     _accel->_stat_scratch_writes += 1;
     _accel->_stat_cycles_atomic_scr_executed++;
   }
@@ -4226,10 +4282,13 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
         std::cout << "64-bit value at the addr port is: " << loc;
       }
       loc = stream.cur_addr(loc);
-      // std::cout << "loc: " << loc << "\n";
+      // cout << "cur addr index: " << stream._cur_addr_index << " addr bytes: " << stream._addr_bytes << endl;
+      // std::cout << "updated loc: " << loc << "\n";
 
       base_addr = stream.cur_offset() * stream._output_bytes;
+      // std::cout << "updated base address: " << base_addr << "\n";
       scr_addr = base_addr + loc * stream._output_bytes;
+      // std::cout << "updated scr address: " << scr_addr << "\n";
       max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
 
 
@@ -4484,6 +4543,8 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
       // FIXME: mem_size based on config (this should be greater than
       // addr_bytes/out_addr.data_width
       if(out_addr.mem_size() && out_val.mem_size() && stream.stream_active()) {
+        // Constraint: This should be same for all active atomic streams
+        _logical_banks = NUM_SCRATCH_BANKS / stream._value_bytes;
         atomic_scratch_update(stream);
         bool is_empty = stream.check_set_empty();
         if (is_empty) {
@@ -4500,12 +4561,13 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
       if(!(stream.stream_active() || atomic_scr_issued_requests_active())) {
         delete_stream(_which_wr, sp); // if both are done
       }
+      /*
       if(atomic_scr_issued_requests_active()) {
         if(can_perform_atomic_scr) {
           serve_atomic_requests(stream, performed_atomic_scr);
           break;
         }
-      }
+      }*/
     } else if (auto *sp = dynamic_cast<remote_core_net_stream_t *>(s)) {
       auto &stream = *sp;
       // int bytes_written=0;
@@ -4526,6 +4588,18 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
           break;
         }
       }
+    }
+  }
+
+
+  // FIXME:CHECKME:atomic scr requests should be served every cycle -- no matter which stream
+  // was issued
+  if(atomic_scr_issued_requests_active()) {
+    if(can_perform_atomic_scr) { 
+      // I see, this info should not be associated with the stream, but in bank buffers
+      // serve_atomic_requests(stream, performed_atomic_scr);
+      serve_atomic_requests(performed_atomic_scr);
+      // break;
     }
   }
 
@@ -4886,7 +4960,6 @@ bool accel_t::done(bool show, int mask) {
 
   if (mask == 0 && d) {
     // nothing left to clean up
-    // cout << "CYCLE WHEN CLEAN UP MODE IS SET TO FALSE: " << now();
     _cleanup_mode = false;
   }
 
@@ -4922,8 +4995,6 @@ bool accel_t::done_concurrent(bool show, int mask) {
     done = false;
   }
 
-  // cout << "Line:3052 let's print 2 done: " << done << " and the other one: "
-  // << cgra_done(show, mask) << endl;
   if (done && !cgra_done(show, mask)) {
     done = false;
   }
