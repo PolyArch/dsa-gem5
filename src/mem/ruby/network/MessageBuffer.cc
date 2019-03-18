@@ -132,6 +132,7 @@ bool
 MessageBuffer::isSpuMessage()
 {
     DPRINTF(RubyQueue, "Peeking at head of queue to check for SPU message.\n");
+    if(m_prio_heap.empty()) return false;
     Message* msg_ptr = m_prio_heap.front().get();
     assert(msg_ptr);
     // if(msg_ptr->getType() == SpuRequestMsg) return true;

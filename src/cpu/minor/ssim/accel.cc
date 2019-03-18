@@ -1,4 +1,5 @@
 #include <algorithm>
+
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -173,22 +174,12 @@ void port_data_t::set_repeat(int r, int rs, bool rf) {
 bool port_data_t::inc_repeated() {
   // cout << "Came here to increase repeated with cur_repeat_lim: " << _cur_repeat_lim << "\n";
   auto repeat_lim = (_cur_repeat_lim - 1) / (1 << REPEAT_FXPNT) + 1;
+  // cout << " And repeat lim: " << repeat_lim << endl;
   if (++_num_times_repeated >= repeat_lim) {
     // cout << "NUM TIMES REPEATED: " << _num_times_repeated << " REPEAT LIM: " << repeat_lim << endl;
     assert(_num_times_repeated == repeat_lim &&
            "Repeat time cannot be more than repeat limit!");
     _num_times_repeated = 0;
-    // TODO: need to change here for data-dependent repeat
-    // load the value and add the condition if not available, port cannot issue
-    /*if(_repeat_flag) { 
-      _cur_repeat_lim = -1; // pop from that port
-       // port_data_t *repeat_prt = &_port_interf.in_port(_repeat);
-       // auto &repeat_prt = _accel->port_interf().out_port(_repeat);
-       auto &repeat_prt = port_interf().out_port(_repeat);
-       if(repeat_prt.mem_size()) {
-         _cur_repeat_lim = repeat_prt.pop_out_data();
-       }
-    } */
     _cur_repeat_lim += _repeat_stretch;
   }
   return _num_times_repeated == 0;
@@ -941,23 +932,23 @@ void accel_t::cycle_cgra_backpressure() {
     auto *port = _sched->vportOf(make_pair(true /*input*/, port_index));
     auto *vec_in = dynamic_cast<SSDfgVecInput *>(port); 
     // cout << "REPEAT FLAG: " << cur_in_port.repeat_flag() << " and num_repeated_till_now: " << cur_in_port.num_times_repeated() << endl;
-    if(cur_in_port.repeat_flag() && cur_in_port.num_times_repeated()==0) { // need to pop to set it
+    if(cur_in_port.repeat_flag() && cur_in_port.num_times_repeated()==0 && cur_in_port.num_ready() && _dfg->can_push_input(vec_in)) { // need to pop to set it
       auto &repeat_prt = port_interf().out_port(cur_in_port.repeat());
       if(repeat_prt.mem_size()) {
         uint64_t x = repeat_prt.pop_out_data();
         if(SS_DEBUG::MEM_REQ) {
-          cout << "Port details: " << cur_in_port.port_cgra_elem() << " " << vec_in->logical_len() << " ( " << vec_in->name() << " ) "<< endl;
-          cout << "NEW REPEAT COUNT: " << x << endl;
+          // cout << "Port details: " << cur_in_port.port_cgra_elem() << " " << vec_in->logical_len() << " ( " << vec_in->name() << " ) "<< endl;
+          // cout << "NEW REPEAT COUNT: " << x << endl;
         }
-        cur_in_port.set_cur_repeat_lim(x);
-        // cur_in_port.set_cur_repeat_lim(repeat_prt.pop_out_data());
-      } else if(cur_in_port.repeat_flag() && cur_in_port.num_times_repeated()!=0) {
-        cur_in_port.set_cur_repeat_lim(-1);
+        int y = (x)*(1<<REPEAT_FXPNT);
+        cur_in_port.set_cur_repeat_lim(y);
+      } else { // sstream_size data is not yet available
+        cur_in_port.set_cur_repeat_lim(-1*(1<<REPEAT_FXPNT));
       }
     }
 
         
-    // cout << "Port details: " << cur_in_port.port_cgra_elem() << " " << vec_in->logical_len() << " ( " << vec_in->name() << " ) " << " cur_repeat_lim: " << cur_in_port.cur_repeat_lim() << endl;
+    // cout << "Port details: " << cur_in_port.port_cgra_elem() << " " << vec_in->logical_len() << " ( " << vec_in->name() << " ) " << " cur_repeat_lim: " << cur_in_port.cur_repeat_lim() << " and num_ready: " << cur_in_port.num_ready() << endl;
     
     if (cur_in_port.num_ready() && cur_in_port.cur_repeat_lim()>0) {
       // auto *port = _sched->vportOf(make_pair(true /*input*/, port_index));
@@ -1003,6 +994,7 @@ void accel_t::cycle_cgra_backpressure() {
         // pop input from CGRA port after it is pushed into the dfg node
         if (!vec_in->backPressureOn()) {
           bool should_pop = cur_in_port.inc_repeated();
+          cout << "Vec name: " << vec_in->name() << " and should pop? " << should_pop << endl;
           if (should_pop) {
             cur_in_port.pop(1);
           }
@@ -3151,14 +3143,17 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
 
   // while (ind_vp.mem_size() >= stream._index_bytes && stream.stream_active()
      //&& (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes))) {
-  while (ind_vp.mem_size() >= stream._index_bytes/ind_vp.get_port_width() && stream.stream_active()
-     && (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes/subsize_vp.get_port_width()))) {
-
+  while (ind_vp.mem_size() >= stream._index_bytes/ind_vp.get_port_width() && stream.stream_active() && (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes/subsize_vp.get_port_width()))) {
 
     if(stream._is_2d_stream && stream._first_ss_access) {
       uint64_t ind2=0;
-      for(int i=0; i<stream._index_bytes/subsize_vp.get_port_width(); ++i) {
-        uint8_t temp = subsize_vp.peek_out_data(i);
+      // for(int i=0; i<stream._index_bytes/subsize_vp.get_port_width(); ++i) {
+      SBDT ssize = subsize_vp.peek_out_data();
+      for(int i=0; i<stream._index_bytes; ++i) {
+        // uint8_t temp = ssize[i]; // subsize_vp.peek_out_data(i);
+        uint8_t temp = (ssize >> (i*8)) & 255; // ind_vp.peek_out_data(i);
+        // cout << "LOCAL 8-bit TEMP VALUE at i: " << i << " is: " << (unsigned)temp << endl;
+        // ind2 = ((ind2 << (i*8))*stream._index_bytes)| temp;
         ind2 = ind2 | (temp << i*8);
       }
       
@@ -3181,10 +3176,14 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
     }
 
     uint64_t ind=0;
-    for(int i=0; i<stream._index_bytes/ind_vp.get_port_width(); ++i) {
-      uint8_t temp = ind_vp.peek_out_data(i);
+    // for(int i=0; i<stream._index_bytes/ind_vp.get_port_width(); ++i) {
+    SBDT ind_val = ind_vp.peek_out_data();
+    for(int i=0; i<stream._index_bytes; ++i) {
+      uint8_t temp = (ind_val >> (i*8)) & 255; // ind_vp.peek_out_data(i);
       // cout << "Value in the port: " << (temp&0xFFFFFFFFFFFFFFFF) << endl;
       ind = ind | (temp << i*8);
+      // cout << "LOCAL 8-bit INDEX VALUE at i: " << i << " is: " << (unsigned)temp << endl;
+      // ind = ((ind << (i*8))&stream._index_mask) | temp;
     }
     addr_t addr = stream.cur_addr(ind);
     // cout << "Current indirect address sent is: " << std::hex << addr << endl;
@@ -4243,6 +4242,32 @@ void scratch_write_controller_t::serve_atomic_requests(bool &performed_atomic_sc
   performed_atomic_scr = true;
 }
 
+void scratch_write_controller_t::push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int out_bytes, uint64_t inc) {
+  struct atomic_scr_op_req temp_req;
+  temp_req._scr_addr = scr_addr;
+  temp_req._inc = inc; 
+  temp_req._opcode = opcode;
+  temp_req._value_bytes = val_bytes;
+  temp_req._output_bytes = out_bytes;
+    
+  // FIXME: not sure if this is correct!
+  int logical_banks = NUM_SCRATCH_BANKS / val_bytes;
+
+  int bank_id = 0;
+
+  // by default is row interleaving for now
+  if (_accel->_banked_spad_mapping_strategy &&
+      (strcmp(_accel->_banked_spad_mapping_strategy, "COL") == 0)) {
+    // bank_id = (scr_addr >> 9) & (logical_banks - 1);
+    bank_id = (scr_addr >> 6) & (logical_banks - 1); // log64 = 6 = log2(k)
+  } else {
+    bank_id = (scr_addr >> 1) & (logical_banks - 1);
+  }
+
+  assert(bank_id < logical_banks);
+  _atomic_scr_issued_requests[bank_id].push(temp_req);
+}
+
 void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stream) {
   SBDT loc;
   addr_t scr_addr, max_addr;
@@ -4322,9 +4347,14 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
                     << " and scr_addr: " << scr_addr
                     << " and scr_size is: " << SCRATCH_SIZE;
         }
+        
+        // TODO: instead of assert, if this condition holds true, send a remote
+        // request (for now let's send a complete packet -- I don't think we
+        // want to say about decomposable n/w but we can study that by
+        // increasing the network bandwidth)
 
-        if(scr_addr + stream._output_bytes > SCRATCH_SIZE) { cout << "scratch_addr: " << scr_addr << endl; }
-        assert(scr_addr + stream._output_bytes <= SCRATCH_SIZE);
+        // if(scr_addr + stream._output_bytes > SCRATCH_SIZE) { cout << "scratch_addr: " << scr_addr << endl; }
+        // assert(scr_addr + stream._output_bytes <= SCRATCH_SIZE);
 
         struct atomic_scr_op_req temp_req;
         temp_req._scr_addr = scr_addr;
@@ -4343,7 +4373,28 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
         }
 
         assert(bank_id < logical_banks);
-        _atomic_scr_issued_requests[bank_id].push(temp_req);
+
+        int local_core_id = (scr_addr + stream._output_bytes)/SCRATCH_SIZE;
+        // int local_scratch_addr = (scr_addr + stream._output_bytes)%SCRATCH_SIZE;
+        if(local_core_id!=(_accel->_ssim->get_core_id()-1)) { // send remote update request
+          cout << "Sending remote atomic update for scratch_addr: " << scr_addr << " from own core id: " << _accel->_ssim->get_core_id() << " to remote core id: " << local_core_id <<  endl; 
+          int local_scr_addr = scr_addr;
+          uint64_t x = temp_req._inc;
+          _accel->_lsq->push_rem_atom_op_req(x, local_scr_addr, temp_req._opcode, temp_req._value_bytes, temp_req._output_bytes);
+ 
+        } else {
+          _atomic_scr_issued_requests[bank_id].push(temp_req);
+        }
+
+        /*if(scr_addr + stream._output_bytes > SCRATCH_SIZE) { 
+          cout << "Sending remote atomic update for scratch_addr: " << scr_addr << endl; 
+          int local_scr_addr = scr_addr;
+          uint64_t x = temp_req._inc;
+          _accel->_lsq->push_rem_atom_op_req(x, local_scr_addr, temp_req._opcode, temp_req._value_bytes, temp_req._output_bytes);
+        } else {
+          _atomic_scr_issued_requests[bank_id].push(temp_req);
+        }*/
+
         _accel->_stat_scratch_bank_requests_pushed++;
         stream._num_strides--;
 
@@ -4822,6 +4873,7 @@ void port_controller_t::cycle() {
           port_data_t& vp_in = pi.in_port(in_port);
           // should send vector version of that
           SBDT val = stream.pop_item();
+          cout << "DATA WIDTH: " << data_width << " pushing data to: " << in_port << endl;
           vp_in.push_data(vp_in.get_byte_vector(val, data_width));
           // vp_in.push_data(stream.pop_item());
         }

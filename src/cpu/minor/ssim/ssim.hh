@@ -69,6 +69,7 @@ public:
   void write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int num_elem);
 
   void push_in_accel_port(int accel_id, uint8_t* val, int num_bytes, int in_port);
+  void push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int out_bytes, uint64_t inc);
   void write_remote_banked_scratchpad(uint8_t* val, int num_bytes, uint16_t scr_addr);
 
   void insert_barrier(uint64_t mask);

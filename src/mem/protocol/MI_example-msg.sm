@@ -30,6 +30,7 @@
 enumeration(SpuRequestType, desc="...") {
   LD,      desc="Get eXclusive";
   ST,      desc="Get Shared";
+  UPDATE,  desc="Put Update";
 }
 
 // CoherenceRequestType

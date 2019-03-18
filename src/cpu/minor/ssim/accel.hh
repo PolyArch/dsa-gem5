@@ -517,7 +517,10 @@ public:
   int num_times_repeated() {return _num_times_repeated;}
   int cur_repeat_lim() {return _cur_repeat_lim;}
   bool repeat_flag() {return _repeat_flag;}
-  void set_cur_repeat_lim(int64_t x) {_cur_repeat_lim=x;}
+  void set_cur_repeat_lim(int64_t x) {
+    _cur_repeat_lim=x;
+    std::cout << "cur repeat lim set to: " << _cur_repeat_lim << std::endl;
+  }
 
   // void set_repeat(int r, int rs);
   void set_repeat(int r, int rs, bool rf);
@@ -894,6 +897,8 @@ class scratch_write_controller_t : public data_controller_t {
   void serve_atomic_requests(bool &performed_atomic_scr);
   void push_remote_wr_req(uint8_t *val, int num_bytes, addr_t scr_addr);
   void scr_write(addr_t addr, affine_write_stream_t& stream, port_data_t& out_vp);
+  // for remote atomic update
+  void push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int out_bytes, uint64_t inc);
 
   void reset_stream_engines() {
     _port_scr_streams.clear();
@@ -1543,6 +1548,10 @@ private:
   void push_scratch_remote_buf(uint8_t* val, int num_bytes, uint16_t scr_addr){
       // _scr_w_c.push_remote_wr_req(val,scr_addr);
       _scr_w_c.push_remote_wr_req(val, num_bytes, scr_addr);
+  }
+
+  void push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int out_bytes, uint64_t inc) {
+    _scr_w_c.push_atomic_update_req(scr_addr, opcode, val_bytes, out_bytes, inc);
   }
 
 bool isLinearSpad(addr_t addr){

@@ -775,6 +775,7 @@ class LSQ : public Named
     /* Push request into the SPU buffer, FIXME: it could directly push here also? */
     void push_spu_req(int src_port_id, int dest_port_id, uint8_t* val, int num_bytes, uint64_t mask);
     void push_spu_scr_wr_req(uint8_t* val, int num_bytes, uint64_t scr_offset, int dest_core_id, int stream_id);
+    void push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int opcode, int val_bytes, int out_bytes);
     // void push_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id, int stream_id);
     int getCpuId() { return cpu.cpuId(); }
 

@@ -72,6 +72,11 @@ void ssim_t::push_in_accel_port(int accel_id, uint8_t* val, int num_bytes, int i
   accel_arr[accel_id]->receive_message(val, num_bytes, in_port);
 }
 
+// SPU has only 1 DGRA in a core
+void ssim_t::push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int out_bytes, uint64_t inc) {
+  accel_arr[0]->push_atomic_update_req(scr_addr, opcode, val_bytes, out_bytes, inc);
+}
+
 bool ssim_t::can_add_stream() {
   for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i,b<<=1) {
     if(_context_bitmask & b) {

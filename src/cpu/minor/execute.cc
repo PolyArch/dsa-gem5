@@ -1587,6 +1587,32 @@ void Execute::send_spu_scr_wr_req(uint8_t* val, int num_bytes, uint64_t scr_offs
   cpu.pushReqFromSpu(msg);
 }
 
+void Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int opcode, int val_bytes, int out_bytes) {
+  std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
+  (*msg).m_MessageSize = MessageSizeType_Control;
+  (*msg).m_Type = SpuRequestType_UPDATE;
+  (*msg).m_Requestor = cpu.get_m_version();
+  (*msg).m_addr = local_scr_addr;
+  for(int j=0; j<val_bytes; ++j){ // check this!
+    int8_t x = (val >> (j*8)) & 255;
+    (*msg).m_DataBlk.setByte(j,x);
+    // (*msg).m_DataBlk.setByte(j,val[j]);
+  }
+
+  // (*msg).m_addr = scr_offset | opcode << 16 | val_bytes << 18 | out_bytes << 20;
+  (*msg).m_addr = local_scr_addr | opcode << 16 | val_bytes << 18 | out_bytes << 20;
+  int dest_core_id = (local_scr_addr >> 16);
+  dest_core_id += 1;
+  if(SS_DEBUG::NET_REQ){
+    std::cout << "Atomic update tuple, scr_addr: " << local_scr_addr << " opcode: " << opcode << " val bytes: " << val_bytes << " out_bytes: " << out_bytes << std::endl; 
+    printf("output destination core: %d\n",dest_core_id);
+  }
+  (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
+
+  // after this, interface is common
+  cpu.pushReqFromSpu(msg);
+}
+
 // multicast, TODO: change names
 void Execute::send_spu_req(int src_port_id, int dest_port_id, uint8_t* val, int num_bytes, uint64_t mask){
 

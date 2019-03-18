@@ -807,10 +807,10 @@ struct indirect_base_stream_t : public base_stream_t {
   addr_t cur_addr(SBDT val) {
     // uint64_t index =  (val >> (_index_in_word * _index_bytes * 8)) & _index_mask;
     uint64_t index =  val & _index_mask;
-    // addr_t x = _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes + _ssind*_sstride;
     if(SS_DEBUG::MEM_REQ) {
       std::cout << "index: " << index << " mult: " << _ind_mult << " ss_ind: " << _ssind << " offset: " << unsigned(_offsets[_index_in_offsets]) << " sstream size: " << _sstream_size << "\n";
-      // std::cout << "The computed address is: " << x << "\n";
+      addr_t x = _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes + _ssind*_sstride;
+      std::cout << "The computed address is: " << x << "\n";
     }
     // return   _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes;
     return   _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes + _ssind*_sstride;

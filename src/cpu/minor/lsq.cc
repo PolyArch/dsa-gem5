@@ -1223,6 +1223,11 @@ void LSQ::push_spu_scr_wr_req(uint8_t* val, int num_bytes, uint64_t scr_offset, 
   execute.send_spu_scr_wr_req(val, num_bytes, scr_offset, dest_core_id);
 }
 
+void LSQ::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int opcode, int val_bytes, int out_bytes) {
+  execute.push_rem_atom_op_req(val, local_scr_addr, opcode, val_bytes, out_bytes);
+}
+
+
 bool
 LSQ::recvTimingResp(PacketPtr response)
 {

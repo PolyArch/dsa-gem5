@@ -103,7 +103,6 @@ MinorCPU::MinorCPU(MinorCPUParams *params) :
 	(*responseToSpu).setConsumer(this);
 }
 
-
 void MinorCPU::wakeup()
 {
   assert(!responseToSpu->isEmpty());
@@ -121,16 +120,30 @@ void MinorCPU::wakeup()
 	std::cout << curCycle();
     printf("Wake up accel at destination node: %d and num_bytes: %d\n",cpuId(),num_bytes);
   }
-  if((*msg).m_Type == SpuRequestType_LD) {
+  if((*msg).m_Type == SpuRequestType_UPDATE) {
+    // TODO: need all the info to push into banks
+    int opcode = (return_info >> 16) & 3;
+    int val_bytes = (return_info >> 18) & 3;
+    int out_bytes = (return_info >> 20) & 3;
+    int scr_addr = return_info & 65535;
+    uint64_t inc = 0;
+    for(int i=0; i<val_bytes; ++i) {
+      int8_t x = msg->m_DataBlk.getByte(i);
+      inc = inc | (x >> (i*8));
+    }
+    if(SS_DEBUG::NET_REQ) {
+      std::cout << "Received atomic update request tuple, scr_addr: " << scr_addr << " opcode: " << opcode << " val_bytes: " << val_bytes << " out_bytes: " << out_bytes << std::endl;
+    }
+    pipeline->receiveSpuUpdateRequest(scr_addr, opcode, val_bytes, out_bytes, inc);
+  } else if((*msg).m_Type == SpuRequestType_LD) {
     int remote_port_id = return_info & 63;
     pipeline->receiveSpuMessage(data, num_bytes, remote_port_id);
   } else {
-      int16_t remote_scr_offset = return_info & 65535; // (pow(2,16)-1);
-      pipeline->receiveSpuMessage(data, num_bytes, remote_scr_offset);
+    int16_t remote_scr_offset = return_info & 65535; // (pow(2,16)-1);
+    pipeline->receiveSpuMessage(data, num_bytes, remote_scr_offset);
   }
 
   responseToSpu->dequeue(clockEdge());
-  // printf("Request popped from the SPU buffer, success!!\n");
 }
 
 void MinorCPU::print(std::ostream& out) const
