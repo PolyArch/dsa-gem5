@@ -531,21 +531,30 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
                      int repeat, int repeat_str, uint64_t flags,
                      uint64_t access_size) {
   base_stream_t* s=NULL, *r=NULL;
-
-
+  
   // specific to recurrence stream, FIXME: the accel_arr[0] thing
   auto& out_vp = accel_arr[0]->port_interf().out_port(out_port);
   int src_data_width = out_vp.get_port_width();
   int core_d = ((flags & 3) == 1) ? -1 : 1;
   access_size = (flags >> 2) ? access_size : NO_PADDING;
 
+  int new_repeat_str = repeat_str & (0x3FF);
+  bool repeat_flag = repeat_str & (1<<10);
+
   if((flags & 3) == 0) {
-    s = new port_port_stream_t(out_port,in_port,num_elem,repeat,repeat_str, src_data_width, access_size);
+
+    std::cout << "Repeat/repeat port in recurrence stream: " << repeat << std::endl;
+    s = new port_port_stream_t(out_port,in_port,num_elem,repeat,new_repeat_str, src_data_width, access_size, repeat_flag);
+    // set the cur_repeat_lim of output port to -1 (this is opp to others)
+    if(repeat_flag) {
+      auto &prt = accel_arr[0]->port_interf().out_port(repeat);
+      prt.set_cur_repeat_lim(-1);
+    }
   } else {
     auto S = new remote_port_stream_t(out_port,in_port,num_elem,
-        repeat,repeat_str,core_d,true, access_size);
+        repeat,new_repeat_str,core_d,true, access_size, repeat_flag);
     auto R = new remote_port_stream_t(out_port,in_port,num_elem,
-        repeat,repeat_str,core_d,false, access_size);
+        repeat,new_repeat_str,core_d,false, access_size, repeat_flag);
     S->_remote_stream=R; // tie together <3
     R->_remote_stream=S;
     s=S;

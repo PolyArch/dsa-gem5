@@ -126,6 +126,7 @@ void MinorCPU::wakeup()
     int val_bytes = (return_info >> 18) & 3;
     int out_bytes = (return_info >> 20) & 3;
     int scr_addr = return_info & 65535;
+    // int scr_addr = return_info & (1<<22-1);
     uint64_t inc = 0;
     for(int i=0; i<val_bytes; ++i) {
       int8_t x = msg->m_DataBlk.getByte(i);

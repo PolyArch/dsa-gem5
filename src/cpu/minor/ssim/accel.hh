@@ -519,7 +519,7 @@ public:
   bool repeat_flag() {return _repeat_flag;}
   void set_cur_repeat_lim(int64_t x) {
     _cur_repeat_lim=x;
-    std::cout << "cur repeat lim set to: " << _cur_repeat_lim << std::endl;
+    // std::cout << "cur repeat lim set to: " << _cur_repeat_lim << std::endl;
   }
 
   // void set_repeat(int r, int rs);
@@ -1093,6 +1093,10 @@ class port_controller_t : public data_controller_t {
   bool schedule_port_port(port_port_stream_t& s);
   bool schedule_const_port(const_port_stream_t& s);
   bool schedule_remote_port(remote_port_stream_t& s);
+
+  void reset_data() {
+    _port_port_streams.clear();
+  }
 
   void print_status();
   void cycle_status();

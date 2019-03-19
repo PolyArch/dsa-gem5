@@ -597,7 +597,7 @@ struct port_port_stream_t : public base_stream_t {
 
   port_port_stream_t(int out_port, int in_port,
                      uint64_t num_elem, int repeat, int repeat_str,
-                     int src_data_width, uint64_t padding_size) {
+                     int src_data_width, uint64_t padding_size, bool repeat_flag) {
     _out_port=out_port;
     _in_ports.push_back(in_port);
     _num_elements=num_elem;
@@ -606,14 +606,17 @@ struct port_port_stream_t : public base_stream_t {
     _src_data_width=src_data_width;
     // For now we still assume CGRA, DGRA features for padding will be supported later...
     _padding_size = padding_size == NO_PADDING ? padding_size : padding_size / 8;
+    _repeat_flag=repeat_flag;
 
     set_orig();
   }
 
   int _repeat_in=1, _repeat_str=0;
+  bool _repeat_flag;
 
   virtual int repeat_in() {return _repeat_in;}
   virtual int repeat_str() {return _repeat_str;}
+  bool repeat_flag() {return _repeat_flag;}
 
   int src_data_width() {
     return _src_data_width;
@@ -672,9 +675,9 @@ struct remote_port_stream_t : public port_port_stream_t {
   //core describes relative core position (-1 or left, +1 for right)
   // TODO: sending fix 8-byte for port->remote port, make it configurable
   remote_port_stream_t(int out_port, int in_port, uint64_t num_elem,
-       int repeat, int repeat_str, int core, bool is_source, int access_size) :
+       int repeat, int repeat_str, int core, bool is_source, int access_size, bool repeat_flag) :
                        port_port_stream_t(out_port,in_port,num_elem,
-                           repeat,repeat_str, 8, access_size) { // send default p.w. to be 1
+                           repeat,repeat_str, 8, access_size, repeat_flag) { // send default p.w. to be 1, also default repeat 
 
     _in_ports.clear();
 
