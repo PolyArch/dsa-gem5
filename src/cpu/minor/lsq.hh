@@ -779,6 +779,9 @@ class LSQ : public Named
     // void push_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id, int stream_id);
     int getCpuId() { return cpu.cpuId(); }
 
+    void set_spu_done(int spu_id);
+    bool all_spu_done();
+
     /** Return the raw-bindable port */
     MinorCPU::MinorCPUPort &getDcachePort() { return dcachePort; }
 

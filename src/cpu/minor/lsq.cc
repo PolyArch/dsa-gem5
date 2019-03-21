@@ -1076,6 +1076,18 @@ LSQ::tryToSendToTransfers(LSQRequestPtr request)
     }
 }
 
+void
+LSQ::set_spu_done(int spu_id) {
+  ThreadContext *thread = cpu.getContext(0); // assume tid=0?
+  thread->getProcessPtr()->set_cpu_done(spu_id);
+}
+
+bool
+LSQ::all_spu_done() {
+  ThreadContext *thread = cpu.getContext(0); // assume tid=0?
+  return thread->getProcessPtr()->all_cpu_done();
+}
+
 bool
 LSQ::tryToSend(LSQRequestPtr request)
 {

@@ -165,6 +165,13 @@ class Process : public SimObject
     virtual void clone(ThreadContext *old_tc, ThreadContext *new_tc,
                        Process *new_p, TheISA::IntReg flags);
 
+    // SPU things
+    void set_cpu_done(int core_id);
+    bool all_cpu_done();
+
+    bool _is_cpu_done[2]; // Just to debug: set it correct later
+    //----------------
+
     // thread contexts associated with this process
     std::vector<ContextID> contextIds;
 

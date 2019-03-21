@@ -1604,16 +1604,28 @@ void Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int op
   // 14-bits
   local_scr_addr = local_scr_addr & 16383;
   (*msg).m_addr = local_scr_addr | opcode << 16 | val_bytes << 18 | out_bytes << 20;
-  int dest_core_id = (local_scr_addr >> 16);
+  // int dest_core_id = local_scr_addr >> 15;
+  // TODO: scratch addr mapping
+  int dest_core_id = rand()%1;
+  // int dest_core_id = (local_scr_addr >> 1) & 1; // FIXME: just to debug
   dest_core_id += 1;
   if(SS_DEBUG::NET_REQ){
-    std::cout << "Atomic update tuple, scr_addr: " << local_scr_addr << " opcode: " << opcode << " val bytes: " << val_bytes << " out_bytes: " << out_bytes << std::endl; 
     printf("output destination core: %d\n",dest_core_id);
   }
-  (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
 
-  // after this, interface is common
-  cpu.pushReqFromSpu(msg);
+  // push message to local buffers
+  if(dest_core_id==cpu.cpuId()) {
+    if(SS_DEBUG::NET_REQ){
+      printf("LOCAL REQUEST destination core: %d\n",dest_core_id);
+    }
+    ssim.push_atomic_update_req(local_scr_addr, opcode, val_bytes, out_bytes, val);
+  } else {
+    if(SS_DEBUG::NET_REQ){
+      std::cout << "Atomic update tuple, scr_addr: " << local_scr_addr << " opcode: " << opcode << " val bytes: " << val_bytes << " out_bytes: " << out_bytes << std::endl; 
+    }
+    (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
+    cpu.pushReqFromSpu(msg);
+  }
 }
 
 // multicast, TODO: change names
@@ -1631,25 +1643,28 @@ void Execute::send_spu_req(int src_port_id, int dest_port_id, uint8_t* val, int 
   // printf("current cpu id is %d\n",cpu.cpuId());
   int dest_core_id = 0;
   std::bitset<64> core_mask(mask);
+  bool should_send=false;
   for(int i=0; i<core_mask.size(); ++i){
-	  if(core_mask.test(i)){
-	    dest_core_id = i+1; // because of 1 offset with tid
-	    if(SS_DEBUG::NET_REQ){
-		  printf("output destinations: %d at core: %d\n",dest_core_id,cpu.cpuId());
-	    }
-        if(dest_core_id==cpu.cpuId() && dest_port_id!=src_port_id) { // this should be an asser actually
-          // send val to the dest port id
-          ssim.push_in_accel_port(0, val, num_bytes, dest_port_id);
-          if(SS_DEBUG::NET_REQ){
-		      printf("Local write at port_id: %d\n", dest_port_id);
-	      }
-        } else {
-	      // printf("dest core id is: %d\n",dest_core_id);
-          (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
+    if(core_mask.test(i)){
+      dest_core_id = i+1; // because of 1 offset with tid
+      if(SS_DEBUG::NET_REQ){
+        printf("output destinations: %d at core: %d\n",dest_core_id,cpu.cpuId());
+      }
+      if(dest_core_id==cpu.cpuId() && dest_port_id!=src_port_id) {
+        // send val to the dest port id
+        ssim.push_in_accel_port(0, val, num_bytes, dest_port_id);
+        if(SS_DEBUG::NET_REQ){
+            printf("Local write at port_id: %d\n", dest_port_id);
         }
-	  }
+      } else {
+        // printf("dest core id is: %d\n",dest_core_id);
+        (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
+        should_send = true;
+      }
+    }
   }
-  cpu.pushReqFromSpu(msg);
+  // If all the requests were local?: Assuming this won't be the case
+  if(should_send) cpu.pushReqFromSpu(msg);
 }
 
 void
@@ -1669,7 +1684,14 @@ Execute::evaluate()
     /* Let ssim tick for one cycle
      */
 
+    // bool all_ssim_done = true; // get this value from global variable
+    // is_global_wait is set when a that instruction is available
+    // all_ssim_done = (!is_global_wait) || (is_global_wait && all_threads_done());
     bool ssim_done = !ssim.in_use(); //= ssim.done(false,0);
+    /*if(ssim_done) {
+      // set global variable corresponding to cpuID()
+      // _is_cpu_done[cpuID()-1]=1;
+    }*/
     if(!ssim_done) {
       ssim.step();
       cpu.activityRecorder->activity();
@@ -1823,6 +1845,7 @@ Execute::evaluate()
        (interrupted ? " (interrupted)" : ""));
 
     bool need_to_tick =
+       // !all_ssim_done || // this is on when there is global barrier
        !ssim_done || /* StreamSim is not done yet*/
        num_issued != 0 || /* Issued some insts this cycle */
        !becoming_stalled || /* Some FU pipelines can still move */

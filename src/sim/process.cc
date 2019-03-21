@@ -657,3 +657,17 @@ Process::fullPath(const std::string &file_name)
 
     return full + file_name;
 }
+
+void
+Process::set_cpu_done(int core_id) {
+  _is_cpu_done[core_id-1]=true;
+}
+
+bool
+Process::all_cpu_done() {
+  for(int i=0; i<2; ++i) {
+    if(!_is_cpu_done[i])
+      return false;
+  }
+  return true;
+}

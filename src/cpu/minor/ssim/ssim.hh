@@ -170,7 +170,7 @@ public:
 
   static bool stall_core(uint64_t mask) {
     return (mask==0) || (mask&WAIT_CMP) ||
-      (mask&WAIT_MEM_WR) || (mask&WAIT_SCR_ATOMIC);
+      (mask&WAIT_MEM_WR) || (mask&WAIT_SCR_ATOMIC) || (mask&GLOBAL_WAIT);
   }
 
   uint64_t roi_cycles() {return _roi_cycles;}

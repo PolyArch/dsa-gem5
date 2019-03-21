@@ -522,6 +522,8 @@ public:
     // std::cout << "cur repeat lim set to: " << _cur_repeat_lim << std::endl;
   }
 
+  void set_num_times_repeated(int d) { _num_times_repeated=d; }
+
   // void set_repeat(int r, int rs);
   void set_repeat(int r, int rs, bool rf);
 

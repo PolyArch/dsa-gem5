@@ -138,6 +138,9 @@ void MinorCPU::wakeup()
     pipeline->receiveSpuUpdateRequest(scr_addr, opcode, val_bytes, out_bytes, inc);
   } else if((*msg).m_Type == SpuRequestType_LD) {
     int remote_port_id = return_info & 63;
+    if(SS_DEBUG::NET_REQ) {
+      std::cout << "Received multicast message at remote port: " << remote_port_id << std::endl;
+    }
     pipeline->receiveSpuMessage(data, num_bytes, remote_port_id);
   } else {
     int16_t remote_scr_offset = return_info & 65535; // (pow(2,16)-1);
