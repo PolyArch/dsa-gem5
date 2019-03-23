@@ -893,6 +893,7 @@ class scratch_write_controller_t : public data_controller_t {
   }
 
   void write_scratch_ind(indirect_wr_stream_t& stream);
+  void write_linear_scratch_ind(indirect_wr_stream_t& stream);
   void write_scratch_remote_ind(remote_core_net_stream_t& stream);
   void write_scratch_remote_direct(direct_remote_scr_stream_t& stream);
   void atomic_scratch_update(atomic_scr_stream_t& stream);
@@ -919,6 +920,7 @@ class scratch_write_controller_t : public data_controller_t {
 
   // void cycle();
   void cycle(bool can_perform_atomic_scr, bool &performed_atomic_scr);
+  void linear_scratch_write_cycle();
   void finish_cycle();
   bool done(bool,int);
 
@@ -1292,6 +1294,9 @@ public:
   void clear_cycle();
 
   void request_reset_data();
+  void request_reset_streams();
+  void switch_stream_cleanup_mode_on();
+  bool all_ports_empty();
 
   port_interf_t& port_interf() {
     return _port_interf;
@@ -1370,6 +1375,7 @@ private:
   std::ofstream in_port_verif, out_port_verif, scr_wr_verif, scr_rd_verif, cmd_verif;
   std::ofstream cgra_multi_verif;
   bool _cleanup_mode=false;
+  bool _stream_cleanup_mode=false;
 
   std::ostream* _cgra_dbg_stream=NULL;
 

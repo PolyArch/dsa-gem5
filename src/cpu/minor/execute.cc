@@ -1604,9 +1604,9 @@ void Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int op
   // 14-bits
   local_scr_addr = local_scr_addr & 16383;
   (*msg).m_addr = local_scr_addr | opcode << 16 | val_bytes << 18 | out_bytes << 20;
-  // int dest_core_id = local_scr_addr >> 15;
+  int dest_core_id = local_scr_addr >> 15;
   // TODO: scratch addr mapping
-  int dest_core_id = rand()%1;
+  // int dest_core_id = rand()%1;
   // int dest_core_id = (local_scr_addr >> 1) & 1; // FIXME: just to debug
   dest_core_id += 1;
   if(SS_DEBUG::NET_REQ){
@@ -1684,14 +1684,7 @@ Execute::evaluate()
     /* Let ssim tick for one cycle
      */
 
-    // bool all_ssim_done = true; // get this value from global variable
-    // is_global_wait is set when a that instruction is available
-    // all_ssim_done = (!is_global_wait) || (is_global_wait && all_threads_done());
     bool ssim_done = !ssim.in_use(); //= ssim.done(false,0);
-    /*if(ssim_done) {
-      // set global variable corresponding to cpuID()
-      // _is_cpu_done[cpuID()-1]=1;
-    }*/
     if(!ssim_done) {
       ssim.step();
       cpu.activityRecorder->activity();

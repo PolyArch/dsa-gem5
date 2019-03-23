@@ -659,15 +659,22 @@ Process::fullPath(const std::string &file_name)
 }
 
 void
-Process::set_cpu_done(int core_id) {
-  _is_cpu_done[core_id-1]=true;
+Process::set_spu_done(int core_id) {
+  _is_spu_done[core_id-1]=true;
 }
 
 bool
-Process::all_cpu_done() {
+Process::all_spu_done() {
   for(int i=0; i<2; ++i) {
-    if(!_is_cpu_done[i])
+    if(!_is_spu_done[i])
       return false;
   }
   return true;
+}
+
+void
+Process::reset_all_spu() {
+  for(int i=0; i<2; ++i) {
+    _is_spu_done[i]=false;
+  }
 }

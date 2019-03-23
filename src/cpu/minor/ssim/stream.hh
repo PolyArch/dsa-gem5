@@ -476,6 +476,7 @@ struct const_port_stream_t : public base_stream_t {
   addr_t _constant2;
   addr_t _num_elements2=0;
   addr_t _iters_left=0;
+  int _const_width=8;
 
   //running counters
   addr_t _elements_left;
@@ -548,14 +549,10 @@ struct const_port_stream_t : public base_stream_t {
 
 };
 
-
-
-
-
-
 // const->scr
 struct const_scr_stream_t : public base_stream_t {
 
+  int _const_width=DATA_WIDTH;
   uint64_t _constant;
   int _num_elements;
   int _iters_left=0; //needs zeroing here, otherwise default can be active

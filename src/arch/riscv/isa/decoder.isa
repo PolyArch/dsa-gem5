@@ -869,6 +869,7 @@ decode QUADRANT default Unknown::unknown() {
                 0x4: ss_const({{
                     xc->setSSReg(imm & 0x3f, SS_IN_PORT);
                     xc->setSSReg(imm >> 6, SS_FLAGS);
+                    xc->setSSReg(imm >> 8, SS_DTYPE);
                     if(imm & (1<<7)) {
                       xc->setSSReg(Rs1,SS_CONSTANT2);
                       xc->setSSReg(Rs2,SS_NUM_ELEM2);
@@ -930,6 +931,7 @@ decode QUADRANT default Unknown::unknown() {
                 0x6: IOp::ss_const_scr({{
                     xc->setSSReg(Rs1,SS_SCRATCH_ADDR);
                     xc->setSSReg(Rs2,SS_CONSTANT);
+                    xc->setSSReg(imm,SS_DTYPE);
                     xc->callSSFunc(SS_CONST_SCR);
                 }}, uint64_t, IsSSStream, IsNonSpeculative, No_OpClass);
                 0x7: ss_cfg_atom_op({{

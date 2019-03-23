@@ -166,10 +166,11 @@ class Process : public SimObject
                        Process *new_p, TheISA::IntReg flags);
 
     // SPU things
-    void set_cpu_done(int core_id);
-    bool all_cpu_done();
+    void set_spu_done(int core_id);
+    void reset_all_spu();
+    bool all_spu_done();
 
-    bool _is_cpu_done[2]; // Just to debug: set it correct later
+    bool _is_spu_done[2]; // Just to debug: set it correct later
     //----------------
 
     // thread contexts associated with this process

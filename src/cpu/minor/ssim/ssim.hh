@@ -63,10 +63,10 @@ public:
   void write_constant(int num_strides, int in_port,
                       SBDT constant, uint64_t num_elem,
                       SBDT constant2, uint64_t num_elem2,
-                      uint64_t flags);
+                      uint64_t flags, int const_width);
   void atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode);
   void multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_port, int rem_port, bool dest_flag, bool spad_type, int64_t stride, int64_t access_size);
-  void write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int num_elem);
+  void write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int num_elem, int const_width);
 
   void push_in_accel_port(int accel_id, uint8_t* val, int num_bytes, int in_port);
   void push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int out_bytes, uint64_t inc);

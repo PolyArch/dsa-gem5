@@ -1,5 +1,4 @@
 #include <algorithm>
-
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -62,6 +61,41 @@ void accel_t::req_config(addr_t addr, int size, uint64_t context) {
 void accel_t::request_reset_data() {
   _cleanup_mode = true;
   reset_data();
+}
+
+bool accel_t::all_ports_empty() {
+
+  for (unsigned i = 0; i < _soft_config.in_ports_active_plus.size(); ++i) {
+    int cur_port = _soft_config.in_ports_active_plus[i];
+    auto &in_vp = _port_interf.in_port(cur_port);
+    if(in_vp.mem_size()) return false;
+  }
+  
+  for (unsigned i = 0; i < _soft_config.out_ports_active_plus.size(); ++i) {
+    int cur_port = _soft_config.out_ports_active_plus[i];
+    auto &out_vp = _port_interf.out_port(cur_port);
+    if(out_vp.mem_size()) return false;
+  }
+  return false;
+}
+
+void accel_t::request_reset_streams() {
+
+  if(!all_ports_empty()) return;
+
+  _dma_c.reset_data();
+  _scr_r_c.reset_data();
+  _scr_w_c.reset_data();
+  _net_c.reset_data();
+  _port_c.reset_data();
+
+  if (_sched) {
+    _sched->reset_simulation_state();
+  }
+}
+
+void accel_t::switch_stream_cleanup_mode_on() {
+  _stream_cleanup_mode = true;
 }
 
 void accel_t::reset_data() {
@@ -754,6 +788,7 @@ void accel_t::tick() {
   _scr_ctrl_turn = (_scr_ctrl_turn + 1) % 2;
   // TODO: remove this after removing the above logic
   _scr_r_c.linear_scratch_cycle();
+  _scr_w_c.linear_scratch_write_cycle();
 
   _port_c.cycle();
   _net_c.cycle();
@@ -829,6 +864,10 @@ void accel_t::tick() {
   _scr_w_c.finish_cycle();
   _scr_r_c.finish_cycle();
   _net_c.finish_cycle();
+
+  if(_stream_cleanup_mode) {
+    request_reset_streams();
+  }
 }
 
 // forward from indirect inputs to indirect outputs -- this makes the protocol
@@ -4591,6 +4630,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
       auto &stream = *sp;
 
       if (stream.stream_active()) {
+        int const_width = stream._const_width;
         // uint64_t total_pushed=0;
         addr_t addr = stream._scratch_addr;
         // while(stream._iters_left!=0) {
@@ -4605,14 +4645,14 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
           SBDT val = stream._constant;
 
           assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
-          _accel->write_scratchpad(addr, &val, sizeof(SBDT), stream.id());
+          _accel->write_scratchpad(addr, &val, sizeof(const_width), stream.id());
 
-          bytes_written += DATA_WIDTH;
-          _accel->_stat_scr_bytes_wr += DATA_WIDTH;
-          _accel->_stat_scratch_write_bytes += DATA_WIDTH;
+          bytes_written += const_width;
+          _accel->_stat_scr_bytes_wr += const_width;
+          _accel->_stat_scratch_write_bytes += const_width;
           stream._iters_left--;
           // total_pushed++;
-          addr += sizeof(SBDT);
+          addr += sizeof(const_width);
         }
         // }
         // add_bw(stream.src(), stream.dest(), 1, total_pushed*DATA_WIDTH);
@@ -4720,6 +4760,10 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
   // belongs to linear spad)
   // if((!issued_linear_on_banked_scr) || (issued_linear_on_banked_scr &&
   // !is_linear_addr_banked)) {
+}
+
+void scratch_write_controller_t::linear_scratch_write_cycle() {
+  if(!_accel->_linear_spad) return;
   if (_accel->_linear_spad) {
     // for(unsigned i = 0; i < (_port_scr_streams.size()); ++i) {
     for (unsigned i = 0; i < (_write_streams.size()); ++i) {
@@ -4996,23 +5040,28 @@ void port_controller_t::cycle() {
       continue;
     }
 
+    int const_width = stream._const_width;
+
     port_data_t &first_vp_in = pi.in_port(stream.first_in_port());
 
     // if(first_vp_in.mem_size() < VP_LEN) { // enough space, so go for it
-    if(first_vp_in.mem_size() < VP_LEN*8/first_vp_in.get_port_width()) { // enough space, so go for it
+    if(first_vp_in.mem_size() < VP_LEN*8/const_width) { // enough space, so go for it
       uint64_t total_pushed=0;
       int data_width = stream.data_width();
 
       // for(int i = 0; i < PORT_WIDTH && first_vp_in.mem_size() < VP_LEN
-      for(int i = 0; i < PORT_WIDTH && first_vp_in.mem_size() < VP_LEN*8/first_vp_in.get_port_width()
+      for(int i = 0; i < PORT_WIDTH && first_vp_in.mem_size() < VP_LEN*8/const_width
                   && stream.stream_active(); i+=data_width) {
 
         for(int in_port : stream.in_ports()) {
           port_data_t& vp_in = pi.in_port(in_port);
           // should send vector version of that
-          SBDT val = stream.pop_item();
-          // cout << "DATA WIDTH: " << data_width << " pushing data to: " << in_port << endl;
-          vp_in.push_data(vp_in.get_byte_vector(val, data_width));
+          SBDT val = stream.pop_item(); // data width of const val should be >= port width
+          int port_width = vp_in.get_port_width();
+          for(int i=0; i<const_width/port_width; ++i) {
+            SBDT temp = (val >> i*8*port_width) & ((1<<8*port_width)-1);
+            vp_in.push_data(vp_in.get_byte_vector(temp, data_width));
+          }
           // vp_in.push_data(stream.pop_item());
         }
         total_pushed++;
@@ -5179,6 +5228,12 @@ bool accel_t::done(bool show, int mask) {
   if (mask == 128 && d) {
     _lsq->set_spu_done(_lsq->getCpuId());
     if(_lsq->all_spu_done()) d=false;
+    else {
+      _lsq->reset_all_spu();
+      if(SS_DEBUG::WAIT) {
+        cout << "Global wait released\n";
+      }
+    }
     // if all_threads_done() d=false;
   }
 

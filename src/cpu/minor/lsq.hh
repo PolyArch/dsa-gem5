@@ -781,6 +781,7 @@ class LSQ : public Named
 
     void set_spu_done(int spu_id);
     bool all_spu_done();
+    void reset_all_spu();
 
     /** Return the raw-bindable port */
     MinorCPU::MinorCPUPort &getDcachePort() { return dcachePort; }

@@ -51,6 +51,13 @@ void ssim_t::req_config(addr_t addr, int size) {
     return;
   }
 
+  // TODO: add a reset stream case here... (only accel[0])
+  if(addr==0 && size==1) {
+    // accel_arr[0]->request_reset_streams();
+    accel_arr[0]->switch_stream_cleanup_mode_on();
+    return;
+  }
+
   set_in_use();  //lets get going then..
 
 
@@ -516,11 +523,12 @@ void ssim_t::multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_por
     }
 }
 
-void ssim_t::write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int num_elem) {
+void ssim_t::write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int num_elem, int const_width) {
     const_scr_stream_t* s = new const_scr_stream_t();
     s->_scratch_addr = scratch_addr;
     s->_num_elements = num_elem;
     s->_constant = value;
+    s->_const_width = const_width;
     s->set_orig();
 
     add_bitmask_stream(s);
@@ -674,7 +682,7 @@ void ssim_t::insert_df_barrier(int64_t num_scr_wr, bool spad_type) {
 void ssim_t::write_constant(int num_strides, int in_port,
                     SBDT constant, uint64_t num_elem,
                     SBDT constant2, uint64_t num_elem2,
-                    uint64_t flags) { //new
+                    uint64_t flags, int const_width) {
 
   const_port_stream_t* s = new const_port_stream_t();
   s->add_in_port(in_port);
@@ -691,6 +699,14 @@ void ssim_t::write_constant(int num_strides, int in_port,
 
   s->_constant2=constant;
   s->_num_elements2=num_elem;
+
+  if(const_width!=0) {
+    s->_const_width = const_width;
+  } else { // assume the width of the corresponding input port
+    port_data_t& cur_out_port = accel_arr[0]->_port_interf.out_port(in_port);
+    s->_const_width = cur_out_port.get_port_width();
+
+  }
 
   s->set_orig();
 

@@ -575,7 +575,7 @@ class ExecContext : public ::ExecContext
                 thread.getSSReg(SS_NUM_STRIDES),   thread.getSSReg(SS_IN_PORT),
                 thread.getSSReg(SS_CONSTANT),      thread.getSSReg(SS_NUM_ELEM),     
                 thread.getSSReg(SS_CONSTANT2),     thread.getSSReg(SS_NUM_ELEM2),    
-                thread.getSSReg(SS_FLAGS) );
+                thread.getSSReg(SS_FLAGS),         thread.getSSReg(SS_DTYPE));
             break;
             case SS_ATOMIC_SCR_OP: ssim.atomic_update_scratchpad(
                 thread.getSSReg(SS_OFFSET),        thread.getSSReg(SS_NUM_ELEM),
@@ -585,7 +585,7 @@ class ExecContext : public ::ExecContext
             break;
             case SS_CONST_SCR: ssim.write_constant_scratchpad(
                 thread.getSSReg(SS_SCRATCH_ADDR),  thread.getSSReg(SS_CONSTANT),
-                thread.getSSReg(SS_NUM_STRIDES));
+                thread.getSSReg(SS_NUM_STRIDES),   thread.getSSReg(SS_DTYPE));
             break;
             case SS_REM_PORT: ssim.multicast_remote_port(
                 // thread.getSSReg(SS_NUM_ELEM), thread.getSSReg(SS_MASK),  
