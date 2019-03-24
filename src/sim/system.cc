@@ -199,6 +199,12 @@ System::System(Params *p)
     // Set back pointers to the system in all memories
     for (int x = 0; x < params()->memories.size(); x++)
         params()->memories[x]->system(this);
+    //---------------------
+    for(int i=0; i<2; ++i) {
+      _is_spu_done[i] = 0;
+      _is_spu_global_wait_released[i] = 0;
+    }
+    //-----------------
 }
 
 System::~System()
@@ -561,4 +567,49 @@ System *
 SystemParams::create()
 {
     return new System(this);
+}
+
+void
+System::set_spu_done(int spu_id) {
+  _is_spu_done[spu_id-1]=1;
+  for(int i=0; i<2; ++i) {
+    printf("At i, it is: %d\n",_is_spu_done[i]);
+  }
+}
+
+bool
+System::all_spu_done() {
+  for(int i=0; i<2; ++i) {
+    if(_is_spu_done[i]==0)
+      return false;
+  }
+  return true;
+}
+
+void
+System::reset_all_spu() {
+  for(int i=0; i<2; ++i) {
+    _is_spu_done[i]=0;
+  }
+}
+
+void
+System::set_spu_global_wait_released(int spu_id) {
+  _is_spu_global_wait_released[spu_id-1]=1;
+}
+
+void
+System::reset_all_spu_global_wait() {
+  for(int i=0; i<2; ++i) {
+    _is_spu_global_wait_released[i]=0;
+  }
+}
+
+bool
+System::is_last_spu() {
+  for(int i=0; i<2; ++i) {
+    if(_is_spu_global_wait_released[i]==0)
+      return false;
+  }
+  return true;
 }

@@ -102,7 +102,6 @@ public:
       if(_dfg_vec->is_temporal()) {
         return 1;
       } else {
-        // return _dfg_vec->length();
         return _dfg_vec->logical_len();
       }
     }

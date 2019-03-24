@@ -1079,37 +1079,58 @@ LSQ::tryToSendToTransfers(LSQRequestPtr request)
 void
 LSQ::set_spu_done(int spu_id) {
   ThreadContext *thread = cpu.getContext(0); // assume tid=0?
-  thread->getProcessPtr()->set_spu_done(spu_id);
+  /*
+  thread->setContextId(0); // base thread
+  // ThreadContext *thread = cpu.getContext(execute.getIssuingThread()); // assume tid=0?
+  std::cout << "CUrrent process id: " << thread->getCpuPtr()->getPid() << "\n";
+  std::cout << "Cpu ptr from thread: " << thread->getCpuPtr() << "\n";
+  std::cout << "Context id: " << thread->contextId() << "\n";
+  std::cout << "System ptr: " << thread->getSystemPtr() << "\n";
+
+
+
+  std::cout << "Process ptr: " << thread->getProcessPtr() << "\n";
+  std::cout << "Process pid from child: " << thread->getProcessPtr()->pid() << "\n";
+  std::cout << "Process pid from child: " << thread->getProcessPtr()->ppid() << "\n";
+  */
+  // thread->getProcessPtr()->set_spu_done(spu_id);
+  // thread->getProcessPtr()->set_spu_done(spu_id);
+  thread->getSystemPtr()->set_spu_done(spu_id);
 }
 
 bool
 LSQ::all_spu_done() {
   ThreadContext *thread = cpu.getContext(0); // assume tid=0?
-  return thread->getProcessPtr()->all_spu_done();
+  // return thread->getProcessPtr()->all_spu_done();
+  return thread->getSystemPtr()->all_spu_done();
 }
 
 void
 LSQ::reset_all_spu() {
   ThreadContext *thread = cpu.getContext(0); // assume tid=0?
-  thread->getProcessPtr()->reset_all_spu();
+  // thread->getProcessPtr()->reset_all_spu();
+  thread->getSystemPtr()->reset_all_spu();
 }
 
 void
 LSQ::reset_all_spu_global_wait() {
   ThreadContext *thread = cpu.getContext(0); // assume tid=0?
-  thread->getProcessPtr()->reset_all_spu_global_wait();
+  // thread->getProcessPtr()->reset_all_spu_global_wait();
+  thread->getSystemPtr()->reset_all_spu_global_wait();
 }
 
 bool
 LSQ::is_last_spu() {
   ThreadContext *thread = cpu.getContext(0); // assume tid=0?
-  return thread->getProcessPtr()->is_last_spu();
+  // return thread->getProcessPtr()->is_last_spu();
+  return thread->getSystemPtr()->is_last_spu();
 }
 
 void
 LSQ::set_spu_global_wait_released(int spu_id) {
   ThreadContext *thread = cpu.getContext(0); // assume tid=0?
-  thread->getProcessPtr()->set_spu_global_wait_released(spu_id);
+  // thread->getProcessPtr()->set_spu_global_wait_released(spu_id);
+  thread->getSystemPtr()->set_spu_global_wait_released(spu_id);
 }
 
 bool

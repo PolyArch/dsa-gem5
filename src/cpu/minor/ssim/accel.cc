@@ -5284,19 +5284,20 @@ bool accel_t::done(bool show, int mask) {
     }
   }
 
-  // FIXME:CHCKME:This is a kind of stream I guess...
+  // This is a kind of stream I guess...
   if(_stream_cleanup_mode) {
     d=false;
   }
 
   if (mask == 128 && d) {
-    // cout << "Came to set this core done: " << _lsq->getCpuId() << endl;
+    cout << "Came to set this core done: " << _lsq->getCpuId() << endl;
     _lsq->set_spu_done(_lsq->getCpuId());
-    if(!_lsq->all_spu_done()) {
-      // cout << "ALL SPUs not done!\n";
-      d=false;
-    } else {
-      d=true; // yes, done!
+    d = _lsq->all_spu_done();
+    if(d) {
+      if(SS_DEBUG::WAIT) {
+        cout << "GLOBAL WAIT RELEASED\n";
+        cout << "CORE ID: " << _lsq->getCpuId() << "\n";
+      }
       // cout << "Called for global barrier for core: " << _lsq->getCpuId() << endl;
       _lsq->set_spu_global_wait_released(_lsq->getCpuId());
       if(_lsq->is_last_spu()) { // last global wait spu
@@ -5304,12 +5305,7 @@ bool accel_t::done(bool show, int mask) {
         _lsq->reset_all_spu();
         _lsq->reset_all_spu_global_wait();
       }
-      if(SS_DEBUG::WAIT) {
-        cout << "GLOBAL WAIT RELEASED\n";
-        cout << "CORE ID: " << _lsq->getCpuId() << "\n";
-      }
     }
-    // if all_threads_done() d=false;
   }
 
   if (SS_DEBUG::WAIT) {

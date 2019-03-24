@@ -1614,14 +1614,14 @@ void Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int op
   }
 
   // push message to local buffers
-  if(dest_core_id==cpu.cpuId()) {
+  if(dest_core_id==cpu.cpuId()+1) { // for some reason, this is 0-indexed
     if(SS_DEBUG::NET_REQ){
       printf("LOCAL REQUEST destination core: %d\n",dest_core_id);
     }
     ssim.push_atomic_update_req(local_scr_addr, opcode, val_bytes, out_bytes, val);
   } else {
     if(SS_DEBUG::NET_REQ){
-      std::cout << "Atomic update tuple, scr_addr: " << local_scr_addr << " opcode: " << opcode << " val bytes: " << val_bytes << " out_bytes: " << out_bytes << std::endl; 
+      std::cout << "Atomic update tuple, scr_addr: " << local_scr_addr << " and local core(0-indexed): " << cpu.cpuId() << " opcode: " << opcode << " val bytes: " << val_bytes << " out_bytes: " << out_bytes << std::endl; 
     }
     (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
     cpu.pushReqFromSpu(msg);
