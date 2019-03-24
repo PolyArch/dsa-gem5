@@ -54,6 +54,7 @@ void ssim_t::req_config(addr_t addr, int size) {
   // TODO: add a reset stream case here... (only accel[0])
   if(addr==0 && size==1) {
     // accel_arr[0]->request_reset_streams();
+    std::cout << "RESET stream request triggered\n";
     accel_arr[0]->switch_stream_cleanup_mode_on();
     return;
   }
@@ -525,10 +526,10 @@ void ssim_t::multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_por
 
 void ssim_t::write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int num_elem, int const_width) {
     const_scr_stream_t* s = new const_scr_stream_t();
-    s->_scratch_addr = scratch_addr;
     s->_num_elements = num_elem;
     s->_constant = value;
-    s->_const_width = const_width;
+    s->_const_width = 2; // FIXME: IMP: not reading correctly:const_width;
+    s->_scratch_addr = scratch_addr-2; // just for logic later
     s->set_orig();
 
     add_bitmask_stream(s);
@@ -700,12 +701,20 @@ void ssim_t::write_constant(int num_strides, int in_port,
   s->_constant2=constant;
   s->_num_elements2=num_elem;
 
-  if(const_width!=0) {
-    s->_const_width = const_width;
+  if(const_width<4) {
+    switch(const_width) {
+      case 0: s->_const_width=8;
+              break;
+      case 1: s->_const_width=4;
+              break;
+      case 2: s->_const_width=2;
+              break;
+      case 3: s->_const_width=1;
+              break;
+    }
   } else { // assume the width of the corresponding input port
-    port_data_t& cur_out_port = accel_arr[0]->_port_interf.out_port(in_port);
-    s->_const_width = cur_out_port.get_port_width();
-
+    port_data_t& cur_in_port = accel_arr[0]->_port_interf.out_port(in_port);
+    s->_const_width = cur_in_port.get_port_width();
   }
 
   s->set_orig();

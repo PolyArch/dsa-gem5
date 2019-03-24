@@ -534,6 +534,7 @@ struct const_port_stream_t : public base_stream_t {
   virtual void print_status() {
      std::cout << "const->port" << "\tport=";
      print_in_ports();
+     std::cout << " const_width: "  << _const_width;
      if(_num_elements) {
        std::cout << "\tconst:" << _constant << " left=" << _elements_left
                  << "/" << _num_elements;
@@ -556,16 +557,22 @@ struct const_scr_stream_t : public base_stream_t {
   uint64_t _constant;
   int _num_elements;
   int _iters_left=0; //needs zeroing here, otherwise default can be active
-  addr_t _scratch_addr;
+  int _scratch_addr;
 
   virtual void set_orig() {
     _iters_left=_num_elements;
- }
+  }
 
   uint64_t constant()    {return _constant;}
   uint64_t num_strides() {return _num_elements;}
 
-  uint64_t scratch_addr(){return _scratch_addr;}
+  int cur_scratch_addr() {
+    // std::cout << " Initial scratc addr: " << _scratch_addr << " and const_width: " << _const_width << "\n";
+    _scratch_addr += _const_width;
+    // std::cout << " Final scratc addr: " << _scratch_addr << "\n";
+    _iters_left--;
+    return _scratch_addr;
+  }
 
   virtual LOC src() {return LOC::CONST;}
   virtual LOC dest() {return LOC::SCR;}
@@ -579,7 +586,8 @@ struct const_scr_stream_t : public base_stream_t {
        std::cout << "\tconst:" << _constant << " left=" << _iters_left
                  << "/" << _num_elements;
      }
-     std::cout << "\titers=" << _iters_left << "/" << _num_elements << "";
+     std::cout << "\titers=" << _iters_left << "/" << _num_elements;
+     std::cout << "\tcur_scratch_addr=" << _scratch_addr << "";
 
     base_stream_t::print_status();
   }

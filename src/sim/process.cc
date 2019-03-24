@@ -152,6 +152,10 @@ Process::Process(ProcessParams *params, EmulationPageTable *pTable,
             debugSymbolTable = nullptr;
         }
     }
+    for(int i=0; i<2; ++i) {
+      _is_spu_done[i] = false;
+      _is_spu_global_wait_released[i] = false;
+    }
 }
 
 void
@@ -659,8 +663,8 @@ Process::fullPath(const std::string &file_name)
 }
 
 void
-Process::set_spu_done(int core_id) {
-  _is_spu_done[core_id-1]=true;
+Process::set_spu_done(int spu_id) {
+  _is_spu_done[spu_id-1]=true;
 }
 
 bool
@@ -677,4 +681,25 @@ Process::reset_all_spu() {
   for(int i=0; i<2; ++i) {
     _is_spu_done[i]=false;
   }
+}
+
+void
+Process::set_spu_global_wait_released(int spu_id) {
+  _is_spu_global_wait_released[spu_id-1]=true;
+}
+
+void
+Process::reset_all_spu_global_wait() {
+  for(int i=0; i<2; ++i) {
+    _is_spu_global_wait_released[i]=false;
+  }
+}
+
+bool
+Process::is_last_spu() {
+  for(int i=0; i<2; ++i) {
+    if(!_is_spu_global_wait_released[i])
+      return false;
+  }
+  return true;
 }

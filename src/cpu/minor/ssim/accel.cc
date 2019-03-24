@@ -63,35 +63,55 @@ void accel_t::request_reset_data() {
   reset_data();
 }
 
+// Let's not consider input ports here
 bool accel_t::all_ports_empty() {
 
+  /*
   for (unsigned i = 0; i < _soft_config.in_ports_active_plus.size(); ++i) {
     int cur_port = _soft_config.in_ports_active_plus[i];
     auto &in_vp = _port_interf.in_port(cur_port);
-    if(in_vp.mem_size()) return false;
+    if(in_vp.mem_size()) {
+      cout << " Input port not empty: " << cur_port << endl;
+      return false;
+    }
   }
+
+  cout << "Input ports empty\n";
+  */
   
   for (unsigned i = 0; i < _soft_config.out_ports_active_plus.size(); ++i) {
     int cur_port = _soft_config.out_ports_active_plus[i];
     auto &out_vp = _port_interf.out_port(cur_port);
-    if(out_vp.mem_size()) return false;
+    if(out_vp.mem_size()) {
+      cout << "Output port not empty: " << cur_port << endl;
+      return false;
+    }
   }
-  return false;
+
+  cout << "Output ports empty\n";
+
+  // Let's check atomic bank buffers
+  if(_scr_w_c.atomic_scr_issued_requests_active()) {
+    cout << "Atomic bank buffers not empty!\n";
+    return false;
+  }
+
+  // cout << "Atomic bank buffers empty\n";
+
+  return true;
 }
 
 void accel_t::request_reset_streams() {
 
   if(!all_ports_empty()) return;
 
-  _dma_c.reset_data();
-  _scr_r_c.reset_data();
-  _scr_w_c.reset_data();
-  _net_c.reset_data();
-  _port_c.reset_data();
-
-  if (_sched) {
-    _sched->reset_simulation_state();
+  if(SS_DEBUG::COMMAND_O) {
+    cout << "RESET STREAM REQUEST RELEASED\n";
   }
+
+  // free ports and streams
+  reset_data();
+  _stream_cleanup_mode=false;
 }
 
 void accel_t::switch_stream_cleanup_mode_on() {
@@ -3229,15 +3249,12 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
 
     if(stream._is_2d_stream && stream._first_ss_access) {
       uint64_t ind2=0;
-      // FIXME: this might have problem with variable data width ports
-      // for(int i=0; i<stream._index_bytes/subsize_vp.get_port_width(); ++i) {
-      SBDT ssize = subsize_vp.peek_out_data();
-      for(int i=0; i<stream._index_bytes; ++i) {
-        // uint8_t temp = ssize[i]; // subsize_vp.peek_out_data(i);
-        uint8_t temp = (ssize >> (i*8)) & 255; // ind_vp.peek_out_data(i);
-        // cout << "LOCAL 8-bit TEMP VALUE at i: " << i << " is: " << (unsigned)temp << endl;
-        // ind2 = ((ind2 << (i*8))*stream._index_bytes)| temp;
-        ind2 = ind2 | (temp << i*8);
+
+      // this works when subsize_vp width < stream index bytes
+      for(int i=0; i<stream._index_bytes/subsize_vp.get_port_width(); ++i) {
+        SBDT ssize = subsize_vp.peek_out_data(i);
+        // ind2 = ind2 | (ssize << i*8*subsize_vp.get_port_width());
+        ind2 = (ind2 << i*8*subsize_vp.get_port_width()) | ssize;
       }
       
       // If sub-stream size is 0, then pop the corresponding element from ind
@@ -3259,15 +3276,11 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
     }
 
     uint64_t ind=0;
-    // for(int i=0; i<stream._index_bytes/ind_vp.get_port_width(); ++i) {
-    // This is assuming that ind_val has higher data width than the config
-    SBDT ind_val = ind_vp.peek_out_data();
-    for(int i=0; i<stream._index_bytes; ++i) {
-      uint8_t temp = (ind_val >> (i*8)) & 255; // ind_vp.peek_out_data(i);
-      // cout << "Value in the port: " << (temp&0xFFFFFFFFFFFFFFFF) << endl;
-      ind = ind | (temp << i*8);
-      // cout << "LOCAL 8-bit INDEX VALUE at i: " << i << " is: " << (unsigned)temp << endl;
-      // ind = ((ind << (i*8))&stream._index_mask) | temp;
+
+    for(int i=0; i<stream._index_bytes/ind_vp.get_port_width(); ++i) {
+      SBDT temp = ind_vp.peek_out_data(i);
+      ind = (ind << i*8*ind_vp.get_port_width()) | temp;
+      // ind = ind | (temp << i*8*ind_vp.get_port_width());
     }
     addr_t addr = stream.cur_addr(ind);
     // cout << "Current indirect address sent is: " << std::hex << addr << endl;
@@ -3594,6 +3607,10 @@ vector<uint8_t> scratch_read_controller_t::read_scratch(affine_read_stream_t &st
              addr + data_width <= SCRATCH_SIZE + LSCRATCH_SIZE);
     }
 
+    SBDT check_value=0;
+    _accel->read_scratchpad(&check_value, addr, data_width, stream.id());
+    // check_value = check_value & ((1<<8*data_width)-1);
+    cout << "COrrected value read from scratchpad at addr: " << addr << " with data_width: " << data_width << " is: " << check_value << endl;
     _accel->read_scratchpad(&val[0], addr, data_width, stream.id());
 
     if (SS_DEBUG::SCR_ACC) {
@@ -4018,6 +4035,7 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
 
           for (int in_port : stream.in_ports()) {
             auto &in_vp = _accel->port_interf().in_port(in_port);
+            // data is a vector of bytes
             in_vp.push_data(data); // just push in the vector
             /*for(auto d : data) {
               in_vp.push_data_byte(d);
@@ -4289,9 +4307,16 @@ void scratch_write_controller_t::serve_atomic_requests(bool &performed_atomic_sc
         // std::cout << "Available requests at the bank queue are: "
         //           << _atomic_scr_issued_requests[i].size() << "\n";
       }
+      // cout << "Initial input val of atomic scr: " << input_val << endl;
       // _accel->read_scratchpad(&input_val+8-request._output_bytes, scr_addr, request._output_bytes, stream.id());
       // FIXME: confirm if I can fix the ID of atomic scr
-      _accel->read_scratchpad(&input_val+8-request._output_bytes, scr_addr, request._output_bytes, 0);
+      // _accel->read_scratchpad(&input_val+8-request._output_bytes, scr_addr, request._output_bytes, 0);
+      SBDT check_value=0;
+      _accel->read_scratchpad(&check_value, scr_addr, request._output_bytes, 0);
+      cout << "ATOMIC SCR: addr it rd/writes to: " << scr_addr << " the value: " << input_val << " and inc: " << inc << endl;
+      cout << "CHECKED CORRECT VALUE: " << check_value << endl;
+      input_val = check_value & ((1<<request._output_bytes*8)-1);
+
       switch (opcode) {
         case 0: input_val += inc;
                 break;
@@ -4305,13 +4330,24 @@ void scratch_write_controller_t::serve_atomic_requests(bool &performed_atomic_sc
                  break;
       }
 
-      // SBDT val = *(&input_val) && 0x000000000000FFFF;
-      // cout << "FInal output of atomic scr: " << val << endl;
+      // FIXME: Just to debug
+      uint16_t correct_val = input_val & ((1<<request._output_bytes*8)-1);
+
+      cout << "FInal output of atomic scr: " << correct_val << endl;
+      /*
       _accel->write_scratchpad(scr_addr,
                                &input_val + 8 - request._output_bytes,
                                request._output_bytes, 0);
+      */
                                // request._output_bytes, stream.id());
 
+      _accel->write_scratchpad(scr_addr,
+                               &correct_val,
+                               request._output_bytes, 0);
+      
+      check_value=0;
+      _accel->read_scratchpad(&check_value, scr_addr, request._output_bytes, 0);
+      cout << "Updated value at the address: " << scr_addr << " is: " << check_value << endl;
       _accel->_stat_scratch_bank_requests_executed++;
       bytes_written += request._value_bytes;
       _accel->_stat_scr_bytes_wr += request._value_bytes;
@@ -4429,7 +4465,8 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
       // Stage 1: push requests in scratch banks
       while (scr_addr < max_addr && stream._num_strides > 0 &&
              out_addr.mem_size() && out_val.mem_size() &&
-             num_val_pops < 64) {
+             num_val_pops < 64/stream._value_bytes) {
+             // num_val_pops < 64) {
         if (SS_DEBUG::COMP) {
           std::cout << "\tupdate at index location: " << loc
                     << " and scr_addr: " << scr_addr
@@ -4466,36 +4503,10 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
         if(SS_DEBUG::NET_REQ) {
           cout << "Sending remote atomic update for scratch_addr: " << scr_addr << " from own core id: " << _accel->_ssim->get_core_id() << " to remote core id: " << local_core_id <<  endl; 
         }
-          int local_scr_addr = scr_addr;
-          uint64_t x = temp_req._inc;
-          _accel->_lsq->push_rem_atom_op_req(x, local_scr_addr, temp_req._opcode, temp_req._value_bytes, temp_req._output_bytes);
+        int local_scr_addr = scr_addr;
+        uint64_t x = temp_req._inc;
+        _accel->_lsq->push_rem_atom_op_req(x, local_scr_addr, temp_req._opcode, temp_req._value_bytes, temp_req._output_bytes);
  
-
-
-        /*
-
-        // int local_scratch_addr = (scr_addr + stream._output_bytes)%SCRATCH_SIZE;
-        // if(local_core_id!=(_accel->_ssim->get_core_id()-1)) { // send remote update request
-        if(local_core_id!=_accel->_ssim->get_core_id()) { // send remote update request
-          cout << "Sending remote atomic update for scratch_addr: " << scr_addr << " from own core id: " << _accel->_ssim->get_core_id() << " to remote core id: " << local_core_id <<  endl; 
-          int local_scr_addr = scr_addr;
-          uint64_t x = temp_req._inc;
-          _accel->_lsq->push_rem_atom_op_req(x, local_scr_addr, temp_req._opcode, temp_req._value_bytes, temp_req._output_bytes);
- 
-        } else {
-          _atomic_scr_issued_requests[bank_id].push(temp_req);
-        }
-        */
-
-        /*if(scr_addr + stream._output_bytes > SCRATCH_SIZE) { 
-          cout << "Sending remote atomic update for scratch_addr: " << scr_addr << endl; 
-          int local_scr_addr = scr_addr;
-          uint64_t x = temp_req._inc;
-          _accel->_lsq->push_rem_atom_op_req(x, local_scr_addr, temp_req._opcode, temp_req._value_bytes, temp_req._output_bytes);
-        } else {
-          _atomic_scr_issued_requests[bank_id].push(temp_req);
-        }*/
-
         _accel->_stat_scratch_bank_requests_pushed++;
         stream._num_strides--;
 
@@ -4632,27 +4643,40 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
       if (stream.stream_active()) {
         int const_width = stream._const_width;
         // uint64_t total_pushed=0;
-        addr_t addr = stream._scratch_addr;
-        // while(stream._iters_left!=0) {
-        // cout << "iters left for the stream is: " << stream._iters_left <<
-        // "\n";
-        addr_t base_addr = addr & SCR_MASK;
-        addr_t max_addr = base_addr + SCR_WIDTH;
+        // addr_t addr = stream._scratch_addr;
+        int addr = stream.cur_scratch_addr(); // first will definitely get in
+        if(_accel->isLinearSpad(addr)) continue;
+        // cout << "IDENTIFIED AS BANKED SCRATCHPAD STREAM\n";
+
+        int base_addr = addr & SCR_MASK;
+        int max_addr = base_addr + SCR_WIDTH;
 
         uint64_t bytes_written = 0;
-        while (addr < max_addr && stream._iters_left > 0 &&
+        while (addr < max_addr && stream.stream_active() &&
                bytes_written < SCR_WIDTH) {
+          
+          // cout << "Enter addr: " << addr << " and max_addr: " << max_addr << endl;
+          // stream.print_status();
+          
           SBDT val = stream._constant;
 
-          assert(addr + DATA_WIDTH <= SCRATCH_SIZE);
-          _accel->write_scratchpad(addr, &val, sizeof(const_width), stream.id());
-
+          assert(addr + const_width <= SCRATCH_SIZE);
+          _accel->write_scratchpad(addr, &val, const_width, stream.id());
           bytes_written += const_width;
+          // cout << "CONST SCR: addr it writes to: " << addr << " the value: " << val << endl;
+
+          if(addr + stream._const_width < max_addr && bytes_written < SCR_WIDTH) {
+            addr = stream.cur_scratch_addr();
+          } else {
+            addr = max_addr;
+          }
+
           _accel->_stat_scr_bytes_wr += const_width;
           _accel->_stat_scratch_write_bytes += const_width;
-          stream._iters_left--;
+          // cout << "Exit addr: " << addr << " and max_addr: " << max_addr << endl;
+          // stream._iters_left--;
+          // addr += const_width;
           // total_pushed++;
-          addr += sizeof(const_width);
         }
         // }
         // add_bw(stream.src(), stream.dest(), 1, total_pushed*DATA_WIDTH);
@@ -4662,7 +4686,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
           _accel->_stat_scratch_writes += 1;
         }
 
-        bool is_empty = stream.check_set_empty();
+        bool is_empty = !stream.stream_active(); // stream.check_set_empty();
         if (is_empty) {
           _accel->process_stream_stats(stream);
           if (SS_DEBUG::VP_SCORE2) {
@@ -4828,6 +4852,53 @@ void scratch_write_controller_t::linear_scratch_write_cycle() {
             break;
           }
         }
+      } else if (auto *sp = dynamic_cast<const_scr_stream_t *>(s)) {
+
+        auto &stream = *sp;
+
+        if (stream.stream_active()) {
+          int const_width = stream._const_width;
+          // uint64_t total_pushed=0;
+          addr_t addr = stream._scratch_addr;
+          addr_t base_addr = addr & SCR_MASK;
+          addr_t max_addr = base_addr + SCR_WIDTH;
+          if(!_accel->isLinearSpad(addr)) continue;
+          // cout << "IDENTIFIED AS LINEAR SCRATCHPAD STREAM\n";
+
+          uint64_t bytes_written = 0;
+          while (addr < max_addr && stream._iters_left > 0 &&
+                 bytes_written < SCR_WIDTH) {
+            SBDT val = stream._constant;
+
+            assert(addr + const_width >= SCRATCH_SIZE);
+            assert(addr + const_width <= SCRATCH_SIZE+LSCRATCH_SIZE);
+            _accel->write_scratchpad(addr, &val, sizeof(const_width), stream.id());
+
+            bytes_written += const_width;
+            _accel->_stat_scr_bytes_wr += const_width;
+            _accel->_stat_scratch_write_bytes += const_width;
+            stream._iters_left--;
+            // total_pushed++;
+            addr += sizeof(const_width);
+          }
+          // }
+          // add_bw(stream.src(), stream.dest(), 1, total_pushed*DATA_WIDTH);
+
+          if (_accel->_ssim->in_roi()) {
+            add_bw(stream.src(), stream.dest(), 1, bytes_written);
+            _accel->_stat_scratch_writes += 1;
+          }
+
+          bool is_empty = stream.check_set_empty();
+          if (is_empty) {
+            _accel->process_stream_stats(stream);
+            if (SS_DEBUG::VP_SCORE2) {
+              cout << "SOURCE: CONST->SCR\n";
+            }
+            delete_stream(_which_wr, sp);
+          }
+          break;
+        }
       }
     }
   }
@@ -4923,13 +4994,15 @@ void port_controller_t::cycle() {
       for(int i = 0; i < PORT_WIDTH &&
             vp_out.mem_size() >= n && stream.stream_active() && vp_out.cur_repeat_lim()>=0; i+=data_width) {
         SBDT val = 0;
-        // TODO: just move this pop to peek and pop only if num_repeated is
-        // done
-        // TODO: make it compatible otherwise. Currently assume sending port data width is equal or less
+
+        // FIXME:CHECKME
         for(int i=0; i<n; ++i) {
           SBDT temp = vp_out.peek_out_data(i);
-          val = val | (temp << i*8*stream.src_data_width());
+          val = (val << i*8*stream.src_data_width()) | temp;
+          // val = val | (temp << i*8*stream.src_data_width());
         }
+
+        cout << "Value extracted from source port: "<< val << endl;
         
         // pop n values only if inc repeated is done
         int x1 = vp_out.cur_repeat_lim();
@@ -5044,12 +5117,10 @@ void port_controller_t::cycle() {
 
     port_data_t &first_vp_in = pi.in_port(stream.first_in_port());
 
-    // if(first_vp_in.mem_size() < VP_LEN) { // enough space, so go for it
     if(first_vp_in.mem_size() < VP_LEN*8/const_width) { // enough space, so go for it
       uint64_t total_pushed=0;
       int data_width = stream.data_width();
 
-      // for(int i = 0; i < PORT_WIDTH && first_vp_in.mem_size() < VP_LEN
       for(int i = 0; i < PORT_WIDTH && first_vp_in.mem_size() < VP_LEN*8/const_width
                   && stream.stream_active(); i+=data_width) {
 
@@ -5057,9 +5128,11 @@ void port_controller_t::cycle() {
           port_data_t& vp_in = pi.in_port(in_port);
           // should send vector version of that
           SBDT val = stream.pop_item(); // data width of const val should be >= port width
-          int port_width = vp_in.get_port_width();
-          for(int i=0; i<const_width/port_width; ++i) {
-            SBDT temp = (val >> i*8*port_width) & ((1<<8*port_width)-1);
+          // int port_width = vp_in.get_port_width();
+          cout << "NUMBER OF CONSTS PUSHED ONCE: " << (const_width/data_width) << endl;
+          for(int i=(const_width/data_width)-1; i>=0; --i) {
+            SBDT temp = (val >> i*8*data_width) & ((1<<8*data_width)-1);
+            cout << "temp of data width is: " << temp << endl;
             vp_in.push_data(vp_in.get_byte_vector(temp, data_width));
           }
           // vp_in.push_data(stream.pop_item());
@@ -5211,6 +5284,34 @@ bool accel_t::done(bool show, int mask) {
     }
   }
 
+  // FIXME:CHCKME:This is a kind of stream I guess...
+  if(_stream_cleanup_mode) {
+    d=false;
+  }
+
+  if (mask == 128 && d) {
+    // cout << "Came to set this core done: " << _lsq->getCpuId() << endl;
+    _lsq->set_spu_done(_lsq->getCpuId());
+    if(!_lsq->all_spu_done()) {
+      // cout << "ALL SPUs not done!\n";
+      d=false;
+    } else {
+      d=true; // yes, done!
+      // cout << "Called for global barrier for core: " << _lsq->getCpuId() << endl;
+      _lsq->set_spu_global_wait_released(_lsq->getCpuId());
+      if(_lsq->is_last_spu()) { // last global wait spu
+        // cout << "IT WAS LAST SPU TO RELEASE GLOBAL BARRIER\n";
+        _lsq->reset_all_spu();
+        _lsq->reset_all_spu_global_wait();
+      }
+      if(SS_DEBUG::WAIT) {
+        cout << "GLOBAL WAIT RELEASED\n";
+        cout << "CORE ID: " << _lsq->getCpuId() << "\n";
+      }
+    }
+    // if all_threads_done() d=false;
+  }
+
   if (SS_DEBUG::WAIT) {
     timestamp();
     if (d) {
@@ -5219,22 +5320,6 @@ bool accel_t::done(bool show, int mask) {
       cout << "Done Check -- NOT DONE: (" << mask << ")\n";
       done_internal(true, mask);
     }
-  }
-
-  /*if(d) { // if it is done itself
-    _lsq->set_spu_done(0);
-    // id_cpu_done[cpuID()]=1;
-  }*/
-  if (mask == 128 && d) {
-    _lsq->set_spu_done(_lsq->getCpuId());
-    if(_lsq->all_spu_done()) d=false;
-    else {
-      _lsq->reset_all_spu();
-      if(SS_DEBUG::WAIT) {
-        cout << "Global wait released\n";
-      }
-    }
-    // if all_threads_done() d=false;
   }
 
   return d;

@@ -1094,6 +1094,24 @@ LSQ::reset_all_spu() {
   thread->getProcessPtr()->reset_all_spu();
 }
 
+void
+LSQ::reset_all_spu_global_wait() {
+  ThreadContext *thread = cpu.getContext(0); // assume tid=0?
+  thread->getProcessPtr()->reset_all_spu_global_wait();
+}
+
+bool
+LSQ::is_last_spu() {
+  ThreadContext *thread = cpu.getContext(0); // assume tid=0?
+  return thread->getProcessPtr()->is_last_spu();
+}
+
+void
+LSQ::set_spu_global_wait_released(int spu_id) {
+  ThreadContext *thread = cpu.getContext(0); // assume tid=0?
+  thread->getProcessPtr()->set_spu_global_wait_released(spu_id);
+}
+
 bool
 LSQ::tryToSend(LSQRequestPtr request)
 {
