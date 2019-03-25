@@ -1198,14 +1198,17 @@ struct atomic_scr_stream_t : public base_stream_t {
   // because our operations our idempotent)
   uint64_t cur_offset(){
     // extracting from right (least significant bits)
-    return (mem_addr() >> (_cur_addr_index*_addr_bytes*8)) & _addr_mask;
+    // return (mem_addr() >> (_cur_addr_index*_addr_bytes*8)) & _addr_mask;
+    return (mem_addr() >> ((_addr_in_word-_cur_addr_index-1)*_addr_bytes*8)) & _addr_mask;
   }
   uint64_t cur_addr(uint64_t loc){
     // extracting from right (least significant bits)
-    return (loc >> (_cur_addr_index*_addr_bytes*8)) & _addr_mask;
+    // return (loc >> (_cur_addr_index*_addr_bytes*8)) & _addr_mask;
+    return (loc >> ((_addr_in_word-_cur_addr_index-1)*_addr_bytes*8)) & _addr_mask;
   }
   uint64_t cur_val(uint64_t val){
-    return (val >> (_cur_val_index*_value_bytes*8)) & _value_mask;
+    // return (val >> (_cur_val_index*_value_bytes*8)) & _value_mask;
+    return (val >> ((_values_in_word-_cur_val_index-1)*_value_bytes*8)) & _value_mask;
   }
   void inc_val_index(){
     _cur_val_index = (_cur_val_index+1)%(_values_in_word+1);

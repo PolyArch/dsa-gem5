@@ -605,6 +605,12 @@ class ExecContext : public ::ExecContext
                   DPRINTF(SS, "Wait Compute\n");         
                 } else if(thread.getSSReg(SS_WAIT_MASK) == 16) {
                   DPRINTF(SS, "Wait mem write\n");
+                } else if(thread.getSSReg(SS_WAIT_MASK) == 128) {
+                  ssim.set_not_in_use(); // FIXME:check
+                  DPRINTF(SS, "Wait on all threads\n");         
+                } else if(thread.getSSReg(SS_WAIT_MASK) == 256) {
+                  ssim.set_not_in_use(); // FIXME:check
+                  DPRINTF(SS, "Wait only on streams\n");
                 } else {
                   ssim.insert_barrier(thread.getSSReg(SS_WAIT_MASK));
                 }

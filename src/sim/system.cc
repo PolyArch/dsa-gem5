@@ -572,9 +572,9 @@ SystemParams::create()
 void
 System::set_spu_done(int spu_id) {
   _is_spu_done[spu_id-1]=1;
-  for(int i=0; i<2; ++i) {
+  /*for(int i=0; i<2; ++i) {
     printf("At i, it is: %d\n",_is_spu_done[i]);
-  }
+  }*/
 }
 
 bool

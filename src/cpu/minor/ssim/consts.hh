@@ -72,7 +72,8 @@ typedef uint64_t addr_t;
 #define WAIT_MEM_WR       16//wait for all writes to complete (not impl)
 #define WAIT_SCR_ATOMIC   32//wait for all atomics to be done, delay the core
 #define WAIT_SCR_WR_DF    64//wait for N remote writes to be done, delay the core
-#define GLOBAL_WAIT        128//wait for all cores (threads) to be done
+#define GLOBAL_WAIT       128//wait for all cores (threads) to be done
+#define STREAM_WAIT       256//wait only for streams to be done
 
 
 //fill modes

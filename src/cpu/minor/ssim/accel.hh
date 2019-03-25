@@ -1097,8 +1097,13 @@ class port_controller_t : public data_controller_t {
   bool schedule_const_port(const_port_stream_t& s);
   bool schedule_remote_port(remote_port_stream_t& s);
 
+
+  // void delete_stream(int i, port_port_stream_t *s);
+
   void reset_data() {
-    _port_port_streams.clear();
+    for(auto& i : _port_port_streams) {i.reset();}
+    for(auto& i : _const_port_streams) {i.reset();}
+    for(auto& i : _remote_port_streams) {i.reset();}
   }
 
   void print_status();

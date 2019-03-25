@@ -1614,7 +1614,7 @@ void Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int op
   }
 
   // push message to local buffers
-  if(dest_core_id==cpu.cpuId()+1) { // for some reason, this is 0-indexed
+  if(dest_core_id==cpu.cpuId() || cpu.cpuId()==0) { // 0--host core when non-multi-threaded code
     if(SS_DEBUG::NET_REQ){
       printf("LOCAL REQUEST destination core: %d\n",dest_core_id);
     }

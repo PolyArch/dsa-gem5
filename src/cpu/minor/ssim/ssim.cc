@@ -176,6 +176,12 @@ void ssim_t::print_stats() {
      if(mask & WAIT_SCR_WR) {
        out << "SCR_WR";
      }
+     if(mask & GLOBAL_WAIT) {
+       out << "GLOBAL_WAIT";
+     }
+     if(mask & STREAM_WAIT) {
+       out << "STREAM_WAIT";
+     }
      out << ")  ";
    }
    out << "\n";

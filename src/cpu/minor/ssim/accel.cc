@@ -79,11 +79,12 @@ bool accel_t::all_ports_empty() {
   cout << "Input ports empty\n";
   */
   
+  // It should check only those output ports which are busy
   for (unsigned i = 0; i < _soft_config.out_ports_active_plus.size(); ++i) {
     int cur_port = _soft_config.out_ports_active_plus[i];
     auto &out_vp = _port_interf.out_port(cur_port);
-    if(out_vp.mem_size()) {
-      cout << "Output port not empty: " << cur_port << endl;
+    if(out_vp.in_use() && out_vp.mem_size()) {
+      cout << "Output port not empty: " << cur_port << " at core id: " << _lsq->getCpuId() << endl;
       return false;
     }
   }
@@ -106,11 +107,37 @@ void accel_t::request_reset_streams() {
   if(!all_ports_empty()) return;
 
   if(SS_DEBUG::COMMAND_O) {
-    cout << "RESET STREAM REQUEST RELEASED\n";
+    cout << "RESET STREAM REQUEST RELEASED for core: " << _lsq->getCpuId() << "\n";
   }
 
-  // free ports and streams
-  reset_data();
+  // free ports and streams (not input ports?)
+  // reset_data();
+  for (unsigned i = 0; i < _soft_config.out_ports_active_plus.size(); ++i) {
+    int cur_port = _soft_config.out_ports_active_plus[i];
+    auto &out_vp = _port_interf.out_port(cur_port);
+    if(out_vp.in_use()) {
+      out_vp.reset_data();
+    }
+  }
+
+  for (unsigned i = 0; i < _soft_config.in_ports_active_plus.size(); ++i) {
+    int cur_port = _soft_config.in_ports_active_plus[i];
+    auto &in_vp = _port_interf.in_port(cur_port);
+    if(in_vp.in_use()) {
+      in_vp.set_status(port_data_t::STATUS::FREE);
+      // in_vp.reset_data();
+    }
+  }
+
+  _dma_c.reset_data();
+  _scr_r_c.reset_data();
+  _scr_w_c.reset_data();
+  _net_c.reset_data();
+  _port_c.reset_data();
+
+  if (_sched) {
+    _sched->reset_simulation_state();
+  }
   _stream_cleanup_mode=false;
 }
 
@@ -930,8 +957,8 @@ uint64_t accel_t::receive(int out_port) {
   SBDT val = out_vp.pop_out_data();
   if (SS_DEBUG::COMMAND || SS_DEBUG::COMMAND_I || SS_DEBUG::COMMAND_O) {
     timestamp();
-    cout << "SS_RECV  on port" << out_vp.port() << " " << out_vp.mem_size()
-         << "\n";
+    cout << "SS_RECV value: " << val << " on port" << out_vp.port() << " " << out_vp.mem_size()
+         << " on core: " << _lsq->getCpuId() << "\n";
   }
   return val;
 }
@@ -1848,7 +1875,6 @@ void accel_t::push_net_in_cmd_queue(base_stream_t *s) {
 // --------------------------SCHEDULE STREAMS ONTO
 // CONTROLLERS----------------------- This is essentially the stream dispatcher
 void accel_t::schedule_streams() {
-  // std::cout << "came here to schedule streams\n";
 
   int str_width = _ssconfig->dispatch_width();
   int str_issued = 0;
@@ -2003,13 +2029,25 @@ void accel_t::schedule_streams() {
     } else if (auto port_port_stream = dynamic_cast<port_port_stream_t *>(ip)) {
       int out_port = port_port_stream->_out_port;
       out_vp = &_port_interf.out_port(out_port);
+      // cout << "Out port for this recurrence stream: " << out_port << endl;
       auto rpt_vp = &_port_interf.out_port(1); // not sure, check with Tony
       if(port_port_stream->repeat_flag()) {
+        // cout << "Repeat port for this recurrence stream: " << port_port_stream->repeat_in() << endl;
         int rpt_port = port_port_stream->repeat_in();
         rpt_vp = &_port_interf.out_port(rpt_port);
+      } else {
+        // cout << "Repeat flag off" << endl;
       }
+      // cout << "Output of my condition1: " << (!port_port_stream->repeat_flag()) << endl;
+      bool cond1 = (!port_port_stream->repeat_flag());
+      bool cond2 = (port_port_stream->repeat_flag() && rpt_vp->can_take(LOC::PORT));
+      bool res_cond = cond1 || cond2;
+      // cout << "Output of my condition2: " << (port_port_stream->repeat_flag() && rpt_vp->can_take(LOC::PORT)) << endl;
+      // cout << "Can inputs take? " << ivps_can_take << endl;
+      // cout << "Repeat flag condition? " << res_cond << endl;
+      // cout << "Is output port not blocked? " << !blocked_ovp[out_port] << endl;
       if (ivps_can_take && out_vp->can_take(LOC::PORT) &&
-          (!port_port_stream->repeat_flag() || (port_port_stream->repeat_flag() && rpt_vp->can_take(LOC::PORT))) && 
+          res_cond && 
           !blocked_ovp[out_port] &&
           (scheduled = _port_c.schedule_port_port(*port_port_stream))) {
         scheduled = true;
@@ -2021,9 +2059,11 @@ void accel_t::schedule_streams() {
 
     } else if (auto const_port_stream =
                    dynamic_cast<const_port_stream_t *>(ip)) {
+      cout << "Trying to schedule const port stream\n";
       if (ivps_can_take) {
         scheduled = _port_c.schedule_const_port(*const_port_stream);
       }
+      cout << "Could schedule: " << scheduled << endl;
     } else if (auto stream = dynamic_cast<affine_write_stream_t *>(ip)) {
       int port = stream->_out_port;
       out_vp = &_port_interf.out_port(port);
@@ -2294,9 +2334,13 @@ bool port_controller_t::schedule_port_port(port_port_stream_t &new_s) {
     if (s.empty()) {
       s = new_s;
       return true;
+    } else {
+      cout << "Could not schedule because earlier port-port stream available\n";
+      s.print_status(); // delete later
     }
   }
   return false;
+  
 }
 bool port_controller_t::schedule_remote_port(remote_port_stream_t &new_s) {
   for (auto &s : _remote_port_streams) {
@@ -2339,13 +2383,7 @@ void apply_map(uint8_t *raw_data, const vector<int> &imap,
 }
 
 void dma_controller_t::port_resp(unsigned cur_port) {
-  // see if initiation interval can be useful
-  /*
-  if(first_entry) {
-    _accel->_stat_mem_initiation_interval = _accel->_ssim->now()-_accel->_ssim->_roi_enter_cycle;
-    first_entry=false;
-  }
-  */
+
   if (Minor::LSQ::LSQRequestPtr response =
           _accel->_lsq->findResponse(cur_port)) {
   
@@ -4482,8 +4520,10 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
         // assert(scr_addr + stream._output_bytes <= SCRATCH_SIZE);
 
         struct atomic_scr_op_req temp_req;
+        SBDT cur_value = out_val.peek_out_data();
+        // cout << "64-bit value popped from out_val port: " << cur_value << endl;
         temp_req._scr_addr = scr_addr;
-        temp_req._inc = stream.cur_val(out_val.peek_out_data());
+        temp_req._inc = stream.cur_val(cur_value);
         temp_req._opcode = stream._op_code;
         temp_req._value_bytes = stream._value_bytes;
         temp_req._output_bytes = stream._output_bytes;
@@ -4953,17 +4993,23 @@ void port_controller_t::cycle() {
       port_data_t &vp_in =
           pi.in_port(in_port); // just wait until 8 items can come
       // port_in_okay = port_in_okay && (vp_in.mem_size() < VP_LEN - 8);
-      port_in_okay = port_in_okay && (vp_in.mem_size() < VP_LEN - 8*8/vp_in.get_port_width());
+      // port_in_okay = port_in_okay && (vp_in.mem_size() < VP_LEN - 8*8/vp_in.get_port_width());
+      port_in_okay = port_in_okay && (vp_in.mem_size() < VP_LEN - 8*vp_in.get_port_width()/8);
     }
 
     //----------------------------
+    /*
     if(stream.data_width()%stream.src_data_width()!=0) {
       cout << "dest: " << stream.data_width() << " src: " << stream.src_data_width() << endl;
     }
     assert(stream.data_width()%stream.src_data_width()==0 && "Dest datatype not a multiple of src datatype");
+    */
+    assert(stream.src_data_width()%stream.data_width()==0 && "Dest datatype not a multiple of src datatype");
+    // cout << "recurrence stream data width: " << stream.data_width() << " src data width: " << stream.src_data_width() << " and repeat flag: " << stream.repeat_flag() << endl;
 
     //-----------------------
-    int n = stream.data_width()/stream.src_data_width();
+    // int n = stream.data_width()/stream.src_data_width();
+    int n = 1; // stream.data_width(); // stream.src_data_width()/stream.data_width();
     // TODO: make it a function
     // Let's use repeat flag of a stream here (otherwise repeat at out port is
     // not supported)
@@ -4995,22 +5041,24 @@ void port_controller_t::cycle() {
             vp_out.mem_size() >= n && stream.stream_active() && vp_out.cur_repeat_lim()>=0; i+=data_width) {
         SBDT val = 0;
 
-        // FIXME:CHECKME
+        // FIXME:CHECKME: assumes out port has higher or equal data width
         for(int i=0; i<n; ++i) {
           SBDT temp = vp_out.peek_out_data(i);
           val = (val << i*8*stream.src_data_width()) | temp;
           // val = val | (temp << i*8*stream.src_data_width());
         }
 
-        cout << "Value extracted from source port: "<< val << endl;
+        // cout << "Value extracted from source port: "<< val << endl;
         
         // pop n values only if inc repeated is done
-        int x1 = vp_out.cur_repeat_lim();
+        
+        // int x1 = vp_out.cur_repeat_lim();
         bool should_pop = vp_out.inc_repeated();
  
-        int x2 = vp_out.cur_repeat_lim();
-        assert(x1==x2);
-        if(vp_out.cur_repeat_lim()==0) {
+        // int x2 = vp_out.cur_repeat_lim();
+        // assert(x1==x2);
+        
+        if(stream.repeat_flag() && vp_out.cur_repeat_lim()==0) {
           // cout << "Current repeat lim was 0\n";
           should_pop = true;
           vp_out.set_num_times_repeated(0);
@@ -5019,35 +5067,32 @@ void port_controller_t::cycle() {
           should_push = true;
         }
 
-       if(should_pop) {
+        if(should_pop) {
           for(int i=0; i<n; ++i) {
             vp_out.pop_out_data();
           }
           stream._num_elements--;
-          vp_out.set_cur_repeat_lim(-1*(1<<REPEAT_FXPNT)); // need to reset so that it cannot be used again
+          if(stream.repeat_flag()) {
+            vp_out.set_cur_repeat_lim(-1*(1<<REPEAT_FXPNT)); // need to reset so that it cannot be used again
 
-          if(stream.repeat_flag() && vp_out.mem_size()>=n && i+data_width<PORT_WIDTH) {
-            assert(vp_out.num_times_repeated()==0);
-            auto &repeat_prt = pi.out_port(stream.repeat_in());
-            if(repeat_prt.mem_size()) { // assuming non-vector port
-              uint64_t x = repeat_prt.pop_out_data();
-              cout << "POPPED FROM REPEAT PORT-2\n";
-              if(SS_DEBUG::MEM_REQ) {
-                cout << "NEW REPEAT COUNT: " << x << endl;
+            if(vp_out.mem_size()>=n && i+data_width<PORT_WIDTH) {
+              assert(vp_out.num_times_repeated()==0);
+              auto &repeat_prt = pi.out_port(stream.repeat_in());
+              if(repeat_prt.mem_size()) { // assuming non-vector port
+                uint64_t x = repeat_prt.pop_out_data();
+                cout << "POPPED FROM REPEAT PORT-2\n";
+                if(SS_DEBUG::MEM_REQ) {
+                  cout << "NEW REPEAT COUNT: " << x << endl;
+                }
+                int y = (x)*(1<<REPEAT_FXPNT);
+                vp_out.set_cur_repeat_lim(y);
+              } else { // sstream_size data is not yet available
+                vp_out.set_cur_repeat_lim(-1*(1<<REPEAT_FXPNT));
               }
-              int y = (x)*(1<<REPEAT_FXPNT);
-              vp_out.set_cur_repeat_lim(y);
-            } else { // sstream_size data is not yet available
-              vp_out.set_cur_repeat_lim(-1*(1<<REPEAT_FXPNT));
             }
           }
-          // cout << "CORRECT n: " << n << " num_elem: " << stream._num_elements << endl;
         }
-        // stream.print_status();
-        // timestamp(); cout << "POPPED b/c port->port WRITE: " << vp_out.port()
-        // << " " << vp_out.mem_size()  << "\n";
 
-        // stream._num_elements--;
         if (stream._padding_size != NO_PADDING) {
           (++stream._padding_cnt) %= stream._padding_size;
         }
@@ -5055,8 +5100,12 @@ void port_controller_t::cycle() {
         if(should_push) {
           for (int in_port : stream.in_ports()) {
             port_data_t &vp_in = pi.in_port(in_port);
-            // vp_in.push_data(val);
-            vp_in.push_data(vp_in.get_byte_vector(val, data_width));
+            // vp_in could be lower width
+            // for(int i=0; i<stream.src_data_width()/stream.data_width(); ++i) {
+            for(int i=stream.src_data_width()/stream.data_width()-1; i>=0; --i) {
+              SBDT temp = val >> (i*8*stream.data_width());
+              vp_in.push_data(vp_in.get_byte_vector(temp, data_width));
+            }
             if (stream._padding_size != NO_PADDING && stream._padding_cnt == 0) {
               if (stream.fill_mode() == STRIDE_ZERO_FILL ||
                   stream.fill_mode() == STRIDE_DISCARD_FILL) {
@@ -5091,10 +5140,10 @@ void port_controller_t::cycle() {
         port_data_t &out_vp = _accel->port_interf().out_port(stream._out_port);
         out_vp.set_status(port_data_t::STATUS::FREE);
         if(stream.repeat_flag()) {
-
-        port_data_t &repeat_vp = _accel->port_interf().out_port(stream.repeat_in());
-        repeat_vp.set_status(port_data_t::STATUS::FREE);
+          port_data_t &repeat_vp = _accel->port_interf().out_port(stream.repeat_in());
+          repeat_vp.set_status(port_data_t::STATUS::FREE);
         }
+        // delete_stream(_which_pp, &stream);
       }
 
       break;
@@ -5129,10 +5178,10 @@ void port_controller_t::cycle() {
           // should send vector version of that
           SBDT val = stream.pop_item(); // data width of const val should be >= port width
           // int port_width = vp_in.get_port_width();
-          cout << "NUMBER OF CONSTS PUSHED ONCE: " << (const_width/data_width) << endl;
+          // cout << "NUMBER OF CONSTS PUSHED ONCE: " << (const_width/data_width) << endl;
           for(int i=(const_width/data_width)-1; i>=0; --i) {
             SBDT temp = (val >> i*8*data_width) & ((1<<8*data_width)-1);
-            cout << "temp of data width is: " << temp << endl;
+            // cout << "temp of data width is: " << temp << endl;
             vp_in.push_data(vp_in.get_byte_vector(temp, data_width));
           }
           // vp_in.push_data(stream.pop_item());
@@ -5290,12 +5339,12 @@ bool accel_t::done(bool show, int mask) {
   }
 
   if (mask == 128 && d) {
-    cout << "Came to set this core done: " << _lsq->getCpuId() << endl;
+    // cout << "Came to set this core done: " << _lsq->getCpuId() << endl;
     _lsq->set_spu_done(_lsq->getCpuId());
     d = _lsq->all_spu_done();
     if(d) {
       if(SS_DEBUG::WAIT) {
-        cout << "GLOBAL WAIT RELEASED\n";
+        cout << "GLOBAL WAIT RELEASED for core id: " << _lsq->getCpuId() << "\n";
         cout << "CORE ID: " << _lsq->getCpuId() << "\n";
       }
       // cout << "Called for global barrier for core: " << _lsq->getCpuId() << endl;
@@ -5331,8 +5380,15 @@ bool accel_t::done_concurrent(bool show, int mask) {
     done = false;
   }
 
-  if (done && !cgra_done(show, mask)) {
-    done = false;
+  bool check_cgra_done = true;
+  if(mask==256) {
+    check_cgra_done = false;
+  }
+
+  if(check_cgra_done) {
+    if (done && !cgra_done(show, mask)) {
+      done = false;
+    }
   }
 
   if (SS_DEBUG::CHECK_SCR_ALIAS) {
