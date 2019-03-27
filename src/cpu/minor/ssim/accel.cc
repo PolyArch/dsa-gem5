@@ -70,6 +70,7 @@ bool accel_t::all_ports_empty() {
   for (unsigned i = 0; i < _soft_config.in_ports_active_plus.size(); ++i) {
     int cur_port = _soft_config.in_ports_active_plus[i];
     auto &in_vp = _port_interf.in_port(cur_port);
+    // if(i==5 || i==31) { continue; }
     if(in_vp.mem_size()) {
       cout << " Input port not empty: " << cur_port << endl;
       return false;
@@ -79,10 +80,12 @@ bool accel_t::all_ports_empty() {
   cout << "Input ports empty\n";
   */
   
+  
   // It should check only those output ports which are busy
   for (unsigned i = 0; i < _soft_config.out_ports_active_plus.size(); ++i) {
     int cur_port = _soft_config.out_ports_active_plus[i];
     auto &out_vp = _port_interf.out_port(cur_port);
+    // if(out_vp.in_use() && out_vp.mem_size()) {
     if(out_vp.in_use() && out_vp.mem_size()) {
       cout << "Output port not empty: " << cur_port << " at core id: " << _lsq->getCpuId() << endl;
       return false;
@@ -110,22 +113,31 @@ void accel_t::request_reset_streams() {
     cout << "RESET STREAM REQUEST RELEASED for core: " << _lsq->getCpuId() << "\n";
   }
 
+  // print_status();
+
   // free ports and streams (not input ports?)
   // reset_data();
   for (unsigned i = 0; i < _soft_config.out_ports_active_plus.size(); ++i) {
     int cur_port = _soft_config.out_ports_active_plus[i];
     auto &out_vp = _port_interf.out_port(cur_port);
-    if(out_vp.in_use()) {
+    out_vp.reset_data();
+    /*if(out_vp.in_use()) {
       out_vp.reset_data();
-    }
+    }*/
   }
 
   for (unsigned i = 0; i < _soft_config.in_ports_active_plus.size(); ++i) {
     int cur_port = _soft_config.in_ports_active_plus[i];
     auto &in_vp = _port_interf.in_port(cur_port);
+    /*if(cur_port==5 || cur_port==31) {
+      continue;
+    } else {
+      in_vp.reset_data();
+    }*/
     if(in_vp.in_use()) {
-      in_vp.set_status(port_data_t::STATUS::FREE);
-      // in_vp.reset_data();
+      // also remove data from it
+      // in_vp.set_status(port_data_t::STATUS::FREE);
+      in_vp.reset_data();
     }
   }
 
@@ -138,6 +150,7 @@ void accel_t::request_reset_streams() {
   if (_sched) {
     _sched->reset_simulation_state();
   }
+  // print_status();
   _stream_cleanup_mode=false;
 }
 
@@ -1122,13 +1135,15 @@ void accel_t::cycle_cgra_backpressure() {
  
     // we need to send the real vec_outputs
     int len = ceil(cur_out_port.port_vec_elem()*cur_out_port.get_port_width()/float(8));
+    // cout << "Length of output required: " << len << endl;
 
     if (_dfg->can_pop_output(vec_output, len)) {
       data.clear();       // make sure it is empty here
       data_valid.clear(); // make sure it is empty here
       _dfg->pop_vector_output(vec_output, data, data_valid, len, print, true);
 
-      // cout << "Allowed to pop output: " << data[0] << "\n";
+      cout << "Output vector name: " << vec_output->name() << endl;
+      cout << "Allowed to pop output: " << data[0] << " " << data[1] << "\n";
       if (in_roi()) {
         _stat_comp_instances += 1;
       }
@@ -1242,6 +1257,7 @@ void accel_t::cycle_cgra() {
   if (!_dfg)
     return;
 
+  // printf("Going to compute with ACCEL ID: %d\n", _lsq->getCpuId());
   if (_back_cgra) {
     cycle_cgra_backpressure();
   } else {
@@ -3216,6 +3232,8 @@ void scratch_read_controller_t::read_scratch_ind(
   if (_ind_ROB.size() > 0) {
     ind_reorder_entry_t *reorder_entry = _ind_ROB.front();
 
+    cout << "Reorder entry size is: " << reorder_entry->size << " and the completed size: " << reorder_entry->completed << endl;
+
     if (reorder_entry->size == reorder_entry->completed) {
       // The entry is ready for transfer!
 
@@ -3291,8 +3309,8 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
       // this works when subsize_vp width < stream index bytes
       for(int i=0; i<stream._index_bytes/subsize_vp.get_port_width(); ++i) {
         SBDT ssize = subsize_vp.peek_out_data(i);
-        // ind2 = ind2 | (ssize << i*8*subsize_vp.get_port_width());
-        ind2 = (ind2 << i*8*subsize_vp.get_port_width()) | ssize;
+        ind2 = ind2 | (ssize << i*8*subsize_vp.get_port_width());
+        // ind2 = (ind2 << i*8*subsize_vp.get_port_width()) | ssize;
       }
       
       // If sub-stream size is 0, then pop the corresponding element from ind
@@ -3307,8 +3325,8 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
         continue;
       } else {
         stream._sstream_size = ind2; // should be done only in the first size
-        // cout << "SIZE PORT NUMBER: " << stream._sn_port << " config bytes: " << stream._index_bytes << endl;
-        // cout << "UPDATED SSTREAM SIZE TO: " << stream._sstream_size << endl;
+        cout << "SIZE PORT NUMBER: " << stream._sn_port << " config bytes: " << stream._index_bytes << endl;
+        cout << "UPDATED SSTREAM SIZE TO: " << stream._sstream_size << endl;
         stream._first_ss_access=false;
       }
     }
@@ -3317,11 +3335,13 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
 
     for(int i=0; i<stream._index_bytes/ind_vp.get_port_width(); ++i) {
       SBDT temp = ind_vp.peek_out_data(i);
-      ind = (ind << i*8*ind_vp.get_port_width()) | temp;
-      // ind = ind | (temp << i*8*ind_vp.get_port_width());
+      cout << "8-bit value from ind port: " << temp << endl;
+      // ind = (ind << i*8*ind_vp.get_port_width()) | temp;
+      // FIXME:IMP: lower one works for the simple outer product
+      ind = ind | (temp << i*8*ind_vp.get_port_width());
     }
     addr_t addr = stream.cur_addr(ind);
-    // cout << "Current indirect address sent is: " << std::hex << addr << endl;
+    cout << "Current indirect address sent is: " << std::hex << addr << endl;
     // addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
 
     if (first) {
@@ -3648,7 +3668,7 @@ vector<uint8_t> scratch_read_controller_t::read_scratch(affine_read_stream_t &st
     SBDT check_value=0;
     _accel->read_scratchpad(&check_value, addr, data_width, stream.id());
     // check_value = check_value & ((1<<8*data_width)-1);
-    cout << "COrrected value read from scratchpad at addr: " << addr << " with data_width: " << data_width << " is: " << check_value << endl;
+    // cout << "COrrected value read from scratchpad at addr: " << addr << " with data_width: " << data_width << " is: " << check_value << endl;
     _accel->read_scratchpad(&val[0], addr, data_width, stream.id());
 
     if (SS_DEBUG::SCR_ACC) {
@@ -5048,7 +5068,6 @@ void port_controller_t::cycle() {
           // val = val | (temp << i*8*stream.src_data_width());
         }
 
-        // cout << "Value extracted from source port: "<< val << endl;
         
         // pop n values only if inc repeated is done
         
@@ -5057,6 +5076,7 @@ void port_controller_t::cycle() {
  
         // int x2 = vp_out.cur_repeat_lim();
         // assert(x1==x2);
+        cout << "Value extracted from source port: " << val << " repeat_flag: " << stream.repeat_flag() << " and should push: " << should_push << endl;
         
         if(stream.repeat_flag() && vp_out.cur_repeat_lim()==0) {
           // cout << "Current repeat lim was 0\n";
@@ -5104,6 +5124,7 @@ void port_controller_t::cycle() {
             // for(int i=0; i<stream.src_data_width()/stream.data_width(); ++i) {
             for(int i=stream.src_data_width()/stream.data_width()-1; i>=0; --i) {
               SBDT temp = val >> (i*8*stream.data_width());
+              cout << "Allowed to push in recurrence: " << temp << " with repeat_flag: " << stream.repeat_flag() << endl;
               vp_in.push_data(vp_in.get_byte_vector(temp, data_width));
             }
             if (stream._padding_size != NO_PADDING && stream._padding_cnt == 0) {
@@ -5179,7 +5200,8 @@ void port_controller_t::cycle() {
           SBDT val = stream.pop_item(); // data width of const val should be >= port width
           // int port_width = vp_in.get_port_width();
           // cout << "NUMBER OF CONSTS PUSHED ONCE: " << (const_width/data_width) << endl;
-          for(int i=(const_width/data_width)-1; i>=0; --i) {
+          // for(int i=(const_width/data_width)-1; i>=0; --i) {
+          for(int i=0; i<(const_width/data_width); ++i) {
             SBDT temp = (val >> i*8*data_width) & ((1<<8*data_width)-1);
             // cout << "temp of data width is: " << temp << endl;
             vp_in.push_data(vp_in.get_byte_vector(temp, data_width));
@@ -5361,6 +5383,9 @@ bool accel_t::done(bool show, int mask) {
     timestamp();
     if (d) {
       cout << "Done Check -- Done (" << mask << ")\n";
+      if(mask == 128 || mask == 256) {
+        print_status();
+      }
     } else {
       cout << "Done Check -- NOT DONE: (" << mask << ")\n";
       done_internal(true, mask);

@@ -1602,8 +1602,19 @@ void Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int op
   // (*msg).m_addr = local_scr_addr | opcode << 16 | val_bytes << 18 | out_bytes << 20;
   // FIXME: assuming only banked scratchpad address space: take only last
   // 14-bits
-  local_scr_addr = local_scr_addr & 16383;
+  const char *col_map_str = std::getenv("COLMAP");
+  bool col_map = false;
+  if (col_map_str != NULL) {
+    col_map = true;
+  }
+ 
+  if(col_map) {
+    local_scr_addr = local_scr_addr & 1; // for just 2 cores
+  } else {
+    local_scr_addr = local_scr_addr & 16383;
+  }
   (*msg).m_addr = local_scr_addr | opcode << 16 | val_bytes << 18 | out_bytes << 20;
+  
   int dest_core_id = local_scr_addr >> 15;
   // TODO: scratch addr mapping
   // int dest_core_id = rand()%1;
