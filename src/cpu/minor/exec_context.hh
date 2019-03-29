@@ -499,6 +499,12 @@ class ExecContext : public ::ExecContext
     void setSSReg(uint64_t val, int ss_idx) {
         thread.setSSReg(val, ss_idx);
     }
+
+    uint64_t getSSReg(int ss_idx) {
+        return thread.getSSReg(ss_idx);
+    }
+ 
+
     void callSSFunc(int ss_func_opcode) {
         DPRINTF(SS, "Do SS_COMMAND %d.\n", SSCmdNames[ss_func_opcode]);
         ssim_t& ssim = execute.getSSIM();
@@ -598,21 +604,24 @@ class ExecContext : public ::ExecContext
                 thread.getSSReg(SS_NUM_ELEM), thread.getSSReg(SS_ADDR_TYPE));
             break;
             case SS_WAIT:
-                if(thread.getSSReg(SS_WAIT_MASK) == 0) {
-                  ssim.set_not_in_use();
-                  DPRINTF(SS, "Set SS Not in Use\n");
-                } else if(thread.getSSReg(SS_WAIT_MASK) == 2) {
-                  DPRINTF(SS, "Wait Compute\n");         
-                } else if(thread.getSSReg(SS_WAIT_MASK) == 16) {
-                  DPRINTF(SS, "Wait mem write\n");
-                } else if(thread.getSSReg(SS_WAIT_MASK) == 128) {
-                  ssim.set_not_in_use(); // FIXME:check
-                  DPRINTF(SS, "Wait on all threads\n");         
-                } else if(thread.getSSReg(SS_WAIT_MASK) == 256) {
-                  ssim.set_not_in_use(); // FIXME:check
-                  DPRINTF(SS, "Wait only on streams\n");
-                } else {
-                  ssim.insert_barrier(thread.getSSReg(SS_WAIT_MASK));
+                {
+                  uint64_t wait_mask = thread.getSSReg(SS_WAIT_MASK);
+                  if(wait_mask == 0) {
+                    ssim.set_not_in_use();
+                    DPRINTF(SS, "Set SS Not in Use\n");
+                  } else if(wait_mask == 2) {
+                    DPRINTF(SS, "Wait Compute\n");         
+                  } else if(wait_mask == 16) {
+                    DPRINTF(SS, "Wait mem write\n");
+                  } else if(wait_mask == 65) {
+                    ssim.set_not_in_use(); // FIXME:check
+                    DPRINTF(SS, "Wait on all threads\n");         
+                  } else if(wait_mask == 66) {
+                    ssim.set_not_in_use(); // FIXME:check
+                    DPRINTF(SS, "Wait only on streams\n");
+                  } else {
+                    ssim.insert_barrier(thread.getSSReg(SS_WAIT_MASK));
+                  }
                 }
             break;
             default:

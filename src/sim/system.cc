@@ -200,7 +200,7 @@ System::System(Params *p)
     for (int x = 0; x < params()->memories.size(); x++)
         params()->memories[x]->system(this);
     //---------------------
-    for(int i=0; i<2; ++i) {
+    for(int i=0; i<64; ++i) {
       _is_spu_done[i] = 0;
       _is_spu_global_wait_released[i] = 0;
     }
@@ -572,23 +572,25 @@ SystemParams::create()
 void
 System::set_spu_done(int spu_id) {
   _is_spu_done[spu_id-1]=1;
-  /*for(int i=0; i<2; ++i) {
+  /*for(int i=0; i<64; ++i) {
     printf("At i, it is: %d\n",_is_spu_done[i]);
   }*/
 }
 
 bool
-System::all_spu_done() {
-  for(int i=0; i<2; ++i) {
-    if(_is_spu_done[i]==0)
+System::all_spu_done(int num_active_threads) {
+  for(int i=0; i<num_active_threads; ++i) {
+    if(_is_spu_done[i]==0) {
+      // printf("SPU not done id: %d\n",i);
       return false;
+    }
   }
   return true;
 }
 
 void
 System::reset_all_spu() {
-  for(int i=0; i<2; ++i) {
+  for(int i=0; i<64; ++i) {
     _is_spu_done[i]=0;
   }
 }
@@ -600,14 +602,14 @@ System::set_spu_global_wait_released(int spu_id) {
 
 void
 System::reset_all_spu_global_wait() {
-  for(int i=0; i<2; ++i) {
+  for(int i=0; i<64; ++i) {
     _is_spu_global_wait_released[i]=0;
   }
 }
 
 bool
-System::is_last_spu() {
-  for(int i=0; i<2; ++i) {
+System::is_last_spu(int num_active_threads) {
+  for(int i=0; i<num_active_threads; ++i) {
     if(_is_spu_global_wait_released[i]==0)
       return false;
   }

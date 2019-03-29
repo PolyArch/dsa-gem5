@@ -73,7 +73,7 @@ public:
   void write_remote_banked_scratchpad(uint8_t* val, int num_bytes, uint16_t scr_addr);
 
   void insert_barrier(uint64_t mask);
-
+  
   void print_stats();
   uint64_t forward_progress_cycle();
   void forward_progress(uint64_t c) {_global_progress_cycle=c;}
@@ -167,8 +167,14 @@ public:
       _config_waits++;
     }
   }
+  
+  // for global barrier case
+  void set_num_active_threads(int num_threads) {
+    _num_active_threads = num_threads;
+  }
 
   static bool stall_core(uint64_t mask) {
+    // std::cout << "Came in stall core with mask: " << mask << std::endl;
     return (mask==0) || (mask&WAIT_CMP) ||
       (mask&WAIT_MEM_WR) || (mask&WAIT_SCR_ATOMIC) || (mask&GLOBAL_WAIT) || (mask&STREAM_WAIT);
   }
@@ -205,6 +211,10 @@ public:
     if(_req_core_id==-1) return true;
     else return (_req_core_id==get_core_id());
   }
+
+  int num_active_threads() {
+    return _num_active_threads;
+  }
    
   bool printed_this_before() { return _printed_this_before; }
   void set_printed_this_before(bool f) { _printed_this_before=f; }
@@ -226,6 +236,8 @@ private:
   // Minor::Execute* _execute; (not sure if we need it)
 
   accel_t* accel_arr[NUM_ACCEL+1]; //LAST ONE IS SHARED SCRATCH
+
+  int _num_active_threads=2; // for global barrier
 
   bool _prev_done = true;
 

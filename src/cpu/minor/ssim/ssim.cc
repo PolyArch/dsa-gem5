@@ -42,19 +42,25 @@ ssim_t::ssim_t(Minor::LSQ* lsq) : _lsq(lsq) {
 }
 void ssim_t::req_config(addr_t addr, int size) {
   if(addr==0 && size==0) {
+    if(SS_DEBUG::COMMAND_I) {
+      std::cout << "Complete reset request issued\n";
+    }
     //This is the reset_data case!
-    for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
+    accel_arr[0]->request_reset_data();
+    /*for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
       if(_context_bitmask & b) {
         accel_arr[i]->request_reset_data();
       }
-    }
+    }*/
     return;
   }
 
-  // TODO: add a reset stream case here... (only accel[0])
+  // reset stream case here... (only accel[0])
   if(addr==0 && size==1) {
     // accel_arr[0]->request_reset_streams();
-    std::cout << "RESET stream request triggered\n";
+    if(SS_DEBUG::COMMAND_I) {
+      std::cout << "RESET stream request triggered\n";
+    }
     accel_arr[0]->switch_stream_cleanup_mode_on();
     return;
   }
@@ -707,7 +713,9 @@ void ssim_t::write_constant(int num_strides, int in_port,
   s->_constant2=constant;
   s->_num_elements2=num_elem;
 
-  if(const_width<4) {
+  // std::cout << "Const width: " << const_width << std::endl;
+
+  if(const_width<4 && const_width >0) { // doesn't for T64 right now -- todo
     switch(const_width) {
       case 0: s->_const_width=8;
               break;
@@ -722,6 +730,7 @@ void ssim_t::write_constant(int num_strides, int in_port,
     port_data_t& cur_in_port = accel_arr[0]->_port_interf.out_port(in_port);
     s->_const_width = cur_in_port.get_port_width();
   }
+  // std::cout << "Final const width: " << s->_const_width << std::endl;
 
   s->set_orig();
 

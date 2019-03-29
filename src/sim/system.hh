@@ -585,13 +585,13 @@ class System : public MemObject
     // SPU things-----------------------------------
     void set_spu_done(int spu_id);
     void reset_all_spu();
-    bool all_spu_done();
-    bool is_last_spu();
+    bool all_spu_done(int num_active_threads);
+    bool is_last_spu(int num_active_threads);
     void set_spu_global_wait_released(int spu_id);
     void reset_all_spu_global_wait();
 
-    int _is_spu_done[2]; // Just to debug: set it correct later
-    int _is_spu_global_wait_released[2]; // Just to debug: set it correct later
+    int _is_spu_done[64]; // Just to debug: set it correct later
+    int _is_spu_global_wait_released[64]; // Just to debug: set it correct later
     //---------------------------------------------
 
   public:

@@ -692,7 +692,8 @@ class dma_controller_t : public data_controller_t {
 
   void reset_data() {
     reset_stream_engines();
-    _mem_read_reqs=0;
+    // _mem_read_reqs=0; -- TODO:CHECK:cleanup mode should wait for all pending memory
+    // requests to come back and then reduce it
     _mem_write_reqs=0;
     _fake_scratch_reqs=0;
   }
@@ -1101,6 +1102,7 @@ class port_controller_t : public data_controller_t {
   // void delete_stream(int i, port_port_stream_t *s);
 
   void reset_data() {
+    // also need to set inactive
     for(auto& i : _port_port_streams) {i.reset();}
     for(auto& i : _const_port_streams) {i.reset();}
     for(auto& i : _remote_port_streams) {i.reset();}
@@ -1597,6 +1599,7 @@ void print_spad_addr(int start, int end){
 void push_net_in_cmd_queue(base_stream_t* s);
 
 int get_cur_cycle();
+
 
 // int get_core_id() {
 //   return _lsq->getCpuId();

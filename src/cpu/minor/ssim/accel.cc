@@ -61,24 +61,28 @@ void accel_t::req_config(addr_t addr, int size, uint64_t context) {
 void accel_t::request_reset_data() {
   _cleanup_mode = true;
   reset_data();
+  if(SS_DEBUG::COMMAND_O) {
+    cout << "Complete reset request served except deleting requested memory reads/writes: " << _lsq->getCpuId() << "\n";
+  }
 }
 
 // Let's not consider input ports here
 bool accel_t::all_ports_empty() {
 
-  /*
+  
+  // TESTING -- it worked?
   for (unsigned i = 0; i < _soft_config.in_ports_active_plus.size(); ++i) {
     int cur_port = _soft_config.in_ports_active_plus[i];
     auto &in_vp = _port_interf.in_port(cur_port);
     // if(i==5 || i==31) { continue; }
-    if(in_vp.mem_size()) {
+    if(in_vp.in_use() && in_vp.mem_size()) {
       cout << " Input port not empty: " << cur_port << endl;
       return false;
     }
   }
 
   cout << "Input ports empty\n";
-  */
+  
   
   
   // It should check only those output ports which are busy
@@ -113,7 +117,7 @@ void accel_t::request_reset_streams() {
     cout << "RESET STREAM REQUEST RELEASED for core: " << _lsq->getCpuId() << "\n";
   }
 
-  // print_status();
+  print_status();
 
   // free ports and streams (not input ports?)
   // reset_data();
@@ -150,7 +154,7 @@ void accel_t::request_reset_streams() {
   if (_sched) {
     _sched->reset_simulation_state();
   }
-  // print_status();
+  print_status();
   _stream_cleanup_mode=false;
 }
 
@@ -820,7 +824,7 @@ void accel_t::whos_to_blame(
 }
 
 void accel_t::tick() {
-
+  
   _cgra_issued = 0; // for statistics reasons
   _dedicated_cgra_issued = 0;
   _backcgra_issued = 0;
@@ -1257,7 +1261,7 @@ void accel_t::cycle_cgra() {
   if (!_dfg)
     return;
 
-  // printf("Going to compute with ACCEL ID: %d\n", _lsq->getCpuId());
+  printf("Going to compute with ACCEL ID: %d\n", _lsq->getCpuId());
   if (_back_cgra) {
     cycle_cgra_backpressure();
   } else {
@@ -1883,14 +1887,17 @@ void accel_t::print_stats() {
   pedantic_statistics(stat_file);
 }
 
+// pushed implicit stream in cmd queue -- I guess not being issued
 void accel_t::push_net_in_cmd_queue(base_stream_t *s) {
-  // printf("TRYING TO PUSH IMPLICT STREAM IN CMD QUEUE\n");
   _ssim->add_bitmask_stream(s);
 }
 
 // --------------------------SCHEDULE STREAMS ONTO
 // CONTROLLERS----------------------- This is essentially the stream dispatcher
 void accel_t::schedule_streams() {
+
+  // FIXME: check with Tony!
+  if(_cleanup_mode) return;
 
   int str_width = _ssconfig->dispatch_width();
   int str_issued = 0;
@@ -3232,7 +3239,7 @@ void scratch_read_controller_t::read_scratch_ind(
   if (_ind_ROB.size() > 0) {
     ind_reorder_entry_t *reorder_entry = _ind_ROB.front();
 
-    cout << "Reorder entry size is: " << reorder_entry->size << " and the completed size: " << reorder_entry->completed << endl;
+    // cout << "Reorder entry size is: " << reorder_entry->size << " and the completed size: " << reorder_entry->completed << endl;
 
     if (reorder_entry->size == reorder_entry->completed) {
       // The entry is ready for transfer!
@@ -3325,8 +3332,8 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
         continue;
       } else {
         stream._sstream_size = ind2; // should be done only in the first size
-        cout << "SIZE PORT NUMBER: " << stream._sn_port << " config bytes: " << stream._index_bytes << endl;
-        cout << "UPDATED SSTREAM SIZE TO: " << stream._sstream_size << endl;
+        // cout << "SIZE PORT NUMBER: " << stream._sn_port << " config bytes: " << stream._index_bytes << endl;
+        // cout << "UPDATED SSTREAM SIZE TO: " << stream._sstream_size << endl;
         stream._first_ss_access=false;
       }
     }
@@ -3335,13 +3342,13 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
 
     for(int i=0; i<stream._index_bytes/ind_vp.get_port_width(); ++i) {
       SBDT temp = ind_vp.peek_out_data(i);
-      cout << "8-bit value from ind port: " << temp << endl;
+      // cout << "8-bit value from ind port: " << temp << endl;
       // ind = (ind << i*8*ind_vp.get_port_width()) | temp;
       // FIXME:IMP: lower one works for the simple outer product
       ind = ind | (temp << i*8*ind_vp.get_port_width());
     }
     addr_t addr = stream.cur_addr(ind);
-    cout << "Current indirect address sent is: " << std::hex << addr << endl;
+    // cout << "Current indirect address sent is: " << std::hex << addr << endl;
     // addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
 
     if (first) {
@@ -3671,9 +3678,12 @@ vector<uint8_t> scratch_read_controller_t::read_scratch(affine_read_stream_t &st
     // cout << "COrrected value read from scratchpad at addr: " << addr << " with data_width: " << data_width << " is: " << check_value << endl;
     _accel->read_scratchpad(&val[0], addr, data_width, stream.id());
 
+
+    // _accel->read_scratchpad(&check_value, scr_addr, request._output_bytes, 0);
+
     if (SS_DEBUG::SCR_ACC) {
       // assume 16-bit to debug just for now
-      cout << "scr_addr:" << hex << addr << " read " << (val[0] << 8 | val[1])
+      cout << "scr_addr:" << hex << addr << " read " << (val[1] << 8 | val[0])
            << " to port " << stream.first_in_port()
            << " with input port width: " << data_width << "\n";
     }
@@ -4355,25 +4365,27 @@ void scratch_write_controller_t::serve_atomic_requests(bool &performed_atomic_sc
       inc = request._inc;
       opcode = request._opcode;
 
-      if (SS_DEBUG::COMP) {
-        // std::cout << (_accel->now()-_accel->_ssim->_stat_start_cycle) << " ";
-        timestamp();
-        printf("ACCEL ID: %d", _accel->_lsq->getCpuId());
-        std::cout << " REAL EXECUTION, update at scr_addr: " << scr_addr
-                  << " at bankid: " << i << " with inc value: " << inc
-                  << "\n";
-        // std::cout << "Available requests at the bank queue are: "
-        //           << _atomic_scr_issued_requests[i].size() << "\n";
-      }
       // cout << "Initial input val of atomic scr: " << input_val << endl;
       // _accel->read_scratchpad(&input_val+8-request._output_bytes, scr_addr, request._output_bytes, stream.id());
       // FIXME: confirm if I can fix the ID of atomic scr
       // _accel->read_scratchpad(&input_val+8-request._output_bytes, scr_addr, request._output_bytes, 0);
       SBDT check_value=0;
       _accel->read_scratchpad(&check_value, scr_addr, request._output_bytes, 0);
-      cout << "ATOMIC SCR: addr it rd/writes to: " << scr_addr << " the value: " << input_val << " and inc: " << inc << endl;
-      cout << "CHECKED CORRECT VALUE: " << check_value << endl;
+      // cout << "ATOMIC SCR: addr it rd/writes to: " << scr_addr << " the value: " << input_val << " and inc: " << inc << endl;
+      // cout << "CHECKED CORRECT VALUE: " << check_value << endl;
       input_val = check_value & ((1<<request._output_bytes*8)-1);
+
+      if (SS_DEBUG::COMP) {
+        // std::cout << (_accel->now()-_accel->_ssim->_stat_start_cycle) << " ";
+        timestamp();
+        printf("ACCEL ID: %d", _accel->_lsq->getCpuId());
+        std::cout << " REAL EXECUTION, update at scr_addr: " << scr_addr
+                  << " at bankid: " << i << " with inc value: " << inc
+                  <<  " and old value: " << input_val
+                  << "\n";
+        // std::cout << "Available requests at the bank queue are: "
+        //           << _atomic_scr_issued_requests[i].size() << "\n";
+      }
 
       switch (opcode) {
         case 0: input_val += inc;
@@ -4388,7 +4400,6 @@ void scratch_write_controller_t::serve_atomic_requests(bool &performed_atomic_sc
                  break;
       }
 
-      // FIXME: Just to debug
       uint16_t correct_val = input_val & ((1<<request._output_bytes*8)-1);
 
       cout << "FInal output of atomic scr: " << correct_val << endl;
@@ -4541,7 +4552,7 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
 
         struct atomic_scr_op_req temp_req;
         SBDT cur_value = out_val.peek_out_data();
-        // cout << "64-bit value popped from out_val port: " << cur_value << endl;
+        cout << "64-bit value popped from out_val port: " << cur_value << endl;
         temp_req._scr_addr = scr_addr;
         temp_req._inc = stream.cur_val(cur_value);
         temp_req._opcode = stream._op_code;
@@ -5012,8 +5023,6 @@ void port_controller_t::cycle() {
     for (int in_port : stream.in_ports()) {
       port_data_t &vp_in =
           pi.in_port(in_port); // just wait until 8 items can come
-      // port_in_okay = port_in_okay && (vp_in.mem_size() < VP_LEN - 8);
-      // port_in_okay = port_in_okay && (vp_in.mem_size() < VP_LEN - 8*8/vp_in.get_port_width());
       port_in_okay = port_in_okay && (vp_in.mem_size() < VP_LEN - 8*vp_in.get_port_width()/8);
     }
 
@@ -5061,7 +5070,7 @@ void port_controller_t::cycle() {
             vp_out.mem_size() >= n && stream.stream_active() && vp_out.cur_repeat_lim()>=0; i+=data_width) {
         SBDT val = 0;
 
-        // FIXME:CHECKME: assumes out port has higher or equal data width
+        // TODO: assumes out port has higher or equal data width
         for(int i=0; i<n; ++i) {
           SBDT temp = vp_out.peek_out_data(i);
           val = (val << i*8*stream.src_data_width()) | temp;
@@ -5076,6 +5085,7 @@ void port_controller_t::cycle() {
  
         // int x2 = vp_out.cur_repeat_lim();
         // assert(x1==x2);
+        cout << "out-recu: " << stream._out_port << " ";
         cout << "Value extracted from source port: " << val << " repeat_flag: " << stream.repeat_flag() << " and should push: " << should_push << endl;
         
         if(stream.repeat_flag() && vp_out.cur_repeat_lim()==0) {
@@ -5100,7 +5110,7 @@ void port_controller_t::cycle() {
               auto &repeat_prt = pi.out_port(stream.repeat_in());
               if(repeat_prt.mem_size()) { // assuming non-vector port
                 uint64_t x = repeat_prt.pop_out_data();
-                cout << "POPPED FROM REPEAT PORT-2\n";
+                // cout << "POPPED FROM REPEAT PORT-2\n";
                 if(SS_DEBUG::MEM_REQ) {
                   cout << "NEW REPEAT COUNT: " << x << endl;
                 }
@@ -5124,7 +5134,7 @@ void port_controller_t::cycle() {
             // for(int i=0; i<stream.src_data_width()/stream.data_width(); ++i) {
             for(int i=stream.src_data_width()/stream.data_width()-1; i>=0; --i) {
               SBDT temp = val >> (i*8*stream.data_width());
-              cout << "Allowed to push in recurrence: " << temp << " with repeat_flag: " << stream.repeat_flag() << endl;
+              cout << "Allowed to push in recurrence: " << temp << " with repeat_flag: " << stream.repeat_flag() << " in-recu port: " << in_port << endl;
               vp_in.push_data(vp_in.get_byte_vector(temp, data_width));
             }
             if (stream._padding_size != NO_PADDING && stream._padding_cnt == 0) {
@@ -5179,7 +5189,9 @@ void port_controller_t::cycle() {
                     : _which_cp + 1; // rolling incr
     auto &pi = _accel->port_interf();
     auto &stream = _const_port_streams[_which_cp];
-    if (!stream.stream_active()) {
+    // if (!stream.stream_active()) {
+    // Reset didn't make it inactive
+    if (stream.empty()) {
       continue;
     }
 
@@ -5198,12 +5210,13 @@ void port_controller_t::cycle() {
           port_data_t& vp_in = pi.in_port(in_port);
           // should send vector version of that
           SBDT val = stream.pop_item(); // data width of const val should be >= port width
-          // int port_width = vp_in.get_port_width();
-          // cout << "NUMBER OF CONSTS PUSHED ONCE: " << (const_width/data_width) << endl;
-          // for(int i=(const_width/data_width)-1; i>=0; --i) {
+          int num_bits = 8*data_width;
           for(int i=0; i<(const_width/data_width); ++i) {
-            SBDT temp = (val >> i*8*data_width) & ((1<<8*data_width)-1);
-            // cout << "temp of data width is: " << temp << endl;
+            SBDT mask = (1 << num_bits) - 1;
+            if(mask==0) { 
+              mask = (1 << (num_bits-1)) - 1;
+            }
+            SBDT temp = (val >> (i*num_bits)) & mask;
             vp_in.push_data(vp_in.get_byte_vector(temp, data_width));
           }
           // vp_in.push_data(stream.pop_item());
@@ -5212,12 +5225,21 @@ void port_controller_t::cycle() {
       }
       add_bw(stream.src(), stream.dest(), 1, total_pushed * data_width);
 
-      bool is_empty = stream.check_set_empty();
+      /*if(!stream.stream_active()) {
+        cout << "const stream inactive\n";
+        stream.print_status();
+      }*/
+      bool is_empty = stream.check_set_empty(); // this set it to empty
       if (is_empty) {
         _accel->process_stream_stats(stream);
 
         if (SS_DEBUG::VP_SCORE2) {
           cout << "SOURCE: CONST->PORT\n";
+        }
+
+        if (SS_DEBUG::COMMAND_O) {
+          cout << "Completed: CONST->PORT\n";
+          stream.print_status();
         }
 
         for (int in_port : stream.in_ports()) {
@@ -5336,6 +5358,7 @@ void port_controller_t::print_status() {
 }
 
 bool accel_t::done(bool show, int mask) {
+  // cout << "Came inside done\n";
   bool d = done_internal(show, mask);
 
   if (show)
@@ -5360,18 +5383,21 @@ bool accel_t::done(bool show, int mask) {
     d=false;
   }
 
-  if (mask == 128 && d) {
-    // cout << "Came to set this core done: " << _lsq->getCpuId() << endl;
+  if (mask == GLOBAL_WAIT && d) {
+    // _cleanup_mode = false; // Should this be here?
+    cout << "Came to set this core done: " << _lsq->getCpuId() << endl;
+    cout << "Number of active threads: " << _ssim->num_active_threads() << endl;
     _lsq->set_spu_done(_lsq->getCpuId());
-    d = _lsq->all_spu_done();
+    d = _lsq->all_spu_done(_ssim->num_active_threads());
     if(d) {
-      if(SS_DEBUG::WAIT) {
+      // if(SS_DEBUG::WAIT) {
+      if(1) {
         cout << "GLOBAL WAIT RELEASED for core id: " << _lsq->getCpuId() << "\n";
         cout << "CORE ID: " << _lsq->getCpuId() << "\n";
       }
       // cout << "Called for global barrier for core: " << _lsq->getCpuId() << endl;
       _lsq->set_spu_global_wait_released(_lsq->getCpuId());
-      if(_lsq->is_last_spu()) { // last global wait spu
+      if(_lsq->is_last_spu(_ssim->num_active_threads())) { // last global wait spu
         // cout << "IT WAS LAST SPU TO RELEASE GLOBAL BARRIER\n";
         _lsq->reset_all_spu();
         _lsq->reset_all_spu_global_wait();
@@ -5383,9 +5409,6 @@ bool accel_t::done(bool show, int mask) {
     timestamp();
     if (d) {
       cout << "Done Check -- Done (" << mask << ")\n";
-      if(mask == 128 || mask == 256) {
-        print_status();
-      }
     } else {
       cout << "Done Check -- NOT DONE: (" << mask << ")\n";
       done_internal(true, mask);
@@ -5406,7 +5429,7 @@ bool accel_t::done_concurrent(bool show, int mask) {
   }
 
   bool check_cgra_done = true;
-  if(mask==256) {
+  if(mask==STREAM_WAIT) {
     check_cgra_done = false;
   }
 

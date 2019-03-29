@@ -990,6 +990,18 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
     BranchData &branch, Fault &fault, bool &committed,
     bool &completed_mem_issue)
 {
+  if(cpu.cpuId()==1 || cpu.cpuId()==2) {
+    std::cout << "Came in commit inst for cpu: " << cpu.cpuId() << "\n";
+    // std::cout << "Is SS instr: " << inst->staticInst->isSS() << "\n";
+    if(inst->staticInst->isSS()) {
+      std::cout << "Imm of instr: " << inst->staticInst->get_imm() << "\n";
+      std::cout << "is reset/config: " << inst->staticInst->isSSConfig() << "\n";
+    } else {
+      std::cout << "Is load: " << inst->staticInst->isLoad() << "\n";
+      std::cout << "Is store: " << inst->staticInst->isStore() << "\n";
+    }
+  }
+ 
     ThreadID thread_id = inst->id.threadId;
     ThreadContext *thread = cpu.getContext(thread_id);
 
@@ -1073,25 +1085,42 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
     } else if (inst->staticInst->isSS() &&  ssim.is_in_config()) {
         completed_inst = false;
         ssim.wait_config();
+        timeout_check(false, inst);
         /* Don't execute any instructions if ssim is in config mode!*/
     } else if (inst->staticInst->isSSConfig() && !lsq.canRequest()) {
         completed_inst = false;
         ssim.wait_config();
+        timeout_check(false, inst);
     } else {
-
-        bool should_commit = true;
+          bool should_commit = true;
+            
+        // for spu global barrier
+        // ExecContext context(cpu, *cpu.threads[0], *this, inst);
 
         //break down by type
         if ( (inst->staticInst->isSSStream()  ||
               (inst->staticInst->isSSWait() &&
                   ssim_t::stall_core(inst->staticInst->get_imm())) )
               && !ssim.can_add_stream()) {
+          
+  /*        if((inst->staticInst->isSSWait() &&
+                  ssim_t::stall_core(inst->staticInst->get_imm())) ) {
+            // ssim.set_num_active_threads(context.getSSReg(SS_STRETCH));
+            // int num_active_threads = (inst->staticInst->get_imm()) >> 7;
+            ssim.set_num_active_threads(num_active_threads);
+}*/
             should_commit = false;
             //DPRINTF(SS,"Can't issue stream b/c buffer is full");
             //continue;
         } else if(inst->staticInst->isSSWait() &&
                   ssim_t::stall_core(inst->staticInst->get_imm())) {
+          // TODO:FIXME: not reading correct value from core
+          // set the global barrier count
+          // ssim.set_num_active_threads(context.getSSReg(SS_STRETCH));
+          // int num_active_threads = (inst->staticInst->get_imm()) >> 7;
+          // ssim.set_num_active_threads(num_active_threads);
           if(!ssim.done(false,inst->staticInst->get_imm()) ) {
+            std::cout << "Should commit is false due to ss wait instruction\n";
             should_commit = false;
             ssim.wait_inst(inst->staticInst->get_imm()); //track stats
 
@@ -1615,8 +1644,12 @@ void Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int op
   }
   (*msg).m_addr = local_scr_addr | opcode << 16 | val_bytes << 18 | out_bytes << 20;
   
+  // 50515 is definitely greater -- to test, I could use a smaller graph but
+  //  mix of mapping for example, local_scr_addr >> 10 & (core_cnt-1);
   int dest_core_id = local_scr_addr >> 15;
-  // TODO: scratch addr mapping
+  // TODO: scratch addr mapping (if we change this, then above decoding also
+  // needs to change -- otherwise incorrect execution)
+  // int dest_core_id = local_scr_addr >> 12 & 7;
   // int dest_core_id = rand()%1;
   // int dest_core_id = (local_scr_addr >> 1) & 1; // FIXME: just to debug
   dest_core_id += 1;

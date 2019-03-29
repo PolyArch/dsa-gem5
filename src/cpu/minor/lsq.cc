@@ -1099,10 +1099,10 @@ LSQ::set_spu_done(int spu_id) {
 }
 
 bool
-LSQ::all_spu_done() {
+LSQ::all_spu_done(int num_active_threads) {
   ThreadContext *thread = cpu.getContext(0); // assume tid=0?
   // return thread->getProcessPtr()->all_spu_done();
-  return thread->getSystemPtr()->all_spu_done();
+  return thread->getSystemPtr()->all_spu_done(num_active_threads);
 }
 
 void
@@ -1120,10 +1120,10 @@ LSQ::reset_all_spu_global_wait() {
 }
 
 bool
-LSQ::is_last_spu() {
-  ThreadContext *thread = cpu.getContext(0); // assume tid=0?
+LSQ::is_last_spu(int num_active_threads) {
+  ThreadContext *thread = cpu.getContext(0); // 1 thread, tid=0
   // return thread->getProcessPtr()->is_last_spu();
-  return thread->getSystemPtr()->is_last_spu();
+  return thread->getSystemPtr()->is_last_spu(num_active_threads);
 }
 
 void

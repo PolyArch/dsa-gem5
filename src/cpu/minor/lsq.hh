@@ -780,10 +780,10 @@ class LSQ : public Named
     int getCpuId() { return cpu.cpuId(); }
 
     void set_spu_done(int spu_id);
-    bool all_spu_done();
+    bool all_spu_done(int num_active_threads);
     void reset_all_spu();
     void reset_all_spu_global_wait();
-    bool is_last_spu();
+    bool is_last_spu(int num_active_threads);
     void set_spu_global_wait_released(int spu_id);
 
     /** Return the raw-bindable port */
