@@ -237,7 +237,7 @@ private:
 
   accel_t* accel_arr[NUM_ACCEL+1]; //LAST ONE IS SHARED SCRATCH
 
-  int _num_active_threads=2; // for global barrier
+  int _num_active_threads=4; // for global barrier
 
   bool _prev_done = true;
 

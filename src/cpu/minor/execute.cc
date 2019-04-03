@@ -990,7 +990,7 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
     BranchData &branch, Fault &fault, bool &committed,
     bool &completed_mem_issue)
 {
-  if(cpu.cpuId()==1 || cpu.cpuId()==2) {
+  /*if(cpu.cpuId()==1 || cpu.cpuId()==2) {
     std::cout << "Came in commit inst for cpu: " << cpu.cpuId() << "\n";
     // std::cout << "Is SS instr: " << inst->staticInst->isSS() << "\n";
     if(inst->staticInst->isSS()) {
@@ -999,8 +999,9 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
     } else {
       std::cout << "Is load: " << inst->staticInst->isLoad() << "\n";
       std::cout << "Is store: " << inst->staticInst->isStore() << "\n";
+      std::cout << "Number of unreserved spaces? " << lsq.accessesInFlight() << "\n";
     }
-  }
+  }*/
  
     ThreadID thread_id = inst->id.threadId;
     ThreadContext *thread = cpu.getContext(thread_id);
@@ -1041,6 +1042,12 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
         bool predicate_passed = false;
         bool completed_mem_inst = executeMemRefInst(inst, branch,
             predicate_passed, fault);
+
+        /*if(cpu.cpuId()==1 && inst->staticInst->isStore()) {
+          std::cout << "Completed mem inst?: " << completed_mem_inst << "\n"; 
+          std::cout << "Could lsq request? " << lsq.canRequest() << "\n";
+          std::cout << "Num of access issued to mem? " << lsq.accessesInFlight() << "\n";
+        }*/
 
         if (completed_mem_inst && fault != NoFault) {
             if (early_memory_issue) {
@@ -1120,7 +1127,7 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
           // int num_active_threads = (inst->staticInst->get_imm()) >> 7;
           // ssim.set_num_active_threads(num_active_threads);
           if(!ssim.done(false,inst->staticInst->get_imm()) ) {
-            std::cout << "Should commit is false due to ss wait instruction\n";
+            // std::cout << "Should commit is false due to ss wait instruction\n";
             should_commit = false;
             ssim.wait_inst(inst->staticInst->get_imm()); //track stats
 

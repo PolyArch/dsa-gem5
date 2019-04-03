@@ -61,6 +61,7 @@ void accel_t::req_config(addr_t addr, int size, uint64_t context) {
 void accel_t::request_reset_data() {
   _cleanup_mode = true;
   reset_data();
+  _cmd_queue.clear(); // check this as well
   if(SS_DEBUG::COMMAND_O) {
     cout << "Complete reset request served except deleting requested memory reads/writes: " << _lsq->getCpuId() << "\n";
   }
@@ -71,6 +72,7 @@ bool accel_t::all_ports_empty() {
 
   
   // TESTING -- it worked?
+  /*
   for (unsigned i = 0; i < _soft_config.in_ports_active_plus.size(); ++i) {
     int cur_port = _soft_config.in_ports_active_plus[i];
     auto &in_vp = _port_interf.in_port(cur_port);
@@ -82,6 +84,7 @@ bool accel_t::all_ports_empty() {
   }
 
   cout << "Input ports empty\n";
+  */
   
   
   
@@ -118,6 +121,7 @@ void accel_t::request_reset_streams() {
   }
 
   print_status();
+  _cmd_queue.clear();
 
   // free ports and streams (not input ports?)
   // reset_data();
@@ -156,6 +160,7 @@ void accel_t::request_reset_streams() {
   }
   print_status();
   _stream_cleanup_mode=false;
+  _cleanup_mode = true; // it should wait for outstanding mem req to be done (wait on o/p ports and then cleanup memory)
 }
 
 void accel_t::switch_stream_cleanup_mode_on() {
@@ -972,6 +977,7 @@ bool accel_t::can_receive(int out_port) {
 uint64_t accel_t::receive(int out_port) {
   port_data_t &out_vp = port_interf().out_port(out_port);
   SBDT val = out_vp.pop_out_data();
+  out_vp.reset_data(); // remove later
   if (SS_DEBUG::COMMAND || SS_DEBUG::COMMAND_I || SS_DEBUG::COMMAND_O) {
     timestamp();
     cout << "SS_RECV value: " << val << " on port" << out_vp.port() << " " << out_vp.mem_size()
@@ -1149,7 +1155,8 @@ void accel_t::cycle_cgra_backpressure() {
       cout << "Output vector name: " << vec_output->name() << endl;
       cout << "Allowed to pop output: " << data[0] << " " << data[1] << "\n";
       if (in_roi()) {
-        _stat_comp_instances += 1;
+        // _stat_comp_instances += 1;
+        _stat_comp_instances += len; // number of scalar inputs
       }
 
       int j = 0, n_times=0;
@@ -1261,7 +1268,7 @@ void accel_t::cycle_cgra() {
   if (!_dfg)
     return;
 
-  printf("Going to compute with ACCEL ID: %d\n", _lsq->getCpuId());
+  // printf("Going to compute with ACCEL ID: %d\n", _lsq->getCpuId());
   if (_back_cgra) {
     cycle_cgra_backpressure();
   } else {
@@ -2176,6 +2183,7 @@ void accel_t::schedule_streams() {
         in_vp->set_status(port_data_t::STATUS::BUSY, ip->unit());
         if (auto port_port_stream = dynamic_cast<port_port_stream_t *>(ip)) { // it means different for recurrence stream: confirm if this makes sense
           cout << "Port stream with repeat: " << port_port_stream->repeat_in() << endl;
+          if(!ip->repeat_flag()) in_vp->set_repeat(repeat, repeat_str, repeat_flag);
         } else {
           in_vp->set_repeat(repeat, repeat_str, repeat_flag);
         }
@@ -2775,7 +2783,7 @@ void dma_controller_t::make_read_request() {
            (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes/subsize_vp.get_port_width())) && 
      
             _accel->_lsq->sd_transfers[in_port].unreservedRemainingSpace() >
-                0 &&
+                0 && // 8 && // 16 && // 8 && // 1 && // 0 && -- leave for done (TODO: check)
             _accel->_lsq->canRequest()) {
 
           auto &in_vp = _accel->port_interf().in_port(in_port);
@@ -4452,7 +4460,7 @@ void scratch_write_controller_t::push_atomic_update_req(int scr_addr, int opcode
   if (_accel->_banked_spad_mapping_strategy &&
       (strcmp(_accel->_banked_spad_mapping_strategy, "COL") == 0)) {
     // bank_id = (scr_addr >> 9) & (logical_banks - 1);
-    bank_id = (scr_addr >> 6) & (logical_banks - 1); // log64 = 6 = log2(k)
+    bank_id = (scr_addr >> 4) & (logical_banks - 1); // log64 = 6 = log2(k)
   } else {
     bank_id = (scr_addr >> 1) & (logical_banks - 1);
   }
@@ -4563,7 +4571,8 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
         if (_accel->_banked_spad_mapping_strategy &&
             (strcmp(_accel->_banked_spad_mapping_strategy, "COL") == 0)) {
           // bank_id = (scr_addr >> 9) & (logical_banks - 1);
-          bank_id = (scr_addr >> 6) & (logical_banks - 1); // log64 = 6 = log2(k)
+          // bank_id = (scr_addr >> 6) & (logical_banks - 1); // log64 = 6 = log2(k)
+          bank_id = (scr_addr >> 5) & (logical_banks - 1); // log64 = 6 = log2(k)
         } else {
           bank_id = (scr_addr >> 1) & (logical_banks - 1);
         }
@@ -5361,6 +5370,11 @@ bool accel_t::done(bool show, int mask) {
   // cout << "Came inside done\n";
   bool d = done_internal(show, mask);
 
+  // Is it correct? -- this gives can't free if already free error
+  if(d) {
+    _cleanup_mode = false;
+  }
+
   if (show)
     return d;
 
@@ -5498,7 +5512,7 @@ bool dma_controller_t::indirect_wr_streams_active() {
 }
 
 bool dma_controller_t::done(bool show, int mask) {
-  if (mask == 0 || mask & WAIT_CMP) {
+  if (mask == 0 || mask & WAIT_CMP || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
     if (dma_port_streams_active()) {
       if (show)
         cout << "DMA -> PORT Streams Not Empty\n";
@@ -5516,7 +5530,7 @@ bool dma_controller_t::done(bool show, int mask) {
     }
   }
 
-  if (mask == 0 || mask & WAIT_CMP || mask & WAIT_MEM_WR) {
+  if (mask == 0 || mask & WAIT_CMP || mask & WAIT_MEM_WR || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
     if (port_dma_streams_active()) {
       if (show)
         cout << "PORT -> DMA Streams Not Empty\n";
@@ -5578,7 +5592,7 @@ bool scratch_write_controller_t::done(bool show, int mask) {
       _df_count = -1;
     }
   }
-  if (mask == 0 || mask & WAIT_CMP || mask & WAIT_SCR_WR) {
+  if (mask == 0 || mask & WAIT_CMP || mask & WAIT_SCR_WR || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
     if (port_scr_streams_active()) {
       if (show)
         cout << "PORT -> SCR Stream Not Empty\n";
@@ -5591,7 +5605,7 @@ bool scratch_write_controller_t::done(bool show, int mask) {
     }
   }
   if (mask == 0 || mask & WAIT_CMP || mask & WAIT_SCR_WR ||
-      mask & WAIT_SCR_RD || mask & WAIT_SCR_ATOMIC) {
+      mask & WAIT_SCR_RD || mask & WAIT_SCR_ATOMIC || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
     if (atomic_scr_streams_active()) {
       if (show)
         cout << "ATOMIC SCR Stream Not Empty\n";
@@ -5611,7 +5625,7 @@ bool scratch_read_controller_t::scr_port_streams_active() {
 }
 
 bool scratch_read_controller_t::done(bool show, int mask) {
-  if (mask == 0 || mask & WAIT_CMP || mask & WAIT_SCR_RD) {
+  if (mask == 0 || mask & WAIT_CMP || mask & WAIT_SCR_RD || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
     if (scr_port_streams_active()) {
       if (show)
         cout << "SCR -> PORT Streams Not Empty\n";
@@ -5627,7 +5641,7 @@ bool scratch_read_controller_t::done(bool show, int mask) {
 }
 
 bool network_controller_t::done(bool show, int mask) {
-  if (mask == 0 || mask & WAIT_CMP) {
+  if (mask == 0 || mask & WAIT_CMP || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
     if (remote_port_multicast_requests_active()) {
       if (show)
         cout << "PORT -> REMOTE PORT Stream Not Empty\n";
@@ -5662,7 +5676,7 @@ bool port_controller_t::const_port_streams_active() {
 }
 
 bool port_controller_t::done(bool show, int mask) {
-  if (mask == 0 || mask & WAIT_CMP) {
+  if (mask == 0 || mask & WAIT_CMP || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
     if (port_port_streams_active()) {
       if (show)
         cout << "PORT -> PORT Stream Not Empty\n";
@@ -5679,7 +5693,7 @@ bool port_controller_t::done(bool show, int mask) {
 
 bool accel_t::cgra_done(bool show, int mask) {
 
-  if (mask == 0 || mask & WAIT_CMP) {
+  if (mask == 0 || mask & WAIT_CMP || mask == GLOBAL_WAIT) {
     for (unsigned i = 0; i < _soft_config.in_ports_active_plus.size(); ++i) {
       int cur_port = _soft_config.in_ports_active_plus[i];
       auto &in_vp = _port_interf.in_port(cur_port);
@@ -5699,7 +5713,7 @@ bool accel_t::cgra_done(bool show, int mask) {
       }
     }
   }
-  if (mask == 0) {
+  if (mask == 0 || mask == GLOBAL_WAIT) {
     for (unsigned i = 0; i < _soft_config.out_ports_active_plus.size(); ++i) {
       int cur_port = _soft_config.out_ports_active_plus[i];
       auto &out_vp = _port_interf.out_port(cur_port);

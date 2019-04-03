@@ -704,6 +704,8 @@ class LSQ : public Named
     /** Is their space in the request queue to be able to push a request by
      *  issuing an isMemRef instruction */
     bool canRequest() { return requests.unreservedRemainingSpace() != 0; }
+    
+    // bool canRequestLess() { return requests.unreservedRemainingSpace() > 1; }
 
     /** Returns a response if it's at the head of the transfers queue and
      *  it's either complete or can be sent on to the store buffer.  After

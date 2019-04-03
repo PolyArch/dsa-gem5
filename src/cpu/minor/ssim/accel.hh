@@ -1103,8 +1103,15 @@ class port_controller_t : public data_controller_t {
 
   void reset_data() {
     // also need to set inactive
-    for(auto& i : _port_port_streams) {i.reset();}
-    for(auto& i : _const_port_streams) {i.reset();}
+    for(auto& i : _port_port_streams) {
+      i.reset();
+    }
+    for(auto& i : _const_port_streams) {
+      i.reset();
+      i._elements_left=0;
+      i._elements_left2=0;
+      i._iters_left=0;
+    }
     for(auto& i : _remote_port_streams) {i.reset();}
   }
 
