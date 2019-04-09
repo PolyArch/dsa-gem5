@@ -2188,7 +2188,7 @@ void accel_t::schedule_streams() {
         port_data_t *in_vp = &_port_interf.in_port(in_port);
         in_vp->set_status(port_data_t::STATUS::BUSY, ip->unit());
         if (auto port_port_stream = dynamic_cast<port_port_stream_t *>(ip)) { // it means different for recurrence stream: confirm if this makes sense
-          // cout << "Port stream with repeat: " << port_port_stream->repeat_in() << endl;
+          cout << "Port stream with repeat: " << port_port_stream->repeat_in() << endl; // required for unuse error
           if(!ip->repeat_flag()) in_vp->set_repeat(repeat, repeat_str, repeat_flag);
         } else {
           in_vp->set_repeat(repeat, repeat_str, repeat_flag);
