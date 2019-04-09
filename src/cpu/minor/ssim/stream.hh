@@ -516,6 +516,7 @@ struct const_port_stream_t : public base_stream_t {
 
   uint64_t pop_item() {
     check_for_iter();
+    std::cout << "constant: " << std::hex << _constant << " other one(not reqd here): " << std::hex << _constant2 << std::endl;
     if(_elements_left > 0) {
       _elements_left--;
       return _constant;

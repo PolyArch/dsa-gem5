@@ -65,6 +65,8 @@ void ssim_t::req_config(addr_t addr, int size) {
     return;
   }
 
+  // cout << "Release cofiguration request\n";
+
   set_in_use();  //lets get going then..
 
 
@@ -465,6 +467,7 @@ void ssim_t::write_scratchpad(int out_port,
 
   // affine_write_stream_t* s = new affine_write_stream_t(LOC::SCR,
   //    scratch_addr, 8, 8, 0, num_bytes/8, out_port, shift_bytes, 0);
+   std::cout << "Output port for writing scratchpad: " << out_port << std::endl;
 
    affine_write_stream_t* s = new affine_write_stream_t(LOC::SCR,
       scratch_addr, num_bytes, num_bytes, 0, 1, out_port, shift_bytes, 0);
@@ -713,6 +716,11 @@ void ssim_t::write_constant(int num_strides, int in_port,
   s->_constant2=constant;
   s->_num_elements2=num_elem;
 
+  // data-width according to port should be set earlier?
+  s->set_orig();
+  add_bitmask_stream(s);
+
+
   // std::cout << "Const width: " << const_width << std::endl;
 
   if(const_width<4 && const_width >0) { // doesn't for T64 right now -- todo
@@ -732,9 +740,6 @@ void ssim_t::write_constant(int num_strides, int in_port,
   }
   // std::cout << "Final const width: " << s->_const_width << std::endl;
 
-  s->set_orig();
-
-  add_bitmask_stream(s);
 }
 
 uint64_t ssim_t::now() {

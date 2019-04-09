@@ -234,7 +234,6 @@ void soft_config_t::reset() {
 void port_data_t::initialize(SSModel *ssconfig, int port, bool isInput) {
   _isInput = isInput;
   _port = port;
-  // _port_width=port_width;
 }
 
 void port_data_t::reset() {
@@ -446,13 +445,24 @@ void port_interf_t::initialize(SSModel *ssconfig) {
   _in_port_data.resize(NUM_IN_PORTS);
   _out_port_data.resize(NUM_OUT_PORTS);
 
+  for(int i=0; i<NUM_IN_PORTS; ++i) {
+    _in_port_data[i].initialize(ssconfig, i, true);
+  }
+
+  for(int j=0; j<NUM_OUT_PORTS; ++j) {
+    _out_port_data[j].initialize(ssconfig, j, false);
+  }
+
+  /*
   for (auto &x : ssconfig->subModel()->io_interf().in_vports) {
+    // cout << "Sending for input port: " << x.first << "\n";
     _in_port_data[x.first].initialize(ssconfig, x.first, true);
   }
 
   for (auto &x : ssconfig->subModel()->io_interf().out_vports) {
+    // cout << "Sending for output port: " << x.first << "\n";
     _out_port_data[x.first].initialize(ssconfig, x.first, false);
-  }
+  }*/
 }
 
 // ---------------------------- ACCEL ------------------------------------------
@@ -547,6 +557,7 @@ accel_t::accel_t(Minor::LSQ *lsq, int i, ssim_t *ssim)
   _banked_spad_mapping_strategy = std::getenv("MAPPING");
 
   _ssconfig = new SSModel(ssconfig_file);
+  // cout << "Came here to create a new configuration for a new accel\n";
   _ssconfig->setMaxEdgeDelay(_fu_fifo_len);
   _port_interf.initialize(_ssconfig);
 
@@ -879,7 +890,6 @@ void accel_t::tick() {
 
     if (SS_DEBUG::CYC_STAT && _accel_index == SS_DEBUG::ACC_INDEX) {
       if (_back_cgra) {
-        // cout << "NEW CYCLE: " << _stat_mem_bytes_rd << "\n";
         cycle_status_backcgra();
       } else {
         cycle_status();
@@ -977,7 +987,7 @@ bool accel_t::can_receive(int out_port) {
 uint64_t accel_t::receive(int out_port) {
   port_data_t &out_vp = port_interf().out_port(out_port);
   SBDT val = out_vp.pop_out_data();
-  out_vp.reset_data(); // remove later
+  // out_vp.reset_data(); // remove later
   if (SS_DEBUG::COMMAND || SS_DEBUG::COMMAND_I || SS_DEBUG::COMMAND_O) {
     timestamp();
     cout << "SS_RECV value: " << val << " on port" << out_vp.port() << " " << out_vp.mem_size()
@@ -1152,8 +1162,10 @@ void accel_t::cycle_cgra_backpressure() {
       data_valid.clear(); // make sure it is empty here
       _dfg->pop_vector_output(vec_output, data, data_valid, len, print, true);
 
-      cout << "Output vector name: " << vec_output->name() << endl;
-      cout << "Allowed to pop output: " << data[0] << " " << data[1] << "\n";
+      if(SS_DEBUG::COMP) {
+        cout << "Output vector name: " << vec_output->name() << endl;
+        cout << "Allowed to pop output: " << data[0] << " " << data[1] << "\n";
+      }
       if (in_roi()) {
         // _stat_comp_instances += 1;
         _stat_comp_instances += len; // number of scalar inputs
@@ -1989,7 +2001,6 @@ void accel_t::schedule_streams() {
       }
     } else if (auto stream = dynamic_cast<remote_core_net_stream_t *>(ip)) {
       // should I check if those ports not busy (Although they should not be)
-      printf("Remote core net streams is being scheduled\n");
       out_vp = &_port_interf.out_port(NET_ADDR_PORT);
       out_vp2 = &_port_interf.out_port(NET_VAL_PORT);
       assert(out_vp->can_take(LOC::PORT) && !blocked_ovp[NET_ADDR_PORT]);
@@ -2072,10 +2083,6 @@ void accel_t::schedule_streams() {
       bool cond1 = (!port_port_stream->repeat_flag());
       bool cond2 = (port_port_stream->repeat_flag() && rpt_vp->can_take(LOC::PORT));
       bool res_cond = cond1 || cond2;
-      // cout << "Output of my condition2: " << (port_port_stream->repeat_flag() && rpt_vp->can_take(LOC::PORT)) << endl;
-      // cout << "Can inputs take? " << ivps_can_take << endl;
-      // cout << "Repeat flag condition? " << res_cond << endl;
-      // cout << "Is output port not blocked? " << !blocked_ovp[out_port] << endl;
       if (ivps_can_take && out_vp->can_take(LOC::PORT) &&
           res_cond && 
           !blocked_ovp[out_port] &&
@@ -2089,11 +2096,9 @@ void accel_t::schedule_streams() {
 
     } else if (auto const_port_stream =
                    dynamic_cast<const_port_stream_t *>(ip)) {
-      cout << "Trying to schedule const port stream\n";
       if (ivps_can_take) {
         scheduled = _port_c.schedule_const_port(*const_port_stream);
       }
-      cout << "Could schedule: " << scheduled << endl;
     } else if (auto stream = dynamic_cast<affine_write_stream_t *>(ip)) {
       int port = stream->_out_port;
       out_vp = &_port_interf.out_port(port);
@@ -2168,8 +2173,9 @@ void accel_t::schedule_streams() {
     // prevent out-of-order access
     for (int in_port : ip->in_ports())
       blocked_ivp[in_port] = true;
-    if (out_vp)
+    if (out_vp) {
       blocked_ovp[out_vp->port()] = true;
+    }
     if (out_vp2)
       blocked_ovp[out_vp2->port()] = true;
 
@@ -2182,7 +2188,7 @@ void accel_t::schedule_streams() {
         port_data_t *in_vp = &_port_interf.in_port(in_port);
         in_vp->set_status(port_data_t::STATUS::BUSY, ip->unit());
         if (auto port_port_stream = dynamic_cast<port_port_stream_t *>(ip)) { // it means different for recurrence stream: confirm if this makes sense
-          cout << "Port stream with repeat: " << port_port_stream->repeat_in() << endl;
+          // cout << "Port stream with repeat: " << port_port_stream->repeat_in() << endl;
           if(!ip->repeat_flag()) in_vp->set_repeat(repeat, repeat_str, repeat_flag);
         } else {
           in_vp->set_repeat(repeat, repeat_str, repeat_flag);
@@ -2366,8 +2372,8 @@ bool port_controller_t::schedule_port_port(port_port_stream_t &new_s) {
       s = new_s;
       return true;
     } else {
-      cout << "Could not schedule because earlier port-port stream available\n";
-      s.print_status(); // delete later
+      // cout << "Could not schedule because earlier port-port stream available\n";
+      // s.print_status(); // delete later
     }
   }
   return false;
@@ -4410,7 +4416,7 @@ void scratch_write_controller_t::serve_atomic_requests(bool &performed_atomic_sc
 
       uint16_t correct_val = input_val & ((1<<request._output_bytes*8)-1);
 
-      cout << "FInal output of atomic scr: " << correct_val << endl;
+      // cout << "FInal output of atomic scr: " << correct_val << endl;
       /*
       _accel->write_scratchpad(scr_addr,
                                &input_val + 8 - request._output_bytes,
@@ -4424,7 +4430,7 @@ void scratch_write_controller_t::serve_atomic_requests(bool &performed_atomic_sc
       
       check_value=0;
       _accel->read_scratchpad(&check_value, scr_addr, request._output_bytes, 0);
-      cout << "Updated value at the address: " << scr_addr << " is: " << check_value << endl;
+      // cout << "Updated value at the address: " << scr_addr << " is: " << check_value << endl;
       _accel->_stat_scratch_bank_requests_executed++;
       bytes_written += request._value_bytes;
       _accel->_stat_scr_bytes_wr += request._value_bytes;
@@ -4527,17 +4533,6 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
       // number of iterations of this loop cannot be more than 8*64-bits
       // => cannot pop more than 8 values from the port
 
-      /*
-      if (SS_DEBUG::COMP) {
-          std::cout << "\t4 CONDITIONS: " << (scr_addr<max_addr)
-                    << " : " << (stream._num_strides>0)
-                    << " : " << out_addr.mem_size()
-                    << " : " << out_val.mem_size()
-                    << " : " << (num_addr_pops<64)
-                    << "\n";
-      }
-      */
-
       // num_value_pops should be less than 64 bytes?
       // Stage 1: push requests in scratch banks
       while (scr_addr < max_addr && stream._num_strides > 0 &&
@@ -4560,7 +4555,7 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
 
         struct atomic_scr_op_req temp_req;
         SBDT cur_value = out_val.peek_out_data();
-        cout << "64-bit value popped from out_val port: " << cur_value << endl;
+        // cout << "64-bit value popped from out_val port: " << cur_value << endl;
         temp_req._scr_addr = scr_addr;
         temp_req._inc = stream.cur_val(cur_value);
         temp_req._opcode = stream._op_code;
@@ -5094,8 +5089,8 @@ void port_controller_t::cycle() {
  
         // int x2 = vp_out.cur_repeat_lim();
         // assert(x1==x2);
-        cout << "out-recu: " << stream._out_port << " ";
-        cout << "Value extracted from source port: " << val << " repeat_flag: " << stream.repeat_flag() << " and should push: " << should_push << endl;
+        // cout << "out-recu: " << stream._out_port << " ";
+        // cout << "Value extracted from source port: " << val << " repeat_flag: " << stream.repeat_flag() << " and should push: " << should_push << endl;
         
         if(stream.repeat_flag() && vp_out.cur_repeat_lim()==0) {
           // cout << "Current repeat lim was 0\n";
@@ -5143,7 +5138,7 @@ void port_controller_t::cycle() {
             // for(int i=0; i<stream.src_data_width()/stream.data_width(); ++i) {
             for(int i=stream.src_data_width()/stream.data_width()-1; i>=0; --i) {
               SBDT temp = val >> (i*8*stream.data_width());
-              cout << "Allowed to push in recurrence: " << temp << " with repeat_flag: " << stream.repeat_flag() << " in-recu port: " << in_port << endl;
+              // cout << "Allowed to push in recurrence: " << temp << " with repeat_flag: " << stream.repeat_flag() << " in-recu port: " << in_port << endl;
               vp_in.push_data(vp_in.get_byte_vector(temp, data_width));
             }
             if (stream._padding_size != NO_PADDING && stream._padding_cnt == 0) {
@@ -5219,13 +5214,18 @@ void port_controller_t::cycle() {
           port_data_t& vp_in = pi.in_port(in_port);
           // should send vector version of that
           SBDT val = stream.pop_item(); // data width of const val should be >= port width
+          // cout << "const_width: " << const_width << " data_width: " << data_width << endl;
           int num_bits = 8*data_width;
           for(int i=0; i<(const_width/data_width); ++i) {
-            SBDT mask = (1 << num_bits) - 1;
+            /*SBDT mask = (1 << num_bits) - 1;
             if(mask==0) { 
               mask = (1 << (num_bits-1)) - 1;
-            }
-            SBDT temp = (val >> (i*num_bits)) & mask;
+            }*/
+
+            SBDT test_mask = (((uint64_t)1)<<(num_bits-1))-1;
+            // cout << "test mask: " << hex << test_mask << endl;
+            // SBDT temp = (val >> (i*num_bits)) & mask;
+            SBDT temp = (val >> (i*num_bits)) & test_mask;
             vp_in.push_data(vp_in.get_byte_vector(temp, data_width));
           }
           // vp_in.push_data(stream.pop_item());
@@ -5367,7 +5367,6 @@ void port_controller_t::print_status() {
 }
 
 bool accel_t::done(bool show, int mask) {
-  // cout << "Came inside done\n";
   bool d = done_internal(show, mask);
 
   // Is it correct? -- this gives can't free if already free error
