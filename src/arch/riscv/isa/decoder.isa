@@ -855,16 +855,14 @@ decode QUADRANT default Unknown::unknown() {
                     xc->callSSFunc(SS_ADD_PRT);
                 }}, IsNonSpeculative, No_OpClass);
                 0x1: ss_scr_rd({{
-                    xc->setSSReg(Rs1,SS_SCRATCH_ADDR);
-                    xc->setSSReg(Rs2,SS_NUM_STRIDES);
-                    xc->setSSReg(imm,SS_IN_PORT);
-                    xc->callSSFunc(SS_SCR_PRT);
+                    xc->pushStreamDimension(Rs1, Rs2, imm >> 1);
+                    if (~imm & 1)
+                      xc->callSSFunc(SS_SCR_PRT);
                 }}, IsSSStream, IsNonSpeculative, No_OpClass);
                 0x2: ss_dma_rd({{
-                    xc->setSSReg(Rs1,SS_MEM_ADDR);
-                    xc->setSSReg(Rs2,SS_NUM_STRIDES);
-                    xc->setSSReg(imm,SS_IN_PORT);
-                    xc->callSSFunc(SS_MEM_PRT);
+                    xc->pushStreamDimension(Rs1, Rs2, imm >> 1);
+                    if (~imm & 1)
+                      xc->callSSFunc(SS_MEM_PRT);
                 }}, IsSSStream, IsNonSpeculative, No_OpClass);
                 0x4: ss_const({{
                     xc->setSSReg(imm & 0x3f, SS_IN_PORT);
@@ -895,11 +893,9 @@ decode QUADRANT default Unknown::unknown() {
             }
             0x16: decode FUNCT3 {
                 0x1: ss_wr_scr({{
-                    xc->setSSReg(Rs1,SS_SCRATCH_ADDR);
-                    xc->setSSReg(Rs2,SS_NUM_BYTES);
-                    xc->setSSReg(0x3f & imm, SS_OUT_PORT);
-                    xc->setSSReg( (imm & 0x40) ? 2 : 0, SS_SHIFT_BYTES);
-                    xc->callSSFunc(SS_PRT_SCR);
+                    xc->pushStreamDimension(Rs1, Rs2, imm >> 1);
+                    if (~imm & 1)
+                      xc->callSSFunc(SS_PRT_SCR);
                 }}, IsSSStream, No_OpClass);
 				0x2: ss_rem_port({{
 					xc->setSSReg(Rs1,SS_NUM_ELEM);
@@ -914,12 +910,9 @@ decode QUADRANT default Unknown::unknown() {
                      xc->setSSReg(Rs1,SS_GARB_ELEM);
                 }}, IsSSStream, No_OpClass);
                 0x4: ss_wr_dma({{
-                    xc->setSSReg(Rs1,SS_MEM_ADDR);
-                    xc->setSSReg(Rs2,SS_NUM_STRIDES);
-                    xc->setSSReg(0x3f & imm, SS_OUT_PORT);
-                    xc->setSSReg( (imm & 0x40) ? 2 : 0, SS_SHIFT_BYTES);
-                    xc->setSSReg( (imm & 0x100) ? 1 : 0, SS_GARBAGE);
-                    xc->callSSFunc(SS_PRT_MEM);
+                    xc->pushStreamDimension(Rs1, Rs2, imm >> 1);
+                    if (~imm & 1)
+                      xc->callSSFunc(SS_PRT_MEM);
                 }}, IsSSStream, IsNonSpeculative, No_OpClass);
                 0x5: ss_wr_rd({{
                     xc->setSSReg(Rs1,SS_NUM_ELEM);

@@ -1134,8 +1134,10 @@ class port_controller_t : public data_controller_t {
 struct stream_stats_histo_t {
   uint64_t vol_by_type[(int)STR_PAT::LEN];
   uint64_t vol_by_len[64];
-  std::unordered_map<uint64_t,uint64_t> vol_by_len_map;
-  std::unordered_map<std::pair<int,int>,uint64_t,pair_hash> vol_by_source;
+  //std::unordered_map<uint64_t,uint64_t> vol_by_len_map;
+  std::map<uint64_t,uint64_t> vol_by_len_map;
+  //std::unordered_map<std::pair<int,int>,uint64_t,pair_hash> vol_by_source;
+  std::map<std::pair<int,int>,uint64_t> vol_by_source;
   uint64_t total_vol=0;
   uint64_t total=0;
 
@@ -1144,14 +1146,24 @@ struct stream_stats_histo_t {
     for(int i = 0; i < 64; ++i)     {vol_by_len[i]=0;}
   }
 
+#define check_and_add(a, b, c) \
+  do {\
+    if (a.find(b) != a.end()) \
+      a[b] += c; \
+    else \
+      a[b] = c; \
+  } while(false)
+
   void add(STR_PAT t, LOC src, LOC dest, uint64_t vol) {
-    vol_by_source[std::make_pair((int)src,(int)dest)] += vol;
+    check_and_add(vol_by_source, std::make_pair((int)src,(int)dest), vol);
     vol_by_type[(int)t] += vol;
     vol_by_len[ilog2(vol)+1]+=vol;
-    vol_by_len_map[vol]+=vol;
+    check_and_add(vol_by_len_map, vol, vol);
     total_vol+=vol;
     total++;
   }
+
+#undef check_and_add
 
   std::string name_of(STR_PAT t) {
     switch(t) {

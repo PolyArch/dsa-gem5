@@ -38,18 +38,11 @@ public:
   //    int stretch, uint64_t num_strides, addr_t scratch_addr, uint64_t flags);
   //void write_dma_from_scratch(addr_t scratch_addr, uint64_t stride,
   //    uint64_t access_size, uint64_t num_strides, addr_t mem_addr, uint64_t flags);
-  void load_dma_to_port(addr_t mem_addr, uint64_t stride,
-      uint64_t access_size, int stretch, uint64_t num_strides,
-      int port, int repeat_in, int repeat_str); //, bool repeat_flag); 
+  void load_dma_to_port(int repeat_in, int repeat_str);
   void add_port(int in_port);
-  void load_scratch_to_port(addr_t scratch_addr, uint64_t stride,
-                            uint64_t access_size, int stretch, uint64_t num_strides,
-        int in_port, int repeat_in, int repeat_str);//, bool repeat_flag);
-  void write_scratchpad(int out_port, addr_t scratch_addr,
-                        uint64_t num_bytes, uint64_t shift_bytes);
-  void write_dma(uint64_t garb_elem,
-      int out_port, uint64_t stride, uint64_t access_size,
-      uint64_t num_strides, addr_t mem_addr, int shift_bytes, int garbage);
+  void load_scratch_to_port(int repeat_in, int repeat_str);
+  void write_scratchpad();
+  void write_dma();
   void reroute(int out_port, int in_port, uint64_t num_elem,
                int repeat, int repeat_str,  uint64_t flags, uint64_t access_size);
   void indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
@@ -219,6 +212,12 @@ public:
   bool printed_this_before() { return _printed_this_before; }
   void set_printed_this_before(bool f) { _printed_this_before=f; }
 
+  void pushStreamDimension(uint64_t a, uint64_t b, uint64_t c) {
+    stream_stack.push_back(a);
+    stream_stack.push_back(b);
+    stream_stack.push_back(c);
+  }
+
 private:
 
   int _req_core_id=-1;
@@ -263,6 +262,7 @@ private:
   uint64_t _config_waits=0;
   std::unordered_map<uint64_t,uint64_t> _wait_map;
 
+  std::vector<uint64_t> stream_stack;
   std::vector<int> extra_in_ports;
 
   uint64_t _global_progress_cycle=0;

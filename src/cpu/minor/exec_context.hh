@@ -490,6 +490,10 @@ class ExecContext : public ::ExecContext
 
 
 #ifdef ISA_HAS_SS
+    void pushStreamDimension(uint64_t a, uint64_t b, uint64_t c) {
+      execute.getSSIM().pushStreamDimension(a, b, c);
+    }
+
     uint64_t receiveSS() {
       DPRINTF(SS, "Do SS_COMMAND RECEIVE\n");
       ssim_t& ssim = execute.getSSIM();
@@ -516,49 +520,28 @@ class ExecContext : public ::ExecContext
             case SS_CFG: ssim.req_config(
                 thread.getSSReg(SS_MEM_ADDR),      thread.getSSReg(SS_CFG_SIZE)); 
             break;
-            //case SS_CFG_PORT: ssim.cfg_port(
-            //    thread.getSSReg(SS_CONSTANT),      thread.getSSReg(SS_IN_PORT)); 
-            //break;
             case SS_CTX: ssim.set_context(thread.getSSReg(SS_CONTEXT),
                                           thread.getSSReg(SS_OFFSET)); 
             break;
             case SS_FILL_MODE: ssim.set_fill_mode(thread.getSSReg(SS_CONSTANT)); 
             break;
-            case SS_MEM_PRT: ssim.load_dma_to_port(
-                thread.getSSReg(SS_MEM_ADDR),      thread.getSSReg(SS_STRIDE),
-                thread.getSSReg(SS_ACCESS_SIZE),   thread.getSSReg(SS_STRETCH), 
-                thread.getSSReg(SS_NUM_STRIDES),   thread.getSSReg(SS_IN_PORT),
-                thread.getSSReg(SS_REPEAT), thread.getSSReg(SS_REPEAT_STRETCH));//,
-                // thread.getSSReg(SS_IS_PORT));
-                // thread.getSSReg(SS_FLAGS));
+            case SS_MEM_PRT: ssim.load_dma_to_port(thread.getSSReg(SS_REPEAT),
+                                                   thread.getSSReg(SS_REPEAT_STRETCH));//,
             break;
             case SS_ADD_PRT: ssim.add_port(thread.getSSReg(SS_IN_PORT));
-                return; //don't clear other vars
+            return;
+            case SS_SCR_PRT: ssim.load_scratch_to_port(thread.getSSReg(SS_REPEAT),
+                                                       thread.getSSReg(SS_REPEAT_STRETCH));//,
             break;
-            case SS_SCR_PRT: ssim.load_scratch_to_port(
-                thread.getSSReg(SS_SCRATCH_ADDR), thread.getSSReg(SS_STRIDE),
-                thread.getSSReg(SS_ACCESS_SIZE),  thread.getSSReg(SS_STRETCH),   
-                thread.getSSReg(SS_NUM_STRIDES),  thread.getSSReg(SS_IN_PORT),
-                thread.getSSReg(SS_REPEAT), thread.getSSReg(SS_REPEAT_STRETCH));//,
-                // thread.getSSReg(SS_IS_PORT));
-                // thread.getSSReg(SS_FLAGS));
+            case SS_PRT_SCR: ssim.write_scratchpad();
             break;
-            case SS_PRT_SCR: ssim.write_scratchpad(
-                thread.getSSReg(SS_OUT_PORT), thread.getSSReg(SS_SCRATCH_ADDR),  
-                thread.getSSReg(SS_NUM_BYTES), thread.getSSReg(SS_SHIFT_BYTES));    
-            break;
-            case SS_PRT_MEM: ssim.write_dma(
-                thread.getSSReg(SS_GARB_ELEM),
-                thread.getSSReg(SS_OUT_PORT),      thread.getSSReg(SS_STRIDE),
-                thread.getSSReg(SS_ACCESS_SIZE),   thread.getSSReg(SS_NUM_STRIDES),
-                thread.getSSReg(SS_MEM_ADDR),      thread.getSSReg(SS_SHIFT_BYTES),
-                thread.getSSReg(SS_GARBAGE));
+            case SS_PRT_MEM: ssim.write_dma();
             break;
             case SS_PRT_PRT: ssim.reroute(
                 thread.getSSReg(SS_OUT_PORT),       thread.getSSReg(SS_IN_PORT),
                 thread.getSSReg(SS_NUM_ELEM),       thread.getSSReg(SS_REPEAT), 
                 thread.getSSReg(SS_REPEAT_STRETCH), thread.getSSReg(SS_FLAGS),
-                thread.getSSReg(SS_ACCESS_SIZE));
+                thread.getSSReg(SS_NUM_STRIDES));
             break;
             case SS_IND_PRT: ssim.indirect(
                 thread.getSSReg(SS_IND_PORT),      thread.getSSReg(SS_IND_TYPE),

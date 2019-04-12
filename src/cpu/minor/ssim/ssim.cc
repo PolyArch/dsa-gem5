@@ -412,16 +412,13 @@ void ssim_t::add_port(int in_port) {
   extra_in_ports.push_back(in_port);
 }
 
-void ssim_t::load_dma_to_port(addr_t mem_addr,
-     uint64_t stride, uint64_t access_size, int stretch, uint64_t num_strides,
-     int in_port, int repeat, int repeat_str) { // , bool repeat_flag) {
+void ssim_t::load_dma_to_port(int repeat, int repeat_str) {
   int new_repeat_str = repeat_str & (0x3FF);
   bool repeat_flag = repeat_str & (1<<10);
 
-  std::vector<int> in_ports;
-  in_ports.push_back(in_port);
-  affine_read_stream_t* s = new affine_read_stream_t(LOC::DMA, mem_addr, stride,
-      access_size, stretch, num_strides, in_ports, repeat, new_repeat_str);
+  affine_read_stream_t* s = new affine_read_stream_t(LOC::DMA, stream_stack,
+                                                     {(int) stream_stack.back()},
+                                                     repeat, new_repeat_str);
   s->_repeat_flag = repeat_flag;
   // set the cur_repeat_lim to -1
   if(repeat_flag) {
@@ -430,29 +427,24 @@ void ssim_t::load_dma_to_port(addr_t mem_addr,
   }
 
   add_bitmask_stream(s);
+  stream_stack.clear();
 }
 
-void ssim_t::write_dma(uint64_t garb_elem, int out_port,
-    uint64_t stride, uint64_t access_size, uint64_t num_strides,
-    addr_t mem_addr, int shift_bytes, int garbage) {
+void ssim_t::write_dma() {
 
-  affine_write_stream_t* s = new affine_write_stream_t(LOC::DMA, mem_addr, stride,
-      access_size, 0, num_strides, out_port, shift_bytes, garbage);
+  affine_write_stream_t* s = new affine_write_stream_t(LOC::DMA, stream_stack);
 
   add_bitmask_stream(s);
+  stream_stack.clear();
 }
 
-void ssim_t::load_scratch_to_port(addr_t scratch_addr,
-  uint64_t stride, uint64_t access_size, int stretch, uint64_t num_strides,
-  int in_port, int repeat, int repeat_str) {//, bool repeat_flag) {
+void ssim_t::load_scratch_to_port(int repeat, int repeat_str) {//, bool repeat_flag) {
   int new_repeat_str = repeat_str & (0x3FF);
   bool repeat_flag = repeat_str & (1<<10);
 
-
-  std::vector<int> in_ports;
-  in_ports.push_back(in_port);
-  affine_read_stream_t* s = new affine_read_stream_t(LOC::SCR, scratch_addr, stride,
-      access_size, stretch, num_strides, in_ports, repeat, new_repeat_str);
+  affine_read_stream_t* s = new affine_read_stream_t(LOC::SCR, stream_stack,
+                                                     {(int) stream_stack.back()},
+                                                     repeat, new_repeat_str);
   s->_repeat_flag = repeat_flag;
   if(repeat_flag) {
     auto &prt = accel_arr[0]->port_interf().out_port(repeat);
@@ -460,23 +452,18 @@ void ssim_t::load_scratch_to_port(addr_t scratch_addr,
   }
       
   add_bitmask_stream(s);
+  stream_stack.clear();
 }
 
-void ssim_t::write_scratchpad(int out_port,
-    addr_t scratch_addr, uint64_t num_bytes, uint64_t shift_bytes) {
+void ssim_t::write_scratchpad() {
 
-  // affine_write_stream_t* s = new affine_write_stream_t(LOC::SCR,
-  //    scratch_addr, 8, 8, 0, num_bytes/8, out_port, shift_bytes, 0);
-   std::cout << "Output port for writing scratchpad: " << out_port << std::endl;
-
-   affine_write_stream_t* s = new affine_write_stream_t(LOC::SCR,
-      scratch_addr, num_bytes, num_bytes, 0, 1, out_port, shift_bytes, 0);
+  affine_write_stream_t* s = new affine_write_stream_t(LOC::SCR, stream_stack);
 
   add_bitmask_stream(s);
+  stream_stack.clear();
 }
 
 // it is not a stream; just a linear write (just push data into buf?)
-// void ssim_t::write_remote_banked_scratchpad(int64_t val, int16_t scr_addr) {
 void ssim_t::write_remote_banked_scratchpad(uint8_t* val, int num_bytes, uint16_t scr_addr) {
   // TODO: add a check for full buffer to apply backpressure to network
   accel_arr[0]->push_scratch_remote_buf(val, num_bytes, scr_addr); // hopefully, we use single accel per CC
@@ -553,14 +540,14 @@ void ssim_t::write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int 
 //The reroute function handles either local recurrence, or remote data transfer
 void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
                      int repeat, int repeat_str, uint64_t flags,
-                     uint64_t access_size) {
+                     uint64_t padding_iter) {
   base_stream_t* s=NULL, *r=NULL;
   
   // specific to recurrence stream, FIXME: the accel_arr[0] thing
   auto& out_vp = accel_arr[0]->port_interf().out_port(out_port);
   int src_data_width = out_vp.get_port_width();
   int core_d = ((flags & 3) == 1) ? -1 : 1;
-  access_size = (flags >> 2) ? access_size : NO_PADDING;
+  padding_iter = (flags >> 2) ? padding_iter : NO_PADDING;
 
   int new_repeat_str = repeat_str & (0x3FF);
   bool repeat_flag = repeat_str & (1<<10);
@@ -568,7 +555,8 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
   if((flags & 3) == 0) {
 
     std::cout << "Repeat/repeat port in recurrence stream: " << repeat << std::endl;
-    s = new port_port_stream_t(out_port,in_port,num_elem,repeat,new_repeat_str, src_data_width, access_size, repeat_flag);
+    s = new port_port_stream_t(out_port,in_port,num_elem,repeat,new_repeat_str,
+                               src_data_width, padding_iter, repeat_flag);
     // set the cur_repeat_lim of output port to -1 (this is opp to others)
     if(repeat_flag) {
       auto &prt = accel_arr[0]->port_interf().out_port(repeat);
@@ -576,9 +564,9 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
     }
   } else {
     auto S = new remote_port_stream_t(out_port,in_port,num_elem,
-        repeat,new_repeat_str,core_d,true, access_size, repeat_flag);
+        repeat,new_repeat_str,core_d,true, padding_iter, repeat_flag);
     auto R = new remote_port_stream_t(out_port,in_port,num_elem,
-        repeat,new_repeat_str,core_d,false, access_size, repeat_flag);
+        repeat,new_repeat_str,core_d,false, padding_iter, repeat_flag);
     S->_remote_stream=R; // tie together <3
     R->_remote_stream=S;
     s=S;

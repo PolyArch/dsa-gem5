@@ -230,117 +230,125 @@ struct stream_barrier_t : public base_stream_t {
 
 struct affine_base_stream_t : public base_stream_t {
   uint64_t _context_bitmask=0; //
-  int64_t _access_size;    // length of smallest access
-  int64_t _stride;         // length of entire slide
-  addr_t _stretch;        // stretch of access size over time
-  addr_t _bytes_in_access=0; // bytes in access completed
-
-  addr_t _mem_addr;     // CURRENT address of stride
-  addr_t _num_strides=0;  // CURRENT strides left
-  addr_t _orig_strides=0;
+  std::vector<uint64_t> origin;
+  std::vector<uint64_t> dims;
+  std::vector<int> idx;
+  std::vector<uint64_t> address;
+  bool stride_hit_{false};
 
   affine_base_stream_t() {}
 
-  int _shift_bytes=0;
-
-  affine_base_stream_t(LOC unit, addr_t mem_addr, uint64_t stride,
-    uint64_t access_size, int stretch, uint64_t num_strides) {
-    _unit=unit;
-    _mem_addr=mem_addr;
-    _stride=stride;
-    _access_size=access_size;
-    _stretch=stretch;
-    _num_strides=num_strides;
+  int64_t access_size() override {
+    return dims[dims.size() - 2];
   }
 
-  virtual void set_orig() {
-    _orig_strides = _num_strides;
+  int64_t start_addr() {
+    return dims[dims.size() - 3];
   }
 
-  virtual uint64_t mem_addr()    {return _mem_addr;}
-  virtual int64_t  access_size() {return _access_size;}
-  virtual int64_t  stride()      {return _stride;}
-  virtual int64_t  stretch()     {return _stretch;}
-  virtual uint64_t num_strides() {return _num_strides;}
-  virtual uint64_t shift_bytes() {return _shift_bytes;}
+  uint64_t dim_stride(int x) {
+    assert(x >= 0);
+    if (x < idx.size() - 1)
+      return dims[x * 3];
+    assert(x == idx.size() - 1);
+    return 0;
+  }
 
-  virtual STR_PAT stream_pattern() {
-    if(_access_size==0 || _orig_strides==0) {
-      return STR_PAT::NONE;
-    } else if(_access_size == _stride || _orig_strides == 1) {
-      return STR_PAT::PURE_CONTIG;
-    } else if(_stride > _access_size) { //know _orig_strides > 1
-      return STR_PAT::SIMPLE_STRIDE;
-    } else if(_stride == 0) {
-      return STR_PAT::SIMPLE_REPEATED;
-    } else {
-      return STR_PAT::OVERLAP;
+  uint64_t &dim_trip_count(int x) {
+    return dims[x * 3 + 1];
+  }
+
+  int64_t dim_stretch(int x) {
+    assert(x >= 0 && x < idx.size() - 1);
+    return dims[x * 3 + 2];
+  }
+
+  affine_base_stream_t(LOC unit, const std::vector<uint64_t> &dims) : origin(dims), dims(dims) {
+    _unit = unit;
+    assert(dims.size() % 3 == 0);
+    idx.resize(dims.size() / 3, 0);
+    address.resize(idx.size(), start_addr());
+  }
+
+  virtual STR_PAT stream_pattern() override {
+    //FIXME: general dimension requires more complicated analysis
+    return STR_PAT::NONE;
+  }
+
+  virtual uint64_t data_volume() override { //TODO/FIXME: THIS IS NOT VALID FOR STRETCH!=0
+    uint64_t res = access_size();
+    for (int i = ((int) origin.size() - 1 - 3); i >= 0; i -= 3) {
+      res *= origin[i - 2];
     }
-  }
-
-  virtual uint64_t data_volume() { //TODO/FIXME: THIS IS NOT VALID FOR STRETCH==0
-    return _orig_strides * abs_access_size();
+    return res;
   }
 
   addr_t cur_addr() {
-    //return _mem_addr + _bytes_in_access;
-    if(_num_strides==0) {
-      return 0;
-    } else {
-      if(_access_size>=0) {
-        return _mem_addr + _bytes_in_access;
-      } else {
-        return _mem_addr - _bytes_in_access - _data_width;
-      }
-    }
+    return address.back();
   }
 
   bool stride_hit() {
-    return _bytes_in_access==0;
+    return stride_hit_;
   }
 
-  int64_t abs_access_size() {
-    return _access_size>0?_access_size:-_access_size;
-  }
-
-  //Return next address
-  addr_t pop_addr() {
-    assert(_access_size!=0);
-    if(!stream_active()) {
-      assert(0 && "inactive stream popped");
+  // bytes: How many bytes of address to pop
+  uint64_t pop_addr(int bytes = -1) {
+    if (bytes == -1)
+      bytes = data_width();
+    auto &current_address = address.back();
+    bool continuous = true;
+    int total_bytes = 0;
+    while (total_bytes < bytes && stream_active()) {
+      uint64_t delta = std::min((uint64_t) bytes, (uint64_t)(access_size() - idx.back()));
+      idx.back() += delta;
+      total_bytes += delta;
+      current_address += delta;
+      if (!continuous) {
+        print_status();
+      }
+      assert(continuous);
+      if (idx.back() == dim_trip_count(idx.size() - 1)) {
+        stride_hit_ = true;
+      } else {
+        stride_hit_ = false;
+      }
+      for (int i = (int) idx.size() - 1; i >= 0; --i) {
+        if (dim_stride(i)) {
+          continuous = false;
+        }
+        current_address = (address[i] += dim_stride(i));
+        if (idx[i] == dim_trip_count(i)) {
+          if (!stream_active())
+            break;
+          idx[i] = 0;
+          if (i - 1 >= 0) {
+            ++idx[i - 1];
+            dim_trip_count(i) += dim_stretch(i - 1);
+          }
+        } else {
+          for (int j = i + 1; j < idx.size() - 1; ++j)
+            address[j] = address[i];
+          break;
+        }
+      }
     }
-
-    if(_shift_bytes==2) {
-      _bytes_in_access+=2;
-    } else {
-      _bytes_in_access+=_data_width;
-    }
-
-    if(_bytes_in_access==abs_access_size()) { // go to next stride
-      _bytes_in_access=0;
-      _mem_addr+=_stride;
-      _num_strides--;
-      _access_size+=_stretch;
-    }
-    
-    // std::cout << "bytes in access: " << _bytes_in_access << " abs_Access_size: " << abs_access_size() << " num_strides left: " << _num_strides << "\n";
-     assert((_bytes_in_access<abs_access_size()
-           || _access_size==0) && "something went wrong");
-
-    return cur_addr();
+    return current_address;
   }
 
-  virtual bool stream_active() {
-    return _num_strides!=0 && _access_size !=0;
+  virtual bool stream_active() override {
+    return idx[0] != dim_trip_count(0);
   }
 
-  virtual void print_status() {
-    std::cout << short_name();
-    std::cout << " acc_size=" << _access_size
-              << " stride=" << _stride << " bytes_comp=" << _bytes_in_access
-              << " addr=" << std::hex << _mem_addr << std::dec
-              << " strides_left=" << _num_strides
-              << " data_width=" << _data_width;
+  virtual void print_status() override {
+    std::cout << short_name() << "\n";
+    for (size_t i = 0; i < idx.size() - 1; ++i) {
+      std::cout << "dim[" << i << "]: stride=" << dim_stride(i) << ", "
+                << "trip_cnt=" << idx[i] << "/" << dim_trip_count(i) << ", "
+                << "stretch=" << dim_stretch(i) << "\n";
+    }
+    std::cout << "innermost: current=" << cur_addr()
+              << ", acc_size=" << idx.back() << "/" << access_size()
+              << ", port=" << dims.back() << "\n";
   }
 
 };
@@ -350,14 +358,12 @@ struct affine_read_stream_t : public affine_base_stream_t {
   int _repeat_in=1, _repeat_str=0;
   bool _repeat_flag=false; // assume by-default not a port
 
-  affine_read_stream_t(LOC unit, addr_t mem_addr, uint64_t stride,
-    uint64_t acc_size, int stretch, uint64_t num_strides,
-    std::vector<int> in_ports, int repeat_in, int repeat_str) :
-    affine_base_stream_t(unit,mem_addr,stride,acc_size,stretch,num_strides) {
+  affine_read_stream_t(LOC unit, const std::vector<uint64_t> &dims,
+    const std::vector<int> &in_ports, int repeat_in, int repeat_str) :
+    affine_base_stream_t(unit, dims) {
     _in_ports=in_ports;
     _repeat_in=repeat_in;
     _repeat_str=repeat_str;
-    set_orig();
   }
 
 
@@ -372,7 +378,7 @@ struct affine_read_stream_t : public affine_base_stream_t {
     affine_base_stream_t::print_status();
     std::cout << " in_port=";
     print_in_ports();
-    std::cout << " repeat_in=" << _repeat_in << " stretch=" << _stretch;
+    std::cout << " repeat_in=" << _repeat_in << " stretch=" << _repeat_str;
     print_empty();
   }
 
@@ -380,27 +386,24 @@ struct affine_read_stream_t : public affine_base_stream_t {
 
 struct affine_write_stream_t : public affine_base_stream_t {
   int _out_port;           //source or destination port
-  int _garbage;
 
-  affine_write_stream_t(LOC unit, addr_t mem_addr, uint64_t stride,
-    uint64_t acc_size, int stretch, uint64_t num_strides,
-    int out_port, int shift_bytes, int garbage) :
-    affine_base_stream_t(unit,mem_addr,stride,acc_size,stretch,num_strides) {
-    _out_port=out_port;
-    _shift_bytes=shift_bytes;
-    _garbage=garbage;
-    set_orig();
+  affine_write_stream_t(LOC unit, const std::vector<uint64_t> &dims) :
+    affine_base_stream_t(unit, dims) {
+    _out_port = dims.back();
   }
 
   int64_t out_port()    {return _out_port;}
-  uint64_t garbage()     {return _garbage;}
+  uint64_t garbage()     {
+    const auto &dims = affine_base_stream_t::dims;
+    return dims[0] == 0 && dims.size() == 3u;
+  }
 
   virtual LOC src() {return LOC::PORT;}
   virtual LOC dest() {return _unit;}
 
   virtual void print_status() {
     affine_base_stream_t::print_status();
-    std::cout << " out_port=" << _out_port << " garbage=" << _garbage;
+    std::cout << " out_port=" << _out_port << " garbage=" << garbage();
     print_empty();
   }
 
@@ -610,8 +613,7 @@ struct port_port_stream_t : public base_stream_t {
     _repeat_in=repeat;
     _repeat_str=repeat_str;
     _src_data_width=src_data_width;
-    // For now we still assume CGRA, DGRA features for padding will be supported later...
-    _padding_size = padding_size == NO_PADDING ? padding_size : padding_size / 8;
+    _padding_size = padding_size;
     _repeat_flag=repeat_flag;
 
     set_orig();
@@ -1089,17 +1091,17 @@ struct direct_remote_scr_stream_t : public remote_scr_stream_t {
   // addr_t _num_elements=0;
   // addr_t _orig_elements;
 
-  virtual void set_orig() {
+  virtual void set_orig() override {
     _orig_elements = _num_elements;
   }
 
-  int64_t val_port()    {return _out_port;}
-  addr_t scratch_base_addr()    {return _remote_scr_base_addr;}
-  uint64_t num_strides() {return _num_elements;}
+  int64_t val_port() override {return _out_port;}
+  addr_t scratch_base_addr() {return _remote_scr_base_addr;}
+  uint64_t num_strides() override {return _num_elements;}
 
-  virtual STR_PAT stream_pattern() {return STR_PAT::REC;}
+  virtual STR_PAT stream_pattern() override {return STR_PAT::REC;}
 
-  virtual bool stream_active() {
+  virtual bool stream_active() override {
     return _num_elements!=0;
   }
 
@@ -1121,11 +1123,11 @@ struct direct_remote_scr_stream_t : public remote_scr_stream_t {
     return _cur_addr;
   }
 
-  virtual void cycle_status() {
+  virtual void cycle_status() override {
   }
 
   // port
-  virtual void print_status() {
+  virtual void print_status() override {
     std::cout << "direct port->remote scratch";
     std::cout << "\tval_port=" << _out_port;
     // std::cout << "\tremote_scratch_base_addr:" << _mem_addr << "\telem_left=" << _num_elements;
@@ -1135,8 +1137,8 @@ struct direct_remote_scr_stream_t : public remote_scr_stream_t {
     base_stream_t::print_status(); // configuration may not have been done yet!
   }
 
-  virtual LOC src() {return LOC::PORT;}
-  virtual LOC dest() {return LOC::REMOTE_SCR;}
+  virtual LOC src() override {return LOC::PORT;}
+  virtual LOC dest() override {return LOC::REMOTE_SCR;}
 };
 
 
@@ -1242,8 +1244,8 @@ struct atomic_scr_stream_t : public base_stream_t {
          << std::dec << "\tinput_type:" << _value_type << "\toutput_type:" << _output_type << "\taddr_type:" << _addr_type << "\n";
        };
 
-    // base_stream_t::print_status();
-  };
+  // base_stream_t::print_status();
+};
 
 
 #endif

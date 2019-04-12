@@ -27,6 +27,7 @@ void accel_t::sanity_check_stream(base_stream_t *s) {
         timestamp();
         std::cout << "In port " << in_port << " is not active for "
                   << s->short_name() << ", maybe a configure error!\n";
+        s->print_status();
       }
     }
   }
@@ -1616,6 +1617,10 @@ void accel_t::print_status() {
   if (done(false, 0)) {
     return;
   }
+  if (!_dfg) {
+    std::cout << "No DFG configured\n";
+    return;
+  }
   cout << "---- ACCEL " << _accel_index << " STATUS ----\n";
   cout << "MEM REQs OUTSTANDING: " << _dma_c.mem_reqs() << "\n";
   cout << "Active SEs:\n";
@@ -2231,7 +2236,8 @@ void data_controller_t::timestamp() { _accel->timestamp(); }
 bool dma_controller_t::schedule_dma_port(affine_read_stream_t &new_s) {
   auto *s = new affine_read_stream_t(new_s);
   // UPDATE CONTEXT ADDRESS FOR SIMT-STYLE DMA INTERACTIONS
-  s->_mem_addr += _accel->accel_index() * new_s.ctx_offset();
+  auto address = s->cur_addr() + _accel->accel_index() * new_s.ctx_offset();
+  std::fill(s->address.begin(), s->address.end(), address);
 
   _dma_port_streams.push_back(s);
   _read_streams.push_back(s);
@@ -2247,7 +2253,9 @@ bool dma_controller_t::schedule_indirect(indirect_stream_t &new_s) {
 
 bool dma_controller_t::schedule_port_dma(affine_write_stream_t &new_s) {
   auto *s = new affine_write_stream_t(new_s);
-  s->_mem_addr += _accel->accel_index() * new_s.ctx_offset();
+  auto address = s->cur_addr() + _accel->accel_index() * new_s.ctx_offset();
+  std::fill(s->address.begin(), s->address.end(), address);
+
   _port_dma_streams.push_back(s);
   _write_streams.push_back(s);
   return true;
@@ -2659,11 +2667,11 @@ void dma_controller_t::make_write_request() {
         port_data_t &out_port =
             _accel->port_interf().out_port(stream._out_port);
         if ((out_port.mem_size() > 0) && // TODO:  unoptimal if we didn't wait?
-            (stream._garbage ||
+            (stream.garbage() ||
              (_accel->_lsq->canRequest() &&
               _accel->_lsq->sd_transfers[MEM_WR_STREAM].canReserve()))) {
 
-          if (!stream._garbage) {
+          if (!stream.garbage()) {
             _accel->_lsq->sd_transfers[MEM_WR_STREAM].reserve();
             req_write(stream, out_port);
           } else { // it's garbage
@@ -2671,7 +2679,7 @@ void dma_controller_t::make_write_request() {
               out_port.pop_out_data(); // get rid of data
               // timestamp(); cout << "POPPED b/c port->dma " << out_port.port()
               // << " " << out_port.mem_size() << "\n";
-              stream.pop_addr(); // get rid of addr
+              stream.pop_addr(out_port.get_port_width()); // get rid of addr
             }
           }
 
@@ -2824,7 +2832,8 @@ void dma_controller_t::make_read_request() {
   }
 }
 
-// this works only when stride is less than 64 (straddle is for just the next cache line) -- basically stride should be equal to the data type or does aligned malloc not work?
+// this works only when stride is less than 64 (straddle is for just the next cache line) --
+// basically stride should be equal to the data type or does aligned malloc not work?
 int dma_controller_t::req_read(affine_read_stream_t &stream) {
   int data_width = stream.data_width();
   addr_t prev_addr = 0;
@@ -2842,7 +2851,6 @@ int dma_controller_t::req_read(affine_read_stream_t &stream) {
   stream.set_straddle_bytes(0);
   // int words=0;
   int elems = 0;
-
   while (addr < max_addr && addr > prev_addr && stream.stream_active()) {
     prev_addr = addr;
     if(addr-base_addr+data_width>64) {
@@ -5128,6 +5136,7 @@ void port_controller_t::cycle() {
         }
 
         if (stream._padding_size != NO_PADDING) {
+          assert(stream._padding_size);
           (++stream._padding_cnt) %= stream._padding_size;
         }
 

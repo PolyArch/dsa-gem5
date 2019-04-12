@@ -347,6 +347,7 @@ class ExecContext {
      */
 
        /** Reads an integer register. */
+    virtual void pushStreamDimension(uint64_t, uint64_t, uint64_t) {}
     virtual void setSSReg(uint64_t val, int ss_idx) {}
     virtual void callSSFunc(int ss_func_opcode) {}
     virtual uint64_t receiveSS() {return 0;}
