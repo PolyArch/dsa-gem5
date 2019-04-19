@@ -5887,9 +5887,6 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
   _sched->cheapCalcLatency(lat, lat_mis);
   int max_lat_mis = lat_mis; //_sched->decode_lat_mis();
 
-  std::cout << "Switched to config: " << _sched->name()
-            << " lat_mis:" << max_lat_mis << " (group breakdown: ";
-
   for (int g = 0; g < NUM_GROUPS; ++g) {
     auto &active_ports = _soft_config.in_ports_active_group[g];
     auto &active_out_ports = _soft_config.out_ports_active_group[g];
@@ -5900,9 +5897,6 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
 
       float thr_ratio = 1 / (float)thr;
       float mis_ratio = ((float)_fu_fifo_len) / (_fu_fifo_len + max_lat_mis);
-
-      std::cout << "group" << g << ": fu_thr:" << thr_ratio
-                << " mis:" << mis_ratio << " ";
 
       // setup the rate limiting structures
       if (thr_ratio < mis_ratio) { // group throughput is worse
