@@ -239,6 +239,7 @@ struct affine_base_stream_t : public base_stream_t {
   affine_base_stream_t() {}
 
   int64_t access_size() override {
+    assert(dims.size() >= 2);
     return dims[dims.size() - 2];
   }
 
@@ -304,6 +305,7 @@ struct affine_base_stream_t : public base_stream_t {
       total_bytes += delta;
       current_address += delta;
       if (!continuous) {
+        std::cout << "bytes: " << delta << "\n";
         print_status();
       }
       assert(continuous);
@@ -335,8 +337,8 @@ struct affine_base_stream_t : public base_stream_t {
     return current_address;
   }
 
-  virtual bool stream_active() override {
-    return idx[0] != dim_trip_count(0);
+  bool stream_active() override {
+    return idx[0] != dim_trip_count(0) && dims[dims.size() - 2] != 0;
   }
 
   virtual void print_status() override {

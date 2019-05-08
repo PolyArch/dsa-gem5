@@ -2192,8 +2192,9 @@ void accel_t::schedule_streams() {
       for (int in_port : ip->in_ports()) {
         port_data_t *in_vp = &_port_interf.in_port(in_port);
         in_vp->set_status(port_data_t::STATUS::BUSY, ip->unit());
-        if (auto port_port_stream = dynamic_cast<port_port_stream_t *>(ip)) { // it means different for recurrence stream: confirm if this makes sense
-          cout << "Port stream with repeat: " << port_port_stream->repeat_in() << endl; // required for unuse error
+        // it means different for recurrence stream: confirm if this makes sense
+        if (auto port_port_stream = dynamic_cast<port_port_stream_t *>(ip)) {
+          (void) (port_port_stream);
           if(!ip->repeat_flag()) in_vp->set_repeat(repeat, repeat_str, repeat_flag);
         } else {
           in_vp->set_repeat(repeat, repeat_str, repeat_flag);
@@ -2883,7 +2884,6 @@ int dma_controller_t::req_read(affine_read_stream_t &stream) {
   sdInfo =
       new SSMemReqInfo(stream.id(), _accel->_accel_index, stream.in_ports(),
                        mask, _accel->get_cur_cycle(), last, stream.fill_mode(), stream.stride_hit());
-                       // mask, _accel->_ssim->now(), last, stream.fill_mode(), stream.stride_hit());
 
   // make request
   _accel->_lsq->pushRequest(_accel->cur_minst(), true /*isLoad*/, NULL /*data*/,
@@ -5926,7 +5926,6 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
       }
     }
   }
-  std::cout << ")\n";
 
   // compute active_plus
   _soft_config.in_ports_active_plus = _soft_config.in_ports_active;

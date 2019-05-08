@@ -413,8 +413,8 @@ void ssim_t::add_port(int in_port) {
 }
 
 void ssim_t::load_dma_to_port(int repeat, int repeat_str) {
-  int new_repeat_str = repeat_str & (0x3FF);
-  bool repeat_flag = repeat_str & (1<<10);
+  int new_repeat_str = repeat_str >> 1;
+  bool repeat_flag = repeat_str & 1;
 
   affine_read_stream_t* s = new affine_read_stream_t(LOC::DMA, stream_stack,
                                                      {(int) stream_stack.back()},
@@ -438,9 +438,10 @@ void ssim_t::write_dma() {
   stream_stack.clear();
 }
 
+
 void ssim_t::load_scratch_to_port(int repeat, int repeat_str) {//, bool repeat_flag) {
-  int new_repeat_str = repeat_str & (0x3FF);
-  bool repeat_flag = repeat_str & (1<<10);
+  int new_repeat_str = repeat_str >> 1;
+  bool repeat_flag = repeat_str & 1;
 
   affine_read_stream_t* s = new affine_read_stream_t(LOC::SCR, stream_stack,
                                                      {(int) stream_stack.back()},
@@ -453,6 +454,7 @@ void ssim_t::load_scratch_to_port(int repeat, int repeat_str) {//, bool repeat_f
       
   add_bitmask_stream(s);
   stream_stack.clear();
+
 }
 
 void ssim_t::write_scratchpad() {
@@ -549,12 +551,11 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
   int core_d = ((flags & 3) == 1) ? -1 : 1;
   padding_iter = (flags >> 2) ? padding_iter : NO_PADDING;
 
-  int new_repeat_str = repeat_str & (0x3FF);
-  bool repeat_flag = repeat_str & (1<<10);
+  int new_repeat_str = repeat_str >> 1;
+  bool repeat_flag = repeat_str & 1;
 
   if((flags & 3) == 0) {
 
-    std::cout << "Repeat/repeat port in recurrence stream: " << repeat << std::endl;
     s = new port_port_stream_t(out_port,in_port,num_elem,repeat,new_repeat_str,
                                src_data_width, padding_iter, repeat_flag);
     // set the cur_repeat_lim of output port to -1 (this is opp to others)
