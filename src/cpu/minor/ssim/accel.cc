@@ -1123,7 +1123,7 @@ void accel_t::cycle_cgra_backpressure() {
     } else if(cur_in_port.num_ready() && cur_in_port.cur_repeat_lim()==0) { // when the element has to be repeated 0 times (discard)
       // cout << "Came inside repeat=0 for Vec name: " << vec_in->name() << "\n";
       cur_in_port.pop(1);
-      }
+    }
   }
 
   // calling with the default parameters for now
