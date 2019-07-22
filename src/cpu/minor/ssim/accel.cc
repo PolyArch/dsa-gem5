@@ -5830,7 +5830,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
          ++port_idx) {
       int cgra_port_num = cur_in_port.cgra_port_for_index(port_idx);
       // SSDfgNode *dfg_node = vec_input->inputs()[port_idx];
-      SSDfgNode *dfg_node = vec_input->inputs()[port_idx*vec_input->get_port_width()/64];
+      SSDfgNode *dfg_node = vec_input->at(port_idx*vec_input->get_port_width()/64);
 
       if (dfg_node != nullptr) {
         SSDfgInput *dfg_in = static_cast<SSDfgInput *>(dfg_node);
@@ -5873,7 +5873,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
     for (unsigned port_idx = 0; port_idx < cur_out_port.port_cgra_elem();
          ++port_idx) {
       // SSDfgNode *dfg_node = vec_output->getOutput(port_idx);
-      SSDfgNode *dfg_node = vec_output->getOutput(port_idx*vec_output->get_port_width()/64);
+      SSDfgNode *dfg_node = vec_output->at(port_idx*vec_output->get_port_width()/64);
       assert(dfg_node);
       SSDfgOutput *dfg_out = static_cast<SSDfgOutput *>(dfg_node);
       max_lat = std::max(_sched->latOf(dfg_out), max_lat);
