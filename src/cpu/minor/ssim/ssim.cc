@@ -265,7 +265,7 @@ void ssim_t::add_bitmask_stream(base_stream_t* s, uint64_t ctx) {
   }
 
   //Check if not active!
-  if(debug && (SS_DEBUG::COMMAND)  ) {
+  if(debug && (SS_DEBUG::COMMAND)) {
     timestamp_context();
     cout << "id:" << s->id() << " ";
     s->print_status();
