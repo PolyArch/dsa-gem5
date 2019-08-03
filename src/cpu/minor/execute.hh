@@ -451,16 +451,14 @@ class Execute : public Named
     // void send_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id);
     void push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int opcode, int val_bytes, int out_bytes);
 
-    /* receive the message at a port or scratchpad */
+    /* receive the message at a port */
     // void receiveSpuMessage(int64_t val, int in_port_id){
     void receiveSpuMessage(uint8_t* val, int num_bytes, int in_port_id){
       ssim.push_in_accel_port(0, val, num_bytes, in_port_id);
     }
 
-	/* receive the message at a port or scratchpad */
-    // void receiveSpuMessage(bool scr_type, int64_t val, int16_t remote_scr_offset){
+	/* receive the message at a scratchpad */
     void receiveSpuMessage(uint8_t* val, int num_bytes, uint16_t remote_scr_offset){
-      // if(scr_type==0)
       ssim.write_remote_banked_scratchpad(val, num_bytes, remote_scr_offset);
     }
 

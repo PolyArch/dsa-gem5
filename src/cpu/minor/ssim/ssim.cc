@@ -500,10 +500,10 @@ void ssim_t::multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_por
       s->_remote_port = rem_port;
       // s->_unit=LOC::SCR; (probably add a flag for the destination to save a new opcode)
       s->set_orig();
-        if(SS_DEBUG::NET_REQ){
-          printf("Remote stream initialized");
-          s->print_status();
-        }
+      if(SS_DEBUG::NET_REQ){
+        printf("Remote stream initialized");
+        s->print_status();
+      }
        add_bitmask_stream(s);
       } else {
         if(rem_port!=0) { // I hope it can never be 0

@@ -1606,6 +1606,7 @@ void Execute::send_spu_scr_wr_req(uint8_t* val, int num_bytes, uint64_t scr_offs
 
   std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
   (*msg).m_MessageSize = MessageSizeType_Control;
+  // (*msg).m_MessageSize = MessageSizeType_Response_Data;
   (*msg).m_Type = SpuRequestType_ST;
   (*msg).m_Requestor = cpu.get_m_version();
   (*msg).m_addr = 0;
@@ -1679,11 +1680,11 @@ void Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int op
   }
 }
 
-// multicast, TODO: change names
 void Execute::send_spu_req(int src_port_id, int dest_port_id, uint8_t* val, int num_bytes, uint64_t mask){
 
   std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
   (*msg).m_MessageSize = MessageSizeType_Control;
+  // (*msg).m_MessageSize = MessageSizeType_Writeback_Data;
   (*msg).m_Type = SpuRequestType_LD;
   (*msg).m_Requestor = cpu.get_m_version();
   for(int i=0; i<num_bytes; ++i){

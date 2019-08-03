@@ -1,4 +1,4 @@
-#include <algorithm>
+// #include <algorithm>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -2502,15 +2502,17 @@ void dma_controller_t::port_resp(unsigned cur_port) {
         }
 
         // cache hit stats collection
-        /*if(_accel->_ssim->in_roi()) {
+        if(_accel->_ssim->in_roi()) {
           _accel->_stat_tot_mem_wait_cycles += (_accel->get_cur_cycle()-response->sdInfo->request_cycle);
           _accel->_stat_mem_bytes_rd += data.size();
           if(_accel->get_cur_cycle()-response->sdInfo->request_cycle<20) { // probably L1 hit
+            // cout << "L1 hit\n";
             _accel->_stat_hit_bytes_rd += data.size();
           } else {
+            // cout << "L1 miss\n";
             _accel->_stat_miss_bytes_rd += data.size();
           } 
-        }*/
+        }
 
         if(_accel->_ssim->in_roi()) {
           _accel->_stat_mem_bytes_rd += data.size();
@@ -2798,8 +2800,7 @@ void dma_controller_t::make_read_request() {
            (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes/subsize_vp.get_port_width())) && 
      
             _accel->_lsq->sd_transfers[in_port].unreservedRemainingSpace() >
-                0 && // 8 && // 16 && // 8 && // 1 && // 0 && -- leave for done (TODO: check)
-            _accel->_lsq->canRequest()) {
+                0 && _accel->_lsq->canRequest()) {
 
           auto &in_vp = _accel->port_interf().in_port(in_port);
           if (in_vp.num_can_push() > 8) { // FIXME:CHECKME: make sure vp isn't full
@@ -2877,6 +2878,7 @@ int dma_controller_t::req_read(affine_read_stream_t &stream) {
 
   bool last = stream.check_set_empty(); // do this first so last is set
   if (last) {
+    timestamp();
     _accel->process_stream_stats(stream);
   }
 
@@ -2925,7 +2927,7 @@ void scratch_write_controller_t::write_scratch_remote_ind(
       val[j] = val_vp.pop_out_data();
       if (SS_DEBUG::NET_REQ) {
         timestamp();
-        cout << "val being written to scratchpad: " << val[j] << "\n";
+        cout << "val being written to remote scratchpad: " << val[j] << "\n";
       }
     }
     _accel->write_scratchpad(addr, &val[0], num_bytes, stream.id());
@@ -3621,7 +3623,9 @@ if(stream._shift_bytes==2) {
          << "-byte write request for port->dma, addr:" << std::hex << init_addr
          << ", data:";
     for (int i = 0; i < elem_written; ++i) {
-      cout << data64[i] << ", ";
+      if(data_width==8) {
+        cout << data64[i] << ", ";
+      }
     }
     cout << "\n" << std::dec;
   }
@@ -5407,8 +5411,8 @@ bool accel_t::done(bool show, int mask) {
 
   if (mask == GLOBAL_WAIT && d) {
     // _cleanup_mode = false; // Should this be here?
-    cout << "Came to set this core done: " << _lsq->getCpuId() << endl;
-    cout << "Number of active threads: " << _ssim->num_active_threads() << endl;
+    // cout << "Came to set this core done: " << _lsq->getCpuId() << endl;
+    // cout << "Number of active threads: " << _ssim->num_active_threads() << endl;
     _lsq->set_spu_done(_lsq->getCpuId());
     d = _lsq->all_spu_done(_ssim->num_active_threads());
     if(d) {

@@ -79,7 +79,6 @@ MessageBuffer::getSize(Tick curTime)
 bool
 MessageBuffer::areNSlotsAvailable(unsigned int n, Tick current_time)
 {
-
     // fast path when message buffers have infinite size
     if (m_max_size == 0) {
         return true;
