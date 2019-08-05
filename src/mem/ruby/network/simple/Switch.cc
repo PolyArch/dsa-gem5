@@ -128,6 +128,13 @@ Switch::regStats()
     }
     m_avg_utilization /= Stats::constant(m_throttles.size());
 
+
+    m_avg_spu_utilization.name(name() + ".percent_spu_links_utilized");
+    for (unsigned int i = 0; i < m_throttles.size(); i++) {
+        m_avg_spu_utilization += m_throttles[i]->getSpuUtilization();
+    }
+    m_avg_spu_utilization /= Stats::constant(m_throttles.size());
+
     for (unsigned int type = MessageSizeType_FIRST;
          type < MessageSizeType_NUM; ++type) {
         m_msg_counts[type]
@@ -195,4 +202,38 @@ Switch *
 SwitchParams::create()
 {
     return new Switch(this);
+}
+
+// actually this should only check spu buffers
+bool
+Switch::areBuffersEmpty() {
+  // for (unsigned int i = 0; i < m_port_buffers.size(); ++i) {
+  for (unsigned int i = 0; i < m_num_connected_buffers; ++i) {
+    if(m_port_buffers[i]==NULL) continue;
+    /*if(!m_port_buffers[i]->isEmpty()) {
+      // if(m_port_buffers[i]->isSpuMessage()) {
+      //  std::cout << "SPU message in port buffer\n";
+      return false;
+      // }
+    }*/
+    if(!m_port_buffers[i]->isStallMapEmpty()) {
+      return false;
+      // }
+    }
+  }
+  return true;
+}
+
+bool
+Switch::perf_switch_buffers_empty() {
+  if(m_perfect_switch==NULL) return true;
+  return m_perfect_switch->check_buffer_empty();
+}
+
+bool
+Switch::areThrottlesEmpty() {
+  for(unsigned int i=0; i<m_throttles.size(); ++i) {
+    if(!m_throttles[i]->empty()) return false;
+  }
+  return true;
 }

@@ -1697,6 +1697,7 @@ int get_cur_cycle();
 
   uint64_t _stat_tot_loads=0;
   uint64_t _stat_tot_stores=0;
+  uint64_t _stat_tot_updates=0;
   uint64_t _stat_tot_mem_store_acc=0;
   uint64_t _stat_tot_mem_load_acc=0;
 

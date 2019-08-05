@@ -1052,8 +1052,8 @@ void accel_t::cycle_cgra_backpressure() {
       if(repeat_prt.mem_size()) {
         uint64_t x = repeat_prt.pop_out_data();
         if(SS_DEBUG::MEM_REQ) {
-          // cout << "Port details: " << cur_in_port.port_cgra_elem() << " " << vec_in->logical_len() << " ( " << vec_in->name() << " ) "<< endl;
-          // cout << "NEW REPEAT COUNT: " << x << endl;
+          cout << "Port details: " << cur_in_port.port_cgra_elem() << " " << vec_in->logical_len() << " ( " << vec_in->name() << " ) "<< endl;
+          cout << "NEW REPEAT COUNT: " << x << endl;
         }
         int y = (x)*(1<<REPEAT_FXPNT);
         cur_in_port.set_cur_repeat_lim(y);
@@ -3340,6 +3340,7 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
       // this works when subsize_vp width < stream index bytes
       for(int i=0; i<stream._index_bytes/subsize_vp.get_port_width(); ++i) {
         SBDT ssize = subsize_vp.peek_out_data(i);
+        // cout << "8 bytes output: " << ssize << endl;
         ind2 = ind2 | (ssize << i*8*subsize_vp.get_port_width());
         // ind2 = (ind2 << i*8*subsize_vp.get_port_width()) | ssize;
       }
@@ -3347,6 +3348,8 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
       // If sub-stream size is 0, then pop the corresponding element from ind
       // port, also again set first ss access
       if(ind2==0) {
+        // cout << "Indirect substream size was 0\n";
+        assert(stream.pop_elem() && "Stream already at end, should allow");
         for(int i=0; i<stream._index_bytes/ind_vp.get_port_width(); ++i) {
           ind_vp.pop_out_data();
         }
@@ -4426,6 +4429,8 @@ void scratch_write_controller_t::serve_atomic_requests(bool &performed_atomic_sc
                  break;
       }
 
+      _accel->_stat_tot_updates++;
+
       uint16_t correct_val = input_val & ((1<<request._output_bytes*8)-1);
 
       // cout << "FInal output of atomic scr: " << correct_val << endl;
@@ -4547,9 +4552,10 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
 
       // num_value_pops should be less than 64 bytes?
       // Stage 1: push requests in scratch banks
+      int remote_update_this_cycle=0;
       while (scr_addr < max_addr && stream._num_strides > 0 &&
              out_addr.mem_size() && out_val.mem_size() &&
-             num_val_pops < 64/stream._value_bytes) {
+             num_val_pops < 64/stream._value_bytes && remote_update_this_cycle<2) {
              // num_val_pops < 64) {
         if (SS_DEBUG::COMP) {
           std::cout << "\tupdate at index location: " << loc
@@ -4588,11 +4594,12 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
 
         int local_core_id = (scr_addr + stream._output_bytes)/SCRATCH_SIZE;
         if(SS_DEBUG::NET_REQ) {
-          cout << "Sending remote atomic update for scratch_addr: " << scr_addr << " from own core id: " << _accel->_ssim->get_core_id() << " to remote core id: " << local_core_id <<  endl; 
+          cout << "Cycle: " << _accel->get_cur_cycle() << " Sending remote atomic update for scratch_addr: " << scr_addr << " from own core id: " << _accel->_ssim->get_core_id() << " to remote core id: " << local_core_id <<  endl; 
         }
         int local_scr_addr = scr_addr;
         uint64_t x = temp_req._inc;
-        _accel->_lsq->push_rem_atom_op_req(x, local_scr_addr, temp_req._opcode, temp_req._value_bytes, temp_req._output_bytes);
+        bool rem = _accel->_lsq->push_rem_atom_op_req(x, local_scr_addr, temp_req._opcode, temp_req._value_bytes, temp_req._output_bytes);
+        if(rem) ++remote_update_this_cycle;
  
         _accel->_stat_scratch_bank_requests_pushed++;
         stream._num_strides--;
@@ -5087,8 +5094,10 @@ void port_controller_t::cycle() {
         SBDT val = 0;
 
         // TODO: assumes out port has higher or equal data width
+        cout << "Pushing the recurrence elements\n";
         for(int i=0; i<n; ++i) {
           SBDT temp = vp_out.peek_out_data(i);
+          cout << "Intermediate temp: " << temp << "\n";
           val = (val << i*8*stream.src_data_width()) | temp;
           // val = val | (temp << i*8*stream.src_data_width());
         }
@@ -5098,6 +5107,7 @@ void port_controller_t::cycle() {
         
         // int x1 = vp_out.cur_repeat_lim();
         bool should_pop = vp_out.inc_repeated();
+        cout << "Should pop this time: " << should_pop << endl;
  
         // int x2 = vp_out.cur_repeat_lim();
         // assert(x1==x2);
@@ -5151,7 +5161,7 @@ void port_controller_t::cycle() {
             // for(int i=0; i<stream.src_data_width()/stream.data_width(); ++i) {
             for(int i=stream.src_data_width()/stream.data_width()-1; i>=0; --i) {
               SBDT temp = val >> (i*8*stream.data_width());
-              // cout << "Allowed to push in recurrence: " << temp << " with repeat_flag: " << stream.repeat_flag() << " in-recu port: " << in_port << endl;
+              cout << "Allowed to push in recurrence: " << temp << " with repeat_flag: " << stream.repeat_flag() << " in-recu port: " << in_port << endl;
               vp_in.push_data(vp_in.get_byte_vector(temp, data_width));
             }
             if (stream._padding_size != NO_PADDING && stream._padding_cnt == 0) {
@@ -5227,18 +5237,14 @@ void port_controller_t::cycle() {
           port_data_t& vp_in = pi.in_port(in_port);
           // should send vector version of that
           SBDT val = stream.pop_item(); // data width of const val should be >= port width
+          // so this should be data_width=16, 16/8=2 elements
+          // if normal constant, const_width=?
           // cout << "const_width: " << const_width << " data_width: " << data_width << endl;
           int num_bits = 8*data_width;
           for(int i=0; i<(const_width/data_width); ++i) {
-            /*SBDT mask = (1 << num_bits) - 1;
-            if(mask==0) { 
-              mask = (1 << (num_bits-1)) - 1;
-            }*/
-
-            SBDT test_mask = (((uint64_t)1)<<(num_bits-1))-1;
+            SBDT mask = (((uint64_t)1)<<(num_bits-1))-1;
             // cout << "test mask: " << hex << test_mask << endl;
-            // SBDT temp = (val >> (i*num_bits)) & mask;
-            SBDT temp = (val >> (i*num_bits)) & test_mask;
+            SBDT temp = (val >> (i*num_bits)) & mask;
             vp_in.push_data(vp_in.get_byte_vector(temp, data_width));
           }
           // vp_in.push_data(stream.pop_item());
@@ -5381,7 +5387,7 @@ void port_controller_t::print_status() {
 
 bool accel_t::done(bool show, int mask) {
   bool d = done_internal(show, mask);
-
+  
   // Is it correct? -- this gives can't free if already free error
   if(d) {
     _cleanup_mode = false;
@@ -5409,12 +5415,29 @@ bool accel_t::done(bool show, int mask) {
     d=false;
   }
 
+  // FIXME: Checking network status (not giving correct results)
+  /*if(d) { // if done, check network as well
+    bool x = _lsq->check_network_idle();
+    if(!x) d = x;
+    else cout << "Network idle\n";
+  }*/
+   // _lsq->check_network_idle();
+
   if (mask == GLOBAL_WAIT && d) {
     // _cleanup_mode = false; // Should this be here?
     // cout << "Came to set this core done: " << _lsq->getCpuId() << endl;
     // cout << "Number of active threads: " << _ssim->num_active_threads() << endl;
     _lsq->set_spu_done(_lsq->getCpuId());
     d = _lsq->all_spu_done(_ssim->num_active_threads());
+
+    // Check network as well
+    if(d) { // if done, check network as well
+      // cout << "All cores done, checking network\n";
+      bool x = _lsq->spu_net_done();// _lsq->check_network_idle();
+      if(!x) d = x;
+      // else cout << "Network idle\n";
+    }
+
     if(d) {
       // if(SS_DEBUG::WAIT) {
       if(1) {
@@ -5440,6 +5463,7 @@ bool accel_t::done(bool show, int mask) {
       done_internal(true, mask);
     }
   }
+
 
   return d;
 }
@@ -5624,8 +5648,16 @@ bool scratch_write_controller_t::done(bool show, int mask) {
       return false;
     }
     if (atomic_scr_issued_requests_active()) {
-      if (show)
-        cout << "ATOMIC SCR bank buffers Not Empty\n";
+      if (show) {
+        cout << "ATOMIC SCR bank buffers Not Empty: "; // \n";
+        for (int i = 0; i < NUM_SCRATCH_BANKS; ++i) {
+          if (!_atomic_scr_issued_requests[i].empty()) {
+            cout << _atomic_scr_issued_requests[i].size();
+            break;
+          }
+        }
+        cout << "\n";
+      }
       return false;
     }
   }

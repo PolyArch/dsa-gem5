@@ -596,7 +596,8 @@ class ExecContext : public ::ExecContext
                     DPRINTF(SS, "Wait Compute\n");         
                   } else if(wait_mask == 16) {
                     DPRINTF(SS, "Wait mem write\n");
-                  } else if(wait_mask == 65) {
+                  // } else if(wait_mask == 65) {
+                  } else if(wait_mask == 128) { // come here on commit
                     ssim.set_not_in_use(); // FIXME:check
                     DPRINTF(SS, "Wait on all threads\n");         
                   } else if(wait_mask == 66) {

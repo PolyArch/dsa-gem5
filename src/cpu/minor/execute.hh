@@ -63,7 +63,6 @@ namespace Minor
 class Execute : public Named
 {
 
-
   /** Structure to hold SenderState info through
      *  translation and memory accesses. */
     class SpuRequest :
@@ -220,6 +219,7 @@ class Execute : public Named
 
   public: /* Public for Pipeline to be able to pass it to Decode */
     std::vector<InputBuffer<ForwardInstData>> inputBuffer;
+    // int _remote_ops_spu[64];
 
   protected:
     /** Stage cycle-by-cycle state */
@@ -444,12 +444,13 @@ class Execute : public Named
 
 	/* push the multicast request on the message buffer */
     // void send_spu_req(int dest_port_id, int8_t* val, int num_bytes, int64_t mask);
+    bool check_network_idle();
     void send_spu_req(int src_port_id, int dest_port_id, uint8_t* val, int num_bytes, uint64_t mask);
 
     /* push the port->scr request on the message buffer */
     void send_spu_scr_wr_req(uint8_t* val, int num_bytes, uint64_t scr_offset, int dest_core_id);
     // void send_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id);
-    void push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int opcode, int val_bytes, int out_bytes);
+    bool push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int opcode, int val_bytes, int out_bytes);
 
     /* receive the message at a port */
     // void receiveSpuMessage(int64_t val, int in_port_id){

@@ -582,6 +582,16 @@ class System : public MemObject
     void drainResume() override;
 
 
+    void inc_spu_receive() { ++_num_spu_receive; }
+    void inc_spu_sent() { ++_num_spu_sent; }
+    bool spu_net_done() { 
+      std::cout << "SPU sent: " << _num_spu_sent << " SPU receive: " << _num_spu_receive << "\n";
+      return _num_spu_sent==_num_spu_receive; 
+    }
+
+    int _num_spu_receive=0;
+    int _num_spu_sent=0;
+
     // SPU things-----------------------------------
     void set_spu_done(int spu_id);
     void reset_all_spu();

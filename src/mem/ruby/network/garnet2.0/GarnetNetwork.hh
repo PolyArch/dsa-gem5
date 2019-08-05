@@ -70,6 +70,8 @@ class GarnetNetwork : public Network
     uint32_t getBuffersPerDataVC() { return m_buffers_per_data_vc; }
     uint32_t getBuffersPerCtrlVC() { return m_buffers_per_ctrl_vc; }
     int getRoutingAlgorithm() const { return m_routing_algorithm; }
+    // TODO: implement this later, currently works only for simple model
+    bool internal_links_idle() { return true; }
 
     bool isFaultModelEnabled() const { return m_enable_fault_model; }
     FaultModel* fault_model;

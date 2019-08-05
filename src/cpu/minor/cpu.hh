@@ -157,6 +157,7 @@ class MinorCPU : public BaseCPU, public Consumer
 
   public:
 
+    bool check_network_idle();
 	void wakeup();
 	void print(std::ostream& out) const;
 
@@ -193,6 +194,7 @@ class MinorCPU : public BaseCPU, public Consumer
 	  // spu_net_ptr->setFromNetQueue(base+core_id, true, 0, "request", dummy3);
 
 
+      // Or should this 0 be core_id?
 	  spu_net_ptr->setToNetQueue(base+cpuId(), true, 0, "response", requestFromSpu);
 	  // spu_net_ptr->setToNetQueue(base+cpuId(), true, 3, "forward", dummy1);
 	  // spu_net_ptr->setToNetQueue(base+cpuId(), true, 1, "response", dummy2);

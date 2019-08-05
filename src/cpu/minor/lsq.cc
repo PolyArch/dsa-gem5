@@ -1105,6 +1105,13 @@ LSQ::all_spu_done(int num_active_threads) {
   return thread->getSystemPtr()->all_spu_done(num_active_threads);
 }
 
+
+bool
+LSQ::spu_net_done() {
+  ThreadContext *thread = cpu.getContext(0); // assume tid=0?
+  return thread->getSystemPtr()->spu_net_done();
+}
+
 void
 LSQ::reset_all_spu() {
   ThreadContext *thread = cpu.getContext(0); // assume tid=0?
@@ -1119,6 +1126,7 @@ LSQ::reset_all_spu_global_wait() {
   thread->getSystemPtr()->reset_all_spu_global_wait();
 }
 
+
 bool
 LSQ::is_last_spu(int num_active_threads) {
   ThreadContext *thread = cpu.getContext(0); // 1 thread, tid=0
@@ -1131,6 +1139,11 @@ LSQ::set_spu_global_wait_released(int spu_id) {
   ThreadContext *thread = cpu.getContext(0); // assume tid=0?
   // thread->getProcessPtr()->set_spu_global_wait_released(spu_id);
   thread->getSystemPtr()->set_spu_global_wait_released(spu_id);
+}
+
+bool 
+LSQ::check_network_idle() {
+  return execute.check_network_idle();
 }
 
 bool
@@ -1280,8 +1293,8 @@ void LSQ::push_spu_scr_wr_req(uint8_t* val, int num_bytes, uint64_t scr_offset, 
   execute.send_spu_scr_wr_req(val, num_bytes, scr_offset, dest_core_id);
 }
 
-void LSQ::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int opcode, int val_bytes, int out_bytes) {
-  execute.push_rem_atom_op_req(val, local_scr_addr, opcode, val_bytes, out_bytes);
+bool LSQ::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int opcode, int val_bytes, int out_bytes) {
+  return execute.push_rem_atom_op_req(val, local_scr_addr, opcode, val_bytes, out_bytes);
 }
 
 

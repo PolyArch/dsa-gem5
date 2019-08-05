@@ -122,6 +122,9 @@ Throttle::operateVnet(int vnet, int &bw_remaining, bool &schedule_wakeup,
             // Find the size of the message we are moving
             MsgPtr msg_ptr = in->peekMsgPtr();
             Message *net_msg_ptr = msg_ptr.get();
+
+            // TODO: what is the width of this message? 
+            // If it is SPU, make it to the tuple (addr, width) = 4 bytes?
             m_units_remaining[vnet] +=
                 network_message_to_size(net_msg_ptr);
 
@@ -160,11 +163,11 @@ Throttle::operateVnet(int vnet, int &bw_remaining, bool &schedule_wakeup,
 void
 Throttle::wakeup()
 {
-  // printf("THROTTLE WAKEUP\n");
     // Limits the number of message sent to a limited number of bytes/cycle.
     assert(getLinkBandwidth() > 0);
+    // updated while operating vnet
     int bw_remaining = getLinkBandwidth();
-    int spu_bw_remaining = getLinkBandwidth(); // FIXME: do I have any info about this message type?
+    int spu_bw_remaining = getLinkBandwidth();
 
     m_wakeups_wo_switch++;
     bool schedule_wakeup = false;
@@ -179,7 +182,6 @@ Throttle::wakeup()
         iteration_direction = true;
     }
 
-    // TODO: add for getting message info
     if (iteration_direction) {
         for (int vnet = 0; vnet < m_vnets; ++vnet) {
           if(!m_in[vnet]->isSpuMessage()) { 

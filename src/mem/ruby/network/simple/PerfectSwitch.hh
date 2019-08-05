@@ -79,6 +79,7 @@ class PerfectSwitch : public Consumer
     void clearStats();
     void collateStats();
     void print(std::ostream& out) const;
+    bool check_buffer_empty();
 
   private:
     // Private copy constructor and assignment operator
