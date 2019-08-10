@@ -50,8 +50,9 @@
 #include "mem/protocol/MachineType.hh"
 #include "mem/ruby/slicc_interface/RubySlicc_Util.hh"
 
-// FIXME: should not have any effect?
 #include "mem/ruby/network/MessageBuffer.hh"
+#include "mem/ruby/network/Network.hh"
+#include "mem/ruby/network/simple/SimpleNetwork.hh"
 
 MinorCPU::MinorCPU(MinorCPUParams *params) :
     BaseCPU(params),
@@ -103,51 +104,72 @@ MinorCPU::MinorCPU(MinorCPUParams *params) :
 	(*responseToSpu).setConsumer(this);
 }
 
+bool MinorCPU::check_network_idle() {
+  if(!requestFromSpu->isEmpty()) return false;
+  if(!responseToSpu->isEmpty()) return false;
+  return (SimpleNetwork*)(spu_net_ptr)->internal_links_idle();
+}
+
 void MinorCPU::wakeup()
 {
-  assert(!responseToSpu->isEmpty());
-  // could do dynamic cast
-  const SpuRequestMsg* msg = (SpuRequestMsg*)responseToSpu->peek();
-  int64_t return_info = msg->m_addr;
+  // assert(!responseToSpu->isEmpty());
+  while(!responseToSpu->isEmpty()) {
+  // if(!responseToSpu->isEmpty()) {
+    // could do dynamic cast
+    const SpuRequestMsg* msg = (SpuRequestMsg*)responseToSpu->peek();
+    int64_t return_info = msg->m_addr;
 
-  int num_bytes = return_info >> 16;
-  uint8_t data[num_bytes];
-  for(int i=0; i<num_bytes; ++i) {
-    data[i] = (*msg).m_DataBlk.getByte(i);
-  }
-  if(SS_DEBUG::NET_REQ){
-	// timestamp();
-	std::cout << curCycle();
-    printf("Wake up accel at destination node: %d and num_bytes: %d\n",cpuId(),num_bytes);
-  }
-  if((*msg).m_Type == SpuRequestType_UPDATE) {
-    // TODO: need all the info to push into banks
-    int opcode = (return_info >> 16) & 3;
-    int val_bytes = (return_info >> 18) & 3;
-    int out_bytes = (return_info >> 20) & 3;
-    int scr_addr = return_info & 65535;
-    // int scr_addr = return_info & (1<<22-1);
-    uint64_t inc = 0;
-    for(int i=0; i<val_bytes; ++i) {
-      int8_t x = msg->m_DataBlk.getByte(i);
-      inc = inc | (x >> (i*8));
+    int num_bytes = return_info >> 16;
+    uint8_t data[num_bytes];
+    for(int i=0; i<num_bytes; ++i) {
+      data[i] = (*msg).m_DataBlk.getByte(i);
     }
-    if(SS_DEBUG::NET_REQ) {
-      std::cout << "Received atomic update request tuple, scr_addr: " << scr_addr << " opcode: " << opcode << " val_bytes: " << val_bytes << " out_bytes: " << out_bytes << std::endl;
+    if(SS_DEBUG::NET_REQ){
+      // timestamp();
+      std::cout << curCycle();
+      printf("Wake up accel at destination node: %d and num_bytes: %d\n",cpuId(),num_bytes);
     }
-    pipeline->receiveSpuUpdateRequest(scr_addr, opcode, val_bytes, out_bytes, inc);
-  } else if((*msg).m_Type == SpuRequestType_LD) {
-    int remote_port_id = return_info & 63;
-    if(SS_DEBUG::NET_REQ) {
-      std::cout << "Received multicast message at remote port: " << remote_port_id << std::endl;
-    }
-    pipeline->receiveSpuMessage(data, num_bytes, remote_port_id);
-  } else {
-    int16_t remote_scr_offset = return_info & 65535; // (pow(2,16)-1);
-    pipeline->receiveSpuMessage(data, num_bytes, remote_scr_offset);
-  }
+    if((*msg).m_Type == SpuRequestType_UPDATE) {
+      // TODO: need all the info to push into banks
+      int opcode = (return_info >> 16) & 3;
+      int val_bytes = (return_info >> 18) & 3;
+      int out_bytes = (return_info >> 20) & 3;
+      int scr_addr = return_info & 65535;
+      // int scr_addr = return_info & (1<<22-1);
+      uint64_t inc = 0;
+      for(int i=0; i<val_bytes; ++i) {
+        int8_t x = msg->m_DataBlk.getByte(i);
+        inc = inc | (x >> (i*8));
+      }
 
-  responseToSpu->dequeue(clockEdge());
+
+
+     // for global barrier
+     ThreadContext *thread = getContext(0); // assume tid=0?
+     thread->getSystemPtr()->inc_spu_receive();
+
+
+
+      if(SS_DEBUG::NET_REQ) {
+        std::cout << "Received atomic update request tuple, scr_addr: " << scr_addr << " opcode: " << opcode << " val_bytes: " << val_bytes << " out_bytes: " << out_bytes << std::endl;
+      }
+      pipeline->receiveSpuUpdateRequest(scr_addr, opcode, val_bytes, out_bytes, inc);
+    } else if((*msg).m_Type == SpuRequestType_LD) {
+      int remote_port_id = return_info & 63;
+      if(SS_DEBUG::NET_REQ) {
+        std::cout << "Received multicast message at remote port: " << remote_port_id << std::endl;
+      }
+      pipeline->receiveSpuMessage(data, num_bytes, remote_port_id);
+    } else {
+      uint16_t remote_scr_offset = return_info & 65535; // (pow(2,16)-1);
+      if(SS_DEBUG::NET_REQ) {
+        std::cout << "Received multicast message for remote scr with offset: " << remote_scr_offset << std::endl;
+      }
+      pipeline->receiveSpuMessage(data, num_bytes, remote_scr_offset);
+    }
+
+    responseToSpu->dequeue(clockEdge());
+  };
 }
 
 void MinorCPU::print(std::ostream& out) const

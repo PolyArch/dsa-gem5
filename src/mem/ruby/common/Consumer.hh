@@ -70,6 +70,10 @@ class Consumer
 
     void scheduleEventAbsolute(Tick timeAbs);
 
+    bool check_no_event() {
+      return m_scheduled_wakeups.empty();
+    }
+
   protected:
     void scheduleEvent(Cycles timeDelta);
 

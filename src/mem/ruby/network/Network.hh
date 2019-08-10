@@ -81,6 +81,7 @@ class Network : public ClockedObject
 
     virtual ~Network();
     virtual void init();
+    virtual bool internal_links_idle() = 0;
 
     static uint32_t getNumberOfVirtualNetworks() { return m_virtual_networks; }
     int getNumNodes() const { return m_nodes; }
@@ -144,6 +145,10 @@ class Network : public ClockedObject
      * @return the NodeID of the destination
      */
     NodeID addressToNodeID(Addr addr, MachineType mtype);
+    bool idle(); // required for global barrier
+    uint32_t get_ctrl_nodes() {
+      return ctrl_nodes;
+    }
 
 	// TODO: Is it being used anywhere? No!
 	// MessageBuffer* getSpuQueue(int core_id) { return s_toNetQueues[core_id][0]; }

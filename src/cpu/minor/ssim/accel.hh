@@ -937,7 +937,7 @@ class scratch_write_controller_t : public data_controller_t {
   
   bool release_df_barrier(){
     assert(_df_count!=-1);
-    // printf("df_count: %ld current_writes: %ld\n",_df_count,_remote_scr_writes);
+    printf("df_count: %ld current_writes: %ld\n",_df_count,_remote_scr_writes);
     return (_remote_scr_writes==_df_count);
   }
 
@@ -1693,6 +1693,7 @@ int get_cur_cycle();
 
   uint64_t _stat_tot_loads=0;
   uint64_t _stat_tot_stores=0;
+  uint64_t _stat_tot_updates=0;
   uint64_t _stat_tot_mem_store_acc=0;
   uint64_t _stat_tot_mem_load_acc=0;
 

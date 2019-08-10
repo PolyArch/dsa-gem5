@@ -82,6 +82,13 @@ class Throttle : public Consumer
     void collateStats();
     void regStats(std::string name);
     void print(std::ostream& out) const;
+    bool empty() {
+      // if(!check_no_event()) return false;
+      for(unsigned int i=0; i<m_units_remaining.size(); ++i) {
+        if(m_units_remaining[i]>0) return false;
+      }
+      return true;
+    }
 
   private:
     void init(NodeID node, Cycles link_latency, int link_bandwidth_multiplier,

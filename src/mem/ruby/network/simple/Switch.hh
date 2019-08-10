@@ -68,6 +68,8 @@ class Switch : public BasicRouter
                     Cycles link_latency, int bw_multiplier);
 
     const Throttle* getThrottle(LinkID link_number) const;
+    bool areBuffersEmpty();
+    bool perf_switch_buffers_empty();
 
     void resetStats();
     void collateStats();
@@ -80,6 +82,7 @@ class Switch : public BasicRouter
 
     bool functionalRead(Packet *);
     uint32_t functionalWrite(Packet *);
+    bool areThrottlesEmpty();
 
   private:
     // Private copy constructor and assignment operator
@@ -94,6 +97,7 @@ class Switch : public BasicRouter
 
     // Statistical variables
     Stats::Formula m_avg_utilization;
+    Stats::Formula m_avg_spu_utilization;
     Stats::Formula m_msg_counts[MessageSizeType_NUM];
     Stats::Formula m_msg_bytes[MessageSizeType_NUM];
 };

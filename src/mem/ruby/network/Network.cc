@@ -46,6 +46,7 @@
 #include "mem/ruby/system/RubySystem.hh"
 // #include "mem/ruby/system/Sequencer.hh"
 #include "cpu/minor/cpu.hh"
+#include "mem/ruby/network/simple/SimpleNetwork.hh"
 
 uint32_t Network::m_virtual_networks;
 uint32_t Network::m_control_msg_size;
@@ -138,6 +139,32 @@ Network::~Network()
         }
     }
     delete m_topology_ptr;
+}
+
+bool Network::idle() {
+  assert(m_toNetQueues.size()==m_nodes);
+  assert(m_fromNetQueues.size()==m_nodes);
+  for(int node = 0; node < m_nodes; node++) {
+    for(unsigned k=0; k<m_toNetQueues[node].size(); ++k) {
+      if(m_toNetQueues[node][k]==NULL) continue;
+      if(!m_toNetQueues[node][k]->isEmpty()) {
+        std::cout << "To net queue not empty\n";
+        // std::cout << m_toNetQueues[node][k]->getStallMapSize() << "\n";
+        return false;
+      }
+    }
+    for(unsigned k=0; k<m_fromNetQueues[node].size(); ++k) {
+      if(m_fromNetQueues[node][k]==NULL) continue;
+      if(!m_fromNetQueues[node][k]->isEmpty()) {
+        std::cout << "From net queue not empty\n";
+        // std::cout << m_fromNetQueues[node][k]->getStallMapSize() << "\n";
+        return false;
+      }
+    }
+  }
+  // TODO: check internal buffers
+  // return internal_links_idle();
+  return true;
 }
 
 void

@@ -172,18 +172,42 @@ Topology::createLinks(Network *net)
         int dst = src_dest.second;
         component_latencies[src][dst] = link->m_latency;
         topology_weights[src][dst] = link->m_weight;
-    }
+     }
 
     // Walk topology and hookup the links
     Matrix dist = shortest_path(topology_weights, component_latencies,
                                 component_inter_switches);
 
+
     for (int i = 0; i < topology_weights.size(); i++) {
+
         for (int j = 0; j < topology_weights[i].size(); j++) {
-            int weight = topology_weights[i][j];
+
+             if(i<m_nodes && i>=ctrl_nodes) {
+              topology_weights[i][j] = topology_weights[i-ctrl_nodes][j];
+            }
+
+        }
+    }
+
+
+    for (int i = 0; i < topology_weights.size(); i++) {
+
+        for (int j = 0; j < topology_weights[i].size(); j++) {
+
+        
+          int weight = topology_weights[i][j];
+          // when it comes to SPU nodes
+
             if (weight > 0 && weight != INFINITE_LATENCY) {
+
                 NetDest destination_set =
                         shortest_path_to_node(i, j, topology_weights, dist);
+
+                /*if(i<m_nodes && i>=ctrl_nodes) {
+                  destination_set =
+                        shortest_path_to_node(i-ctrl_nodes, j, topology_weights, dist);
+                }*/
                 makeLink(net, i, j, destination_set);
             }
         }
@@ -234,11 +258,13 @@ Topology::makeLink(Network *net, SwitchID src, SwitchID dest,
         src_dest.second = dest;
         link_entry = m_link_map[src_dest];
 		if(src < ctrl_nodes) {
+	      std::cout << "cache ext in this time with src: " << src << " and dest: " << dest << "\n"; // issue in this function
           net->makeExtInLink(src, dest - (2 * m_nodes), link_entry.link,
                         routing_table_entry);
 		} else {
-	  // printf("spu ext in this time\n"); // issue in this function
+          std::cout << "spu ext in this time with src: " << src << " and dest: " << dest << "\n"; // issue in this function
 	    // printf("src is external node, dest_id should be varying with switches: %d\n", dest);
+        // dest-num_cores+1+i
 		  net->makeSpuExtInLink(src, dest - (2 * m_nodes), link_entry.link,
                         routing_table_entry);
 		}

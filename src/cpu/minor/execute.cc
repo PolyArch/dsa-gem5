@@ -1599,6 +1599,11 @@ Execute::isInbetweenInsts(ThreadID thread_id) const
         !lsq.accessesInFlight();
 }
 
+bool
+Execute::check_network_idle() {
+  return cpu.check_network_idle();
+}
+
 // TODO: see how to set custom messages
 // pack the message to send request on the SPU network to write on remote scratchpad
 // void Execute::send_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id) {
@@ -1606,6 +1611,7 @@ void Execute::send_spu_scr_wr_req(uint8_t* val, int num_bytes, uint64_t scr_offs
 
   std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
   (*msg).m_MessageSize = MessageSizeType_Control;
+  // (*msg).m_MessageSize = MessageSizeType_Response_Data;
   (*msg).m_Type = SpuRequestType_ST;
   (*msg).m_Requestor = cpu.get_m_version();
   (*msg).m_addr = 0;
@@ -1623,9 +1629,10 @@ void Execute::send_spu_scr_wr_req(uint8_t* val, int num_bytes, uint64_t scr_offs
   cpu.pushReqFromSpu(msg);
 }
 
-void Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int opcode, int val_bytes, int out_bytes) {
+bool Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int opcode, int val_bytes, int out_bytes) {
   std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
   (*msg).m_MessageSize = MessageSizeType_Control;
+  // (*msg).m_MessageSize = MessageSizeType_Response_Data;
   (*msg).m_Type = SpuRequestType_UPDATE;
   (*msg).m_Requestor = cpu.get_m_version();
   (*msg).m_addr = local_scr_addr;
@@ -1663,7 +1670,11 @@ void Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int op
   if(SS_DEBUG::NET_REQ){
     printf("output destination core: %d\n",dest_core_id);
   }
-
+  // FIXME: should not push more than 2 values in the same cycle
+  /*if(cpu.cpuId()!=dest_core_id) {
+    dest_core_id = 2; // it has to be 1
+  }*/
+// 
   // push message to local buffers
   if(dest_core_id==cpu.cpuId() || cpu.cpuId()==0) { // 0--host core when non-multi-threaded code
     if(SS_DEBUG::NET_REQ){
@@ -1676,14 +1687,20 @@ void Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int op
     }
     (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
     cpu.pushReqFromSpu(msg);
+  
+    // for global barrier
+    ThreadContext *thread = cpu.getContext(0); // assume tid=0?
+    thread->getSystemPtr()->inc_spu_sent();
+    return true;
   }
+  return false;
 }
 
-// multicast, TODO: change names
 void Execute::send_spu_req(int src_port_id, int dest_port_id, uint8_t* val, int num_bytes, uint64_t mask){
 
   std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
   (*msg).m_MessageSize = MessageSizeType_Control;
+  // (*msg).m_MessageSize = MessageSizeType_Writeback_Data;
   (*msg).m_Type = SpuRequestType_LD;
   (*msg).m_Requestor = cpu.get_m_version();
   for(int i=0; i<num_bytes; ++i){

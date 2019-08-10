@@ -216,6 +216,8 @@ void ssim_t::print_stats() {
     }
   }
 
+  cout << "Total atomic updates: " << accel_arr[0]->_stat_tot_updates << endl;
+
   cout << "Total Memory Activity: " << (double) total_mem_accesses
                                      / (double) roi_cycles() << "\n";
 
@@ -413,8 +415,11 @@ void ssim_t::add_port(int in_port) {
 }
 
 void ssim_t::load_dma_to_port(int repeat, int repeat_str) {
-  int new_repeat_str = repeat_str >> 1;
-  bool repeat_flag = repeat_str & 1;
+  // int new_repeat_str = repeat_str >> 1;
+  int new_repeat_str = repeat_str >> 2;
+  bool repeat_flag = (repeat_str>>1) & 1;
+
+  // bool repeat_flag = repeat_str & 1;
 
   affine_read_stream_t* s = new affine_read_stream_t(LOC::DMA, stream_stack,
                                                      {(int) stream_stack.back()},
@@ -440,8 +445,10 @@ void ssim_t::write_dma() {
 
 
 void ssim_t::load_scratch_to_port(int repeat, int repeat_str) {//, bool repeat_flag) {
-  int new_repeat_str = repeat_str >> 1;
-  bool repeat_flag = repeat_str & 1;
+  // int new_repeat_str = repeat_str >> 1;
+  // bool repeat_flag = repeat_str & 1;
+  int new_repeat_str = repeat_str >> 2;
+  bool repeat_flag = (repeat_str>>1) & 1;
 
   affine_read_stream_t* s = new affine_read_stream_t(LOC::SCR, stream_stack,
                                                      {(int) stream_stack.back()},
@@ -500,10 +507,10 @@ void ssim_t::multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_por
       s->_remote_port = rem_port;
       // s->_unit=LOC::SCR; (probably add a flag for the destination to save a new opcode)
       s->set_orig();
-        if(SS_DEBUG::NET_REQ){
-          printf("Remote stream initialized");
-          s->print_status();
-        }
+      if(SS_DEBUG::NET_REQ){
+        printf("Remote stream initialized");
+        s->print_status();
+      }
        add_bitmask_stream(s);
       } else {
         if(rem_port!=0) { // I hope it can never be 0
@@ -551,8 +558,14 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
   int core_d = ((flags & 3) == 1) ? -1 : 1;
   padding_iter = (flags >> 2) ? padding_iter : NO_PADDING;
 
-  int new_repeat_str = repeat_str >> 1;
-  bool repeat_flag = repeat_str & 1;
+  // cout << "Repeat std seen: " << repeat_str << endl;
+  // int new_repeat_str = repeat_str >> 1;
+  // bool repeat_flag = (repeat_str) & 1;
+  int new_repeat_str = repeat_str >> 2;
+  bool repeat_flag = (repeat_str>>1) & 1;
+  // since the last bit of stretch is flag
+  // int new_repeat_str = repeat_str >> 2;
+  // bool repeat_flag = (repeat_str>>1) & 1;
 
   if((flags & 3) == 0) {
 

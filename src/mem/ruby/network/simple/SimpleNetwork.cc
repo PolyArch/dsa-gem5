@@ -39,6 +39,7 @@
 #include "mem/ruby/network/simple/Switch.hh"
 #include "mem/ruby/network/simple/Throttle.hh"
 #include "mem/ruby/profiler/Profiler.hh"
+#include "mem/ruby/common/Consumer.hh"
 
 using namespace std;
 using m5::stl_helpers::deletePointers;
@@ -242,4 +243,42 @@ SimpleNetwork::functionalWrite(Packet *pkt)
         num_functional_writes += m_int_link_buffers[i]->functionalWrite(pkt);
     }
     return num_functional_writes;
+}
+
+bool
+SimpleNetwork::internal_links_idle() {
+  for(unsigned int j=0; j < m_switches.size(); ++j) {
+    if(m_switches[j]==NULL) continue;
+
+   if(!m_switches[j]->areThrottlesEmpty()) {
+      std::cout << "Throttle buffers not empty\n";
+      return false;
+    }
+  }
+  return true;
+  if(!idle()) return false;
+  for (unsigned int i = 0; i < m_int_link_buffers.size(); ++i) {
+    if(m_int_link_buffers[i]==NULL) continue;
+    if(!m_int_link_buffers[i]->isEmpty()) {
+      std::cout << "internal link buffers not empty: " << i << "\n";
+      return false;
+    }
+    if(!m_int_link_buffers[i]->isStallMapEmpty()) {
+      std::cout << "internal link buffers not empty: " << i << "\n";
+      return false;
+    }
+  }
+  // check port buffers in switches
+  for(unsigned int j=0; j < m_switches.size(); ++j) {
+    if(m_switches[j]==NULL) continue;
+    /*if(!m_switches[j]->areBuffersEmpty()) {
+      std::cout << "Switch buffers not empty\n";
+      return false;
+    }*/
+    if(!m_switches[j]->perf_switch_buffers_empty()) {
+      std::cout << "Perfect Switch buffers not empty\n";
+      return false;
+    }
+  }
+  return true;
 }

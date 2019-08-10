@@ -343,3 +343,53 @@ PerfectSwitch::print(std::ostream& out) const
 {
     out << "[PerfectSwitch " << m_switch_id << "]";
 }
+
+bool
+PerfectSwitch::check_buffer_empty() {
+
+    int highest_prio_vnet = m_virtual_networks-1;
+    int lowest_prio_vnet = 0;
+    int decrementer = 1;
+
+    // invert priorities to avoid starvation seen in the component network
+    if (m_wakeups_wo_switch > PRIORITY_SWITCH_LIMIT) {
+        m_wakeups_wo_switch = 0;
+        highest_prio_vnet = 0;
+        lowest_prio_vnet = m_virtual_networks-1;
+        decrementer = -1;
+    }
+
+    // For all components incoming queues
+    for (int vnet = highest_prio_vnet;
+         (vnet * decrementer) >= (decrementer * lowest_prio_vnet);
+         vnet -= decrementer) {
+      if(m_pending_message_count[vnet] > 0) return false;
+    }
+
+  /*for (unsigned int i = 0; i < m_in.size(); ++i) {
+    for (unsigned int j = 0; j < m_in[i].size(); ++j) {
+      if(m_in[i][j]==NULL) continue;
+      if(!m_in[i][j]->isEmpty()) {
+        if(m_in[i][j]->isSpuMessage()) {
+          std::cout << "SPU message present in in buffer\n";
+        return false;
+      }
+    }
+  }
+  }
+  for (unsigned int i = 0; i < m_out.size(); ++i) {
+    for (unsigned int j = 0; j < m_out[i].size(); ++j) {
+      if(m_out[i][j]==NULL) continue;
+      if(!m_out[i][j]->isEmpty()) {
+        if(m_out[i][j]->isSpuMessage()) {
+          std::cout << "SPU message present in out buffer\n";
+
+        return false;
+        }
+      }
+    }
+  }*/
+  
+  return true;
+
+}

@@ -777,16 +777,18 @@ class LSQ : public Named
     /* Push request into the SPU buffer, FIXME: it could directly push here also? */
     void push_spu_req(int src_port_id, int dest_port_id, uint8_t* val, int num_bytes, uint64_t mask);
     void push_spu_scr_wr_req(uint8_t* val, int num_bytes, uint64_t scr_offset, int dest_core_id, int stream_id);
-    void push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int opcode, int val_bytes, int out_bytes);
+    bool push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int opcode, int val_bytes, int out_bytes);
     // void push_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id, int stream_id);
     int getCpuId() { return cpu.cpuId(); }
 
     void set_spu_done(int spu_id);
     bool all_spu_done(int num_active_threads);
+    bool spu_net_done();
     void reset_all_spu();
     void reset_all_spu_global_wait();
     bool is_last_spu(int num_active_threads);
     void set_spu_global_wait_released(int spu_id);
+    bool check_network_idle();
 
     /** Return the raw-bindable port */
     MinorCPU::MinorCPUPort &getDcachePort() { return dcachePort; }

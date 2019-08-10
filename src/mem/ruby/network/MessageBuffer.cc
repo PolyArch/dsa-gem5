@@ -79,7 +79,6 @@ MessageBuffer::getSize(Tick curTime)
 bool
 MessageBuffer::areNSlotsAvailable(unsigned int n, Tick current_time)
 {
-
     // fast path when message buffers have infinite size
     if (m_max_size == 0) {
         return true;
@@ -160,9 +159,6 @@ void
 MessageBuffer::enqueue(MsgPtr message, Tick current_time, Tick delta)
 {
     // record current time incase we have a pop that also adjusts my size
-	// FIXME: remove comments, just to debug
-	// printf("CHECK TIME OF ENQUEUE: %lu\n", current_time);
-	// printf("CHECK TIME OF ENQUEUE: %lu\n",m_time_last_time_enqueue);
     if (m_time_last_time_enqueue < current_time) {
         m_msgs_this_cycle = 0;  // first msg this cycle
         m_time_last_time_enqueue = current_time;
@@ -170,6 +166,7 @@ MessageBuffer::enqueue(MsgPtr message, Tick current_time, Tick delta)
 
     m_msg_counter++;
     m_msgs_this_cycle++;
+    // std::cout << "MESSAGES ARRIVED THIS CYCLE: " << m_msgs_this_cycle << "\n";
 
 	// printf("Updated bookkeeping information\n");
     // Calculate the arrival time of the message, that is, the first

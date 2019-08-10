@@ -55,6 +55,7 @@ class SimpleNetwork : public Network
 
     void collateStats();
     void regStats();
+    bool internal_links_idle();
 
     bool isVNetOrdered(int vnet) const { return m_ordered[vnet]; }
 

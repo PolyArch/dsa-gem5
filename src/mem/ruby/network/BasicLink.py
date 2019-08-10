@@ -46,7 +46,6 @@ class BasicExtLink(BasicLink):
     cxx_header = "mem/ruby/network/BasicLink.hh"
     ext_node = Param.RubyController("External node")
     int_node = Param.BasicRouter("ID of internal node")
-    # bandwidth_factor = 16 # only used by simple network
     bandwidth_factor = 16 # only used by simple network
 
 class SpuExtLink(BasicLink):
