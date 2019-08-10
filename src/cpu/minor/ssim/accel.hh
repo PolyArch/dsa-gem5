@@ -99,11 +99,7 @@ public:
   // FIXME: dgra logical ports doesn't work with the temporal region
   unsigned port_cgra_elem() {
     if(_dfg_vec) {
-      if(_dfg_vec->is_temporal()) {
-        return 1;
-      } else {
-        return _dfg_vec->logical_len();
-      }
+      return _dfg_vec->logical_len();
     }
     return 1;
   } 
@@ -313,7 +309,7 @@ public:
   template <typename T>
   void push_data(T data, bool valid=true) {
     int data_size = sizeof(T);
-    assert(data_size=_port_width && "data size doesn't match the port width in dfg");
+    assert(data_size == _port_width && "data size doesn't match the port width in dfg");
 
     if(_bytes_in_word!=0) {
       std::cout << "It's not cool to leave random incomplete words in the port, "

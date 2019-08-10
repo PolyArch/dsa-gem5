@@ -1065,7 +1065,7 @@ void accel_t::cycle_cgra_backpressure() {
         
     // cout << "Port details: " << cur_in_port.port_cgra_elem() << " " << vec_in->logical_len() << " ( " << vec_in->name() << " ) " << " cur_repeat_lim: " << cur_in_port.cur_repeat_lim() << " and num_ready: " << cur_in_port.num_ready() << " and mem size: " << cur_in_port.mem_size() << endl;
     
-    if (cur_in_port.num_ready() && cur_in_port.cur_repeat_lim()>0) {
+    if (cur_in_port.num_ready() && cur_in_port.cur_repeat_lim() > 0) {
       // auto *port = _sched->vportOf(make_pair(true /*input*/, port_index));
       // auto *vec_in = dynamic_cast<SSDfgVecInput *>(port);
       assert(vec_in != NULL && "input port pointer is null\n");
@@ -1079,16 +1079,13 @@ void accel_t::cycle_cgra_backpressure() {
         SBDT val = 0;
         bool valid = false;
 
-        // if(cur_in_port.port_cgra_elem()!=vec_in->length()){
-        if(cur_in_port.port_cgra_elem()!=vec_in->logical_len()){
+        if(cur_in_port.port_cgra_elem() != vec_in->logical_len()){
           cout << cur_in_port.port_cgra_elem() << " " << vec_in->logical_len() << " ( " << vec_in->name() << " ) "<< endl;
+          assert(false && "Vector size not same in scheduler and simulator");
         }
-        assert(cur_in_port.port_cgra_elem()==vec_in->logical_len() && "Vector size not same in scheduler and simulator");
-        // cout << "Logical length: " << vec_in->logical_len() << " ( " << vec_in->name() << " ) "<< endl;
 
-        // cout << "Initial size in dgra connector: " << cur_in_port.port_cgra_elem() << endl;
-        for (unsigned port_idx = 0; port_idx < cur_in_port.port_cgra_elem();
-             ++port_idx) { // port_idx are the scalar cgra nodes
+        for (unsigned port_idx = 0; port_idx < cur_in_port.port_cgra_elem(); ++port_idx) {
+          // port_idx are the scalar cgra nodes
           int cgra_port = cur_in_port.cgra_port_for_index(port_idx);
           if (_soft_config.cgra_in_ports_active[cgra_port] == false) {
             break;
@@ -1128,6 +1125,7 @@ void accel_t::cycle_cgra_backpressure() {
 
   // calling with the default parameters for now
   num_computed = _dfg->cycle(print, true);
+
   if (num_computed) {
     _cgra_issued++;
     _backcgra_issued++;
@@ -2483,6 +2481,7 @@ void dma_controller_t::port_resp(unsigned cur_port) {
 
         for (int in_port : response->sdInfo->ports) {
           port_data_t &in_vp = pi.in_port(in_port);
+
           in_vp.push_data(data);
 
           if (response->sdInfo->stride_hit) {
@@ -3569,8 +3568,7 @@ void dma_controller_t::req_write(affine_write_stream_t &stream,
   */
   addr_t prev_addr = addr - data_width;
 
-  std::vector<uint8_t> data;
-  data.resize(MEM_WIDTH);
+  std::vector<uint8_t> data(MEM_WIDTH);
   uint8_t *data8 = data.data();
   uint16_t *data16 = (uint16_t *)data8;
   uint32_t *data32 = (uint32_t *)data8;
@@ -3591,13 +3589,6 @@ void dma_controller_t::req_write(affine_write_stream_t &stream,
       data64[elem_written++] = val;
     }
 
-    /*
-if(stream._shift_bytes==2) {
-  data16[elem_written++]=(uint16_t)(val&0xFFFF);
-} else { //assuming data_width=64
-  data64[elem_written++]=val;
-}
-    */
     ovp.pop_out_data(); // pop the one we peeked
     // timestamp(); cout << "POPPED b/c Mem Write: " << vp.port() << " " <<
     // vp.mem_size() << "\n";
