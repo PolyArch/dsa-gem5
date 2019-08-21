@@ -1100,6 +1100,13 @@ void accel_t::cycle_cgra_backpressure() {
 
         // TODO: this is supposed to be the verif flag, fix it later!
         num_computed = _dfg->push_vector(vec_in, data, data_valid, print, true);
+
+        if(SS_DEBUG::COMP) {
+          cout << "Vec name: " << vec_in->name() << " allowed to push input: ";
+          for(auto d : data) cout << d << " ";
+          cout << "\n";
+        }
+
         data.clear();       // clear the input data pushed to dfg
         data_valid.clear(); // clear the input data pushed to dfg
 
@@ -1110,10 +1117,6 @@ void accel_t::cycle_cgra_backpressure() {
           if (should_pop) {
             cur_in_port.pop(1);
           }
-        }
-
-        if(SS_DEBUG::COMP) {
-          cout << "Vec name: " << vec_in->name() << "Allowed to push input: " << data[0] << " " << data[1] << " " << data[2] << " " << data[3] << "\n";
         }
 
       }
@@ -1163,7 +1166,9 @@ void accel_t::cycle_cgra_backpressure() {
 
       if(SS_DEBUG::COMP) {
         cout << "Output vector name: " << vec_output->name() << endl;
-        cout << "Allowed to pop output: " << data[0] << " " << data[1] << "\n";
+        cout << " allowed to pop output: ";
+        for(auto d : data) cout << d << " ";
+        cout << "\n";
       }
       if (in_roi()) {
         // _stat_comp_instances += 1;
