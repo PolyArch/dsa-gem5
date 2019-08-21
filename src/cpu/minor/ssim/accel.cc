@@ -5085,10 +5085,8 @@ void port_controller_t::cycle() {
         SBDT val = 0;
 
         // TODO: assumes out port has higher or equal data width
-        cout << "Pushing the recurrence elements\n";
         for(int i=0; i<n; ++i) {
           SBDT temp = vp_out.peek_out_data(i);
-          cout << "Intermediate temp: " << temp << "\n";
           val = (val << i*8*stream.src_data_width()) | temp;
           // val = val | (temp << i*8*stream.src_data_width());
         }
@@ -5098,7 +5096,6 @@ void port_controller_t::cycle() {
         
         // int x1 = vp_out.cur_repeat_lim();
         bool should_pop = vp_out.inc_repeated();
-        cout << "Should pop this time: " << should_pop << endl;
  
         // int x2 = vp_out.cur_repeat_lim();
         // assert(x1==x2);
@@ -5152,7 +5149,6 @@ void port_controller_t::cycle() {
             // for(int i=0; i<stream.src_data_width()/stream.data_width(); ++i) {
             for(int i=stream.src_data_width()/stream.data_width()-1; i>=0; --i) {
               SBDT temp = val >> (i*8*stream.data_width());
-              cout << "Allowed to push in recurrence: " << temp << " with repeat_flag: " << stream.repeat_flag() << " in-recu port: " << in_port << endl;
               vp_in.push_data(vp_in.get_byte_vector(temp, data_width));
             }
             if (stream._padding_size != NO_PADDING && stream._padding_cnt == 0) {
