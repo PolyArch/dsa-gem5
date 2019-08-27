@@ -555,6 +555,7 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
   // specific to recurrence stream, FIXME: the accel_arr[0] thing
   auto& out_vp = accel_arr[0]->port_interf().out_port(out_port);
   int src_data_width = out_vp.get_port_width();
+  // cout << "Data width of out_vp: " << src_data_width << endl;
   int core_d = ((flags & 3) == 1) ? -1 : 1;
   padding_iter = (flags >> 2) ? padding_iter : NO_PADDING;
 
@@ -725,6 +726,7 @@ void ssim_t::write_constant(int num_strides, int in_port,
 
   // std::cout << "Const width: " << const_width << std::endl;
 
+  // use ss_const for that instead of ss_dconst
   if(const_width<4 && const_width >0) { // doesn't for T64 right now -- todo
     switch(const_width) {
       case 0: s->_const_width=8;

@@ -968,12 +968,14 @@ void Execute::timeout_check(bool should_commit, MinorDynInstPtr inst) {
   uint64_t last_event = std::max(last_sd_issue,
                         ssim.forward_progress_cycle());
   if(!should_commit) {
-    if(cyc > 9990 + last_event) {
+    // if(cyc > 9990 + last_event) {
+    if(cyc > 999000 + last_event) {
       breakpoint();
+      std::cout << " for core: " << cpu.cpuId() << "\n";
       DPRINTF(SS,"Almost Aborting because of wait", *inst);
     }
 
-    if(cyc > 10000 + last_event) {
+    if(cyc > 1000000 + last_event) {
       DPRINTF(SS,"Instruction: %s is stalled for too long!!! ABORTING", *inst);
       ssim.print_stats();
       //ssim.done(true,0);
@@ -1660,7 +1662,19 @@ bool Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int op
   
   // 50515 is definitely greater -- to test, I could use a smaller graph but
   //  mix of mapping for example, local_scr_addr >> 10 & (core_cnt-1);
-  int dest_core_id = local_scr_addr >> 15;
+  
+
+  // always 16 or the same core, 6 = 110
+  // because this is always in the local core, 
+  // Okay I want to divide the available thing equally
+  // 1 + 3352/8 = 1 + log(419) = 1+8.5 = 9.5
+  int dest_core_id = local_scr_addr >> 9;
+  // Ok, to maintain locality -- 
+  std::cout << "local scratch addr: " << local_scr_addr << std::endl;
+  // dest_core_id = (local_scr_addr>>11)&7; // + rand()%2; // always even number
+  dest_core_id = (local_scr_addr/1583)&7; // + rand()%2; // always even number
+  std::cout << "dest core id: " << dest_core_id << std::endl;
+  
   // TODO: scratch addr mapping (if we change this, then above decoding also
   // needs to change -- otherwise incorrect execution)
   // int dest_core_id = local_scr_addr >> 12 & 7;

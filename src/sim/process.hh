@@ -173,8 +173,8 @@ class Process : public SimObject
     void set_spu_global_wait_released(int spu_id);
     void reset_all_spu_global_wait();
 
-    int _is_spu_done[2]; // Just to debug: set it correct later
-    int _is_spu_global_wait_released[2]; // Just to debug: set it correct later
+    int _is_spu_done[8]; // Just to debug: set it correct later
+    int _is_spu_global_wait_released[8]; // Just to debug: set it correct later
     //----------------
 
     // thread contexts associated with this process

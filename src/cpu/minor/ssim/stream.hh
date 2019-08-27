@@ -843,6 +843,7 @@ struct indirect_base_stream_t : public base_stream_t {
     if(_index_in_offsets >= _offsets.size()) {
       _index_in_offsets=0;
       _ssind++;
+      // if(_sstream_size!=_ssind) std::cout << "sstream: " << _sstream_size << " ssind: " << _ssind << std::endl;
       if(_sstream_size!=_ssind) return false;
       _ssind=0;
       _num_elements--;

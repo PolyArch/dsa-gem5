@@ -73,7 +73,7 @@ Switch::addInPort(const vector<MessageBuffer*>& in)
     m_perfect_switch->addInPort(in);
 }
 
-// FIXME: check who is calling this!
+// called from simple network
 void
 Switch::addOutPort(const vector<MessageBuffer*>& out,
                    const NetDest& routing_table_entry,

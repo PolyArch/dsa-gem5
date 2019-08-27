@@ -916,7 +916,7 @@ class scratch_write_controller_t : public data_controller_t {
     reset_stream_engines();
   }
 
-  bool crosssar_backpressureOn();
+  bool crossbar_backpressureOn();
 
   // void cycle();
   void cycle(bool can_perform_atomic_scr, bool &performed_atomic_scr);

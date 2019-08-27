@@ -94,7 +94,7 @@ void
 PerfectSwitch::addOutPort(const vector<MessageBuffer*>& out,
                           const NetDest& routing_table_entry)
 {
-  // printf("CAME in perfect switch out port adds\n");
+  printf("CAME in perfect switch out port adds\n");
     // Setup link order
     LinkOrder l;
     l.m_value = 0;
@@ -104,6 +104,7 @@ PerfectSwitch::addOutPort(const vector<MessageBuffer*>& out,
     // Add to routing table
     m_out.push_back(out);
     m_routing_table.push_back(routing_table_entry);
+    std::cout << "New routing table size: " << m_routing_table.size() << "\n";
 }
 
 PerfectSwitch::~PerfectSwitch()
@@ -205,9 +206,11 @@ PerfectSwitch::operateMessageBuffer(MessageBuffer *buffer, int incoming,
             }
         }
 
+        // std::cout << "Routing table size: " << m_routing_table.size() << " withmessage dest: " << msg_dsts.count() << "\n";
         for (int i = 0; i < m_routing_table.size(); i++) {
             // pick the next link to look at
             int link = m_link_order[i].m_link;
+            // cout << "This link map to: " << link << endl;
             NetDest dst = m_routing_table[link];
             DPRINTF(RubyNetwork, "dst: %s\n", dst);
 
@@ -228,6 +231,7 @@ PerfectSwitch::operateMessageBuffer(MessageBuffer *buffer, int incoming,
             // those nodes that were already handled by this link
             msg_dsts.removeNetDest(dst);
         }
+        // std::cout << "message dest left: " << msg_dsts.count() << "\n";
 
         assert(msg_dsts.count() == 0);
 

@@ -113,8 +113,8 @@ bool MinorCPU::check_network_idle() {
 void MinorCPU::wakeup()
 {
   // assert(!responseToSpu->isEmpty());
-  while(!responseToSpu->isEmpty()) {
-  // if(!responseToSpu->isEmpty()) {
+  // while(!responseToSpu->isEmpty()) { // it should have been ready too
+  if(!responseToSpu->isEmpty()) {
     // could do dynamic cast
     const SpuRequestMsg* msg = (SpuRequestMsg*)responseToSpu->peek();
     int64_t return_info = msg->m_addr;
@@ -153,7 +153,9 @@ void MinorCPU::wakeup()
       if(SS_DEBUG::NET_REQ) {
         std::cout << "Received atomic update request tuple, scr_addr: " << scr_addr << " opcode: " << opcode << " val_bytes: " << val_bytes << " out_bytes: " << out_bytes << std::endl;
       }
-      pipeline->receiveSpuUpdateRequest(scr_addr, opcode, val_bytes, out_bytes, inc);
+      // pipeline->receiveSpuUpdateRequest(scr_addr, opcode, val_bytes, out_bytes, inc);
+      // FIXME:IMP: allocate more bits to specify datatype
+      pipeline->receiveSpuUpdateRequest(scr_addr, opcode, 8, 8, inc);
     } else if((*msg).m_Type == SpuRequestType_LD) {
       int remote_port_id = return_info & 63;
       if(SS_DEBUG::NET_REQ) {

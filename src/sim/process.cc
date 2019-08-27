@@ -152,7 +152,7 @@ Process::Process(ProcessParams *params, EmulationPageTable *pTable,
             debugSymbolTable = nullptr;
         }
     }
-    for(int i=0; i<2; ++i) {
+    for(int i=0; i<8; ++i) {
       _is_spu_done[i] = 0;
       _is_spu_global_wait_released[i] = 0;
     }
@@ -665,14 +665,14 @@ Process::fullPath(const std::string &file_name)
 void
 Process::set_spu_done(int spu_id) {
   _is_spu_done[spu_id-1]=1;
-  for(int i=0; i<2; ++i) {
+  for(int i=0; i<8; ++i) {
     printf("At i, it is: %d\n",_is_spu_done[i]);
   }
 }
 
 bool
 Process::all_spu_done() {
-  for(int i=0; i<2; ++i) {
+  for(int i=0; i<8; ++i) {
     if(_is_spu_done[i]==0)
       return false;
   }
@@ -681,7 +681,7 @@ Process::all_spu_done() {
 
 void
 Process::reset_all_spu() {
-  for(int i=0; i<2; ++i) {
+  for(int i=0; i<8; ++i) {
     _is_spu_done[i]=0;
   }
 }
@@ -693,14 +693,14 @@ Process::set_spu_global_wait_released(int spu_id) {
 
 void
 Process::reset_all_spu_global_wait() {
-  for(int i=0; i<2; ++i) {
+  for(int i=0; i<8; ++i) {
     _is_spu_global_wait_released[i]=0;
   }
 }
 
 bool
 Process::is_last_spu() {
-  for(int i=0; i<2; ++i) {
+  for(int i=0; i<8; ++i) {
     if(_is_spu_global_wait_released[i]==0)
       return false;
   }

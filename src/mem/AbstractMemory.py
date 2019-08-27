@@ -49,7 +49,8 @@ class AbstractMemory(MemObject):
 
     # A default memory size of 128 MB (starting at 0) is used to
     # simplify the regressions
-    range = Param.AddrRange('128MB', "Address range (potentially interleaved)")
+    # range = Param.AddrRange('128MB', "Address range (potentially interleaved)")
+    range = Param.AddrRange('32MB', "Address range (potentially interleaved)")
     null = Param.Bool(False, "Do not store data, always return zero")
 
     # All memories are passed to the global physical memory, and

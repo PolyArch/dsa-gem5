@@ -72,19 +72,16 @@ class SimpleNetwork(RubyNetwork):
             # Add message buffers to routers for each external link connection
             for link in self.ext_links:
                 # Routers can only be int_nodes on ext_links
-                # print("Detected an Ext link")
                 if link.int_node in self.routers:
                     for i in xrange(self.number_of_virtual_networks):
                         router_buffers.append(MessageBuffer(ordered = True))
             # router.port_buffers = router_buffers
             
-            # TODO: Add message buffers to routers for each spu external link connection
+            # Add message buffers to routers for each spu external link connection
             # Should be 2 links associated with each router
             for link in self.spu_ext_links:
                 if link.spu_int_node in self.routers:
                     for i in xrange(self.number_of_virtual_networks):
-                    # print("Should come here 4 times")
-                    # for i in xrange(2):
                         router_buffers.append(MessageBuffer(ordered = True))
             router.port_buffers = router_buffers
             # print(self.number_of_virtual_networks)

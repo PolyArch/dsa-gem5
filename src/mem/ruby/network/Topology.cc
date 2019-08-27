@@ -36,6 +36,7 @@
 #include "mem/ruby/network/BasicLink.hh"
 #include "mem/ruby/network/Network.hh"
 #include "mem/ruby/slicc_interface/AbstractController.hh"
+#include <iostream>
 
 using namespace std;
 
@@ -95,20 +96,21 @@ Topology::Topology(uint32_t num_routers,
     for (vector<SpuExtLink*>::const_iterator i = spu_ext_links.begin();
          i != spu_ext_links.end(); ++i) {
         SpuExtLink *spu_ext_link = (*i);
-        BasicRouter *router = spu_ext_link->params()->spu_int_node;
+        // BasicRouter *router = spu_ext_link->params()->spu_int_node;
 		// TODO: use it to get the coreid later on
-        int machine_base_idx = temp;
-        // machine_base_idx = MachineType_base_number(MachineType_Accel);
-        int ext_idx1 = machine_base_idx;
+        // int machine_base_idx = temp;
+        // int machine_base_idx = MachineType_base_number(MachineType_Accel);
+        int ext_idx1 = temp; // machine_base_idx;
         int ext_idx2 = ext_idx1 + m_nodes;
-        int int_idx = 2*m_nodes + router->params()->router_id;
+        // want to use same routers?
+        int int_idx = 2*m_nodes + temp - ctrl_nodes; // router->params()->router_id;
 
         // create the internal uni-directional links in both directions
         // ext to int
         addLink(ext_idx1, int_idx, spu_ext_link);
         // int to ext
         addLink(int_idx, ext_idx2, spu_ext_link);
-		temp++;
+		temp++; // this makes sure that it increments by 1
     }
 
     // Internal Links
@@ -177,19 +179,42 @@ Topology::createLinks(Network *net)
     // Walk topology and hookup the links
     Matrix dist = shortest_path(topology_weights, component_latencies,
                                 component_inter_switches);
+    std::cout <<  "m_nodes: " << m_nodes << " ctrl_nodes: " << ctrl_nodes << "\n";
+    std::cout << "topology weights size: " << topology_weights.size() << " updated size: " << topology_weights[0].size() << "\n";
 
 
+    /*
     for (int i = 0; i < topology_weights.size(); i++) {
 
         for (int j = 0; j < topology_weights[i].size(); j++) {
 
+          // FIXME: no j?
              if(i<m_nodes && i>=ctrl_nodes) {
-              topology_weights[i][j] = topology_weights[i-ctrl_nodes][j];
+               if(j<m_nodes && j>=ctrl_nodes) {
+                 topology_weights[i][j] = topology_weights[i-ctrl_nodes][j-ctrl_nodes];
+               } else {
+                 topology_weights[i][j] = topology_weights[i-ctrl_nodes][j];
+                }
             }
 
         }
+    }*/
+
+    for (int i = 0; i < topology_weights.size(); i++) {
+        for (int j = 0; j < topology_weights[i].size(); j++) {
+          std::cout <<  "i: " << i << " j: " << j << " topology weights: " << topology_weights[i][j] << "\n" ;
+        }
     }
 
+
+    
+    for (int i = 0; i < topology_weights.size(); i++) {
+
+        for (int j = 0; j < topology_weights[i].size(); j++) {
+
+          std::cout <<  "i: " << i << " j: " << j << " dist weights: " << dist[i][j] << "\n";
+        }
+    }
 
     for (int i = 0; i < topology_weights.size(); i++) {
 
@@ -199,6 +224,7 @@ Topology::createLinks(Network *net)
           int weight = topology_weights[i][j];
           // when it comes to SPU nodes
 
+          // for SPU, positive weights only for dest=81
             if (weight > 0 && weight != INFINITE_LATENCY) {
 
                 NetDest destination_set =
@@ -208,6 +234,7 @@ Topology::createLinks(Network *net)
                   destination_set =
                         shortest_path_to_node(i-ctrl_nodes, j, topology_weights, dist);
                 }*/
+                std::cout << "making link b/w i: " << i << " j: " << j << "\n";
                 makeLink(net, i, j, destination_set);
             }
         }
@@ -219,8 +246,10 @@ Topology::addLink(SwitchID src, SwitchID dest, BasicLink* link,
                   PortDirection src_outport_dirn,
                   PortDirection dst_inport_dirn)
 {
+  // 
     assert(src <= m_number_of_switches+m_nodes+m_nodes);
     assert(dest <= m_number_of_switches+m_nodes+m_nodes);
+    std::cout << "Came here to join the link for src: " << src << " dest: " << dest << endl;
 
     std::pair<int, int> src_dest_pair;
     LinkEntry link_entry;
@@ -257,7 +286,7 @@ Topology::makeLink(Network *net, SwitchID src, SwitchID dest,
         src_dest.first = src;
         src_dest.second = dest;
         link_entry = m_link_map[src_dest];
-		if(src < ctrl_nodes) {
+		if(src < ctrl_nodes) { // should only come here for 0-15 (instead of 0-16)
 	      std::cout << "cache ext in this time with src: " << src << " and dest: " << dest << "\n"; // issue in this function
           net->makeExtInLink(src, dest - (2 * m_nodes), link_entry.link,
                         routing_table_entry);
@@ -307,7 +336,72 @@ Topology::extend_shortest_path(Matrix &current_dist, Matrix &latencies,
     bool change = true;
     int nodes = current_dist.size();
 
+    // FIXME: need to consider effective i,j for calculating their distances,
+    // and store in the larger array value
+    /*
     while (change) {
+        change = false;
+        // setting distances between memory nodes
+        for (int i = 0; i < ctrl_nodes; i++) { // src
+            for (int j = 0; j < ctrl_nodes; j++) { // dist
+                int minimum = current_dist[i][j]; // should be 1000
+                int previous_minimum = minimum;
+                int intermediate_switch = -1;
+                // for (int k = 0; k < nodes; k++) {
+                for (int k = 0; k < ctrl_nodes; k++) {
+                    minimum = min(minimum,
+                        current_dist[i][k] + current_dist[k][j]);
+                    if (previous_minimum != minimum) {
+                        intermediate_switch = k;
+                        inter_switches[i][j] =
+                            inter_switches[i][k] +
+                            inter_switches[k][j] + 1;
+                    }
+                    previous_minimum = minimum;
+                }
+                if (current_dist[i][j] != minimum) {
+                    change = true;
+                    current_dist[i][j] = minimum;
+                    assert(intermediate_switch >= 0);
+                    assert(intermediate_switch < latencies[i].size());
+                    latencies[i][j] = latencies[i][intermediate_switch] +
+                        latencies[intermediate_switch][j];
+                }
+            }
+        }
+        // between SPU node and memory node, there should be infinity distance
+        // the same algorithm was not wrong then?
+        for (int i = ctrl_nodes; i < m_nodes; i++) { // src
+            for (int j = ctrl_nodes; j < m_nodes; j++) { // dist
+                int minimum = current_dist[i][j];
+                int previous_minimum = minimum;
+                int intermediate_switch = -1;
+                // for (int k = 0; k < (m_nodes-ctrl_nodes); k++) {
+                for (int k = ctrl_nodes; k < m_nodes; k++) {
+                    minimum = min(minimum,
+                        current_dist[i-ctrl_nodes][k] + current_dist[k][j-ctrl_nodes]);
+                    if (previous_minimum != minimum) {
+                        intermediate_switch = k; // -ctrl_nodes;
+                        // What is this data structure?
+                        inter_switches[i][j] =
+                            inter_switches[i][k] +
+                            inter_switches[k][j] + 1;
+                    }
+                    previous_minimum = minimum;
+                }
+                // store n the correct location
+                if (current_dist[i][j] != minimum) {
+                    change = true;
+                    current_dist[i][j] = minimum;
+                    assert(intermediate_switch >= 0);
+                    assert(intermediate_switch < latencies[i].size());
+                    latencies[i][j] = latencies[i][intermediate_switch] +
+                        latencies[intermediate_switch][j];
+                }
+            }
+        }
+            */
+      while (change) {
         change = false;
         for (int i = 0; i < nodes; i++) {
             for (int j = 0; j < nodes; j++) {
@@ -365,8 +459,6 @@ Topology::shortest_path_to_node(SwitchID src, SwitchID next,
     int max_machines;
 
     machines = MachineType_NUM;
-	// FIXME: hard-coded to debug
-    // machines = MachineType_NUM+4;
     max_machines = MachineType_base_number(MachineType_NUM);
 
     for (int m = 0; m < machines; m++) {

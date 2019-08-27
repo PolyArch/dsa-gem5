@@ -1171,6 +1171,7 @@ void accel_t::cycle_cgra_backpressure() {
         // _stat_comp_instances += 1;
         _stat_comp_instances += len; // number of scalar inputs
       }
+      assert(data_valid.size()==len);
 
       int j = 0, n_times=0;
       for (j = 0; j < len; ++j) {
@@ -3344,12 +3345,19 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
         ind2 = ind2 | (ssize << i*8*subsize_vp.get_port_width());
         // ind2 = (ind2 << i*8*subsize_vp.get_port_width()) | ssize;
       }
+
+      stream._sstream_size = ind2; // should be done only in the first size
+      // I doubt if it is to consecutive 0 stream accesses
+      cout << "Current ssize: " << ind2 << endl;
       
       // If sub-stream size is 0, then pop the corresponding element from ind
       // port, also again set first ss access
       if(ind2==0) {
-        // cout << "Indirect substream size was 0\n";
-        assert(stream.pop_elem() && "Stream already at end, should allow");
+        // Oh, this is required to reduce the total num of elements in atomic
+        // scr
+        stream._sstream_size = 1; // hack, assume 1 element done so we could pop this element from stream
+        stream.pop_elem();
+        // assert(stream.pop_elem() && "Stream already at end, should allow");
         for(int i=0; i<stream._index_bytes/ind_vp.get_port_width(); ++i) {
           ind_vp.pop_out_data();
         }
@@ -3358,7 +3366,7 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
         }
         continue;
       } else {
-        stream._sstream_size = ind2; // should be done only in the first size
+        // stream._sstream_size = ind2; // should be done only in the first size
         // cout << "SIZE PORT NUMBER: " << stream._sn_port << " config bytes: " << stream._index_bytes << endl;
         // cout << "UPDATED SSTREAM SIZE TO: " << stream._sstream_size << endl;
         stream._first_ss_access=false;
@@ -4348,7 +4356,7 @@ void scratch_read_controller_t::print_status() {
   }
 }
 
-bool scratch_write_controller_t::crosssar_backpressureOn() {
+bool scratch_write_controller_t::crossbar_backpressureOn() {
   for (int i = 0; i < NUM_SCRATCH_BANKS; ++i) {
     if (_atomic_scr_issued_requests[i].size() == MAX_BANK_BUFFER_SIZE)
       return true;
@@ -4514,7 +4522,7 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
 
     if (out_addr.mem_size() > 0 && out_val.mem_size() > 0 &&
         stream._value_bytes*n < 64 && // number of pushes should be max 
-        !crosssar_backpressureOn()) { // enough in src and dest
+        !crossbar_backpressureOn()) { // enough in src and dest
       n++;
 
       // hopefully it pushes data here
@@ -4555,12 +4563,13 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
       int remote_update_this_cycle=0;
       while (scr_addr < max_addr && stream._num_strides > 0 &&
              out_addr.mem_size() && out_val.mem_size() &&
-             num_val_pops < 64/stream._value_bytes && remote_update_this_cycle<2) {
+             num_val_pops < 64/stream._value_bytes && remote_update_this_cycle<1) {
              // num_val_pops < 64) {
         if (SS_DEBUG::COMP) {
           std::cout << "\tupdate at index location: " << loc
                     << " and scr_addr: " << scr_addr
-                    << " and scr_size is: " << SCRATCH_SIZE;
+                    << " and scr_size is: " << SCRATCH_SIZE
+                    << " input num strides: " << stream._num_strides;
         }
         
         // TODO: instead of assert, if this condition holds true, send a remote
@@ -4593,6 +4602,7 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
         assert(bank_id < logical_banks);
 
         int local_core_id = (scr_addr + stream._output_bytes)/SCRATCH_SIZE;
+        local_core_id = scr_addr >> 14;
         if(SS_DEBUG::NET_REQ) {
           cout << "Cycle: " << _accel->get_cur_cycle() << " Sending remote atomic update for scratch_addr: " << scr_addr << " from own core id: " << _accel->_ssim->get_core_id() << " to remote core id: " << local_core_id <<  endl; 
         }
@@ -4603,6 +4613,9 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
  
         _accel->_stat_scratch_bank_requests_pushed++;
         stream._num_strides--;
+        // FIXME: this is to prevent garbage value
+        assert(stream._num_strides<1000000);
+        // assert(stream._num_strides>=0);
 
         if (SS_DEBUG::COMP) {
           std::cout << "\tvalues input: " << temp_req._inc << "\tbank_id: " << bank_id
@@ -4811,12 +4824,14 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
       port_data_t &out_addr = _accel->port_interf().out_port(stream._out_port);
       port_data_t &out_val = _accel->port_interf().out_port(stream._val_port);
 
+      cout << "own_core_id: " << _accel->_ssim->get_core_id() << " addr mem_size: " << out_addr.mem_size() << " val mem_size: " << out_val.mem_size() << " stream_active: " << stream.stream_active() << endl;
       // FIXME: mem_size based on config (this should be greater than
       // addr_bytes/out_addr.data_width
       if(out_addr.mem_size() && out_val.mem_size() && stream.stream_active()) {
         // Constraint: This should be same for all active atomic streams
         _logical_banks = NUM_SCRATCH_BANKS / stream._value_bytes;
         atomic_scratch_update(stream);
+        cout << "current core: " << _accel->_ssim->get_core_id() << " return number of strides: " << stream._num_strides << endl;
         bool is_empty = stream.check_set_empty();
         if (is_empty) {
           _accel->process_stream_stats(stream);
@@ -5081,8 +5096,9 @@ void port_controller_t::cycle() {
       }
     }
 
-    // cout << "Mem size in vp_out: " << vp_out.mem_size() << " and n: " << n << " port in okay: " << port_in_okay << " cur repeat lim: " << vp_out.cur_repeat_lim() << endl;
+    cout << "Mem size in vp_out: " << vp_out.mem_size() << " and n: " << n << " port in okay: " << port_in_okay << " cur repeat lim: " << vp_out.cur_repeat_lim() << endl;
 
+    cout << "Stream source data_width: " << stream.src_data_width() << endl;
     if (vp_out.mem_size() >= n && port_in_okay && vp_out.cur_repeat_lim()>=0) { // okay go for it
       // cout << "Let's try to send data for recurrence stream\n";
 
@@ -5094,10 +5110,10 @@ void port_controller_t::cycle() {
         SBDT val = 0;
 
         // TODO: assumes out port has higher or equal data width
-        cout << "Pushing the recurrence elements\n";
+        // cout << "Pushing the recurrence elements\n";
         for(int i=0; i<n; ++i) {
           SBDT temp = vp_out.peek_out_data(i);
-          cout << "Intermediate temp: " << temp << "\n";
+          // cout << "Intermediate temp: " << temp << "\n";
           val = (val << i*8*stream.src_data_width()) | temp;
           // val = val | (temp << i*8*stream.src_data_width());
         }
@@ -5107,7 +5123,7 @@ void port_controller_t::cycle() {
         
         // int x1 = vp_out.cur_repeat_lim();
         bool should_pop = vp_out.inc_repeated();
-        cout << "Should pop this time: " << should_pop << endl;
+        // cout << "Should pop this time: " << should_pop << endl;
  
         // int x2 = vp_out.cur_repeat_lim();
         // assert(x1==x2);
@@ -5161,7 +5177,7 @@ void port_controller_t::cycle() {
             // for(int i=0; i<stream.src_data_width()/stream.data_width(); ++i) {
             for(int i=stream.src_data_width()/stream.data_width()-1; i>=0; --i) {
               SBDT temp = val >> (i*8*stream.data_width());
-              cout << "Allowed to push in recurrence: " << temp << " with repeat_flag: " << stream.repeat_flag() << " in-recu port: " << in_port << endl;
+              // cout << "Allowed to push in recurrence: " << temp << " with repeat_flag: " << stream.repeat_flag() << " in-recu port: " << in_port << endl;
               vp_in.push_data(vp_in.get_byte_vector(temp, data_width));
             }
             if (stream._padding_size != NO_PADDING && stream._padding_cnt == 0) {
@@ -5222,7 +5238,9 @@ void port_controller_t::cycle() {
       continue;
     }
 
+
     int const_width = stream._const_width;
+    cout << "const width: " << const_width << " data width: " << stream.data_width() << endl;
 
     port_data_t &first_vp_in = pi.in_port(stream.first_in_port());
 
