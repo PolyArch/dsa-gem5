@@ -164,7 +164,7 @@ protected:
   uint64_t _reqs=0;
   uint64_t _ctx_offset=0;
   std::vector<int> _in_ports;
-  soft_config_t* _soft_config;
+  soft_config_t* _soft_config=NULL;
 };
 
 
