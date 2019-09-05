@@ -224,8 +224,6 @@ void soft_config_t::reset() {
   in_port_delay.clear();
   out_ports_lat.clear();
   cgra_in_ports_active.clear();
-  input_dfg_node.clear();
-  output_dfg_node.clear();
   inst_histo.clear();
 }
 
@@ -1018,8 +1016,9 @@ void accel_t::cycle_cgra_backpressure() {
   for (int i = 0; i < active_in_ports.size(); ++i) {
     int port_index = active_in_ports[i];
     auto &cur_in_port = _port_interf.in_port(port_index);
-    SSDfgVecInput *vec_in = dynamic_cast<SSDfgVecInput *>(
-        _sched->vportOf(make_pair(true /*input*/, port_index)));
+    ssvport* vp =_sched->ssModel()->subModel()->io_interf().get(true,port_index);
+    //cout << "vp pointer" << vp << "\n";
+    SSDfgVecInput *vec_in = dynamic_cast<SSDfgVecInput *>(_sched->dfgNodeOf(vp));
     assert(vec_in != NULL && "input port pointer is null\n");
     // flag is true if data is available at this port
     if (cur_in_port.num_ready()) {
@@ -1042,8 +1041,8 @@ void accel_t::cycle_cgra_backpressure() {
     int port_index = active_in_ports[i];
     auto &cur_in_port = _port_interf.in_port(port_index);
         
-    auto *port = _sched->vportOf(make_pair(true /*input*/, port_index));
-    auto *vec_in = dynamic_cast<SSDfgVecInput *>(port); 
+    ssvport* vp =_sched->ssModel()->subModel()->io_interf().get(true,port_index);
+    SSDfgVecInput *vec_in = dynamic_cast<SSDfgVecInput *>(_sched->dfgNodeOf(vp));
     // cout << "REPEAT FLAG: " << cur_in_port.repeat_flag() << " and num_repeated_till_now: " << cur_in_port.num_times_repeated() << endl;
     // TODO: make it compatible for different datawidth of the port and repeat
     // count
@@ -1111,12 +1110,9 @@ void accel_t::cycle_cgra_backpressure() {
         data_valid.clear(); // clear the input data pushed to dfg
 
         // pop input from CGRA port after it is pushed into the dfg node
-        if (!vec_in->backPressureOn()) {
-          bool should_pop = cur_in_port.inc_repeated();
-          // cout << "Vec name: " << vec_in->name() << " and should pop? " << should_pop << endl;
-          if (should_pop) {
-            cur_in_port.pop(1);
-          }
+        bool should_pop = cur_in_port.inc_repeated();
+        if (should_pop) {
+          cur_in_port.pop(1);
         }
 
       }
@@ -1136,7 +1132,7 @@ void accel_t::cycle_cgra_backpressure() {
 
   if (in_roi()) {
     _stat_ss_insts += num_computed;
-    _stat_ss_dfg_util += (double)num_computed / _dfg->ordered_insts().size();
+    _stat_ss_dfg_util += (double)num_computed / _dfg->inst_vec().size();
   }
 
   // pop the ready outputs
@@ -1147,10 +1143,10 @@ void accel_t::cycle_cgra_backpressure() {
   for (int i = 0; i < active_out_ports.size(); ++i) {
     int port_index = active_out_ports[i];
     auto &cur_out_port = _port_interf.out_port(port_index);
-       
-    SSDfgVec *vec_out =
-        _sched->vportOf(make_pair(false /*output*/, port_index));
-    SSDfgVecOutput *vec_output = dynamic_cast<SSDfgVecOutput *>(vec_out);
+
+    ssvport* vp =_sched->ssModel()->subModel()->io_interf().get(false,port_index);
+    SSDfgVecOutput *vec_output = dynamic_cast<SSDfgVecOutput *>(_sched->dfgNodeOf(vp));
+
     assert(vec_output != NULL && "output port pointer is null\n");
 
     int data_width = cur_out_port.get_port_width();
@@ -1253,15 +1249,10 @@ void accel_t::cycle_cgra_fixedtiming() {
         uint64_t port_index = active_ports[i];
         port_data_t &in_port = _port_interf.in_port(port_index);
 
-        auto *port = _sched->vportOf(make_pair(true /*input*/, port_index));
-        auto *vec_in = dynamic_cast<SSDfgVecInput *>(port);
-        // skip popping if backpressure is on
-        if (!vec_in->backPressureOn()) {
-          // only increment repeated if no backpressure
-          bool should_pop = in_port.inc_repeated();
-          if (should_pop) {
-            in_port.pop(1);
-          }
+        // only increment repeated if no backpressure
+        bool should_pop = in_port.inc_repeated();
+        if (should_pop) {
+          in_port.pop(1);
         }
       }
     }
@@ -1328,7 +1319,7 @@ void accel_t::execute_dfg(unsigned instance, int group) {
       bool valid = cur_in_port.valid_of(port_idx, instance);
 
       // for each cgra port and associated dfg input
-      _soft_config.input_dfg_node[group][i][port_idx]->set_value(val, valid);
+      _dfg->vec_in(i)->set_value(port_idx, val, valid);
 
       if (SS_DEBUG::COMP) {
         if (valid)
@@ -1393,10 +1384,10 @@ void accel_t::execute_dfg(unsigned instance, int group) {
     for (unsigned port_idx = 0; port_idx < cur_out_port.port_cgra_elem();
          ++port_idx) {
       // int cgra_port = cur_out_port.cgra_port_for_index(port_idx);
-      SSDfgOutput *n = _soft_config.output_dfg_node[group][i][port_idx];
 
-      uint64_t val = n->retrieve();
-      bool valid = !n->parent_invalid();
+      auto out_vec = _dfg->vec_out(i);
+      uint64_t val = out_vec->retrieve(port_idx);
+      bool valid = !out_vec->invalid();
       cur_out_port.push_cgra_port(port_idx, val,
                                   valid); // retreive from last inst
 
@@ -5827,6 +5818,36 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
   _dfg = _sched->ssdfg();                 // now we have the dfg!
   _dfg->set_dbg_stream(_cgra_dbg_stream); // change debug stream for dfg
 
+  //for(auto i : _dfg->nodes<SSDfgVecInput*>()) {
+  //  ssvport* vp = dynamic_cast<ssvport*>(_sched->locationOf(i));
+
+  //  int port_number = vp->port();
+
+  //  cout << i->name() << " is mapped to " << vp->name() 
+  //    << " with id: " << vp->id() << " and vp pointer:" << vp << " and port: " << port_number << "\n";
+
+  //  vp =_sched->ssModel()->subModel()->node_list()[vp->id()];
+
+  //  cout << "and also is mapped to " << vp->name() 
+  //    << " with id: " << vp->id() << " and vp pointer:" << vp << " and port: " << port_number << "\n";
+
+
+  //  SSDfgVecInput* vertex = dynamic_cast<SSDfgVecInput*>(_sched->dfgNodeOf(vp));
+  //  if(vertex) {
+  //    cout << vertex->name() << "is what schedule recorded \n";
+  //  }
+  //  assert(vertex);
+
+  //}
+
+  //for(auto i : _dfg->nodes<SSDfgVecOutput*>()) {
+  //  ssnode* n = _sched->locationOf(i);
+
+  //  cout << i->name() << " is mapped to " << n->name() 
+  //    << " with id: " << n->id() << " and vp pointer:" << n << "\n";
+  //}
+
+
   // Lets print it for debugging purposes
   std::ofstream ofs("viz/dfg-reconstructed.dot", std::ios::out);
   if (!ofs.good()) {
@@ -5842,8 +5863,6 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
 
   _soft_config.in_ports_active_group.resize(NUM_GROUPS);
   _soft_config.out_ports_active_group.resize(NUM_GROUPS);
-  _soft_config.input_dfg_node.resize(NUM_GROUPS);
-  _soft_config.output_dfg_node.resize(NUM_GROUPS);
   _soft_config.group_thr.resize(NUM_GROUPS);
 
   _soft_config.in_ports_name.resize(64);
@@ -5851,7 +5870,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
 
   for (int ind = 0; ind < _dfg->num_vec_input(); ++ind) {
     SSDfgVec *vec_in = _dfg->vec_in(ind);
-    int i = _sched->vecPortOf(vec_in).second;
+    int i = _sched->vecPortOf(vec_in);
     _soft_config.in_ports_active.push_back(i); // activate input vector port
 
     SSDfgVecInput *vec_input = dynamic_cast<SSDfgVecInput *>(vec_in);
@@ -5859,9 +5878,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
 
     _soft_config.in_ports_name[i] = vec_input->name();
 
-    int group_ind = _dfg->find_group_for_vec(vec_input);
-    _soft_config.in_ports_active_group[group_ind].push_back(i);
-
+    _soft_config.in_ports_active_group[vec_input->group_id()].push_back(i);
 
     // port mapping of 1 vector port - cgra_port_num: vector offset elements
     port_data_t &cur_in_port = _port_interf.in_port(i);
@@ -5869,67 +5886,36 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
 
     cur_in_port.set_port_width(vec_in->get_port_width());
  
-
-    // find corresponding dfg nodes
-    std::vector<SSDfgInput *> dfg_inputs;
-
     // for each mapped cgra port
-
     for (unsigned port_idx = 0; port_idx < cur_in_port.port_cgra_elem();
          ++port_idx) {
       int cgra_port_num = cur_in_port.cgra_port_for_index(port_idx);
-      // SSDfgNode *dfg_node = vec_input->inputs()[port_idx];
-      SSDfgNode *dfg_node = vec_input->at(port_idx*vec_input->get_port_width()/64);
-
-      if (dfg_node != nullptr) {
-        SSDfgInput *dfg_in = static_cast<SSDfgInput *>(dfg_node);
-        dfg_inputs.push_back(dfg_in); // get all the dfg inputs for ports
-        if (cgra_port_num >= _soft_config.cgra_in_ports_active.size())
-          _soft_config.cgra_in_ports_active.resize(cgra_port_num + 1);
-        _soft_config.cgra_in_ports_active[cgra_port_num] = true;
-      } else {
-        // TODO: is there something I SHOULD DO INCASE input DOESN'T EXIST?
+      if (cgra_port_num >= _soft_config.cgra_in_ports_active.size()) {
+        _soft_config.cgra_in_ports_active.resize(cgra_port_num + 1);
       }
+      _soft_config.cgra_in_ports_active[cgra_port_num] = true;
     }
-    _soft_config.input_dfg_node[group_ind].push_back(dfg_inputs);
   }
+
+  //SSDfgNode *dfg_node = vec_output->at(port_idx*vec_output->get_port_width()/64 );
 
   for (int ind = 0; ind < _dfg->num_vec_output(); ++ind) {
     SSDfgVec *vec_out = _dfg->vec_out(ind);
-    int i = _sched->vecPortOf(vec_out).second;
+    int i = _sched->vecPortOf(vec_out);
 
     _soft_config.out_ports_active.push_back(i);
-
     SSDfgVecOutput *vec_output = dynamic_cast<SSDfgVecOutput *>(vec_out);
     assert(vec_output);
 
     _soft_config.out_ports_name[i] = vec_output->name();
-
-    int group_ind = _dfg->find_group_for_vec(vec_output);
-    _soft_config.out_ports_active_group[group_ind].push_back(i);
-
-    vector<bool> mask = _sched->maskOf(vec_out);
+    _soft_config.out_ports_active_group[vec_output->group_id()].push_back(i);
 
     // port mapping of 1 vector port - cgra_port_num: vector offset elements
     auto &cur_out_port = _port_interf.out_port(i);
     cur_out_port.set_port_width(vec_out->get_port_width());
     cur_out_port.set_dfg_vec(vec_out);
 
-    // find corresponding dfg nodes
-    std::vector<SSDfgOutput *> dfg_outputs;
-
-    int max_lat = 0;
-    for (unsigned port_idx = 0; port_idx < cur_out_port.port_cgra_elem();
-         ++port_idx) {
-      // SSDfgNode *dfg_node = vec_output->getOutput(port_idx);
-      SSDfgNode *dfg_node = vec_output->at(port_idx*vec_output->get_port_width()/64);
-      assert(dfg_node);
-      SSDfgOutput *dfg_out = static_cast<SSDfgOutput *>(dfg_node);
-      max_lat = std::max(_sched->latOf(dfg_out), max_lat);
-      dfg_outputs.push_back(dfg_out);
-    }
-    _soft_config.out_ports_lat[i] = max_lat;
-    _soft_config.output_dfg_node[group_ind].push_back(dfg_outputs);
+    _soft_config.out_ports_lat[i] = _sched->latOf(vec_output);
   }
 
   int lat, lat_mis;

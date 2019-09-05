@@ -74,9 +74,6 @@ public:
 
   std::vector<bool> cgra_in_ports_active;
 
-  //input dfg nodes for [group][vec][port]
-  std::vector<std::vector<std::vector<SSDfgInput*>>>  input_dfg_node;
-  std::vector<std::vector<std::vector<SSDfgOutput*>>> output_dfg_node;
   std::map<SS_CONFIG::ss_inst_t,int> inst_histo;
   void reset();
 };
