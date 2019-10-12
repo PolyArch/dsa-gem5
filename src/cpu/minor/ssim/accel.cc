@@ -5,7 +5,7 @@
 #include <unordered_set>
 #include <utility>
 
-#include "cpu/minor/cpu.hh"
+#include "../cpu.hh"
 #include "ssim.hh"
 
 using namespace std;
@@ -64,30 +64,14 @@ void accel_t::request_reset_data() {
   reset_data();
   _cmd_queue.clear(); // check this as well
   if(SS_DEBUG::COMMAND_O) {
-    cout << "Complete reset request served except deleting requested memory reads/writes: " << _lsq->getCpuId() << "\n";
+    cout << "Complete reset request served except deleting requested memory reads/writes: "
+         << _lsq->getCpuId() << "\n";
   }
 }
 
 // Let's not consider input ports here
 bool accel_t::all_ports_empty() {
 
-  
-  // TESTING -- it worked?
-  /*
-  for (unsigned i = 0; i < _soft_config.in_ports_active_plus.size(); ++i) {
-    int cur_port = _soft_config.in_ports_active_plus[i];
-    auto &in_vp = _port_interf.in_port(cur_port);
-    // if(i==5 || i==31) { continue; }
-    if(in_vp.in_use() && in_vp.mem_size()) {
-      cout << " Input port not empty: " << cur_port << endl;
-      return false;
-    }
-  }
-
-  cout << "Input ports empty\n";
-  */
-  
-  
   
   // It should check only those output ports which are busy
   for (unsigned i = 0; i < _soft_config.out_ports_active_plus.size(); ++i) {
@@ -279,6 +263,7 @@ bool port_data_t::inc_repeated() {
     assert(_num_times_repeated == repeat_lim &&
            "Repeat time cannot be more than repeat limit!");
     _num_times_repeated = 0;
+
     _cur_repeat_lim += _repeat_stretch;
   }
   return _num_times_repeated == 0;
@@ -347,12 +332,24 @@ T port_data_t::pop_in_custom_data() {
 }
 
 // pop SBDT data from output port
-SBDT port_data_t::pop_out_data() {
-  assert(_mem_data.size());
-  SBDT val = peek_out_data();
-  _mem_data.pop_front();
-  _valid_data.pop_front(); // TODO: for now we ignore invalid, hope that's okay?
-  return val;
+SBDT port_data_t::pop_out_data(int bytes) {
+  if (bytes == -1) {
+    bytes = _port_width;
+  } else {
+    assert(bytes % _port_width == 0);
+  }
+  SBDT res = 0;
+  for (int i = 0; i < bytes; i += _port_width) {
+    SBDT val = peek_out_data();
+    _mem_data.pop_front();
+    _valid_data.pop_front(); // TODO: for now we ignore invalid, hope that's okay?
+    res |= val << (i * 8);
+  }
+  if (SS_DEBUG::DATA_STATUS) {
+    std::cout << bytes << " byte(s) popped, value is " << res << std::endl;
+    std::cout << "remain " << _port_width * _mem_data.size() << " bytes" << std::endl;
+  }
+  return res;
 }
 
 // pop T amount of data from output port
@@ -366,19 +363,41 @@ template <typename T> T port_data_t::pop_out_custom_data() {
 }
 
 // peek at output data (return original data typecasted to SBDT)
-SBDT port_data_t::peek_out_data() {
-  assert(_mem_data.size());
-  vector<uint8_t> v = _mem_data.front();
-  SBDT val = get_sbdt_val(v, _port_width);
-  return val;
-}
+SBDT port_data_t::peek_out_data(int idx, int bytes) {
 
-// send ith element considering scalar port
-SBDT port_data_t::peek_out_data(int i) {
-  assert(i>=0 && _mem_data.size()>i);
-  vector<uint8_t> v = _mem_data[i];
-  SBDT val = get_sbdt_val(v, _port_width);
-  return val;
+  if (bytes == -1) {
+    bytes = _port_width;
+  } else {
+    assert(bytes % _port_width == 0);
+  }
+
+  assert(idx + bytes / _port_width <= _mem_data.size());
+  
+  SBDT res = 0;
+
+  for (int i = 0; i < bytes; i += _port_width) {
+    SBDT partial = 0;
+#define RI(x) case x: {                                              \
+  partial = *((uint##x##_t*)(&_mem_data[idx + i / _port_width][0])); \
+  break;                                                             \
+}
+    switch(_port_width * 8) {
+    RI(64)
+    RI(32)
+    RI(16)
+    RI(8)
+    default:
+      assert(false);
+    }
+#undef RI
+    res |= partial << (8 * i);
+  }
+
+  if (SS_DEBUG::DATA_STATUS) {
+    std::cout << "peeked value is " << bytes << std::endl;
+  }
+
+  return res;
 }
 
 // Throw away data in CGRA input ports
@@ -1003,8 +1022,6 @@ void accel_t::cycle_cgra_backpressure() {
   bool print = false;
   if (SS_DEBUG::COMP) {
     print = true;
-    // timestamp();
-    // *cgra_dbg_stream  <<"\n";
   }
 
   int num_computed = 0;
@@ -1054,19 +1071,23 @@ void accel_t::cycle_cgra_backpressure() {
           cout << "Port details: " << cur_in_port.port_cgra_elem() << " " << vec_in->logical_len() << " ( " << vec_in->name() << " ) "<< endl;
           cout << "NEW REPEAT COUNT: " << x << endl;
         }
-        int y = (x)*(1<<REPEAT_FXPNT);
+        int y = (x << REPEAT_FXPNT);
         cur_in_port.set_cur_repeat_lim(y);
       } else { // sstream_size data is not yet available
-        cur_in_port.set_cur_repeat_lim(-1*(1<<REPEAT_FXPNT));
+        cur_in_port.set_cur_repeat_lim(-1);
       }
     }
 
         
-    // cout << "Port details: " << cur_in_port.port_cgra_elem() << " " << vec_in->logical_len() << " ( " << vec_in->name() << " ) " << " cur_repeat_lim: " << cur_in_port.cur_repeat_lim() << " and num_ready: " << cur_in_port.num_ready() << " and mem size: " << cur_in_port.mem_size() << endl;
-    
+    //cout << "Port details: " << cur_in_port.port_cgra_elem() << " "
+    //     << vec_in->logical_len() << " ( " << vec_in->name() << " ) "
+    //     << " cur_repeat_lim: " << ((cur_in_port.cur_repeat_lim() - 1) / (1 << REPEAT_FXPNT) + 1)
+    //     << " repeat_stretch: "
+    //     << " and num_ready: " << cur_in_port.num_ready()
+    //     << " and mem size: " << cur_in_port.mem_size() << endl;
+
     if (cur_in_port.num_ready() && cur_in_port.cur_repeat_lim() > 0) {
-      // auto *port = _sched->vportOf(make_pair(true /*input*/, port_index));
-      // auto *vec_in = dynamic_cast<SSDfgVecInput *>(port);
+
       assert(vec_in != NULL && "input port pointer is null\n");
 
       if (_dfg->can_push_input(vec_in)) {
@@ -1102,8 +1123,10 @@ void accel_t::cycle_cgra_backpressure() {
 
         if(SS_DEBUG::COMP) {
           cout << "Vec name: " << vec_in->name() << " allowed to push input: ";
-          for(auto d : data) cout << d << " ";
-          cout << "\n";
+          for (size_t i = 0; i < data.size(); ++i) {
+            std::cout << data[i] << "(" << data_valid[i] << ") ";
+          }
+          cout << std::endl;
         }
 
         data.clear();       // clear the input data pushed to dfg
@@ -1116,6 +1139,7 @@ void accel_t::cycle_cgra_backpressure() {
         }
 
       }
+
     } else if(cur_in_port.num_ready() && cur_in_port.cur_repeat_lim()==0) { // when the element has to be repeated 0 times (discard)
       // cout << "Came inside repeat=0 for Vec name: " << vec_in->name() << "\n";
       cur_in_port.pop(1);
@@ -1230,9 +1254,6 @@ void accel_t::cycle_cgra_fixedtiming() {
       int cur_port = active_ports[i];
       min_ready =
           std::min(_port_interf.in_port(cur_port).num_ready(), min_ready);
-      // if(min_ready==0 && _accel_index==0) {
-      //  timestamp(); cout << "Port " << cur_port << "not ready\n";
-      //}
     }
 
     // Now fire on all cgra ports
@@ -1299,8 +1320,6 @@ void accel_t::execute_dfg(unsigned instance, int group) {
   _dfg->set_dbg_stream(_cgra_dbg_stream);
 
   auto &active_ports = _soft_config.in_ports_active_group[group];
-
-  // timestamp(); cout << " EXECUTE ACCEL " << accel_index() << "\n";
 
   // send each fifo's data to corresponding dfg input
   for (unsigned i = 0; i < active_ports.size(); ++i) {
@@ -1744,12 +1763,12 @@ void accel_t::print_statistics(std::ostream &out) {
       << ((double)_stat_cgra_busy_cycles) / ((double)roi_cycles())
       << ", DFGs / Cycle: "
       << ((double)_stat_comp_instances) / ((double)roi_cycles()) << "\n";
-  out << "For backcgra, Average thoughput of all ports (overall): "
-    <<
-    ((double)_stat_comp_instances)/((double)roi_cycles()*_dfg->num_vec_output()) // gives seg fault when no dfg
-    << ", CGRA outputs/cgra busy cycles: "
-    <<  ((double)_stat_comp_instances)/((double)_stat_cgra_busy_cycles)  <<
-    "\n";
+  if (_dfg) {
+    out << "For backcgra, Average thoughput of all ports (overall): "
+      << ((double)_stat_comp_instances)/((double)roi_cycles()*_dfg->num_vec_output()) // gives seg fault when no dfg
+      << ", CGRA outputs/cgra busy cycles: "
+      <<  ((double)_stat_comp_instances)/((double)_stat_cgra_busy_cycles)  << "\n";
+  }
   out << "CGRA Insts / Computation Instance: "
       << ((double)_stat_ss_insts) / ((double)_stat_comp_instances) << "\n";
   out << "CGRA Insts / Cycle: "
@@ -2188,9 +2207,9 @@ void accel_t::schedule_streams() {
         port_data_t *in_vp = &_port_interf.in_port(in_port);
         in_vp->set_status(port_data_t::STATUS::BUSY, ip->unit());
         // it means different for recurrence stream: confirm if this makes sense
-        if (auto port_port_stream = dynamic_cast<port_port_stream_t *>(ip)) {
-          (void) (port_port_stream);
-          if(!ip->repeat_flag()) in_vp->set_repeat(repeat, repeat_str, repeat_flag);
+        if (dynamic_cast<port_port_stream_t *>(ip)) {
+          if(!ip->repeat_flag())
+            in_vp->set_repeat(repeat, repeat_str, repeat_flag);
         } else {
           in_vp->set_repeat(repeat, repeat_str, repeat_flag);
         }
@@ -2350,19 +2369,6 @@ bool scratch_write_controller_t::schedule_const_scr(const_scr_stream_t &new_s) {
   return true;
 }
 
-// bool scratch_write_controller_t::schedule_scr_scr(scr_scr_stream_t& new_s) {
-//  for(auto& s : _scr_scr_streams) {
-//    if(s.empty()) {
-//      s=new_s; //copy the values
-//      //cout << s._remote_stream << " became " << &s << "\n";
-//      s._remote_stream->_remote_stream = &s;//update pointer to remote
-//      //cout << "hooked up reader to stable writer\n";
-//      return true;
-//    }
-//  }
-//  return false;
-//}
-
 bool scratch_write_controller_t::schedule_port_scr(
     affine_write_stream_t &new_s) {
   auto *s = new affine_write_stream_t(new_s);
@@ -2370,6 +2376,7 @@ bool scratch_write_controller_t::schedule_port_scr(
   _write_streams.push_back(s);
   return true;
 }
+
 bool port_controller_t::schedule_port_port(port_port_stream_t &new_s) {
   for (auto &s : _port_port_streams) {
     if (s.empty()) {
@@ -2383,6 +2390,7 @@ bool port_controller_t::schedule_port_port(port_port_stream_t &new_s) {
   return false;
   
 }
+
 bool port_controller_t::schedule_remote_port(remote_port_stream_t &new_s) {
   for (auto &s : _remote_port_streams) {
     if (s.empty()) {
@@ -2472,7 +2480,7 @@ void dma_controller_t::port_resp(unsigned cur_port) {
                     << ", size in bytes: " << data.size() << " elements"
                     << (last ? "(last)" : "") << "\n";
         }
-        
+
         // FIXME: check if stats are reset at roi
         // _accel->_stat_mem_bytes_rd += data.size();
 
@@ -2874,7 +2882,6 @@ int dma_controller_t::req_read(affine_read_stream_t &stream) {
 
   bool last = stream.check_set_empty(); // do this first so last is set
   if (last) {
-    timestamp();
     _accel->process_stream_stats(stream);
   }
 
@@ -3513,8 +3520,6 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t &stream) {
     data64[index++] = val;
 
     out_vp.pop_out_data();
-    // timestamp(); cout << "POPPED b/c INDIRECT WRITE: " << out_vp.port() <<
-    // "\n";
     bytes_written += sizeof(SBDT);
 
     bool pop_ind_vp = stream.pop_elem();
@@ -3599,7 +3604,6 @@ void dma_controller_t::req_write(affine_write_stream_t &stream,
     }
 
     ovp.pop_out_data(); // pop the one we peeked
-    // timestamp(); cout << "POPPED b/c Mem Write: " << vp.port() << " " <<
     // vp.mem_size() << "\n";
 
     prev_addr = addr;
@@ -4400,7 +4404,6 @@ void scratch_write_controller_t::serve_atomic_requests(bool &performed_atomic_sc
       input_val = check_value & ((1<<request._output_bytes*8)-1);
 
       if (SS_DEBUG::COMP) {
-        // std::cout << (_accel->now()-_accel->_ssim->_stat_start_cycle) << " ";
         timestamp();
         printf("ACCEL ID: %d", _accel->_lsq->getCpuId());
         std::cout << " REAL EXECUTION, update at scr_addr: " << scr_addr
@@ -4519,24 +4522,21 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
 
       num_addr_pops = 0;
       num_val_pops = 0;
-      loc = out_addr.peek_out_data();
+      loc = out_addr.peek_out_data(0, stream._output_bytes);
       if (SS_DEBUG::COMP) {
-        std::cout << "1 cycle execution : "
-                  << "\n";
+        std::cout << "1 cycle execution : " << std::endl;
         std::cout << "64-bit value at the addr port is: " << loc;
       }
       loc = stream.cur_addr(loc);
-      // cout << "cur addr index: " << stream._cur_addr_index << " addr bytes: " << stream._addr_bytes << endl;
-      // std::cout << "updated loc: " << loc << "\n";
+      //cout << "cur addr index: " << stream._cur_addr_index << " addr bytes: " << stream._addr_bytes << endl;
+      //std::cout << "updated loc: " << loc << "\n";
 
       base_addr = stream.cur_offset() * stream._output_bytes;
-      // std::cout << "updated base address: " << base_addr << "\n";
       scr_addr = base_addr + loc * stream._output_bytes;
-      // std::cout << "updated scr address: " << scr_addr << "\n";
       max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
 
 
-      // cout << "SCR ADDR: " << scr_addr << " BASE ADDR: " << base_addr << "\n";
+      //cout << "SCR ADDR: " << scr_addr << " BASE ADDR: " << base_addr << "\n";
 
       // FIXME: check if this correct
       // max_addr = (scr_addr & stream._value_mask) + stream._value_bytes;
@@ -4558,7 +4558,7 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
                     << " and scr_size is: " << SCRATCH_SIZE
                     << " input num strides: " << stream._num_strides;
         }
-        
+
         // TODO: instead of assert, if this condition holds true, send a remote
         // request (for now let's send a complete packet -- I don't think we
         // want to say about decomposable n/w but we can study that by
@@ -4568,8 +4568,10 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
         // assert(scr_addr + stream._output_bytes <= SCRATCH_SIZE);
 
         struct atomic_scr_op_req temp_req;
-        SBDT cur_value = out_val.peek_out_data();
-        // cout << "64-bit value popped from out_val port: " << cur_value << endl;
+        SBDT cur_value = out_val.peek_out_data(0, stream._value_bytes);
+        if (SS_DEBUG::COMP) {
+          cout << "64-bit value popped from out_val port: " << cur_value << endl;
+        }
         temp_req._scr_addr = scr_addr;
         temp_req._inc = stream.cur_val(cur_value);
         temp_req._opcode = stream._op_code;
@@ -4591,11 +4593,15 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
         int local_core_id = (scr_addr + stream._output_bytes)/SCRATCH_SIZE;
         local_core_id = scr_addr >> 14;
         if(SS_DEBUG::NET_REQ) {
-          cout << "Cycle: " << _accel->get_cur_cycle() << " Sending remote atomic update for scratch_addr: " << scr_addr << " from own core id: " << _accel->_ssim->get_core_id() << " to remote core id: " << local_core_id <<  endl; 
+          timestamp();
+          cout << " Sending remote atomic update for scratch_addr: "
+               << scr_addr << " from own core id: " << _accel->_ssim->get_core_id()
+               << " to remote core id: " << local_core_id <<  endl; 
         }
         int local_scr_addr = scr_addr;
         uint64_t x = temp_req._inc;
-        bool rem = _accel->_lsq->push_rem_atom_op_req(x, local_scr_addr, temp_req._opcode, temp_req._value_bytes, temp_req._output_bytes);
+        bool rem = _accel->_lsq->push_rem_atom_op_req(x, local_scr_addr, temp_req._opcode,
+                                                      temp_req._value_bytes, temp_req._output_bytes);
         if(rem) ++remote_update_this_cycle;
  
         _accel->_stat_scratch_bank_requests_pushed++;
@@ -4618,7 +4624,7 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
         if (stream.can_pop_val()) {
           stream._cur_val_index = 0;
           num_val_pops++;
-          out_val.pop_out_data();
+          out_val.pop_out_data(stream._value_bytes);
           if (SS_DEBUG::COMP) {
             std::cout << "\tpopped data from val port";
           }
@@ -4627,7 +4633,7 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
           stream._cur_addr_index = 0;
           // for bank conflicts calc purposes
           num_addr_pops++;
-          out_addr.pop_out_data();
+          out_addr.pop_out_data(stream._addr_bytes);
           if (SS_DEBUG::COMP) {
             std::cout << "\tpopped data from addr port";
           }
@@ -4811,7 +4817,10 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
       port_data_t &out_addr = _accel->port_interf().out_port(stream._out_port);
       port_data_t &out_val = _accel->port_interf().out_port(stream._val_port);
 
-      cout << "own_core_id: " << _accel->_ssim->get_core_id() << " addr mem_size: " << out_addr.mem_size() << " val mem_size: " << out_val.mem_size() << " stream_active: " << stream.stream_active() << endl;
+      //cout << "own_core_id: " << _accel->_ssim->get_core_id() << " addr mem_size: "
+      //     << out_addr.mem_size() << " val mem_size: " << out_val.mem_size()
+      //     << " stream_active: " << stream.stream_active() << endl;
+
       // FIXME: mem_size based on config (this should be greater than
       // addr_bytes/out_addr.data_width
       if(out_addr.mem_size() && out_val.mem_size() && stream.stream_active()) {
@@ -5083,9 +5092,7 @@ void port_controller_t::cycle() {
       }
     }
 
-    cout << "Mem size in vp_out: " << vp_out.mem_size() << " and n: " << n << " port in okay: " << port_in_okay << " cur repeat lim: " << vp_out.cur_repeat_lim() << endl;
 
-    cout << "Stream source data_width: " << stream.src_data_width() << endl;
     if (vp_out.mem_size() >= n && port_in_okay && vp_out.cur_repeat_lim()>=0) { // okay go for it
       // cout << "Let's try to send data for recurrence stream\n";
 
@@ -5226,7 +5233,6 @@ void port_controller_t::cycle() {
 
 
     int const_width = stream._const_width;
-    cout << "const width: " << const_width << " data width: " << stream.data_width() << endl;
 
     port_data_t &first_vp_in = pi.in_port(stream.first_in_port());
 

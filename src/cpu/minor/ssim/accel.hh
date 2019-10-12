@@ -232,10 +232,11 @@ public:
   template <typename T>
   void push_mem_data(T data) {
     int data_size = sizeof(T);
-    assert(data_size=_port_width && "data size doesn't match the port width in dfg");
+    assert(data_size == _port_width && "data size doesn't match the port width in dfg");
+    push_data(data);
     // std::cout << "Data being pushed from memory" << std::hex << data << std::endl;
-    _mem_data.push_back(get_byte_vector<T>(data,_port_width));
-    _valid_data.push_back(true);
+    //_mem_data.push_back(get_byte_vector<T>(data,_port_width));
+    //_valid_data.push_back(true);
   }
 
   uint8_t _incomplete_word[8]={0};
@@ -267,39 +268,25 @@ public:
 
   // not used for only read (should be just for port_resp from dma)
   // associated with each port
-  std::vector<uint8_t> leftover;
+  std::vector<std::pair<uint8_t, bool>> leftover;
   void push_data(std::vector<uint8_t> data, bool valid=true) {
-    // std::cout << "INCOMING DATA_SIZE: " << data.size() << "\n";
-    //TODO: HACK FIX: THIS IS BAD: PLEASE DON'T LEAVE THIS HERE
     for(uint8_t item : data) {
-      leftover.push_back(item);
-    }
-    data=leftover;
-    leftover.clear();
-    //END TODO HACK FIXME BAD
-
-    int data_size = data.size();
-    // std::cout << "DATA_SIZE: " << data_size << " PORT_WIDTH: " << _port_width << "\n";
-//    if((data_size%_port_width!=0)) {
-//      std::cout << "DATA_SIZE: " << data_size << " PORT_WIDTH: " << _port_width << "\n";
-//    }
-//    assert((data_size%_port_width==0) && "weird data size returned");
-
-    int num_chunks = data_size/_port_width;
-    for(int i=0; i<num_chunks;++i){
-      // _mem_data.push_back(data);
-      std::vector<uint8_t> local_data = slice(data, i*_port_width, (i+1)*_port_width);
-      _mem_data.push_back(local_data);
-      _valid_data.push_back(valid);
-      _total_pushed+=valid;
+      leftover.emplace_back(item, valid);
     }
 
-    //HACK AGAIN
-    if(num_chunks * _port_width != data_size) {
-      leftover = slice(data, num_chunks*_port_width, data_size);
+    size_t i;
+    for (i = 0; i + _port_width <= leftover.size(); i += _port_width) {
+      std::vector<uint8_t> to_append;
+      for (int j = 0; j < _port_width; ++j) {
+        to_append.push_back(leftover[i + j].first);
+        assert(leftover[i + j].second == leftover[i].second);
+      }
+      _mem_data.push_back(to_append);
+      _valid_data.push_back(leftover[i].second);
+      _total_pushed += valid;
     }
-    // std::cout << "LEFTOVER SIZE: " << leftover.size() << "\n";
-    //END HACK
+
+    leftover.erase(leftover.begin(), leftover.begin() + i);
 
   }
 
@@ -308,31 +295,18 @@ public:
     int data_size = sizeof(T);
     assert(data_size == _port_width && "data size doesn't match the port width in dfg");
 
-    if(_bytes_in_word!=0) {
+    if(_bytes_in_word != 0) {
       std::cout << "It's not cool to leave random incomplete words in the port, "
            << "please be more tidy next time\n";
       assert(0);
     }
 
- // Consider the case when it tries to push SBDT data but it's width is just
- // 16-bits?
-    // std::cout << sizeof(T) << " " << _port_width << "\n";
-    int num_chunks = sizeof(T)/_port_width;
-    // std::cout << "Data being pushed to a port from memory or cgra" << std::hex << data << std::endl;
-    for(int i=0; i<num_chunks; ++i){
-      // std::cout << "Scalar data beng sent" << std::hex << (data >> (i*_port_width*8)) << std::endl;
-      std::vector<uint8_t> v = get_byte_vector(data >> (i*_port_width*8),_port_width);
-        // std::cout << "Data after conversion to vector and back" << std::hex << get_sbdt_val(v,_port_width) << std::endl;
-        _mem_data.push_back(v);
-        _valid_data.push_back(valid);
-        _total_pushed+=valid;
+    std::vector<uint8_t> vec;
+    for (int i = 0; i < sizeof(T); ++i) {
+      vec.push_back((data >> (i * 8)) & 255);
     }
+    push_data(vec, valid);
 
-    // std::vector<uint8_t> v = get_byte_vector(data,_port_width);
-    // std::cout << "Data after conversion to vector and back" << std::hex << get_sbdt_val(v,_port_width) << std::endl;
-    // _mem_data.push_back(v);
-    // _valid_data.push_back(valid);
-    // _total_pushed+=valid;
   }
 
   void reformat_in();  //rearrange all data for CGRA
@@ -408,11 +382,10 @@ public:
   template <typename T>
   T pop_in_custom_data(); // pop one data from mem
 
-  SBDT pop_out_data(); // pop one data from mem
+  SBDT pop_out_data(int bytes = -1); // pop one data from mem
   template <typename T>
   T pop_out_custom_data(); // pop one data from mem
-  SBDT peek_out_data(); // peek one data from mem
-  SBDT peek_out_data(int i); // peek one data from mem
+  SBDT peek_out_data(int i = 0, int bytes = -1); // peek one data from mem
 
   bool any_data() {
     if(_isInput) {
@@ -527,8 +500,8 @@ public:
   uint64_t total_pushed() { return _total_pushed; }
 
   void set_port_width(int num_bits){
-    assert(num_bits%8==0);
-    _port_width=num_bits/8;
+    assert(num_bits % 8 == 0);
+    _port_width = num_bits / 8;
   }
 
   // in bytes

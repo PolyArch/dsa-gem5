@@ -21,15 +21,16 @@ void base_stream_t::set_empty(bool b) {
 
 void base_stream_t::print_in_ports() {
   for(int i = 0; i < _in_ports.size();++i) {
-    std::cout << _in_ports[i] << " ";
-  }
-  if(_soft_config) {
-    std::cout << "(";
-    for(int i = 0; i < _in_ports.size();++i) {
-      std::cout << _soft_config->in_ports_name[_in_ports[i]] << " ";
-    }
-    if(_in_ports.size()) std::cout <<'\b';
-    std::cout << ")";
+    std::cout << soft_port_name(_in_ports[i], true) << " ";
   }
 }
 
+std::string base_stream_t::soft_port_name(int x, bool is_input) {
+  std::ostringstream oss;
+  oss << x;
+  auto &vec = is_input ? _soft_config->in_ports_name : _soft_config->out_ports_name;
+  if (_soft_config && x < vec.size()) {
+    oss << "(" << vec[x] << ")";
+  }
+  return oss.str();
+}

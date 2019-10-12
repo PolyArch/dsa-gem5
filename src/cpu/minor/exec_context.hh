@@ -613,6 +613,7 @@ class ExecContext : public ::ExecContext
             break;
         }
         //RESET REPEAT to 1 -- since this is by far the most common case
+        setSSReg(0,SS_FLAGS);
         setSSReg(1,SS_REPEAT);
         setSSReg(0,SS_REPEAT_STRETCH);
         setSSReg(0,SS_OFFSET_LIST);

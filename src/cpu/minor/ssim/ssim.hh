@@ -38,9 +38,9 @@ public:
   //    int stretch, uint64_t num_strides, addr_t scratch_addr, uint64_t flags);
   //void write_dma_from_scratch(addr_t scratch_addr, uint64_t stride,
   //    uint64_t access_size, uint64_t num_strides, addr_t mem_addr, uint64_t flags);
-  void load_dma_to_port(int repeat_in, int repeat_str);
+  void load_dma_to_port(int64_t repeat_in, int64_t repeat_str);
   void add_port(int in_port);
-  void load_scratch_to_port(int repeat_in, int repeat_str);
+  void load_scratch_to_port(int64_t repeat_in, int64_t repeat_str);
   void write_scratchpad();
   void write_dma();
   void reroute(int out_port, int in_port, uint64_t num_elem,

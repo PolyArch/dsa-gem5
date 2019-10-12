@@ -8,7 +8,7 @@
 #include <assert.h>
 
 #include "ssim.hh"
-#include "cpu/minor/cpu.hh"
+#include "../cpu.hh"
 
 extern "C" void libsbsim_is_present() {}
 
@@ -414,10 +414,9 @@ void ssim_t::add_port(int in_port) {
   extra_in_ports.push_back(in_port);
 }
 
-void ssim_t::load_dma_to_port(int repeat, int repeat_str) {
-  // int new_repeat_str = repeat_str >> 1;
-  int new_repeat_str = repeat_str >> 2;
-  bool repeat_flag = (repeat_str>>1) & 1;
+void ssim_t::load_dma_to_port(int64_t repeat, int64_t repeat_str) {
+  int new_repeat_str = repeat_str >> 1;
+  bool repeat_flag(repeat_str & 1);
 
   // bool repeat_flag = repeat_str & 1;
 
@@ -444,11 +443,9 @@ void ssim_t::write_dma() {
 }
 
 
-void ssim_t::load_scratch_to_port(int repeat, int repeat_str) {//, bool repeat_flag) {
-  // int new_repeat_str = repeat_str >> 1;
-  // bool repeat_flag = repeat_str & 1;
-  int new_repeat_str = repeat_str >> 2;
-  bool repeat_flag = (repeat_str>>1) & 1;
+void ssim_t::load_scratch_to_port(int64_t repeat, int64_t repeat_str) {//, bool repeat_flag) {
+  int new_repeat_str = repeat_str >> 1;
+  bool repeat_flag(repeat_str & 1);
 
   affine_read_stream_t* s = new affine_read_stream_t(LOC::SCR, stream_stack,
                                                      {(int) stream_stack.back()},
@@ -559,14 +556,8 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
   int core_d = ((flags & 3) == 1) ? -1 : 1;
   padding_iter = (flags >> 2) ? padding_iter : NO_PADDING;
 
-  // cout << "Repeat std seen: " << repeat_str << endl;
-  // int new_repeat_str = repeat_str >> 1;
-  // bool repeat_flag = (repeat_str) & 1;
-  int new_repeat_str = repeat_str >> 2;
-  bool repeat_flag = (repeat_str>>1) & 1;
-  // since the last bit of stretch is flag
-  // int new_repeat_str = repeat_str >> 2;
-  // bool repeat_flag = (repeat_str>>1) & 1;
+  int new_repeat_str = repeat_str >> 1;
+  bool repeat_flag(repeat_str & 1);
 
   if((flags & 3) == 0) {
 
@@ -727,22 +718,17 @@ void ssim_t::write_constant(int num_strides, int in_port,
   // std::cout << "Const width: " << const_width << std::endl;
 
   // use ss_const for that instead of ss_dconst
-  if(const_width<4 && const_width >0) { // doesn't for T64 right now -- todo
-    switch(const_width) {
-      case 0: s->_const_width=8;
-              break;
-      case 1: s->_const_width=4;
-              break;
-      case 2: s->_const_width=2;
-              break;
-      case 3: s->_const_width=1;
-              break;
+  if(const_width) {
+    switch(const_width - 1) {
+      case 0: s->_const_width=8; break;
+      case 1: s->_const_width=4; break;
+      case 2: s->_const_width=2; break;
+      case 3: s->_const_width=1; break;
     }
   } else { // assume the width of the corresponding input port
     port_data_t& cur_in_port = accel_arr[0]->_port_interf.out_port(in_port);
     s->_const_width = cur_in_port.get_port_width();
   }
-  // std::cout << "Final const width: " << s->_const_width << std::endl;
 
 }
 

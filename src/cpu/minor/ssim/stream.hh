@@ -31,6 +31,8 @@ struct base_stream_t {
   virtual LOC src() {return LOC::NONE;}
   virtual LOC dest() {return LOC::NONE;}
 
+  std::string soft_port_name(int x, bool is_input);
+
   static void sep(std::string &s) {
     if(s.length()!=0) s+="|";
   }
@@ -342,15 +344,14 @@ struct affine_base_stream_t : public base_stream_t {
   }
 
   virtual void print_status() override {
-    std::cout << short_name() << "\n";
+    std::cout << short_name() << "\t";
     for (size_t i = 0; i < idx.size() - 1; ++i) {
       std::cout << "dim[" << i << "]: stride=" << dim_stride(i) << ", "
                 << "trip_cnt=" << idx[i] << "/" << dim_trip_count(i) << ", "
-                << "stretch=" << dim_stretch(i) << "\n";
+                << "stretch=" << dim_stretch(i) << "\t";
     }
     std::cout << "innermost: current=" << cur_addr()
-              << ", acc_size=" << idx.back() << "/" << access_size()
-              << ", port=" << dims.back() << "\n";
+              << ", acc_size=" << idx.back() << "/" << access_size();
   }
 
 };
@@ -405,7 +406,7 @@ struct affine_write_stream_t : public affine_base_stream_t {
 
   virtual void print_status() {
     affine_base_stream_t::print_status();
-    std::cout << " out_port=" << _out_port << " garbage=" << garbage();
+    std::cout << " out_port=" << soft_port_name(_out_port, false) << " garbage=" << garbage();
     print_empty();
   }
 
@@ -1243,7 +1244,7 @@ struct atomic_scr_stream_t : public base_stream_t {
   virtual void print_status() {
     std::cout << "atomic_scr " << "\tval_port=" << _val_port
               << "\taddr_port:" << _out_port  << "\top_code:" << _op_code << "\titers left: " << _num_strides
-         << std::dec << "\tinput_type:" << _value_type << "\toutput_type:" << _output_type << "\taddr_type:" << _addr_type << "\n";
+         << std::dec << "\tinput_type:" << (int) _value_bytes << "\toutput_type:" << (int) _output_bytes << "\taddr_type:" << (int) _addr_bytes << "\n";
        };
 
   // base_stream_t::print_status();
