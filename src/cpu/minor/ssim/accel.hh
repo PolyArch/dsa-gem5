@@ -188,45 +188,21 @@ public:
     return v;
   }
 
-  template <typename T>
-  T merge_bytes(T val, std::vector<uint8_t> v, int len) {
-    // std::cout << "while merging\n";
-    for(int i=0; i<len; i++){
-      val = val | ((v[i] & 0xFFFFFFFFFFFFFFFF) << (i*8));
-      // val = val | ((v[i] & ((uint64_t) 1 << 63) << (i*8));
-    }
-    return val;
-  }
-
-  SBDT get_sbdt_val(std::vector<uint8_t> v, int len){
-    SBDT val = 0;
-    return merge_bytes(val,v,len);
-    /*
-    for(int i=0; i<len; i++){
-      val = val | (v[i] << i*8);
-    }
-    return val;
-    */
-  }
-
   // FIXME: hack for now--create a map of data_width and datatype
   template <typename T>
   T get_custom_val(std::vector<uint8_t> v, int len){
-    if(len==1) {
-      uint8_t val=0;
-      return merge_bytes(val,v,len);
-    } else if(len==2) {
-      uint16_t val=0;
-      return merge_bytes(val,v,len);
-    } else if(len==4) {
-      uint32_t val=0;
-      return merge_bytes(val,v,len);
-    } else {
-      uint64_t val=0;
-      return merge_bytes(val,v,len);
+    switch (len) {
+    case 1:
+      return *reinterpret_cast<uint8_t*>(&v[0]);
+    case 2:
+      return *reinterpret_cast<uint16_t*>(&v[0]);
+    case 4:
+      return *reinterpret_cast<uint32_t*>(&v[0]);
+    case 8:
+      return *reinterpret_cast<uint64_t*>(&v[0]);
+    default:
+      assert(0);
     }
-    assert(0);
-    return -1; // should not come here
   }
 
   template <typename T>
@@ -234,36 +210,13 @@ public:
     int data_size = sizeof(T);
     assert(data_size == _port_width && "data size doesn't match the port width in dfg");
     push_data(data);
-    // std::cout << "Data being pushed from memory" << std::hex << data << std::endl;
-    //_mem_data.push_back(get_byte_vector<T>(data,_port_width));
-    //_valid_data.push_back(true);
   }
-
-  uint8_t _incomplete_word[8]={0};
-  int _bytes_in_word=0;
-  //We need an adaptor so that we can push sub-word size data to the ports
-  //Ideally we'd change all the datastructures so they could work properly
-  //for now I'm implementing a hack
 
   void push_data_byte(uint8_t b) {
-     _incomplete_word[_bytes_in_word++]=b;
-     if(_bytes_in_word==8) {
-       _bytes_in_word=0;
-       push_data( *((uint64_t*)_incomplete_word),true);
-      for(int i = 0; i <8; ++i) _incomplete_word[i]=0;
+     leftover.emplace_back(b, true);
+     if(leftover.size() == 8) {
+       push_data({},true);
      }
-  }
-
-  // FIXME: find a neater way to do this
-  std::vector<uint8_t> slice(std::vector<uint8_t> &x, int start, int end) {
-    // auto first = x.cbegin()+start;
-    // auto last = x.cbegin()+end;
-    // std::vector<uint8_t> ret(first,last);
-    std::vector<uint8_t> ret;
-    for(int i=start; i<end; i++){
-      ret.push_back(x[i]);
-    }
-    return ret;
   }
 
   // not used for only read (should be just for port_resp from dma)
@@ -295,16 +248,14 @@ public:
     int data_size = sizeof(T);
     assert(data_size == _port_width && "data size doesn't match the port width in dfg");
 
-    if(_bytes_in_word != 0) {
+    if (!leftover.empty()) {
       std::cout << "It's not cool to leave random incomplete words in the port, "
            << "please be more tidy next time\n";
       assert(0);
     }
 
-    std::vector<uint8_t> vec;
-    for (int i = 0; i < sizeof(T); ++i) {
-      vec.push_back((data >> (i * 8)) & 255);
-    }
+    std::vector<uint8_t> vec(sizeof(T));
+    *reinterpret_cast<T*>(&vec[0]) = data;
     push_data(vec, valid);
 
   }
@@ -356,11 +307,9 @@ public:
   }
   */
 
-  template <typename T>
-  void push_cgra_port(unsigned cgra_port, T val, bool valid) {
-    int data_size = sizeof(T);
-    assert(data_size=_port_width && "data size doesn't match the port width in dfg");
-    std::vector<uint8_t> v = get_byte_vector(val,_port_width);
+  void push_cgra_port(unsigned cgra_port, SBDT val, bool valid) {
+    std::vector<uint8_t> v(sizeof(SBDT));
+    *reinterpret_cast<SBDT*>(&v[0]) = val;
     _cgra_data[cgra_port].push_back(v);
     _cgra_valid[cgra_port].push_back(valid);
   }
@@ -369,9 +318,19 @@ public:
 
   //get the value of an instance in cgra port
   SBDT value_of(unsigned port_idx, unsigned instance) {
-    // return _cgra_data[port_idx][instance];
-    SBDT val = get_sbdt_val(_cgra_data[port_idx][instance],_port_width);
-    return val;
+    auto &vec = _cgra_data[port_idx][instance];
+    switch (vec.size()) {
+    case 1:
+      return *reinterpret_cast<uint8_t*>(&vec[0]);
+    case 2:
+      return *reinterpret_cast<uint16_t*>(&vec[0]);
+    case 4:
+      return *reinterpret_cast<uint32_t*>(&vec[0]);
+    case 8:
+      return *reinterpret_cast<uint64_t*>(&vec[0]);
+    default:
+      assert(0);
+    }
   }
 
   bool valid_of(unsigned port_idx, unsigned instance) {
@@ -1376,7 +1335,6 @@ private:
 
   void cycle_cgra();   //Tick on each cycle
   void cycle_cgra_backpressure();
-  void cycle_cgra_fixedtiming();
 
   void reset_data(); //carry out the work
 
@@ -1471,7 +1429,6 @@ private:
   }
 
   void do_cgra();
-  void execute_dfg(unsigned instance, int group);
 
   void forward_progress() {
     _waiting_cycles=0;
@@ -1540,7 +1497,8 @@ private:
       temp.push_back(data[i]);
     }
     if(SS_DEBUG::NET_REQ) {
-      std::cout << "Received value: " << in_vp.get_sbdt_val(temp, in_vp.get_port_width()) << " at remote port: " << remote_in_port << "\n";
+      std::cout << "Received value: " << *reinterpret_cast<SBDT*>(&temp[0])
+                << " at remote port: " << remote_in_port << "\n";
     }
     in_vp.push_data(temp);
     // inc remote values received at this port

@@ -1019,10 +1019,6 @@ uint64_t accel_t::receive(int out_port) {
 // Ports relevant for this simulation this are called "active_in_ports_bp"
 
 void accel_t::cycle_cgra_backpressure() {
-  bool print = false;
-  if (SS_DEBUG::COMP) {
-    print = true;
-  }
 
   int num_computed = 0;
   auto &active_in_ports = _soft_config.in_ports_active_backcgra;
@@ -1041,7 +1037,7 @@ void accel_t::cycle_cgra_backpressure() {
     if (cur_in_port.num_ready()) {
       count_avail++;
     }
-    if (_dfg->can_push_input(vec_in)) {
+    if (vec_in->can_push()) {
       _slot_avail[i]++;
       if (!cur_in_port.num_ready()) {
         _could_not_serve[i]++;
@@ -1063,7 +1059,7 @@ void accel_t::cycle_cgra_backpressure() {
     // cout << "REPEAT FLAG: " << cur_in_port.repeat_flag() << " and num_repeated_till_now: " << cur_in_port.num_times_repeated() << endl;
     // TODO: make it compatible for different datawidth of the port and repeat
     // count
-    if(cur_in_port.repeat_flag() && cur_in_port.num_times_repeated()==0 && cur_in_port.num_ready() && _dfg->can_push_input(vec_in)) { // need to pop to set it
+    if(cur_in_port.repeat_flag() && cur_in_port.num_times_repeated()==0 && cur_in_port.num_ready() && vec_in->can_push()) { // need to pop to set it
       auto &repeat_prt = port_interf().out_port(cur_in_port.repeat());
       if(repeat_prt.mem_size()) {
         uint64_t x = repeat_prt.pop_out_data();
@@ -1090,7 +1086,7 @@ void accel_t::cycle_cgra_backpressure() {
 
       assert(vec_in != NULL && "input port pointer is null\n");
 
-      if (_dfg->can_push_input(vec_in)) {
+      if (vec_in->can_push()) {
         forward_progress();
 
         // execute_dfg
@@ -1114,12 +1110,15 @@ void accel_t::cycle_cgra_backpressure() {
           // get the data of the instance of CGRA FIFO
           val = cur_in_port.value_of(port_idx, 0);
           valid = cur_in_port.valid_of(port_idx, 0);
-          data_valid.push_back(valid);
           data.push_back(val);
+          data_valid.push_back(valid);
         }
 
         // TODO: this is supposed to be the verif flag, fix it later!
-        num_computed = _dfg->push_vector(vec_in, data, data_valid, print, true);
+        // num_computed = _dfg->push_vector(vec_in, data, data_valid, print, true);
+        for (int i = 0; i < data.size(); ++i) {
+          vec_in->values()[i]->push(data[i], data_valid[i], 0);
+        }
 
         if(SS_DEBUG::COMP) {
           cout << "Vec name: " << vec_in->name() << " allowed to push input: ";
@@ -1128,9 +1127,6 @@ void accel_t::cycle_cgra_backpressure() {
           }
           cout << std::endl;
         }
-
-        data.clear();       // clear the input data pushed to dfg
-        data_valid.clear(); // clear the input data pushed to dfg
 
         // pop input from CGRA port after it is pushed into the dfg node
         bool should_pop = cur_in_port.inc_repeated();
@@ -1147,7 +1143,8 @@ void accel_t::cycle_cgra_backpressure() {
   }
 
   // calling with the default parameters for now
-  num_computed = _dfg->cycle(print, true);
+  //num_computed = _dfg->cycle(print, true);
+  num_computed = _dfg->forward();
 
   if (num_computed) {
     _cgra_issued++;
@@ -1179,15 +1176,14 @@ void accel_t::cycle_cgra_backpressure() {
     int len = ceil(cur_out_port.port_vec_elem()*cur_out_port.get_port_width()/float(8));
     // cout << "Length of output required: " << len << endl;
 
-    if (_dfg->can_pop_output(vec_output, len)) {
+    if (vec_output->can_pop()) {
       data.clear();       // make sure it is empty here
       data_valid.clear(); // make sure it is empty here
-      _dfg->pop_vector_output(vec_output, data, data_valid, len, print, true);
+      vec_output->pop(data, data_valid);
 
       if(SS_DEBUG::COMP) {
-        cout << "Output vector name: " << vec_output->name() << endl;
-        cout << " allowed to pop output: ";
-        for(auto d : data) cout << d << " ";
+        cout << "outvec[" << vec_output->name() << "] allowed to pop output: ";
+        for(auto &d : data) cout << d << " ";
         cout << "\n";
       }
       if (in_roi()) {
@@ -1223,216 +1219,18 @@ void accel_t::cycle_cgra_backpressure() {
   }
 }
 
-// FIXME: this doesn't work with dgra
-void accel_t::cycle_cgra_fixedtiming() {
-  uint64_t cur_cycle = now();
-  for (int group = 0; group < NUM_GROUPS; ++group) {
-    if (_dfg->group_prop(group).is_temporal)
-      continue; // break out
-    std::vector<bool> &prev_issued_group = _cgra_prev_issued_group[group];
-    // int mod_index = cur_cycle%prev_issued_group.size();
-
-    // detect if we need to wait for throughput reasons on CGRA group -- easy
-    // peasy if(cur_cycle < _delay_group_until[group]) {
-    //  continue;
-    //}
-    int num_issue = 0;
-    for (int i = 0; i < prev_issued_group.size(); ++i) {
-      num_issue += prev_issued_group[i];
-    }
-    if (num_issue >= _soft_config.group_thr[group].first) {
-      continue;
-    }
-
-    // Detect if we are ready to fire
-    auto &active_ports = _soft_config.in_ports_active_group[group];
-
-    if (active_ports.size() == 0)
-      continue;
-    unsigned min_ready = 10000000;
-    for (int i = 0; i < active_ports.size(); ++i) {
-      int cur_port = active_ports[i];
-      min_ready =
-          std::min(_port_interf.in_port(cur_port).num_ready(), min_ready);
-    }
-
-    // Now fire on all cgra ports
-    if (min_ready > 0) {
-      forward_progress();
-      //_delay_group_until[group]=cur_cycle+_soft_config.group_thr[group];
-      execute_dfg(0, group); // Note that this will set backpressure variable
-
-      // if(in_roi()) {
-      //  _stat_ss_insts+=_dfg->num_insts();
-      //}
-      // pop the elements from inport as they have been processed
-      for (unsigned i = 0; i < active_ports.size(); ++i) {
-        uint64_t port_index = active_ports[i];
-        port_data_t &in_port = _port_interf.in_port(port_index);
-
-        // only increment repeated if no backpressure
-        bool should_pop = in_port.inc_repeated();
-        if (should_pop) {
-          in_port.pop(1);
-        }
-      }
-    }
-  }
-
-  // some previously produced outputs might be ready at this point,
-  // so, lets quickly check. (could be broken out as a separate function)
-  if (!_cgra_output_ready.empty()) {
-    auto iter = _cgra_output_ready.begin();
-    if (cur_cycle >= iter->first) {
-
-      for (auto &out_port_num : iter->second) {
-        _port_interf.out_port(out_port_num).set_out_complete();
-      }
-      _cgra_output_ready.erase(iter); // delete from list
-    }
-  }
-}
-
 void accel_t::cycle_cgra() {
   if (!_dfg)
     return;
 
-  // printf("Going to compute with ACCEL ID: %d\n", _lsq->getCpuId());
-  if (_back_cgra) {
-    cycle_cgra_backpressure();
-  } else {
-    cycle_cgra_backpressure();
-    cycle_cgra_fixedtiming();
-  }
+  cycle_cgra_backpressure();
+
   if (in_roi()) {
     _stat_cgra_busy_cycles += (_cgra_issued > 0);
   }
 
   if (_cgra_issued > 0 && SS_DEBUG::COMP && SS_DEBUG::NET_REQ) {
     printf("ACCEL ID: %d\n", _lsq->getCpuId());
-  }
-}
-
-void accel_t::execute_dfg(unsigned instance, int group) {
-  if (SS_DEBUG::COMP) {
-    *_cgra_dbg_stream << "inputs (group" << group << "):";
-  }
-  _dfg->set_dbg_stream(_cgra_dbg_stream);
-
-  auto &active_ports = _soft_config.in_ports_active_group[group];
-
-  // send each fifo's data to corresponding dfg input
-  for (unsigned i = 0; i < active_ports.size(); ++i) {
-    auto &cur_in_port = _port_interf.in_port(active_ports[i]);
-
-    // for each active vector port
-    for (unsigned port_idx = 0; port_idx < cur_in_port.port_cgra_elem();
-         ++port_idx) {
-      int cgra_port = cur_in_port.cgra_port_for_index(port_idx);
-      if (_soft_config.cgra_in_ports_active[cgra_port] == false) {
-        continue;
-      }
-
-      // get the data of the instance of CGRA FIFO
-      SBDT val = cur_in_port.value_of(port_idx, instance);
-      bool valid = cur_in_port.valid_of(port_idx, instance);
-
-      // for each cgra port and associated dfg input
-      _dfg->vec_in(i)->set_value(port_idx, val, valid);
-
-      if (SS_DEBUG::COMP) {
-        if (valid)
-          *_cgra_dbg_stream << std::hex << val << ", " << std::dec;
-        else
-          *_cgra_dbg_stream << "inv, ";
-      }
-
-      if (SS_DEBUG::VERIF_PORT) {
-        in_port_verif << hex << setw(16) << setfill('0') << val << " ";
-      }
-    }
-  }
-
-  if (in_roi()) {
-    for (auto i : _soft_config.inst_histo) {
-      _total_histo[i.first] += i.second;
-    }
-    for (unsigned i = 0; i < _soft_config.in_ports_active.size(); ++i) {
-      unsigned cur_p = _soft_config.in_ports_active[i];
-      _vport_histo[_port_interf.in_port(cur_p).port_cgra_elem()]++;
-    }
-    for (unsigned i = 0; i < _soft_config.out_ports_active.size(); ++i) {
-      unsigned cur_p = _soft_config.out_ports_active[i];
-      _vport_histo[_port_interf.out_port(cur_p).port_cgra_elem()]++;
-    }
-  }
-
-  bool print = false;
-  if (SS_DEBUG::COMP) {
-    print = true;
-    *_cgra_dbg_stream << "\n";
-  }
-
-  if (SS_DEBUG::VERIF_PORT) {
-    in_port_verif << "\n";
-  }
-
-  // perform computation
-  int num_computed = _dfg->compute(print, SS_DEBUG::VERIF_CGRA, group);
-
-  if (in_roi()) {
-    _stat_ss_insts += num_computed;
-  }
-
-  uint64_t cur_cycle = now();
-
-  _cgra_issued_group[group] = true;
-  _cgra_issued++;
-  _dedicated_cgra_issued++;
-
-  auto &active_out_ports = _soft_config.out_ports_active_group[group];
-
-  // send outputs to corresponding output fifo
-  // TODO: Impelement backpressure in simulator here!
-  for (unsigned i = 0; i < active_out_ports.size(); ++i) {
-    int pnum = active_out_ports[i];
-    auto &cur_out_port = _port_interf.out_port(pnum);
-
-    int num_discarded = 0;
-
-    for (unsigned port_idx = 0; port_idx < cur_out_port.port_cgra_elem();
-         ++port_idx) {
-      // int cgra_port = cur_out_port.cgra_port_for_index(port_idx);
-
-      auto out_vec = _dfg->vec_out(i);
-      uint64_t val = out_vec->retrieve(port_idx);
-      bool valid = !out_vec->invalid();
-      cur_out_port.push_cgra_port(port_idx, val,
-                                  valid); // retreive from last inst
-
-      if (SS_DEBUG::COMP) {
-        *_cgra_dbg_stream << "output:" << hex << val << ", valid:" << valid
-                          << dec << "\n";
-      }
-
-      if (SS_DEBUG::VERIF_PORT) {
-        out_port_verif << hex << setw(16) << setfill('0') << val << " ";
-      }
-      num_discarded += !valid;
-    }
-
-    cur_out_port.inc_ready(1); // we just did one instance
-    cur_out_port.set_in_flight();
-    int lat = _soft_config.out_ports_lat[pnum];
-    _cgra_output_ready[cur_cycle + lat].push_back(pnum);
-  }
-
-  if (SS_DEBUG::VERIF_PORT) {
-    out_port_verif << "\n";
-  }
-
-  if (in_roi()) {
-    _stat_comp_instances += 1;
   }
 }
 
