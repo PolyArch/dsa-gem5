@@ -5,6 +5,7 @@
 #include "consts.hh"
 #include <iostream>
 #include "loc.hh"
+#include "sim-debug.hh"
 
 #include "cpu/minor/dyn_inst.hh" //don't like this, workaround later (TODO)
 
@@ -52,7 +53,7 @@ struct base_stream_t {
 
   static std::string loc_short_name(LOC loc) {
     std::string a;
-    if(loc==LOC::NONE)
+    if(loc==LOC::NONE) return "?";
     if((loc&LOC::DMA)!=LOC::NONE)         {sep(a); return a+="D";}
     if((loc&LOC::SCR)!=LOC::NONE)         {sep(a); return a+="S";}
     if((loc&LOC::PORT)!=LOC::NONE)        {sep(a); return a+="P";}
@@ -60,7 +61,7 @@ struct base_stream_t {
     if((loc&LOC::REMOTE_PORT)!=LOC::NONE) {sep(a); return a+="R";}
     if((loc&LOC::REMOTE_SCR)!=LOC::NONE)  {sep(a); return a+="Q";}
     if((loc&LOC::REC_BUS)!=LOC::NONE)     {sep(a); return a+="B";}
-    return "?";
+    assert(0);
   }
 
 
@@ -295,7 +296,7 @@ struct affine_base_stream_t : public base_stream_t {
   }
 
   // bytes: How many bytes of address to pop
-  uint64_t pop_addr(int bytes = -1) {
+  virtual uint64_t pop_addr(int bytes = -1) {
     if (bytes == -1)
       bytes = data_width();
     auto &current_address = address.back();
@@ -309,8 +310,8 @@ struct affine_base_stream_t : public base_stream_t {
       if (!continuous) {
         std::cout << "bytes: " << delta << "\n";
         print_status();
+        assert(false);
       }
-      assert(continuous);
       if (idx.back() == dim_trip_count(idx.size() - 1)) {
         stride_hit_ = true;
       } else {
@@ -412,67 +413,38 @@ struct affine_write_stream_t : public affine_base_stream_t {
 
 };
 
-//3. Scratch -> Scratch
-//struct scr_scr_stream_t;
-//struct scr_scr_stream_t : public mem_stream_base_t {
-//  uint64_t _scratch_addr; //CURRENT scratch addr
-//  bool _is_source;
-//  bool _is_ready;
-//
-//  scr_scr_stream_t* _remote_stream;
-//  uint64_t          _remote_bitmask;
-//
-//  scr_scr_stream_t() {}
-//
-//  scr_scr_stream_t(addr_t mem_addr, uint64_t stride, uint64_t access_size,
-//      int stretch, uint64_t num_strides, addr_t scratch_addr, bool is_src) :
-//         mem_stream_base_t(mem_addr,stride,access_size,stretch,
-//        num_strides) {
-//    _scratch_addr=scratch_addr;
-//
-//    _is_source = is_src;
-//    _is_ready=false;
-//
-//    set_orig();
-//  }
-//
-//  uint64_t mem_addr()    {return _mem_addr;}
-//  int64_t  access_size() {return _access_size;}
-//  int64_t  stride()      {return _stride;}
-//  uint64_t num_strides() {return _num_strides;}
-//  uint64_t shift_bytes() {return _shift_bytes;}
-//  uint64_t scratch_addr(){return _scratch_addr;}
-//
-//  void set_remote(scr_scr_stream_t* r, uint64_t r_bitmask) {
-//    _remote_bitmask=r_bitmask;
-//    _remote_stream=r;
-//  }
-//  virtual LOC src() {
-//    if(_is_source) return LOC::SCR;
-//    else          return LOC::REMOTE_SCR;
-//  }
-//  virtual LOC dest() {
-//    if(_is_source) return LOC::REMOTE_SCR;
-//    else          return LOC::SCR;
-//  }
-//
-//  virtual void print_status() {
-//    if(_is_source) {
-//      std::cout << "scr->remote_scr";
-//    } else {
-//      std::cout << "remote_scr->scr";
-//    }
-//
-//    std::cout << "\tscr_addr=" << _scratch_addr
-//              << "\tacc_size=" << _access_size
-//              << " stride=" << _stride << " bytes_comp=" << _bytes_in_access
-//              << " mem_addr=" << std::hex << _mem_addr << std::dec
-//              << " strides_left=" << _num_strides;
-//
-//    base_stream_t::print_status();
-//  }
-//
-//};
+struct BuffetStream : public affine_read_stream_t {
+  // Buffet is used to reuse a stream of data under in an allocated buffer.
+  // [start, bytes)
+  int start, buffer_size;
+  // The source of the data stream.
+  int src_port;
+  uint64_t total;
+  // The runtime status of buffet, which portion of the data stream is in the buffer.
+  int shadow, shadow_dtype;
+  int inport_dtype;
+
+  // State machine
+  uint64_t front{0}, end{0};
+  int dont_pop_shadow;
+
+  BuffetStream(int start_, int buffer_size_, int src_port_, int total_,
+               LOC unit, const std::vector<uint64_t> &dims, const std::vector<int> &in_ports,
+               int repeat_in, int repeat_str, int shadow_, int shadow_dtype_, int inport_dtype_) :
+    affine_read_stream_t(unit, dims, in_ports, repeat_in, repeat_str), start(start_),
+    buffer_size(buffer_size_), src_port(src_port_), total(total_), shadow(shadow_),
+    shadow_dtype(shadow_dtype_), inport_dtype(inport_dtype_) {}
+
+  bool stream_active() override {
+    return total || affine_read_stream_t::stream_active();
+  }
+
+  void print_status() override {
+    std::cout << "[buffet stream] [" << start << ", " << start + buffer_size << ") source: "
+              << src_port << ", total: " << total << "bytes ";
+    affine_read_stream_t::print_status();
+  }
+};
 
 
 //Constant -> Port
@@ -895,7 +867,7 @@ struct indirect_stream_t : public indirect_base_stream_t {
       // return LOC::PORT|LOC::DMA;
       return LOC::DMA;
     } else {
-      return LOC::PORT|LOC::SCR;
+      return (LOC) (LOC::PORT|LOC::SCR);
     }
   }
   virtual LOC dest() {return LOC::PORT;}

@@ -851,9 +851,16 @@ decode QUADRANT default Unknown::unknown() {
                     xc->callSSFunc(SS_ADD_PRT);
                 }}, IsNonSpeculative, No_OpClass);
                 0x1: ss_scr_rd({{
-                    xc->pushStreamDimension(Rs1, Rs2, imm >> 1);
-                    if (~imm & 1)
-                      xc->callSSFunc(SS_SCR_PRT);
+                    xc->pushStreamDimension(Rs1, Rs2, (imm >> 2) & 63);
+                    if (~imm & 1) {
+                      if (imm >> 1 & 1) {
+                        // Invoke a Buffet stream!
+                        xc->setSSReg((imm >> 7) & 63, SS_OUT_PORT);
+                        xc->callSSFunc(SS_BUFFET);
+                      } else {
+                        xc->callSSFunc(SS_SCR_PRT);
+                      }
+                    }
                 }}, IsSSStream, IsNonSpeculative, No_OpClass);
                 0x2: ss_dma_rd({{
                     xc->pushStreamDimension(Rs1, Rs2, imm >> 1);
@@ -889,9 +896,14 @@ decode QUADRANT default Unknown::unknown() {
             }
             0x16: decode FUNCT3 {
                 0x1: ss_wr_scr({{
-                    xc->pushStreamDimension(Rs1, Rs2, imm >> 1);
-                    if (~imm & 1)
-                      xc->callSSFunc(SS_PRT_SCR);
+                    xc->pushStreamDimension(Rs1, Rs2, (imm >> 2) & 63);
+                    if (~imm & 1) {
+                      if (imm >> 1 & 1) {
+                        // Do nothing! This is to get prepared for Buffet!
+                      } else {
+                        xc->callSSFunc(SS_PRT_SCR);
+                      }
+                    }
                 }}, IsSSStream, No_OpClass);
 				0x2: ss_rem_port({{
 					xc->setSSReg(Rs1,SS_NUM_ELEM);

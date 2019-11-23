@@ -508,120 +508,138 @@ class ExecContext : public ::ExecContext
         return thread.getSSReg(ss_idx);
     }
  
-
+    // TODO: Make merge all the registers into SSIM
     void callSSFunc(int ss_func_opcode) {
         DPRINTF(SS, "Do SS_COMMAND %d.\n", SSCmdNames[ss_func_opcode]);
         ssim_t& ssim = execute.getSSIM();
         ssim.set_cur_minst(inst);
         switch(ss_func_opcode) {
-            case SS_BEGIN_ROI: ssim.roi_entry(true); break;
-            case SS_END_ROI: ssim.roi_entry(false); break;
-            case SS_STATS: ssim.print_stats(); break;
-            case SS_CFG: ssim.req_config(
-                thread.getSSReg(SS_MEM_ADDR),      thread.getSSReg(SS_CFG_SIZE)); 
-            break;
-            case SS_CTX: ssim.set_context(thread.getSSReg(SS_CONTEXT),
-                                          thread.getSSReg(SS_OFFSET)); 
-            break;
-            case SS_FILL_MODE: ssim.set_fill_mode(thread.getSSReg(SS_CONSTANT)); 
-            break;
-            case SS_MEM_PRT: ssim.load_dma_to_port(thread.getSSReg(SS_REPEAT),
-                                                   thread.getSSReg(SS_REPEAT_STRETCH));//,
-            break;
-            case SS_ADD_PRT: ssim.add_port(thread.getSSReg(SS_IN_PORT));
-            return;
-            case SS_SCR_PRT: ssim.load_scratch_to_port(thread.getSSReg(SS_REPEAT),
-                                                       thread.getSSReg(SS_REPEAT_STRETCH));//,
-            break;
-            case SS_PRT_SCR: ssim.write_scratchpad();
-            break;
-            case SS_PRT_MEM: ssim.write_dma();
-            break;
-            case SS_PRT_PRT: ssim.reroute(
-                thread.getSSReg(SS_OUT_PORT),       thread.getSSReg(SS_IN_PORT),
-                thread.getSSReg(SS_NUM_ELEM),       thread.getSSReg(SS_REPEAT), 
+            case SS_BEGIN_ROI:
+              ssim.roi_entry(true);
+              break;
+            case SS_END_ROI:
+              ssim.roi_entry(false);
+              break;
+            case SS_STATS:
+              ssim.print_stats();
+              break;
+            case SS_CFG:
+              ssim.req_config(thread.getSSReg(SS_MEM_ADDR), thread.getSSReg(SS_CFG_SIZE)); 
+              break;
+            case SS_CTX:
+              ssim.set_context(thread.getSSReg(SS_CONTEXT), thread.getSSReg(SS_OFFSET)); 
+              break;
+            case SS_FILL_MODE:
+              ssim.set_fill_mode(thread.getSSReg(SS_CONSTANT)); 
+              break;
+            case SS_MEM_PRT:
+              ssim.load_dma_to_port(thread.getSSReg(SS_REPEAT),
+                                    thread.getSSReg(SS_REPEAT_STRETCH));
+              break;
+            case SS_ADD_PRT:
+              ssim.add_port(thread.getSSReg(SS_IN_PORT));
+              return;
+            case SS_SCR_PRT:
+              ssim.load_scratch_to_port(thread.getSSReg(SS_REPEAT),
+                                        thread.getSSReg(SS_REPEAT_STRETCH));
+              break;
+            case SS_PRT_SCR:
+              ssim.write_scratchpad();
+              break;
+            case SS_PRT_MEM:
+              ssim.write_dma();
+              break;
+            case SS_PRT_PRT:
+              ssim.reroute(
+                thread.getSSReg(SS_OUT_PORT), thread.getSSReg(SS_IN_PORT),
+                thread.getSSReg(SS_NUM_ELEM), thread.getSSReg(SS_REPEAT), 
                 thread.getSSReg(SS_REPEAT_STRETCH), thread.getSSReg(SS_FLAGS),
                 thread.getSSReg(SS_NUM_STRIDES));
-            break;
-            case SS_IND_PRT: ssim.indirect(
-                thread.getSSReg(SS_IND_PORT),      thread.getSSReg(SS_IND_TYPE),
-                thread.getSSReg(SS_IN_PORT),       thread.getSSReg(SS_INDEX_ADDR),
-                thread.getSSReg(SS_NUM_ELEM),      thread.getSSReg(SS_REPEAT),
-                thread.getSSReg(SS_REPEAT_STRETCH),thread.getSSReg(SS_OFFSET_LIST),
-                thread.getSSReg(SS_DTYPE),         thread.getSSReg(SS_IND_MULT),
+              break;
+            case SS_IND_PRT:
+              ssim.indirect(
+                thread.getSSReg(SS_IND_PORT), thread.getSSReg(SS_IND_TYPE),
+                thread.getSSReg(SS_IN_PORT), thread.getSSReg(SS_INDEX_ADDR),
+                thread.getSSReg(SS_NUM_ELEM), thread.getSSReg(SS_REPEAT),
+                thread.getSSReg(SS_REPEAT_STRETCH), thread.getSSReg(SS_OFFSET_LIST),
+                thread.getSSReg(SS_DTYPE), thread.getSSReg(SS_IND_MULT),
                 thread.getSSReg(SS_IS_SCRATCH), thread.getSSReg(SS_FLAGS),
                 thread.getSSReg(SS_STRIDE), thread.getSSReg(SS_ACCESS_SIZE),
                 thread.getSSReg(SS_STRETCH)); // changed interpretation of stretch here
-            break;
-            case SS_PRT_IND: ssim.indirect_write(
+              break;
+            case SS_PRT_IND:
+              ssim.indirect_write(
                 thread.getSSReg(SS_IND_PORT), thread.getSSReg(SS_IND_TYPE),
                 thread.getSSReg(SS_OUT_PORT), thread.getSSReg(SS_INDEX_ADDR),
                 thread.getSSReg(SS_NUM_ELEM), thread.getSSReg(SS_OFFSET_LIST),
-                thread.getSSReg(SS_DTYPE),    thread.getSSReg(SS_IND_MULT),
+                thread.getSSReg(SS_DTYPE), thread.getSSReg(SS_IND_MULT),
                 thread.getSSReg(SS_IS_SCRATCH));
-            break;
-            case SS_CNS_PRT: ssim.write_constant(
-                thread.getSSReg(SS_NUM_STRIDES),   thread.getSSReg(SS_IN_PORT),
-                thread.getSSReg(SS_CONSTANT),      thread.getSSReg(SS_NUM_ELEM),     
-                thread.getSSReg(SS_CONSTANT2),     thread.getSSReg(SS_NUM_ELEM2),    
-                thread.getSSReg(SS_FLAGS),         thread.getSSReg(SS_DTYPE));
-            break;
-            case SS_ATOMIC_SCR_OP: ssim.atomic_update_scratchpad(
-                thread.getSSReg(SS_OFFSET),        thread.getSSReg(SS_NUM_ELEM),
-                thread.getSSReg(SS_OUT_PORT),      thread.getSSReg(SS_VAL_PORT),
-                thread.getSSReg(SS_IND_TYPE),      thread.getSSReg(SS_DTYPE),
-                thread.getSSReg(SS_ADDR_TYPE),     thread.getSSReg(SS_OPCODE));
-            break;
-            case SS_CONST_SCR: ssim.write_constant_scratchpad(
-                thread.getSSReg(SS_SCRATCH_ADDR),  thread.getSSReg(SS_CONSTANT),
-                thread.getSSReg(SS_NUM_STRIDES),   thread.getSSReg(SS_DTYPE));
-            break;
-            case SS_REM_PORT: ssim.multicast_remote_port(
-                // thread.getSSReg(SS_NUM_ELEM), thread.getSSReg(SS_MASK),  
+              break;
+            case SS_CNS_PRT:
+              ssim.write_constant(
+                thread.getSSReg(SS_NUM_STRIDES), thread.getSSReg(SS_IN_PORT),
+                thread.getSSReg(SS_CONSTANT), thread.getSSReg(SS_NUM_ELEM),     
+                thread.getSSReg(SS_CONSTANT2), thread.getSSReg(SS_NUM_ELEM2),    
+                thread.getSSReg(SS_FLAGS), thread.getSSReg(SS_DTYPE));
+              break;
+            case SS_ATOMIC_SCR_OP:
+              ssim.atomic_update_scratchpad(
+                thread.getSSReg(SS_OFFSET), thread.getSSReg(SS_NUM_ELEM),
+                thread.getSSReg(SS_OUT_PORT), thread.getSSReg(SS_VAL_PORT),
+                thread.getSSReg(SS_IND_TYPE), thread.getSSReg(SS_DTYPE),
+                thread.getSSReg(SS_ADDR_TYPE), thread.getSSReg(SS_OPCODE));
+              break;
+            case SS_CONST_SCR:
+              ssim.write_constant_scratchpad(
+                thread.getSSReg(SS_SCRATCH_ADDR), thread.getSSReg(SS_CONSTANT),
+                thread.getSSReg(SS_NUM_STRIDES), thread.getSSReg(SS_DTYPE));
+              break;
+            case SS_REM_PORT:
+              ssim.multicast_remote_port(
                 thread.getSSReg(SS_NUM_ELEM), thread.getSSReg(SS_SCRATCH_ADDR),
                 thread.getSSReg(SS_OUT_PORT), thread.getSSReg(SS_IN_PORT),
                 thread.getSSReg(SS_FLAGS), thread.getSSReg(SS_ADDR_TYPE),
                 thread.getSSReg(SS_STRIDE), thread.getSSReg(SS_ACCESS_SIZE));
-            break;
-            case SS_WAIT_DF: ssim.insert_df_barrier(
+              break;
+            case SS_WAIT_DF:
+              ssim.insert_df_barrier(
                 thread.getSSReg(SS_NUM_ELEM), thread.getSSReg(SS_ADDR_TYPE));
-            break;
-            case SS_WAIT:
-                {
-                  uint64_t wait_mask = thread.getSSReg(SS_WAIT_MASK);
-                  if(wait_mask == 0) {
-                    ssim.set_not_in_use();
-                    DPRINTF(SS, "Set SS Not in Use\n");
-                  } else if(wait_mask == 2) {
-                    DPRINTF(SS, "Wait Compute\n");         
-                  } else if(wait_mask == 16) {
-                    DPRINTF(SS, "Wait mem write\n");
-                  // } else if(wait_mask == 65) {
-                  } else if(wait_mask == 128) { // come here on commit
-                    ssim.set_not_in_use(); // FIXME:check
-                    DPRINTF(SS, "Wait on all threads\n");         
-                  } else if(wait_mask == 66) {
-                    ssim.set_not_in_use(); // FIXME:check
-                    DPRINTF(SS, "Wait only on streams\n");
-                  } else {
-                    ssim.insert_barrier(thread.getSSReg(SS_WAIT_MASK));
-                  }
-                }
-            break;
+              break;
+            case SS_WAIT: {
+              uint64_t wait_mask = thread.getSSReg(SS_WAIT_MASK);
+              if(wait_mask == 0) {
+                ssim.set_not_in_use();
+                DPRINTF(SS, "Set SS Not in Use\n");
+              } else if(wait_mask == 2) {
+                DPRINTF(SS, "Wait Compute\n");         
+              } else if(wait_mask == 16) {
+                DPRINTF(SS, "Wait mem write\n");
+              } else if(wait_mask == 128) { // come here on commit
+                ssim.set_not_in_use(); // FIXME:check
+                DPRINTF(SS, "Wait on all threads\n");         
+              } else if(wait_mask == 66) {
+                ssim.set_not_in_use(); // FIXME:check
+                DPRINTF(SS, "Wait only on streams\n");
+              } else {
+                ssim.insert_barrier(thread.getSSReg(SS_WAIT_MASK));
+              }
+              break;
+            }
+            case SS_BUFFET:
+              ssim.instantiate_buffet(thread.getSSReg(SS_REPEAT), thread.getSSReg(SS_REPEAT_STRETCH));
+              break;
             default:
-                DPRINTF(SS, "UNIMPLEMENTED COMMAND\n");
-            break;
+              DPRINTF(SS, "UNIMPLEMENTED COMMAND\n");
+              break;
         }
-        //RESET REPEAT to 1 -- since this is by far the most common case
         setSSReg(0,SS_FLAGS);
+        //Reset REPEAT to 1 -- since this is by far the most common case
         setSSReg(1,SS_REPEAT);
         setSSReg(0,SS_REPEAT_STRETCH);
         setSSReg(0,SS_OFFSET_LIST);
         setSSReg(0,SS_IND_TYPE);
         setSSReg(0,SS_DTYPE);
         setSSReg(1,SS_IND_MULT);
-        // setSSReg(0,SS_IS_PORT);
-
     }
 #endif
 

@@ -282,17 +282,10 @@ void ssim_t::add_bitmask_stream(base_stream_t* s, uint64_t ctx) {
     return;
   }
 
-  //if(debug && (SS_DEBUG::COMMAND)  ) {
-  //  cout << "Sending to Cores: ";
-  //}
-
   shared_ptr<base_stream_t> s_shr(s);
 
-  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
-    if(ctx & b) {
-      //if(debug && (SS_DEBUG::COMMAND)  ) {
-      //  cout << i;
-      //}
+  for(uint64_t i = 0; i < NUM_ACCEL_TOTAL; ++i) {
+    if(ctx >> i & 1) {
       if(s->in_ports().size()!=0) {
         auto& in_vp = accel_arr[i]->port_interf().in_port(s->first_in_port());
         s->set_data_width(in_vp.get_port_width()); // added for dgra
@@ -306,10 +299,6 @@ void ssim_t::add_bitmask_stream(base_stream_t* s, uint64_t ctx) {
       accel_arr[i]->add_stream(s_shr);
     }
   }
-
-  //if(debug && (SS_DEBUG::COMMAND)  ) {
-  //  cout << "\n";
-  //}
 
   extra_in_ports.clear(); //reset this
 }
@@ -719,14 +708,13 @@ void ssim_t::write_constant(int num_strides, int in_port,
 
   // use ss_const for that instead of ss_dconst
   if(const_width) {
-    switch(const_width - 1) {
-      case 0: s->_const_width=8; break;
-      case 1: s->_const_width=4; break;
-      case 2: s->_const_width=2; break;
-      case 3: s->_const_width=1; break;
-    }
+    //case 0: width=8;
+    //case 1: width=4;
+    //case 2: width=2;
+    //case 3: width=1;
+    s->_const_width = 1 << (3 - (const_width - 1));
   } else { // assume the width of the corresponding input port
-    port_data_t& cur_in_port = accel_arr[0]->_port_interf.out_port(in_port);
+    port_data_t& cur_in_port = accel_arr[0]->_port_interf.in_port(in_port);
     s->_const_width = cur_in_port.get_port_width();
   }
 
@@ -786,4 +774,51 @@ void ssim_t::roi_entry(bool enter) {
     _roi_cycles += _stat_stop_cycle - _stat_start_cycle;
     _in_roi=false;
   }
+}
+
+void ssim_t::instantiate_buffet(int repeat, int repeat_str) {
+
+  int start = (stream_stack[0] >> 32) & 0xFFFFFFFF;
+  int buffer_size = stream_stack[0] & 0xFFFFFFFF;
+  uint64_t total = stream_stack[1];
+  int src_port = stream_stack[2];
+
+
+  stream_stack.erase(stream_stack.begin(), stream_stack.begin() + 3);
+
+  int shadow_port = stream_stack[stream_stack.size() - 3] & 31;
+  int shadow_dtype = stream_stack[stream_stack.size() - 3] >> 5 & 7;
+  if(shadow_dtype) {
+    //case 0: width=8;
+    //case 1: width=4;
+    //case 2: width=2;
+    //case 3: width=1;
+    shadow_dtype = 1 << (3 - (shadow_dtype - 1));
+  } else { // assume the width of the corresponding input port
+    port_data_t& cur_out_port = accel_arr[0]->_port_interf.out_port(shadow_port);
+    shadow_dtype = cur_out_port.get_port_width();
+  }
+
+  int in_port = stream_stack[stream_stack.size() - 1];
+  int inport_dtype = stream_stack[stream_stack.size() - 3] >> 8 & 7;
+  if(inport_dtype) {
+    //case 0: width=8;
+    //case 1: width=4;
+    //case 2: width=2;
+    //case 3: width=1;
+    inport_dtype = 1 << (3 - (inport_dtype - 1));
+    port_data_t& cur_out_port = accel_arr[0]->_port_interf.in_port(in_port);
+    assert(inport_dtype % cur_out_port.get_port_width() == 0);
+  } else { // assume the width of the corresponding input port
+    port_data_t& cur_out_port = accel_arr[0]->_port_interf.in_port(in_port);
+    inport_dtype = cur_out_port.get_port_width();
+  }
+
+  stream_stack[stream_stack.size() - 3] = 0;
+  BuffetStream *buffet = new BuffetStream(start, buffer_size, src_port, total, LOC::SCR,
+                                          stream_stack, {in_port}, repeat, repeat_str,
+                                          shadow_port, shadow_dtype, inport_dtype);
+
+  add_bitmask_stream(buffet);
+  stream_stack.clear();
 }

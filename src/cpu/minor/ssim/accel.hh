@@ -240,7 +240,6 @@ public:
     }
 
     leftover.erase(leftover.begin(), leftover.begin() + i);
-
   }
 
   template <typename T>
@@ -455,6 +454,9 @@ public:
   // Return true if the value should be popped.
   // Or more accurately, repeat time runs out.
   bool inc_repeated();
+  int get_stretch() {
+    return _repeat_stretch;
+  }
 
   uint64_t total_pushed() { return _total_pushed; }
 
@@ -704,17 +706,8 @@ class scratch_read_controller_t : public data_controller_t {
   scratch_read_controller_t(accel_t* host, dma_controller_t* d)
     : data_controller_t(host) {
     _dma_c=d; //save this for later
-
-    // mask.resize(SCR_WIDTH/DATA_WIDTH);
     mask.resize(SCR_WIDTH);
-
-    //if(is_shared()) {
-    //  _scr_scr_streams.resize(NUM_ACCEL);
-    //} else {
-    //  _scr_scr_streams.resize(1);
-    //}
     _indirect_scr_read_requests.resize(NUM_SCRATCH_BANKS);
-
     reset_stream_engines();
   }
 
@@ -782,7 +775,6 @@ class scratch_read_controller_t : public data_controller_t {
   void delete_stream(int i, indirect_stream_t* s);
 
   std::vector<affine_read_stream_t*> _scr_port_streams;
-  //std::vector<scr_scr_stream_t*> _scr_scr_streams;
   std::vector<indirect_stream_t*> _ind_port_streams;
 
   std::vector<std::queue<indirect_scr_read_req>> _indirect_scr_read_requests;
@@ -852,6 +844,7 @@ class scratch_write_controller_t : public data_controller_t {
   bool schedule_atomic_scr_op(atomic_scr_stream_t& s);
   bool schedule_indirect_wr(indirect_wr_stream_t& s);
   bool schedule_network_stream(remote_core_net_stream_t& s);
+  bool schedule_buffet(BuffetStream *);
 
   void print_status();
   void cycle_status();
@@ -879,6 +872,7 @@ class scratch_write_controller_t : public data_controller_t {
   private:
   int _which_wr=0; // for banked scratchpad
   int _which_linear_wr=0; // for linear scratchpad
+  int which_buffet{0};
 
   struct atomic_scr_op_req{
     addr_t _scr_addr;
@@ -913,6 +907,7 @@ class scratch_write_controller_t : public data_controller_t {
   std::vector<const_scr_stream_t*> _const_scr_streams;
   std::vector<atomic_scr_stream_t*> _atomic_scr_streams;
   std::vector<indirect_wr_stream_t*> _ind_wr_streams;
+  std::vector<BuffetStream> buffets;
 
   // TODO: fix the size of these queues
   // std::queue<struct ind_write_req> _remote_scr_w_buf;
