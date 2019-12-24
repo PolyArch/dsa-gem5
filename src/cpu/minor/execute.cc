@@ -1103,7 +1103,7 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
         //break down by type
         if ( (inst->staticInst->isSSStream()  ||
               (inst->staticInst->isSSWait() &&
-                  ssim_t::stall_core(inst->staticInst->get_imm())) )
+                  (ssim_t::stall_core(inst->staticInst->get_imm()))) )
               && !ssim.can_add_stream()) {
           
   /*        if((inst->staticInst->isSSWait() &&
@@ -1623,6 +1623,10 @@ void Execute::send_spu_scr_wr_req(uint8_t* val, int num_bytes, uint64_t scr_offs
   }
   (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
   cpu.pushReqFromSpu(msg);
+
+    // for global barrier
+    ThreadContext *thread = cpu.getContext(0); // assume tid=0?
+    thread->getSystemPtr()->inc_spu_sent();
 }
 
 bool Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int opcode, int val_bytes, int out_bytes) {
@@ -1630,6 +1634,7 @@ bool Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int op
   (*msg).m_MessageSize = MessageSizeType_Control;
   // (*msg).m_MessageSize = MessageSizeType_Response_Data;
   (*msg).m_Type = SpuRequestType_UPDATE;
+  // (*msg).m_Type = SpuRequestType_LD;
   (*msg).m_Requestor = cpu.get_m_version();
   (*msg).m_addr = local_scr_addr;
   for(int j=0; j<val_bytes; ++j){ // check this!
@@ -1662,11 +1667,21 @@ bool Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int op
   // because this is always in the local core, 
   // Okay I want to divide the available thing equally
   // 1 + 3352/8 = 1 + log(419) = 1+8.5 = 9.5
-  int dest_core_id = local_scr_addr >> 9;
+  printf("received local scr addr: %ld\n",local_scr_addr);
+  int dst_id = local_scr_addr/4;
+  int vert_per_core = 3352/8;
+  int dest_core_id = dst_id/vert_per_core;
+  // int dest_core_id = local_scr_addr >> 9; // this should be 0 to 7
+  // dest_core_id = local_scr_addr%ssim.num_active_threads(); // this should be 0 to 7
+  printf("src core: %d dest core: %d\n",cpu.cpuId(), dest_core_id);
+  int p = rand()%32; // ssim.num_active_threads();
+  if(p<31) dest_core_id = cpu.cpuId()-1;
+  else dest_core_id = rand()%8; // ssim.num_active_threads();
+  dest_core_id += 1; // this should be 1 to 8
   // Ok, to maintain locality -- 
   // std::cout << "local scratch addr: " << local_scr_addr << std::endl;
   // dest_core_id = (local_scr_addr>>11)&7; // + rand()%2; // always even number
-  dest_core_id = (local_scr_addr/1583)&7; // + rand()%2; // always even number
+  // dest_core_id = (local_scr_addr/1583)&7; // + rand()%2; // always even number
   // std::cout << "dest core id: " << dest_core_id << std::endl;
   
   // TODO: scratch addr mapping (if we change this, then above decoding also
@@ -1674,31 +1689,35 @@ bool Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int op
   // int dest_core_id = local_scr_addr >> 12 & 7;
   // int dest_core_id = rand()%1;
   // int dest_core_id = (local_scr_addr >> 1) & 1; // FIXME: just to debug
-  dest_core_id += 1;
-  if(SS_DEBUG::NET_REQ){
+  /*if(SS_DEBUG::NET_REQ){
     printf("output destination core: %d\n",dest_core_id);
-  }
+  }*/
   // FIXME: should not push more than 2 values in the same cycle
   /*if(cpu.cpuId()!=dest_core_id) {
     dest_core_id = 2; // it has to be 1
   }*/
 // 
   // push message to local buffers
-  if(dest_core_id==cpu.cpuId() || cpu.cpuId()==0) { // 0--host core when non-multi-threaded code
-    if(SS_DEBUG::NET_REQ){
+  // if(dest_core_id==cpu.cpuId() || cpu.cpuId()==0) { // 0--host core when non-multi-threaded code
+  // assert(cpu.cpuId()==0); 
+  if(dest_core_id==cpu.cpuId()) { // 0--host core when non-multi-threaded code
+  // if(1) { // 0--host core when non-multi-threaded code
+    /*if(SS_DEBUG::NET_REQ){
       printf("LOCAL REQUEST destination core: %d\n",dest_core_id);
-    }
+    }*/
     ssim.push_atomic_update_req(local_scr_addr, opcode, val_bytes, out_bytes, val);
   } else {
     if(SS_DEBUG::NET_REQ){
-      std::cout << "Atomic update tuple, scr_addr: " << local_scr_addr << " and local core(0-indexed): " << cpu.cpuId() << " opcode: " << opcode << " val bytes: " << val_bytes << " out_bytes: " << out_bytes << std::endl; 
+       printf("output destination core: %d\n",dest_core_id);
+      std::cout << "Atomic update net tuple, scr_addr: " << local_scr_addr << " and local core(0-indexed): " << cpu.cpuId() << " opcode: " << opcode << " val bytes: " << val_bytes << " out_bytes: " << out_bytes << std::endl; 
     }
     (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
-    cpu.pushReqFromSpu(msg);
-  
     // for global barrier
     ThreadContext *thread = cpu.getContext(0); // assume tid=0?
     thread->getSystemPtr()->inc_spu_sent();
+
+    cpu.pushReqFromSpu(msg);
+  
     return true;
   }
   return false;
@@ -1720,6 +1739,7 @@ void Execute::send_spu_req(int src_port_id, int dest_port_id, uint8_t* val, int 
   int dest_core_id = 0;
   std::bitset<64> core_mask(mask);
   bool should_send=false;
+  ThreadContext *thread = cpu.getContext(0); // assume tid=0?
   for(int i=0; i<core_mask.size(); ++i){
     if(core_mask.test(i)){
       dest_core_id = i+1; // because of 1 offset with tid
@@ -1735,12 +1755,15 @@ void Execute::send_spu_req(int src_port_id, int dest_port_id, uint8_t* val, int 
       } else {
         // printf("dest core id is: %d\n",dest_core_id);
         (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
+        thread->getSystemPtr()->inc_spu_sent();
         should_send = true;
       }
     }
   }
   // If all the requests were local?: Assuming this won't be the case
-  if(should_send) cpu.pushReqFromSpu(msg);
+  if(should_send) {
+    cpu.pushReqFromSpu(msg);
+  }
 }
 
 void

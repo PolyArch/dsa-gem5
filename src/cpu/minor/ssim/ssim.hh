@@ -161,7 +161,9 @@ public:
   static bool stall_core(uint64_t mask) {
     // std::cout << "Came in stall core with mask: " << mask << std::endl;
     return (mask==0) || (mask&WAIT_CMP) ||
-      (mask&WAIT_MEM_WR) || (mask&WAIT_SCR_ATOMIC) || (mask&GLOBAL_WAIT) || (mask&STREAM_WAIT);
+      (mask&WAIT_MEM_WR) || (mask&WAIT_SCR_ATOMIC) || (mask/GLOBAL_WAIT>0) || (mask&STREAM_WAIT);
+      // (mask&WAIT_MEM_WR) || (mask&WAIT_SCR_ATOMIC) || (mask&GLOBAL_WAIT) || (mask&STREAM_WAIT);
+
   }
 
   uint64_t roi_cycles() {return _roi_cycles;}
@@ -217,7 +219,7 @@ private:
 
   accel_t* accel_arr[NUM_ACCEL+1]; //LAST ONE IS SHARED SCRATCH
 
-  int _num_active_threads=8; // for global barrier
+  int _num_active_threads=-1; // for global barrier
 
   bool _prev_done = true;
 

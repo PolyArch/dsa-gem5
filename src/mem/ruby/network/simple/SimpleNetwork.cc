@@ -89,7 +89,7 @@ SimpleNetwork::makeExtOutLink(SwitchID src, NodeID dest, BasicLink* link,
 
     SimpleExtLink *simple_link = safe_cast<SimpleExtLink*>(link);
 
-    std::cout << "adding conventional outport, src: " << src << " dest: " << dest << "\n";
+    // std::cout << "adding conventional outport, src: " << src << " dest: " << dest << "\n";
     m_switches[src]->addOutPort(m_fromNetQueues[dest], routing_table_entry,
                                 simple_link->m_latency,
                                 simple_link->m_bw_multiplier);
@@ -117,7 +117,7 @@ SimpleNetwork::makeSpuExtOutLink(SwitchID src, NodeID dest, BasicLink* link,
     // printf("for links to SPU, src: %d dest: %d, dest should be less than 4, src should be less than num of switches\n",src,dest);
 
 	SimpleSpuExtLink *simple_link = safe_cast<SimpleSpuExtLink*>(link);
-    std::cout << "adding spu outport, src: " << src << " dest: " << dest << "\n";
+    // std::cout << "adding spu outport, src: " << src << " dest: " << dest << "\n";
     // m_switches[src]->addOutPort(m_fromNetQueues[dest+ctrl_nodes], routing_table_entry,
     m_switches[src]->addOutPort(m_fromNetQueues[dest], routing_table_entry,
                                 simple_link->m_latency,

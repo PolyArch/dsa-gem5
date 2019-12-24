@@ -29,6 +29,8 @@
 #include "stream.hh"
 #include "consts.hh"
 
+
+
 using namespace SS_CONFIG;
 
 struct pair_hash {
@@ -171,7 +173,7 @@ public:
         unsigned extra = width - remainder;
         for(int i = 0; i < extra; ++i) {
           // push_data((SBDT)0,valid_flag); // need typecast because of template
-          push_data(dummy_val,valid_flag);
+        push_data(dummy_val,valid_flag);
         }
       }
     }
@@ -227,6 +229,7 @@ public:
       leftover.emplace_back(item, valid);
     }
 
+    // std::cout << "Port width at port: " << _port << " width: " << _port_width << std::endl;
     size_t i;
     for (i = 0; i + _port_width <= leftover.size(); i += _port_width) {
       std::vector<uint8_t> to_append;
@@ -234,6 +237,7 @@ public:
         to_append.push_back(leftover[i + j].first);
         assert(leftover[i + j].second == leftover[i].second);
       }
+      // std::cout << "pushed to mem data\n";
       _mem_data.push_back(to_append);
       _valid_data.push_back(leftover[i].second);
       _total_pushed += valid;
@@ -463,6 +467,7 @@ public:
   void set_port_width(int num_bits){
     assert(num_bits % 8 == 0);
     _port_width = num_bits / 8;
+      // std::cout << "Setting port width of port: " << _port << " is: " << _port_width << "\n";
   }
 
   // in bytes
@@ -494,7 +499,7 @@ private:
   // 23: 1, 2   24: 3, 4
   bool _isInput;
   int _port=-1;
-  int _port_width=8; // take 8 bytes by default
+  int _port_width=-1; // 8; // take 8 bytes by default
   int _outstanding=0;
   STATUS _status=STATUS::FREE;
   LOC _loc=LOC::NONE;
@@ -1492,8 +1497,8 @@ private:
       temp.push_back(data[i]);
     }
     if(SS_DEBUG::NET_REQ) {
-      std::cout << "Received value: " << *reinterpret_cast<SBDT*>(&temp[0])
-                << " at remote port: " << remote_in_port << "\n";
+        std::cout << "Received value: " << *reinterpret_cast<SBDT *>(&temp[0])
+                  << " at remote port: " << remote_in_port << "\n";
     }
     in_vp.push_data(temp);
     // inc remote values received at this port

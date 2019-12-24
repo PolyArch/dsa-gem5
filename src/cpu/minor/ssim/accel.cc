@@ -3,9 +3,9 @@
 #include <iostream>
 #include <unordered_set>
 #include <utility>
-
 #include "../cpu.hh"
 #include "ssim.hh"
+
 
 using namespace std;
 
@@ -275,6 +275,7 @@ void port_data_t::reformat_in() { // rearrange data for CGRA
     std::cerr << "Too few elem, zero padding\n";
     _mem_data.resize(_mem_data.size() + port_vec_elem()-extra_elem);
   }*/
+  cout << "Came to reformat in at port: " << _port << " and mem data size: " << _mem_data.size() << endl;
   while (_mem_data.size() >= port_vec_elem()) {
     reformat_in_work();
   }
@@ -294,9 +295,10 @@ void port_data_t::reformat_in_work() {
     return;
   }
 
+  // cout << "number of elements at port vec: " << port_vec_elem() << endl;
   int cgra_port=0; //just stripe accross the port
   for(unsigned i = 0; i < port_vec_elem(); ++i,    
-        cgra_port = cgra_port+1 == _cgra_data.size() ? 0 : cgra_port + 1) {
+      cgra_port = cgra_port+1 == _cgra_data.size() ? 0 : cgra_port + 1) {
       std::vector<uint8_t> val = _mem_data.front();
       bool valid = _valid_data.front();
       _cgra_data[cgra_port].push_back(val);
@@ -305,7 +307,9 @@ void port_data_t::reformat_in_work() {
       _valid_data.pop_front();
   }
 
+  // cout << "number of ready prev: " << _num_ready << endl;
   _num_ready += port_depth();
+  // cout << "number of ready after update: " << port_depth() << endl;
 
 }
 
@@ -418,6 +422,8 @@ void port_data_t::pop(unsigned instances) {
 
 // rearrange data from CGRA
 void port_data_t::reformat_out() {
+    cout << "Came to reformat in at port: " << _port << " and mem data size: " << _mem_data.size() << endl;
+    cout << "Can output: " << can_output() << endl;
   while (can_output()) {
     reformat_out_work();
   }
@@ -1229,6 +1235,7 @@ void accel_t::cycle_cgra() {
     _stat_cgra_busy_cycles += (_cgra_issued > 0);
   }
 
+  // printf("ACCEL ID: %d\n", _lsq->getCpuId());
   if (_cgra_issued > 0 && SS_DEBUG::COMP && SS_DEBUG::NET_REQ) {
     printf("ACCEL ID: %d\n", _lsq->getCpuId());
   }
@@ -1238,7 +1245,7 @@ void accel_t::cycle_cgra() {
 // cycle
 // Buffer Sizes                                     |      Bus Activity
 // ip 1:5 2:5 7:7; op 1:2 scr_wr:1 cq:1 mem_req:14  | ip: op: scr_rd: scr_wr:
-// mr: mw:
+// mr:
 void accel_t::cycle_status() {
   if (_soft_config.in_ports_active.size() == 0) {
     return;
@@ -5281,7 +5288,8 @@ bool accel_t::done(bool show, int mask) {
   if (show)
     return d;
 
-  if (mask == 0 && d) {
+  if ((mask == 0 || mask/GLOBAL_WAIT>0) && d) {
+      // if (mask == 0 && d) {
     // nothing left to clean up
     _cleanup_mode = false;
   }
@@ -5308,18 +5316,20 @@ bool accel_t::done(bool show, int mask) {
   }*/
    // _lsq->check_network_idle();
 
-  if (mask == GLOBAL_WAIT && d) {
+  // if (mask == GLOBAL_WAIT && d) {
+  if (mask/GLOBAL_WAIT>0 && d) {
     // _cleanup_mode = false; // Should this be here?
-    // cout << "Came to set this core done: " << _lsq->getCpuId() << endl;
+    // cout << "Came to set this core done: " << _lsq->getCpuId() << " with num_threads: " << _ssim->num_active_threads() << endl;
     // cout << "Number of active threads: " << _ssim->num_active_threads() << endl;
     _lsq->set_spu_done(_lsq->getCpuId());
     d = _lsq->all_spu_done(_ssim->num_active_threads());
 
     // Check network as well
     if(d) { // if done, check network as well
-      // cout << "All cores done, checking network\n";
+      cout << "All cores done, checking network\n";
       bool x = _lsq->spu_net_done();// _lsq->check_network_idle();
       if(!x) d = x;
+      else cout << "Network done for number of threads: " << _ssim->num_active_threads() << "\n";
       // else cout << "Network idle\n";
     }
 
@@ -5433,7 +5443,8 @@ bool dma_controller_t::indirect_wr_streams_active() {
 }
 
 bool dma_controller_t::done(bool show, int mask) {
-  if (mask == 0 || mask & WAIT_CMP || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
+  if (mask == 0 || mask & WAIT_CMP || mask/GLOBAL_WAIT>0 || mask == STREAM_WAIT) {
+      // if (mask == 0 || mask & WAIT_CMP || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
     if (dma_port_streams_active()) {
       if (show)
         cout << "DMA -> PORT Streams Not Empty\n";
@@ -5451,7 +5462,8 @@ bool dma_controller_t::done(bool show, int mask) {
     }
   }
 
-  if (mask == 0 || mask & WAIT_CMP || mask & WAIT_MEM_WR || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
+  if (mask == 0 || mask & WAIT_CMP || mask & WAIT_MEM_WR || mask/GLOBAL_WAIT>0 || mask == STREAM_WAIT) {
+      // if (mask == 0 || mask & WAIT_CMP || mask & WAIT_MEM_WR || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
     if (port_dma_streams_active()) {
       if (show)
         cout << "PORT -> DMA Streams Not Empty\n";
@@ -5513,7 +5525,8 @@ bool scratch_write_controller_t::done(bool show, int mask) {
       _df_count = -1;
     }
   }
-  if (mask == 0 || mask & WAIT_CMP || mask & WAIT_SCR_WR || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
+  if (mask == 0 || mask & WAIT_CMP || mask & WAIT_SCR_WR || mask/GLOBAL_WAIT>0 || mask == STREAM_WAIT) {
+      // if (mask == 0 || mask & WAIT_CMP || mask & WAIT_SCR_WR || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
     if (port_scr_streams_active()) {
       if (show)
         cout << "PORT -> SCR Stream Not Empty\n";
@@ -5526,7 +5539,8 @@ bool scratch_write_controller_t::done(bool show, int mask) {
     }
   }
   if (mask == 0 || mask & WAIT_CMP || mask & WAIT_SCR_WR ||
-      mask & WAIT_SCR_RD || mask & WAIT_SCR_ATOMIC || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
+      mask & WAIT_SCR_RD || mask & WAIT_SCR_ATOMIC || mask/GLOBAL_WAIT>0 || mask == STREAM_WAIT) {
+      // mask & WAIT_SCR_RD || mask & WAIT_SCR_ATOMIC || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
     if (atomic_scr_streams_active()) {
       if (show)
         cout << "ATOMIC SCR Stream Not Empty\n";
@@ -5554,7 +5568,8 @@ bool scratch_read_controller_t::scr_port_streams_active() {
 }
 
 bool scratch_read_controller_t::done(bool show, int mask) {
-  if (mask == 0 || mask & WAIT_CMP || mask & WAIT_SCR_RD || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
+  if (mask == 0 || mask & WAIT_CMP || mask & WAIT_SCR_RD || mask/GLOBAL_WAIT>0 || mask == STREAM_WAIT) {
+      // if (mask == 0 || mask & WAIT_CMP || mask & WAIT_SCR_RD || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
     if (scr_port_streams_active()) {
       if (show)
         cout << "SCR -> PORT Streams Not Empty\n";
@@ -5570,7 +5585,8 @@ bool scratch_read_controller_t::done(bool show, int mask) {
 }
 
 bool network_controller_t::done(bool show, int mask) {
-  if (mask == 0 || mask & WAIT_CMP || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
+  if (mask == 0 || mask & WAIT_CMP || mask/GLOBAL_WAIT>0 || mask == STREAM_WAIT) {
+      // if (mask == 0 || mask & WAIT_CMP || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
     if (remote_port_multicast_requests_active()) {
       if (show)
         cout << "PORT -> REMOTE PORT Stream Not Empty\n";
@@ -5605,7 +5621,8 @@ bool port_controller_t::const_port_streams_active() {
 }
 
 bool port_controller_t::done(bool show, int mask) {
-  if (mask == 0 || mask & WAIT_CMP || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
+  if (mask == 0 || mask & WAIT_CMP || mask/GLOBAL_WAIT>0 || mask == STREAM_WAIT) {
+      // if (mask == 0 || mask & WAIT_CMP || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
     if (port_port_streams_active()) {
       if (show)
         cout << "PORT -> PORT Stream Not Empty\n";
@@ -5622,7 +5639,8 @@ bool port_controller_t::done(bool show, int mask) {
 
 bool accel_t::cgra_done(bool show, int mask) {
 
-  if (mask == 0 || mask & WAIT_CMP || mask == GLOBAL_WAIT) {
+  if (mask == 0 || mask & WAIT_CMP || mask/GLOBAL_WAIT>0) {
+      // if (mask == 0 || mask & WAIT_CMP || mask == GLOBAL_WAIT) {
     for (unsigned i = 0; i < _soft_config.in_ports_active_plus.size(); ++i) {
       int cur_port = _soft_config.in_ports_active_plus[i];
       auto &in_vp = _port_interf.in_port(cur_port);
@@ -5642,7 +5660,8 @@ bool accel_t::cgra_done(bool show, int mask) {
       }
     }
   }
-  if (mask == 0 || mask == GLOBAL_WAIT) {
+  if (mask == 0 || mask/GLOBAL_WAIT>0) {
+      // if (mask == 0 || mask == GLOBAL_WAIT) {
     for (unsigned i = 0; i < _soft_config.out_ports_active_plus.size(); ++i) {
       int cur_port = _soft_config.out_ports_active_plus[i];
       auto &out_vp = _port_interf.out_port(cur_port);
@@ -5765,6 +5784,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
     port_data_t &cur_in_port = _port_interf.in_port(i);
     cur_in_port.set_dfg_vec(vec_in);
 
+    cout << "accel: " << _lsq->getCpuId() << "setting port width: " << vec_in->get_port_width() << "\n";
     cur_in_port.set_port_width(vec_in->get_port_width());
  
     // for each mapped cgra port

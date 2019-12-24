@@ -614,8 +614,12 @@ class ExecContext : public ::ExecContext
                 DPRINTF(SS, "Wait Compute\n");         
               } else if(wait_mask == 16) {
                 DPRINTF(SS, "Wait mem write\n");
-              } else if(wait_mask == 128) { // come here on commit
-                ssim.set_not_in_use(); // FIXME:check
+              // } else if(wait_mask == 128) { // come here on commit
+              } else if(wait_mask%128==0) { // come here on commit
+                ssim.set_not_in_use();
+                int t = wait_mask/128;
+                printf("Identified global wait with threads: %d\n",t);
+                ssim.set_num_active_threads(t);
                 DPRINTF(SS, "Wait on all threads\n");         
               } else if(wait_mask == 66) {
                 ssim.set_not_in_use(); // FIXME:check

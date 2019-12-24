@@ -112,9 +112,18 @@ bool MinorCPU::check_network_idle() {
 
 void MinorCPU::wakeup()
 {
+     // for global barrier
+     // ThreadContext *thread = getContext(0); // assume tid=0?
+     // thread->getSystemPtr()->inc_spu_receive();
+
   // assert(!responseToSpu->isEmpty());
   // while(!responseToSpu->isEmpty()) { // it should have been ready too
   if(!responseToSpu->isEmpty()) {
+
+   // for global barrier
+    ThreadContext *thread = getContext(0); // assume tid=0?
+    thread->getSystemPtr()->inc_spu_receive();
+
     // could do dynamic cast
     const SpuRequestMsg* msg = (SpuRequestMsg*)responseToSpu->peek();
     int64_t return_info = msg->m_addr;
@@ -142,15 +151,7 @@ void MinorCPU::wakeup()
         inc = inc | (x >> (i*8));
       }
 
-
-
-     // for global barrier
-     ThreadContext *thread = getContext(0); // assume tid=0?
-     thread->getSystemPtr()->inc_spu_receive();
-
-
-
-      if(SS_DEBUG::NET_REQ) {
+        if(SS_DEBUG::NET_REQ) {
         std::cout << "Received atomic update request tuple, scr_addr: " << scr_addr << " opcode: " << opcode << " val_bytes: " << val_bytes << " out_bytes: " << out_bytes << std::endl;
       }
       // pipeline->receiveSpuUpdateRequest(scr_addr, opcode, val_bytes, out_bytes, inc);
