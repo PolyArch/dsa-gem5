@@ -5784,7 +5784,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
     port_data_t &cur_in_port = _port_interf.in_port(i);
     cur_in_port.set_dfg_vec(vec_in);
 
-    cout << "accel: " << _lsq->getCpuId() << "setting port width: " << vec_in->get_port_width() << "\n";
+    // cout << "accel: " << _lsq->getCpuId() << "setting port width: " << vec_in->get_port_width() << "\n";
     cur_in_port.set_port_width(vec_in->get_port_width());
  
     // for each mapped cgra port
