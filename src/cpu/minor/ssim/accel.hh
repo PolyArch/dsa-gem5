@@ -738,6 +738,7 @@ class scratch_read_controller_t : public data_controller_t {
   // void cycle();
   void cycle(bool &performed_read);
   void linear_scratch_cycle();
+  void serve_ind_read_banks();
   // banked scratchpad read buffers
   bool indirect_scr_read_requests_active();
 
@@ -753,6 +754,8 @@ class scratch_read_controller_t : public data_controller_t {
   void cycle_status();
 
   bool scr_port_streams_active();
+  void push_ind_rem_read_req(int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry);
+  void push_ind_rem_read_data(int8_t* data, int request_ptr, int addr, int data_bytes, int reorder_entry);
 
   private:
   int _which_rd=0;
@@ -767,11 +770,20 @@ class scratch_read_controller_t : public data_controller_t {
     bool last = false;
   };
 
+  // a single entry (which entry it is associated with)
+  // should be id?
+  std::unordered_map<int, ind_reorder_entry_t*> _reorder_entry_id;
+  int _cur_irob_ptr = -1;
+
   struct indirect_scr_read_req{
-    void *ptr;
+    // void *ptr;
+    int data_ptr;
     uint64_t addr;
     size_t bytes;
-    ind_reorder_entry_t* reorder_entry=NULL;
+    int irob_entry_id;
+    bool remote = false;
+    int req_core = -1;
+    // ind_reorder_entry_t* reorder_entry=NULL;
   };
 
   std::vector<base_stream_t*> _read_streams;
@@ -1486,7 +1498,7 @@ private:
     }
   }
 
-  void receive_message(uint8_t* data, int num_bytes, int remote_in_port) {
+  void receive_message(int8_t* data, int num_bytes, int remote_in_port) {
     port_data_t& in_vp = _port_interf.in_port(remote_in_port);
     // TODO: Check the max port size here and apply backpressure
     
@@ -1513,6 +1525,14 @@ private:
 
   void push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int out_bytes, uint64_t inc) {
     _scr_w_c.push_atomic_update_req(scr_addr, opcode, val_bytes, out_bytes, inc);
+  }
+
+  void push_ind_rem_read_req(int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry) {
+      _scr_r_c.push_ind_rem_read_req(req_core, request_ptr, addr, data_bytes, reorder_entry);
+  }
+
+  void push_ind_rem_read_data(int8_t* data, int request_ptr, int addr, int data_bytes, int reorder_entry) {
+      _scr_r_c.push_ind_rem_read_data(data, request_ptr, addr, data_bytes, reorder_entry);
   }
 
 bool isLinearSpad(addr_t addr){

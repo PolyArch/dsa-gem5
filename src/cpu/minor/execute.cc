@@ -1629,6 +1629,81 @@ void Execute::send_spu_scr_wr_req(uint8_t* val, int num_bytes, uint64_t scr_offs
     thread->getSystemPtr()->inc_spu_sent();
 }
 
+// data from current core to the requesting core
+void Execute::push_rem_read_return(int dst_core, uint64_t data, int request_ptr, int addr, int data_bytes, int reorder_entry) {
+  std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
+  (*msg).m_MessageSize = MessageSizeType_Control;
+  (*msg).m_Type = SpuRequestType_LD;
+  (*msg).m_Requestor = cpu.get_m_version();
+  
+  for(int j=0; j<data_bytes; ++j){
+    int8_t x = (data >> (j*8)) & 65536;
+    (*msg).m_DataBlk.setByte(j,x);
+  }
+
+  assert(addr < (64*1024));
+  assert(request_ptr < 64); // this would be equal to log(irob entries)
+  // global scratch size < 64 kB
+  (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 25;
+  
+  int dest_core_id = dst_core;
+  assert(dest_core_id!=cpu.cpuId() && "packet should not have been marked remote");
+
+    if(SS_DEBUG::NET_REQ){
+       printf("Remote read return data src core: %d dest core: %d\n",cpu.cpuId()+1, dest_core_id);
+       // printf("output destination core: %d\n",dest_core_id);
+      // std::cout << "Remote read request, scr_addr: " << addr << " and local core(0-indexed): " << cpu.cpuId() << std::endl; 
+    }
+    (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
+    // for global barrier
+    ThreadContext *thread = cpu.getContext(0); // assume tid=0?
+    thread->getSystemPtr()->inc_spu_sent();
+
+    cpu.pushReqFromSpu(msg);
+}
+
+bool Execute::push_rem_read_req(int request_ptr, int addr, int data_bytes, int reorder_entry) {
+  std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
+  (*msg).m_MessageSize = MessageSizeType_Control;
+  (*msg).m_Type = SpuRequestType_LD;
+  (*msg).m_Requestor = cpu.get_m_version();
+
+  // FIXME: does it work for a signal that it is a read request?
+  (*msg).m_DataBlk.setByte(0,-1);
+
+  assert(addr < (64*1024));
+  assert(request_ptr < 64); // this would be equal to log(irob entries)
+  assert(data_bytes<8);
+  // global scratch size < 64 kB
+  std::cout << "sending addr: " << addr << " ptr: " << request_ptr << " data bytes: " << data_bytes << " entry: " << reorder_entry << std::endl;
+  int req_core = cpu.cpuId() + 1;
+  (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 25 | req_core << 28;
+  
+  int dest_core_id = addr & 1024; // FIXME: should be number of threads
+  dest_core_id += 1;
+  printf("src core: %d dest core: %d\n",cpu.cpuId(), dest_core_id);
+  if(dest_core_id==cpu.cpuId()) { // 0--host core when non-multi-threaded code
+    /*if(SS_DEBUG::NET_REQ){
+      printf("LOCAL REQUEST destination core: %d\n",dest_core_id);
+    }*/
+    ssim.push_ind_rem_read_req(cpu.cpuId()+1, request_ptr, addr, data_bytes, reorder_entry);
+  } else {
+    if(SS_DEBUG::NET_REQ){
+       printf("output destination core for scratchpad read: %d and requesting core: %d\n",dest_core_id, cpu.cpuId());
+      std::cout << "Remote read request, scr_addr: " << addr << " and local core(0-indexed): " << cpu.cpuId() <<" and m_addr send: " << (*msg).m_addr << std::endl; 
+    }
+    (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
+    // for global barrier
+    ThreadContext *thread = cpu.getContext(0); // assume tid=0?
+    thread->getSystemPtr()->inc_spu_sent();
+
+    cpu.pushReqFromSpu(msg);
+  
+    return true;
+  }
+  return false;
+}
+
 bool Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int opcode, int val_bytes, int out_bytes) {
   std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
   (*msg).m_MessageSize = MessageSizeType_Control;
@@ -1723,7 +1798,7 @@ bool Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int op
   return false;
 }
 
-void Execute::send_spu_req(int src_port_id, int dest_port_id, uint8_t* val, int num_bytes, uint64_t mask){
+void Execute::send_spu_req(int src_port_id, int dest_port_id, int8_t* val, int num_bytes, uint64_t mask){
 
   std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
   (*msg).m_MessageSize = MessageSizeType_Control;

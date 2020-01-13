@@ -445,16 +445,26 @@ class Execute : public Named
 	/* push the multicast request on the message buffer */
     // void send_spu_req(int dest_port_id, int8_t* val, int num_bytes, int64_t mask);
     bool check_network_idle();
-    void send_spu_req(int src_port_id, int dest_port_id, uint8_t* val, int num_bytes, uint64_t mask);
+    void send_spu_req(int src_port_id, int dest_port_id, int8_t* val, int num_bytes, uint64_t mask);
 
     /* push the port->scr request on the message buffer */
     void send_spu_scr_wr_req(uint8_t* val, int num_bytes, uint64_t scr_offset, int dest_core_id);
     // void send_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id);
     bool push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int opcode, int val_bytes, int out_bytes);
+    bool push_rem_read_req(int request_ptr, int addr, int data_bytes, int reorder_entry);
+
+  void push_rem_read_return(int dst_core, uint64_t data, int request_ptr, int addr, int data_bytes, int reorder_entry);
+    void receiveSpuReadRequest(int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry) {
+      ssim.push_ind_rem_read_req(req_core, request_ptr, addr, data_bytes, reorder_entry);
+    }
+   void receiveSpuReadData(int8_t* data, int request_ptr, int addr, int data_bytes, int reorder_entry) {
+      ssim.push_ind_rem_read_data(data, request_ptr, addr, data_bytes, reorder_entry);
+    }
+
 
     /* receive the message at a port */
     // void receiveSpuMessage(int64_t val, int in_port_id){
-    void receiveSpuMessage(uint8_t* val, int num_bytes, int in_port_id){
+    void receiveSpuMessage(int8_t* val, int num_bytes, int in_port_id){
       ssim.push_in_accel_port(0, val, num_bytes, in_port_id);
     }
 

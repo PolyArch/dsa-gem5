@@ -2957,6 +2957,81 @@ void scratch_read_controller_t::read_linear_scratch_ind(
   }
 }
 
+// FIXME: create entry in the indirect ROB here
+void scratch_read_controller_t::push_ind_rem_read_req(int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry) {
+    if(SS_DEBUG::NET_REQ) {
+        cout << "Read request reached with requesting core: " << req_core << " x dim: " << request_ptr << " y dim: " << reorder_entry << " and addr: " << addr << " data bytes: " << data_bytes << endl;
+    }
+    indirect_scr_read_req request;
+    request.data_ptr = request_ptr;
+    request.addr = addr;
+    request.bytes = data_bytes;
+    request.irob_entry_id = reorder_entry;
+    request.remote = true;
+    request.req_core = req_core;
+
+    int logical_banks = NUM_SCRATCH_BANKS / data_bytes; // ->data_bytes;
+
+    // Assuming linear mapping by default
+    int bank_id = addr & (logical_banks - 1);
+
+    if(SS_DEBUG::NET_REQ) {
+        cout << "Remote read request at bank: " << bank_id << " and core: " << _accel->_lsq->getCpuId() << endl;
+        // cout << "Reorder entry info, bytes: " << x->data_bytes << " req_core: " << x->req_core << " remote: " << x->remote << endl;
+    }
+    _indirect_scr_read_requests[bank_id].push(request);
+}
+
+// push directly to irob now
+void scratch_read_controller_t::push_ind_rem_read_data(int8_t* data, int request_ptr, int addr, int data_bytes, int reorder_entry) {
+    if(SS_DEBUG::NET_REQ) {
+        cout << "Pushing the returned data of indirect read with x dim: " << request_ptr << " y dim: " << reorder_entry << " addr: " << addr << " data bytes: " << data_bytes << endl;
+        cout << "Currently at core: " << _accel->_lsq->getCpuId() << endl;
+    }
+    ind_reorder_entry_t *x = _reorder_entry_id[reorder_entry];
+    std::memcpy(&x->data[request_ptr], data, data_bytes);
+    x->completed += x->data_bytes;
+    // assert(x.size > 0 && x.size <= 64);
+    // assert(x.completed <= 64);
+
+    // TODO: add bandwidth for bytes read
+}
+
+void scratch_read_controller_t::serve_ind_read_banks() {
+    int bytes_read = 0;
+    for (int i = 0; i < _indirect_scr_read_requests.size(); ++i) {
+        if (!_indirect_scr_read_requests[i].empty()) {
+
+            indirect_scr_read_req request = _indirect_scr_read_requests[i].front();
+
+            cout << "Found scr read requests to be non-empty and remote request: " << request.remote << "\n";
+            if(request.remote) {
+                cout << "Identified to return data at core: " << _accel->_lsq->getCpuId() << endl;
+                int64_t return_data; // = *copy_addr; // read bytes starting from copy_addr
+                // std::memcpy(&return_data, copy_addr, request.bytes);
+                void * copy_addr = &return_data;
+                // FIXME: stream id is incorrect, should we send it over network
+                _accel->read_scratchpad(copy_addr, request.addr, request.bytes,0);
+                                        // reorder_entry.stream->id());
+
+                _accel->_lsq->push_rem_read_return(request.req_core, return_data, request.data_ptr, request.addr, request.bytes, _cur_irob_ptr);
+            } else {
+                ind_reorder_entry_t &reorder_entry = *_reorder_entry_id[request.irob_entry_id];
+                void* copy_addr = reorder_entry.data + request.data_ptr;
+                _accel->read_scratchpad(copy_addr, request.addr, request.bytes,
+                                    reorder_entry.stream->id());
+                reorder_entry.completed += reorder_entry.data_bytes;
+                assert(reorder_entry.size > 0 && reorder_entry.size <= 64);
+                assert(reorder_entry.completed <= reorder_entry.size);
+            }
+
+            // bytes_read += reorder_entry.data_bytes;
+            bytes_read += request.bytes;
+            _indirect_scr_read_requests[i].pop();
+        }
+    }
+}
+
 void scratch_read_controller_t::read_scratch_ind(
     indirect_stream_t &stream,
     uint64_t scr_addr /*if scr is dest, also todo*/) {
@@ -2969,14 +3044,21 @@ void scratch_read_controller_t::read_scratch_ind(
     // don't use this anymore because data goes into the request instead
     // uint8_t* raw_ptr = (uint8_t*)&stream._cur_ind_val;
 
-    int logical_banks = NUM_SCRATCH_BANKS / stream._data_bytes;
+    // int logical_banks = NUM_SCRATCH_BANKS / stream._data_bytes;
 
+    _cur_irob_ptr = (_cur_irob_ptr + 1)%(_accel->_ind_rob_size);
     ind_reorder_entry_t *reorder_entry = new ind_reorder_entry_t();
+    _reorder_entry_id.insert(make_pair(_cur_irob_ptr, reorder_entry));
+    ind_reorder_entry_t *x = _reorder_entry_id[_cur_irob_ptr];
+    assert(x==reorder_entry);
     _ind_ROB.push(reorder_entry);
     reorder_entry->stream = &stream;
     reorder_entry->data_bytes = stream._data_bytes;
     reorder_entry->size = 0; // paranoia
     reorder_entry->last = false;
+
+    cout << "Initialized reorder entry at loc: " << _cur_irob_ptr << " and data bytes: " << reorder_entry->data_bytes << " size: " << reorder_entry->size << endl;
+    cout << "intialized at core: " << _accel->_lsq->getCpuId() << endl;
 
     // just distribute the elements to the queues
     while (ind_vp.mem_size() >= stream._index_bytes && stream.stream_active() &&
@@ -3002,18 +3084,37 @@ void scratch_read_controller_t::read_scratch_ind(
       // _accel->read_scratchpad(raw_ptr+stream._ind_bytes_complete, addr,
       // stream._data_bytes, stream.id());
       indirect_scr_read_req request;
-      request.ptr = reorder_entry->data + reorder_entry->size;
+      // This is the location in the data array
+      // request.ptr = reorder_entry->data + reorder_entry->size;
+      request.data_ptr = reorder_entry->size; // this would be less than 64 right?
       // +stream._ind_bytes_complete;
       request.addr = addr;
-      request.bytes = stream._data_bytes;
-      request.reorder_entry = reorder_entry;
+      request.bytes = stream._data_bytes/8;
+      request.irob_entry_id = _cur_irob_ptr;
+        // request.reorder_entry = reorder_entry;
 
       reorder_entry->size += stream._data_bytes; // increment size of request
 
       // Assuming linear mapping by default
-      int bank_id = addr & (logical_banks - 1);
+      // int bank_id = addr & (logical_banks - 1);
 
-      _indirect_scr_read_requests[bank_id].push(request);
+      // TODO: for remote read, this request should be sent over network
+      // to be pushed in their bank_request queues
+      if(SS_DEBUG::NET_REQ) {
+          cout << "Sending remote scr read request for reorder x loc: " << request.data_ptr << " y loc: " << _cur_irob_ptr << " addr in scratch: " << request.addr << " and bytes to be read: " << request.bytes << endl;
+      }
+      // bool is_remote =
+      _accel->_lsq->push_rem_read_req(request.data_ptr, request.addr, request.bytes, _cur_irob_ptr);
+      /*if(!is_remote) {
+          _indirect_scr_read_requests[bank_id].push(request);
+      }*/
+      /*int req_core = addr/SCRATCH_SIZE;
+      if(req_core != _accel->_lsq->getCpuId()) {
+         _accel->_lsq->push_rem_read_req(request.ptr, request.addr, request.bytes, request.reorder_entry);
+      } else {
+          _indirect_scr_read_requests[bank_id].push(request);
+      }*/
+      // _indirect_scr_read_requests[bank_id].push(request);
 
       assert(reorder_entry->size > 0 && reorder_entry->size <= 64);
     }
@@ -3045,13 +3146,24 @@ void scratch_read_controller_t::read_scratch_ind(
     if (!_indirect_scr_read_requests[i].empty()) {
 
       indirect_scr_read_req request = _indirect_scr_read_requests[i].front();
-      ind_reorder_entry_t &reorder_entry = *request.reorder_entry;
+      ind_reorder_entry_t &reorder_entry = *_reorder_entry_id[request.irob_entry_id];
 
-      _accel->read_scratchpad(request.ptr, request.addr, request.bytes,
-                              reorder_entry.stream->id());
-      reorder_entry.completed += reorder_entry.data_bytes;
-      assert(reorder_entry.size > 0 && reorder_entry.size <= 64);
-      assert(reorder_entry.completed <= reorder_entry.size);
+      void* copy_addr = reorder_entry.data + request.data_ptr;
+      _accel->read_scratchpad(copy_addr, request.addr, request.bytes,
+                                reorder_entry.stream->id());
+
+      cout << "Found scr read requests to be non-empty and remote request: " << request.remote << "\n";
+      if(request.remote) {
+          cout << "Identified to return data at core: " << _accel->_lsq->getCpuId() << endl;
+          uint64_t return_data; // = *copy_addr; // read bytes starting from copy_addr
+          std::memcpy(&return_data, copy_addr, request.bytes);
+          _accel->_lsq->push_rem_read_return(request.req_core, return_data, request.data_ptr, request.addr, request.bytes, _cur_irob_ptr);
+      } else {
+        reorder_entry.completed += reorder_entry.data_bytes;
+        assert(reorder_entry.size > 0 && reorder_entry.size <= 64);
+        assert(reorder_entry.completed <= reorder_entry.size);
+      }
+
       bytes_read += reorder_entry.data_bytes;
       _indirect_scr_read_requests[i].pop();
     }
@@ -3625,7 +3737,7 @@ void network_controller_t::multicast_data(
   uint64_t remote_elem_sent = 0;
 
   int data_width = out_vp.get_port_width(); // in bytes
-  uint8_t val[64]; // number of 8-byte elements to send
+  int8_t val[64]; // number of 8-byte elements to send
 
   if (stream.stream_active() && out_vp.mem_size() >= message_size && out_vp.mem_size()) {
     while (stream.stream_active() // enough in dest
@@ -3904,6 +4016,7 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
   float min_ind_port_ready = -2;
 
   cycle_read_queue();
+  serve_ind_read_banks();
 
   int i = 0;
   // FOR BANKED SCRATCHPAD

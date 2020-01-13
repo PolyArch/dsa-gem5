@@ -112,12 +112,6 @@ bool MinorCPU::check_network_idle() {
 
 void MinorCPU::wakeup()
 {
-     // for global barrier
-     // ThreadContext *thread = getContext(0); // assume tid=0?
-     // thread->getSystemPtr()->inc_spu_receive();
-
-  // assert(!responseToSpu->isEmpty());
-  // while(!responseToSpu->isEmpty()) { // it should have been ready too
   if(!responseToSpu->isEmpty()) {
 
    // for global barrier
@@ -129,14 +123,14 @@ void MinorCPU::wakeup()
     int64_t return_info = msg->m_addr;
 
     int num_bytes = return_info >> 16;
-    uint8_t data[num_bytes];
+    int8_t data[num_bytes];
     for(int i=0; i<num_bytes; ++i) {
       data[i] = (*msg).m_DataBlk.getByte(i);
     }
     if(SS_DEBUG::NET_REQ){
       // timestamp();
       std::cout << curCycle();
-      printf("Wake up accel at destination node: %d and num_bytes: %d\n",cpuId(),num_bytes);
+      printf("Wake up accel at destination node: %d and num_bytes: %d and complete return info: %ld\n",cpuId(),num_bytes, return_info);
     }
     if((*msg).m_Type == SpuRequestType_UPDATE) {
       // TODO: need all the info to push into banks
@@ -157,20 +151,41 @@ void MinorCPU::wakeup()
       // pipeline->receiveSpuUpdateRequest(scr_addr, opcode, val_bytes, out_bytes, inc);
       // FIXME:IMP: allocate more bits to specify datatype
       pipeline->receiveSpuUpdateRequest(scr_addr, opcode, 8, 8, inc);
-    } else if((*msg).m_Type == SpuRequestType_LD) {
+    } else if((*msg).m_Type == SpuRequestType_LD) { 
+      // TODO: read these values from the block
+      // if read request, so this will push in bank queues and read data
+      int8_t x = (*msg).m_DataBlk.getByte(0);
+      bool read_req = (x==-1);
+      int addr = return_info && 65536;
+      int request_ptr = (return_info >> 16) & 63; 
+      int data_bytes = (return_info >> 22) & 7; 
+      data_bytes *= 8;
+      int reorder_entry = (return_info >> 25) & 3;
+      int req_core = (return_info >> 28);
+
+      if(read_req) {
+        if(SS_DEBUG::NET_REQ) {
+          std::cout << "Read request with req core: " << req_core << std::endl;
+        }
+        pipeline->receiveSpuReadRequest(req_core, request_ptr, addr, data_bytes, reorder_entry);
+      } else {
+        // for this directly push in the irob
+        pipeline->receiveSpuReadData(data, request_ptr, addr, data_bytes, reorder_entry);
+      }
+    } /*else if((*msg).m_Type == SpuRequestType_LD) { // FIXME: change its naming
       int remote_port_id = return_info & 63;
       if(SS_DEBUG::NET_REQ) {
         std::cout << "Received multicast message at remote port: " << remote_port_id << std::endl;
       }
       pipeline->receiveSpuMessage(data, num_bytes, remote_port_id);
-    } else {
+    } */
+      else {
       uint16_t remote_scr_offset = return_info & 65535; // (pow(2,16)-1);
       if(SS_DEBUG::NET_REQ) {
         std::cout << "Received multicast message for remote scr with offset: " << remote_scr_offset << std::endl;
       }
       pipeline->receiveSpuMessage(data, num_bytes, remote_scr_offset);
     }
-
     responseToSpu->dequeue(clockEdge());
   };
 }

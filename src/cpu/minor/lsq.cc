@@ -1281,7 +1281,7 @@ LSQ::canSendToMemorySystem()
 
 /* Push PORT MULTICAST request into the SPU network buffer, FIXME: it could directly push here also? */
 // void LSQ::push_spu_req(int dest_port_id, uint64_t val, int64_t mask)
-void LSQ::push_spu_req(int src_port_id, int dest_port_id, uint8_t* val, int num_bytes, uint64_t mask)
+void LSQ::push_spu_req(int src_port_id, int dest_port_id, int8_t* val, int num_bytes, uint64_t mask)
 {
   execute.send_spu_req(src_port_id, dest_port_id, val, num_bytes, mask);
 }
@@ -1297,6 +1297,13 @@ bool LSQ::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int opcode
   return execute.push_rem_atom_op_req(val, local_scr_addr, opcode, val_bytes, out_bytes);
 }
 
+bool LSQ::push_rem_read_req(int request_ptr, int addr, int data_bytes, int reorder_entry) {
+  return execute.push_rem_read_req(request_ptr, addr, data_bytes, reorder_entry);
+}
+
+void LSQ::push_rem_read_return(int dst_core, uint64_t data, int request_ptr, int addr, int data_bytes, int reorder_entry) {
+  execute.push_rem_read_return(dst_core, data, request_ptr, addr, data_bytes, reorder_entry);
+}
 
 bool
 LSQ::recvTimingResp(PacketPtr response)

@@ -57,8 +57,10 @@ public:
   void multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_port, int rem_port, bool dest_flag, bool spad_type, int64_t stride, int64_t access_size);
   void write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int num_elem, int const_width);
 
-  void push_in_accel_port(int accel_id, uint8_t* val, int num_bytes, int in_port);
+  void push_in_accel_port(int accel_id, int8_t* val, int num_bytes, int in_port);
   void push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int out_bytes, uint64_t inc);
+  void push_ind_rem_read_req(int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry);
+  void push_ind_rem_read_data(int8_t* data, int request_ptr, int addr, int data_bytes, int reorder_entry);
   void write_remote_banked_scratchpad(uint8_t* val, int num_bytes, uint16_t scr_addr);
 
   // We integrate Buffet to achieve double-buffering.

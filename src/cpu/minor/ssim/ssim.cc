@@ -21,7 +21,7 @@ ssim_t::ssim_t(Minor::LSQ* lsq) : _lsq(lsq) {
   if (req_core_id_str != nullptr) {
     _req_core_id = atoi(req_core_id_str);
   }
-  // cout << "DEBUG PRED FOR CORE " << get_core_id() << ": " << debug_pred() << endl;
+  // cout << "DEBUG PRED FOR CORE " << gee_core_id() << ": " << debug_pred() << endl;
   SS_DEBUG::check_env(debug_pred());
 
   for(int i = 0; i < NUM_ACCEL_TOTAL; ++i) {
@@ -83,7 +83,7 @@ void ssim_t::req_config(addr_t addr, int size) {
 
 // receive network message at the given input port id
 // void ssim_t::push_in_accel_port(int accel_id, int64_t val, int in_port) {
-void ssim_t::push_in_accel_port(int accel_id, uint8_t* val, int num_bytes, int in_port) {
+void ssim_t::push_in_accel_port(int accel_id, int8_t* val, int num_bytes, int in_port) {
   assert(accel_id<NUM_ACCEL_TOTAL);
   accel_arr[accel_id]->receive_message(val, num_bytes, in_port);
 }
@@ -91,6 +91,14 @@ void ssim_t::push_in_accel_port(int accel_id, uint8_t* val, int num_bytes, int i
 // SPU has only 1 DGRA in a core
 void ssim_t::push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int out_bytes, uint64_t inc) {
   accel_arr[0]->push_atomic_update_req(scr_addr, opcode, val_bytes, out_bytes, inc);
+}
+
+void ssim_t::push_ind_rem_read_req(int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry) {
+    accel_arr[0]->push_ind_rem_read_req(req_core, request_ptr, addr, data_bytes, reorder_entry);
+}
+
+void ssim_t::push_ind_rem_read_data(int8_t* data, int request_ptr, int addr, int data_bytes, int reorder_entry) {
+    accel_arr[0]->push_ind_rem_read_data(data, request_ptr, addr, data_bytes, reorder_entry);
 }
 
 bool ssim_t::can_add_stream() {
