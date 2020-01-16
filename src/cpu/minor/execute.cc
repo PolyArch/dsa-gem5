@@ -1637,26 +1637,31 @@ void Execute::push_rem_read_return(int dst_core, uint64_t data, int request_ptr,
   (*msg).m_Requestor = cpu.get_m_version();
   
   for(int j=0; j<data_bytes; ++j){
-    int8_t x = (data >> (j*8)) & 65536;
+    int8_t x = (data >> (j*8)) & 65535;
     (*msg).m_DataBlk.setByte(j,x);
   }
 
+  // data_bytes = data_bytes/8; // or this is 9 for 64?
+
   assert(addr < (64*1024));
   assert(request_ptr < 64); // this would be equal to log(irob entries)
+  assert(data_bytes < 16); // could be 1 to 8 bytes
   // global scratch size < 64 kB
-  (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 25;
+  (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 26;
   
   int dest_core_id = dst_core;
-  assert(dest_core_id!=cpu.cpuId() && "packet should not have been marked remote");
+  int src_core = cpu.cpuId();
+  assert(src_core!=dest_core_id && "Same core should not have been remote");
 
     if(SS_DEBUG::NET_REQ){
-       printf("Remote read return data src core: %d dest core: %d\n",cpu.cpuId()+1, dest_core_id);
+       printf("Remote read return data src core: %d dest core: %d\n",src_core, dest_core_id);
+       std::cout << "Returning remote read data addr: " << addr << " and x dim: " << request_ptr << " y dim: " << reorder_entry << " and data bytes: " << data_bytes << std::endl;
        // printf("output destination core: %d\n",dest_core_id);
       // std::cout << "Remote read request, scr_addr: " << addr << " and local core(0-indexed): " << cpu.cpuId() << std::endl; 
     }
     (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
     // for global barrier
-    ThreadContext *thread = cpu.getContext(0); // assume tid=0?
+    ThreadContext *thread = cpu.getContext(0); // assume single-threaded core, tid=0?
     thread->getSystemPtr()->inc_spu_sent();
 
     cpu.pushReqFromSpu(msg);
@@ -1673,20 +1678,20 @@ bool Execute::push_rem_read_req(int request_ptr, int addr, int data_bytes, int r
 
   assert(addr < (64*1024));
   assert(request_ptr < 64); // this would be equal to log(irob entries)
-  assert(data_bytes<8);
+  assert(data_bytes<16);
   // global scratch size < 64 kB
-  std::cout << "sending addr: " << addr << " ptr: " << request_ptr << " data bytes: " << data_bytes << " entry: " << reorder_entry << std::endl;
-  int req_core = cpu.cpuId() + 1;
-  (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 25 | req_core << 28;
+  // std::cout << "sending addr: " << addr << " ptr: " << request_ptr << " data bytes: " << data_bytes << " entry: " << reorder_entry << std::endl;
+  int req_core = cpu.cpuId();
+  (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 26 | req_core << 29;
   
   int dest_core_id = addr & 1024; // FIXME: should be number of threads
   dest_core_id += 1;
-  printf("src core: %d dest core: %d\n",cpu.cpuId(), dest_core_id);
-  if(dest_core_id==cpu.cpuId()) { // 0--host core when non-multi-threaded code
+  // printf("src core: %d dest core: %d\n",cpu.cpuId(), dest_core_id);
+  if(dest_core_id==req_core) { // 0--host core when non-multi-threaded code
     /*if(SS_DEBUG::NET_REQ){
       printf("LOCAL REQUEST destination core: %d\n",dest_core_id);
     }*/
-    ssim.push_ind_rem_read_req(cpu.cpuId()+1, request_ptr, addr, data_bytes, reorder_entry);
+    ssim.push_ind_rem_read_req(req_core, request_ptr, addr, data_bytes, reorder_entry);
   } else {
     if(SS_DEBUG::NET_REQ){
        printf("output destination core for scratchpad read: %d and requesting core: %d\n",dest_core_id, cpu.cpuId());
@@ -1709,7 +1714,6 @@ bool Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int op
   (*msg).m_MessageSize = MessageSizeType_Control;
   // (*msg).m_MessageSize = MessageSizeType_Response_Data;
   (*msg).m_Type = SpuRequestType_UPDATE;
-  // (*msg).m_Type = SpuRequestType_LD;
   (*msg).m_Requestor = cpu.get_m_version();
   (*msg).m_addr = local_scr_addr;
   for(int j=0; j<val_bytes; ++j){ // check this!
@@ -1742,13 +1746,13 @@ bool Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int op
   // because this is always in the local core, 
   // Okay I want to divide the available thing equally
   // 1 + 3352/8 = 1 + log(419) = 1+8.5 = 9.5
-  printf("received local scr addr: %ld\n",local_scr_addr);
+  // printf("received local scr addr: %ld\n",local_scr_addr);
   int dst_id = local_scr_addr/4;
   int vert_per_core = 3352/8;
   int dest_core_id = dst_id/vert_per_core;
   // int dest_core_id = local_scr_addr >> 9; // this should be 0 to 7
   // dest_core_id = local_scr_addr%ssim.num_active_threads(); // this should be 0 to 7
-  printf("src core: %d dest core: %d\n",cpu.cpuId(), dest_core_id);
+  // printf("src core: %d dest core: %d\n",cpu.cpuId(), dest_core_id);
   int p = rand()%32; // ssim.num_active_threads();
   if(p<31) dest_core_id = cpu.cpuId()-1;
   else dest_core_id = rand()%8; // ssim.num_active_threads();
@@ -1803,7 +1807,7 @@ void Execute::send_spu_req(int src_port_id, int dest_port_id, int8_t* val, int n
   std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
   (*msg).m_MessageSize = MessageSizeType_Control;
   // (*msg).m_MessageSize = MessageSizeType_Writeback_Data;
-  (*msg).m_Type = SpuRequestType_LD;
+  (*msg).m_Type = SpuRequestType_ST;
   (*msg).m_Requestor = cpu.get_m_version();
   for(int i=0; i<num_bytes; ++i){
     (*msg).m_DataBlk.setByte(i,val[i]);

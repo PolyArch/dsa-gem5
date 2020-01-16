@@ -768,10 +768,12 @@ class scratch_read_controller_t : public data_controller_t {
     int data_bytes;
     base_stream_t* stream;
     bool last = false;
+    int id = -1; // should store this I guess
   };
 
   // a single entry (which entry it is associated with)
   // should be id?
+  // FIXME: should be deleted once done..
   std::unordered_map<int, ind_reorder_entry_t*> _reorder_entry_id;
   int _cur_irob_ptr = -1;
 

@@ -156,35 +156,37 @@ void MinorCPU::wakeup()
       // if read request, so this will push in bank queues and read data
       int8_t x = (*msg).m_DataBlk.getByte(0);
       bool read_req = (x==-1);
-      int addr = return_info && 65536;
+      int addr = return_info && 65535;
       int request_ptr = (return_info >> 16) & 63; 
-      int data_bytes = (return_info >> 22) & 7; 
-      data_bytes *= 8;
-      int reorder_entry = (return_info >> 25) & 3;
-      int req_core = (return_info >> 28);
+      int data_bytes = (return_info >> 22) & 15; //7; // less than 64? wrong?
+      // data_bytes *= 8;
+      int reorder_entry = (return_info >> 26) & 7;
+      int req_core = (return_info >> 29);
 
+      if(SS_DEBUG::NET_REQ) {
+        std::cout << " Request: " << read_req << "\n";
+        std::cout << "In wakeup, remote read with addr: " << addr << " x dim: " << request_ptr << " y dim: " << reorder_entry << " and data bytes: " << data_bytes << std::endl;
+        }
       if(read_req) {
         if(SS_DEBUG::NET_REQ) {
           std::cout << "Read request with req core: " << req_core << std::endl;
         }
         pipeline->receiveSpuReadRequest(req_core, request_ptr, addr, data_bytes, reorder_entry);
       } else {
+        assert(req_core==0);
         // for this directly push in the irob
+        
         pipeline->receiveSpuReadData(data, request_ptr, addr, data_bytes, reorder_entry);
       }
-    } /*else if((*msg).m_Type == SpuRequestType_LD) { // FIXME: change its naming
+    } else if((*msg).m_Type == SpuRequestType_ST) {
       int remote_port_id = return_info & 63;
       if(SS_DEBUG::NET_REQ) {
         std::cout << "Received multicast message at remote port: " << remote_port_id << std::endl;
       }
       pipeline->receiveSpuMessage(data, num_bytes, remote_port_id);
-    } */
-      else {
-      uint16_t remote_scr_offset = return_info & 65535; // (pow(2,16)-1);
-      if(SS_DEBUG::NET_REQ) {
-        std::cout << "Received multicast message for remote scr with offset: " << remote_scr_offset << std::endl;
-      }
-      pipeline->receiveSpuMessage(data, num_bytes, remote_scr_offset);
+    }
+    else {
+      assert(0 && "unknown SPU message type");
     }
     responseToSpu->dequeue(clockEdge());
   };
