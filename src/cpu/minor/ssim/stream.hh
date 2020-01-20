@@ -721,6 +721,7 @@ struct indirect_base_stream_t : public base_stream_t {
   addr_t _index_addr;
   uint64_t _offset_list;
   uint64_t _ind_mult;
+  int _val_num=-1;
   std::vector<char> _offsets;
   int _sstream_size=1; // size of sub-stream: should be extracted from the num_elem port
   int _ssind=0;

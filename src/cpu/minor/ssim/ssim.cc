@@ -93,8 +93,8 @@ void ssim_t::push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int
   accel_arr[0]->push_atomic_update_req(scr_addr, opcode, val_bytes, out_bytes, inc);
 }
 
-void ssim_t::push_ind_rem_read_req(int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry) {
-    accel_arr[0]->push_ind_rem_read_req(req_core, request_ptr, addr, data_bytes, reorder_entry);
+void ssim_t::push_ind_rem_read_req(bool is_remote, int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry) {
+    accel_arr[0]->push_ind_rem_read_req(is_remote, req_core, request_ptr, addr, data_bytes, reorder_entry);
 }
 
 void ssim_t::push_ind_rem_read_data(int8_t* data, int request_ptr, int addr, int data_bytes, int reorder_entry) {
@@ -599,7 +599,7 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
 //Configure an indirect stream with params
 void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
     uint64_t num_elem, int repeat, int repeat_str,uint64_t offset_list,
-    int dtype, uint64_t ind_mult, bool scratch, bool stream, int sstride, int sacc_size, int sn_port) {
+    int dtype, uint64_t ind_mult, bool scratch, bool stream, int sstride, int sacc_size, int sn_port, int val_num) {
   indirect_stream_t* s = new indirect_stream_t();
   s->_ind_port=ind_port;
   s->_ind_type=ind_type;
@@ -612,6 +612,7 @@ void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr
   s->_dtype=dtype;
   s->_ind_mult=ind_mult;
   s->_is_2d_stream=stream;
+  s->_val_num=val_num;
   if(stream) { // set sub-stream parameters here (read from ss_stride)
     s->_sstride = sstride;
     s->_sacc_size = sacc_size;

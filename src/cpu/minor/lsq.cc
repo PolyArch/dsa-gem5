@@ -1301,8 +1301,16 @@ bool LSQ::push_rem_read_req(int request_ptr, int addr, int data_bytes, int reord
   return execute.push_rem_read_req(request_ptr, addr, data_bytes, reorder_entry);
 }
 
-void LSQ::push_rem_read_return(int dst_core, uint64_t data, int request_ptr, int addr, int data_bytes, int reorder_entry) {
+void LSQ::push_rem_read_return(int dst_core, uint8_t data[64], int request_ptr, int addr, int data_bytes, int reorder_entry) {
   execute.push_rem_read_return(dst_core, data, request_ptr, addr, data_bytes, reorder_entry);
+}
+
+void LSQ::serve_pending_net_req() {
+  execute.serve_pending_net_req();
+}
+
+bool LSQ::is_pending_net_empty() {
+  return execute.is_pending_net_empty();
 }
 
 bool

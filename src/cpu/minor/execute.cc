@@ -1630,42 +1630,50 @@ void Execute::send_spu_scr_wr_req(uint8_t* val, int num_bytes, uint64_t scr_offs
 }
 
 // data from current core to the requesting core
-void Execute::push_rem_read_return(int dst_core, uint64_t data, int request_ptr, int addr, int data_bytes, int reorder_entry) {
+void Execute::push_rem_read_return(int dst_core, uint8_t data[64], int request_ptr, int addr, int data_bytes, int reorder_entry) {
   std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
   (*msg).m_MessageSize = MessageSizeType_Control;
   (*msg).m_Type = SpuRequestType_LD;
   (*msg).m_Requestor = cpu.get_m_version();
   
   for(int j=0; j<data_bytes; ++j){
+    /*
     int8_t x = (data >> (j*8)) & 65535;
     (*msg).m_DataBlk.setByte(j,x);
+    */
+    (*msg).m_DataBlk.setByte(j,data[j]);
   }
 
-  // data_bytes = data_bytes/8; // or this is 9 for 64?
+  if(data_bytes>8) {
+    assert(data_bytes==NUM_SCRATCH_BANKS);
+    data_bytes=9; // linear case
+  }
 
   assert(addr < (64*1024));
   assert(request_ptr < 64); // this would be equal to log(irob entries)
   assert(data_bytes < 16); // could be 1 to 8 bytes
   // global scratch size < 64 kB
+  // (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 33;
   (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 26;
   
-  int dest_core_id = dst_core;
   int src_core = cpu.cpuId();
-  assert(src_core!=dest_core_id && "Same core should not have been remote");
+  assert(src_core!=dst_core && "Same core should not have been remote");
 
-    if(SS_DEBUG::NET_REQ){
-       printf("Remote read return data src core: %d dest core: %d\n",src_core, dest_core_id);
-       std::cout << "Returning remote read data addr: " << addr << " and x dim: " << request_ptr << " y dim: " << reorder_entry << " and data bytes: " << data_bytes << std::endl;
-       // printf("output destination core: %d\n",dest_core_id);
-      // std::cout << "Remote read request, scr_addr: " << addr << " and local core(0-indexed): " << cpu.cpuId() << std::endl; 
-    }
-    (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
-    // for global barrier
-    ThreadContext *thread = cpu.getContext(0); // assume single-threaded core, tid=0?
-    thread->getSystemPtr()->inc_spu_sent();
+  if(SS_DEBUG::NET_REQ){
+     printf("Remote read return data src core: %d dest core: %d\n",src_core, dst_core);
+     std::cout << "Returning remote read data addr: " << addr << " and x dim: " << request_ptr << " y dim: " << reorder_entry << " and data bytes: " << data_bytes << std::endl;
+  }
+  (*msg).m_Destination.add(cpu.get_m_version(dst_core));
 
-    cpu.pushReqFromSpu(msg);
+  push_net_req(msg);
+  /*
+  cpu.pushReqFromSpu(msg);
+  ThreadContext *thread = cpu.getContext(0);
+  thread->getSystemPtr()->inc_spu_sent();
+  std::cout << "Return request sent\n";
+  */
 }
+
 
 bool Execute::push_rem_read_req(int request_ptr, int addr, int data_bytes, int reorder_entry) {
   std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
@@ -1676,37 +1684,69 @@ bool Execute::push_rem_read_req(int request_ptr, int addr, int data_bytes, int r
   // FIXME: does it work for a signal that it is a read request?
   (*msg).m_DataBlk.setByte(0,-1);
 
+  if(data_bytes>8) {
+    assert(data_bytes==NUM_SCRATCH_BANKS);
+    data_bytes=9; // linear case
+  }
   assert(addr < (64*1024));
   assert(request_ptr < 64); // this would be equal to log(irob entries)
   assert(data_bytes<16);
   // global scratch size < 64 kB
   // std::cout << "sending addr: " << addr << " ptr: " << request_ptr << " data bytes: " << data_bytes << " entry: " << reorder_entry << std::endl;
   int req_core = cpu.cpuId();
+  // (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 33 | req_core << 36;
   (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 26 | req_core << 29;
   
-  int dest_core_id = addr & 1024; // FIXME: should be number of threads
+  // int dest_core_id = addr & 1024; // FIXME: should be number of threads
+  // int dest_core_id = addr % ssim.num_active_threads();
+  int dest_core_id = addr/SCRATCH_SIZE;
+  assert(dest_core_id < ssim.num_active_threads());
   dest_core_id += 1;
   // printf("src core: %d dest core: %d\n",cpu.cpuId(), dest_core_id);
   if(dest_core_id==req_core) { // 0--host core when non-multi-threaded code
+  // if(1) {
     /*if(SS_DEBUG::NET_REQ){
       printf("LOCAL REQUEST destination core: %d\n",dest_core_id);
     }*/
-    ssim.push_ind_rem_read_req(req_core, request_ptr, addr, data_bytes, reorder_entry);
+    addr = addr & (SCRATCH_SIZE-1);
+    ssim.push_ind_rem_read_req(false, req_core, request_ptr, addr, data_bytes, reorder_entry);
+    return false;
   } else {
     if(SS_DEBUG::NET_REQ){
        printf("output destination core for scratchpad read: %d and requesting core: %d\n",dest_core_id, cpu.cpuId());
       std::cout << "Remote read request, scr_addr: " << addr << " and local core(0-indexed): " << cpu.cpuId() <<" and m_addr send: " << (*msg).m_addr << std::endl; 
     }
     (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
+
+    push_net_req(msg);
+
     // for global barrier
+    /*
     ThreadContext *thread = cpu.getContext(0); // assume tid=0?
     thread->getSystemPtr()->inc_spu_sent();
-
     cpu.pushReqFromSpu(msg);
+    */
   
     return true;
   }
-  return false;
+}
+
+void Execute::push_net_req(std::shared_ptr<SpuRequestMsg> msg) {
+  _pending_net_req.push(msg);
+}
+
+void Execute::serve_pending_net_req() {
+  // requires some condition if this can be accepted or not..
+  if(!_pending_net_req.empty()) {
+    if(SS_DEBUG::NET_REQ) {
+      std::cout << "Issuing SPU network request from core: " << cpu.cpuId() << " at cycle: " << cpu.curCycle() << "\n";
+    }
+    std::shared_ptr<SpuRequestMsg> msg = _pending_net_req.front();
+    ThreadContext *thread = cpu.getContext(0); // assume tid=0?
+    thread->getSystemPtr()->inc_spu_sent();
+    cpu.pushReqFromSpu(msg);
+    _pending_net_req.pop();
+  }
 }
 
 bool Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int opcode, int val_bytes, int out_bytes) {

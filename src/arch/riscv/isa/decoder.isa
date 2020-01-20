@@ -979,7 +979,8 @@ decode QUADRANT default Unknown::unknown() {
                 }}, IsSSStream, IsNonSpeculative, No_OpClass);
                 0x7: ss_cfg_ind({{
                     xc->setSSReg(Rs1,SS_OFFSET_LIST);
-                    xc->setSSReg(Rs2, SS_IND_MULT); 
+                    xc->setSSReg(Rs2, SS_OFFSET); 
+                    xc->setSSReg((imm>>4), SS_IND_MULT); 
                     xc->setSSReg((imm>>2)&0x3, SS_IND_TYPE); 
                     xc->setSSReg((imm>>0)&0x3, SS_DTYPE); 
                 }}, No_OpClass);

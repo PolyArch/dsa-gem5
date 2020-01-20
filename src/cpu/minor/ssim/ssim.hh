@@ -43,7 +43,7 @@ public:
                int repeat, int repeat_str,  uint64_t flags, uint64_t access_size);
   void indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
     uint64_t num_elem, int repeat, int repeat_str, uint64_t offset_list,
-    int dtype, uint64_t ind_mult, bool scratch, bool stream, int sstride, int sacc_size, int sn_port);
+    int dtype, uint64_t ind_mult, bool scratch, bool stream, int sstride, int sacc_size, int sn_port, int val_num);
   void indirect_write(int ind_port, int ind_type, int out_port,
     addr_t index_addr, uint64_t num_elem, uint64_t offset_list,
     int dtype, uint64_t ind_mult, bool scratch);
@@ -59,7 +59,7 @@ public:
 
   void push_in_accel_port(int accel_id, int8_t* val, int num_bytes, int in_port);
   void push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int out_bytes, uint64_t inc);
-  void push_ind_rem_read_req(int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry);
+  void push_ind_rem_read_req(bool is_remote, int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry);
   void push_ind_rem_read_data(int8_t* data, int request_ptr, int addr, int data_bytes, int reorder_entry);
   void write_remote_banked_scratchpad(uint8_t* val, int num_bytes, uint16_t scr_addr);
 

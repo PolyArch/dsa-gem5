@@ -754,7 +754,7 @@ class scratch_read_controller_t : public data_controller_t {
   void cycle_status();
 
   bool scr_port_streams_active();
-  void push_ind_rem_read_req(int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry);
+  void push_ind_rem_read_req(bool is_remote, int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry);
   void push_ind_rem_read_data(int8_t* data, int request_ptr, int addr, int data_bytes, int reorder_entry);
 
   private:
@@ -959,6 +959,7 @@ class network_controller_t : public data_controller_t {
     reset_stream_engines();
   }
 
+  void serve_pending_net_req();
   void multicast_data(remote_port_multicast_stream_t& stream, int message_size);
   void write_remote_scr(remote_scr_stream_t& stream);
   void write_direct_remote_scr(direct_remote_scr_stream_t& stream);
@@ -1529,8 +1530,8 @@ private:
     _scr_w_c.push_atomic_update_req(scr_addr, opcode, val_bytes, out_bytes, inc);
   }
 
-  void push_ind_rem_read_req(int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry) {
-      _scr_r_c.push_ind_rem_read_req(req_core, request_ptr, addr, data_bytes, reorder_entry);
+  void push_ind_rem_read_req(bool is_remote, int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry) {
+      _scr_r_c.push_ind_rem_read_req(is_remote, req_core, request_ptr, addr, data_bytes, reorder_entry);
   }
 
   void push_ind_rem_read_data(int8_t* data, int request_ptr, int addr, int data_bytes, int reorder_entry) {

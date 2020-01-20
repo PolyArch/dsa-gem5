@@ -212,9 +212,7 @@ class MinorCPU : public BaseCPU, public Consumer
 
 	// FIXME
 	void pushReqFromSpu(MsgPtr msg) {
-	  // Cycles latency(1);
-	  // fromSpu_q_ptr->enqueue(msg, clockEdge(), cyclesToTick(latency));
-	  requestFromSpu->enqueue(msg, clockEdge(), 1);
+	  requestFromSpu->enqueue(msg, clockEdge(), cyclesToTicks(Cycles(1)));
 	}
 
     /** Starting, waking and initialisation */

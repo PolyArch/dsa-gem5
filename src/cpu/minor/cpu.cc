@@ -112,7 +112,10 @@ bool MinorCPU::check_network_idle() {
 
 void MinorCPU::wakeup()
 {
+  // TODO: while used when multiple packets may be received (works when only
+  // 1 packet issued per cycle)
   if(!responseToSpu->isEmpty()) {
+  // while(!responseToSpu->isEmpty()) {
 
    // for global barrier
     ThreadContext *thread = getContext(0); // assume tid=0?
@@ -158,10 +161,12 @@ void MinorCPU::wakeup()
       bool read_req = (x==-1);
       int addr = return_info && 65535;
       int request_ptr = (return_info >> 16) & 63; 
-      int data_bytes = (return_info >> 22) & 15; //7; // less than 64? wrong?
-      // data_bytes *= 8;
+      int data_bytes = (return_info >> 22) & 15;
       int reorder_entry = (return_info >> 26) & 7;
       int req_core = (return_info >> 29);
+
+      assert(data_bytes<10);
+      if(data_bytes==9) data_bytes=NUM_SCRATCH_BANKS;
 
       if(SS_DEBUG::NET_REQ) {
         std::cout << " Request: " << read_req << "\n";
@@ -171,6 +176,8 @@ void MinorCPU::wakeup()
         if(SS_DEBUG::NET_REQ) {
           std::cout << "Read request with req core: " << req_core << std::endl;
         }
+        // should only use the local addr instead of global location
+        addr = addr & (SCRATCH_SIZE-1);
         pipeline->receiveSpuReadRequest(req_core, request_ptr, addr, data_bytes, reorder_entry);
       } else {
         assert(req_core==0);
