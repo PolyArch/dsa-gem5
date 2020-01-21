@@ -580,7 +580,7 @@ class ExecContext : public ::ExecContext
                 thread.getSSReg(SS_NUM_STRIDES), thread.getSSReg(SS_IN_PORT),
                 thread.getSSReg(SS_CONSTANT), thread.getSSReg(SS_NUM_ELEM),     
                 thread.getSSReg(SS_CONSTANT2), thread.getSSReg(SS_NUM_ELEM2),    
-                thread.getSSReg(SS_FLAGS), thread.getSSReg(SS_DTYPE));
+                thread.getSSReg(SS_FLAGS), thread.getSSReg(SS_DTYPE), thread.getSSReg(SS_IND_TYPE));
               break;
             case SS_ATOMIC_SCR_OP:
               ssim.atomic_update_scratchpad(

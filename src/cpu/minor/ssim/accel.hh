@@ -1539,8 +1539,10 @@ private:
   }
 
 bool isLinearSpad(addr_t addr){
+  if(!_linear_spad) return false;
   // int spad_offset_bits = log2(SCRATCH_SIZE+LSCRATCH_SIZE);
-  assert(addr < (SCRATCH_SIZE+LSCRATCH_SIZE));
+  // could be remote location
+  // assert(addr < (SCRATCH_SIZE+LSCRATCH_SIZE));
   int spad_offset_bits = log2(SCRATCH_SIZE);
   int spad_type = (addr >> spad_offset_bits) & 1;
   return spad_type; // for 1, it is linear

@@ -613,6 +613,7 @@ void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr
   s->_ind_mult=ind_mult;
   s->_is_2d_stream=stream;
   s->_val_num=val_num;
+  s->_ind_mult *= val_num; // for wide accesses (real mult requires more bits)
   if(stream) { // set sub-stream parameters here (read from ss_stride)
     s->_sstride = sstride;
     s->_sacc_size = sacc_size;
@@ -691,7 +692,7 @@ void ssim_t::insert_df_barrier(int64_t num_scr_wr, bool spad_type) {
 void ssim_t::write_constant(int num_strides, int in_port,
                     SBDT constant, uint64_t num_elem,
                     SBDT constant2, uint64_t num_elem2,
-                    uint64_t flags, int const_width) {
+                    uint64_t flags, int const_width, bool iter_port) {
 
   const_port_stream_t* s = new const_port_stream_t();
   s->add_in_port(in_port);
@@ -708,6 +709,7 @@ void ssim_t::write_constant(int num_strides, int in_port,
 
   s->_constant2=constant;
   s->_num_elements2=num_elem;
+  s->_is_iter_port=iter_port;
 
   // data-width according to port should be set earlier?
   s->set_orig();

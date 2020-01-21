@@ -964,12 +964,13 @@ void Execute::timeout_check(bool should_commit, MinorDynInstPtr inst) {
   uint64_t last_event = std::max(last_sd_issue,
                         ssim.forward_progress_cycle());
   if(!should_commit) {
-    // if(cyc > 9990 + last_event) {
-    if(cyc > 999000 + last_event) {
+    if(cyc > 9990 + last_event) {
+    // if(cyc > 999000 + last_event) {
       DPRINTF(SS,"Almost Aborting because of wait", *inst);
     }
 
-    if(cyc > 1000000 + last_event) {
+    // if(cyc > 1000000 + last_event) {
+    if(cyc > 10000 + last_event) {
       DPRINTF(SS,"Instruction: %s is stalled for too long!!! ABORTING", *inst);
       ssim.print_stats();
       //ssim.done(true,0);
@@ -1684,31 +1685,39 @@ bool Execute::push_rem_read_req(int request_ptr, int addr, int data_bytes, int r
   // FIXME: does it work for a signal that it is a read request?
   (*msg).m_DataBlk.setByte(0,-1);
 
+
+  int req_core = cpu.cpuId();
+  for(int j=0; j<5; ++j){
+    int8_t x = (req_core >> (j*8)) & 65535;
+    (*msg).m_DataBlk.setByte(j+1,x);
+  }
+
   if(data_bytes>8) {
     assert(data_bytes==NUM_SCRATCH_BANKS);
     data_bytes=9; // linear case
   }
-  assert(addr < (64*1024));
-  assert(request_ptr < 64); // this would be equal to log(irob entries)
-  assert(data_bytes<16);
-  // global scratch size < 64 kB
-  // std::cout << "sending addr: " << addr << " ptr: " << request_ptr << " data bytes: " << data_bytes << " entry: " << reorder_entry << std::endl;
-  int req_core = cpu.cpuId();
-  // (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 33 | req_core << 36;
-  (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 26 | req_core << 29;
-  
-  // int dest_core_id = addr & 1024; // FIXME: should be number of threads
+   // int dest_core_id = addr & 1024; // FIXME: should be number of threads
   // int dest_core_id = addr % ssim.num_active_threads();
   int dest_core_id = addr/SCRATCH_SIZE;
   assert(dest_core_id < ssim.num_active_threads());
   dest_core_id += 1;
+  addr = addr & (SCRATCH_SIZE-1);
+
+  assert(addr < SCRATCH_SIZE);
+  assert(request_ptr < 64); // this would be equal to log(irob entries)
+  assert(data_bytes<16);
+
+  // global scratch size < 64 kB
+  // std::cout << "sending addr: " << addr << " ptr: " << request_ptr << " data bytes: " << data_bytes << " entry: " << reorder_entry << std::endl;
+  // (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 33 | req_core << 36;
+  (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 26; // | req_core << 29;
+  
   // printf("src core: %d dest core: %d\n",cpu.cpuId(), dest_core_id);
   if(dest_core_id==req_core) { // 0--host core when non-multi-threaded code
   // if(1) {
-    /*if(SS_DEBUG::NET_REQ){
+    if(SS_DEBUG::NET_REQ){
       printf("LOCAL REQUEST destination core: %d\n",dest_core_id);
-    }*/
-    addr = addr & (SCRATCH_SIZE-1);
+    }
     ssim.push_ind_rem_read_req(false, req_core, request_ptr, addr, data_bytes, reorder_entry);
     return false;
   } else {

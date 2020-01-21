@@ -81,7 +81,7 @@ struct base_stream_t {
   virtual ~base_stream_t() { }
   void print_empty() {
     if(stream_active())  std::cout << "               ACTIVE";
-    else                 std::cout << "             inactive";
+    else                 std::cout << "             INACTIVE";
 
     if(empty())          std::cout << "EMPTY!\n";
     else                 std::cout << "\n";
@@ -449,6 +449,7 @@ struct BuffetStream : public affine_read_stream_t {
 
 //Constant -> Port
 struct const_port_stream_t : public base_stream_t {
+  bool _is_iter_port=false;
   addr_t _constant;
   addr_t _num_elements=0;
   addr_t _constant2;
@@ -464,7 +465,7 @@ struct const_port_stream_t : public base_stream_t {
   addr_t _orig_elements;
 
   void check_for_iter() {
-    if(!_elements_left && !_elements_left2 && _iters_left) {
+    if(!_is_iter_port && !_elements_left && !_elements_left2 && _iters_left) {
       _iters_left--;
       _elements_left=_num_elements;
       _elements_left2=_num_elements2;
@@ -497,7 +498,7 @@ struct const_port_stream_t : public base_stream_t {
     if(_elements_left > 0) {
       _elements_left--;
       return _constant;
-    } else if(_elements_left2) {
+    } else if(_elements_left2>0) {
       _elements_left2--;
       return _constant2;
     }

@@ -553,6 +553,8 @@ accel_t::accel_t(Minor::LSQ *lsq, int i, ssim_t *ssim)
     _ind_rob_size = atoi(ind_rob_size);
   }
 
+  assert(_ind_rob_size<64 && "ind rob size exceeded the bits allocated in SPU-net transaction");
+
   const char *ssconfig_file = std::getenv("SBCONFIG");
  
   // if (!SS_DEBUG::SUPRESS_STATS) {
@@ -3109,7 +3111,10 @@ void scratch_read_controller_t::read_scratch_ind(
 
     uint64_t ind=0;
     addr_t addr=0;
+    // TODO: accumulate all remote requests here (check for local and remote),
+    // and then send (allowed for sequential memory location, addr, 64*C bytes)
     for(int req=0; req<num_irob_entries_reqd; ++req) {
+      assert(_ind_ROB.size() <= _accel->_ind_rob_size && "overflow of indirect rob");
 
       _cur_irob_ptr = (_cur_irob_ptr + 1)%(_accel->_ind_rob_size);
       ind_reorder_entry_t *reorder_entry = new ind_reorder_entry_t();
@@ -3127,7 +3132,7 @@ void scratch_read_controller_t::read_scratch_ind(
 
       // cout << "Initialized reorder entry at loc: " << _cur_irob_ptr << " and data bytes: " << reorder_entry->data_bytes << " size: " << reorder_entry->size << endl;
       // cout << "intialized at core: " << _accel->_lsq->getCpuId() << endl;
-      // bool is_remote = false; // max 1 remote request can be sent per cycle (FIXME?)
+      bool is_remote = false; // max 1 remote request can be sent per cycle (FIXME?)
 
       // just distribute the elements to the queues (for follow on requests, it
       // doesn't need to pop from indirect vector port)
@@ -3159,10 +3164,12 @@ void scratch_read_controller_t::read_scratch_ind(
 
         reorder_entry->size += serve_width;
 
-        if(SS_DEBUG::NET_REQ) {
+        int dest_core_id = request.addr/SCRATCH_SIZE;
+        if(dest_core_id==_accel->_lsq->getCpuId()-1) is_remote=false;
+
+        if(is_remote && SS_DEBUG::NET_REQ) {
             cout << "Sending remote scr read request for reorder x loc: " << request.data_ptr << " y loc: " << _cur_irob_ptr << " addr in scratch: " << request.addr << " and bytes to be read: " << request.bytes << endl;
         }
-        // is_remote = 
         _accel->_lsq->push_rem_read_req(request.data_ptr, request.addr, request.bytes, _cur_irob_ptr);
       }
       // cout << "Reorder entry size in the end: " << reorder_entry->size << endl;
@@ -4068,10 +4075,8 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
       auto &stream = *sp;
       port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
 
-      if ((ind_vp.mem_size() >= stream._index_bytes && stream.stream_active() && !checkLinearSpadStream(stream))) {
-       // ||  indirect_scr_read_requests_active()) {
-        //-----------------------------------
-        // cout << "Detected as a banked scratchpad\n";
+      if ((ind_vp.mem_size() >= stream._index_bytes && stream.stream_active() && !checkLinearSpadStream(stream)) && _ind_ROB.size() < _accel->_ind_rob_size) {
+        
         bool skip_check = SS_DEBUG::UNREAL_INPUTS;
 
         if (min_ind_port_ready == -2) {
@@ -4079,8 +4084,6 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
         }
         if (!skip_check && min_ind_port_ready >= MAX_PORT_READY)
           continue;
-        //-------------------------------------
-
 
         // if(checkLinearSpadStream(stream)) continue;
         read_scratch_ind(stream, -1 /*scratch*/);
@@ -5216,6 +5219,12 @@ void port_controller_t::cycle() {
 
 
     int const_width = stream._const_width;
+    // TODO: fix the case when iter=0
+    
+    // if consts 0 and stream active (elems popped<iter) and data in those
+    // ports (lets keep both for now), update the consts
+    port_data_t &rpt1_prt = pi.out_port(stream._num_elements);
+    port_data_t &rpt2_prt = pi.out_port(stream._num_elements2);
 
     port_data_t &first_vp_in = pi.in_port(stream.first_in_port());
 
@@ -5230,8 +5239,18 @@ void port_controller_t::cycle() {
 
           port_data_t& vp_in = pi.in_port(in_port);
 
+          if(!stream._elements_left && !stream._elements_left2 && stream._is_iter_port) {
+            if(rpt1_prt.mem_size() > 0 && rpt2_prt.mem_size() > 0) {
+              stream._iters_left--;
+              stream._elements_left = rpt1_prt.pop_out_data();
+              stream._elements_left2 = rpt2_prt.pop_out_data();
+            } 
+            if(!stream._elements_left && !stream._elements_left2) break;
+          }
+
           // should send vector version of that
           SBDT val = stream.pop_item(); // data width of const val should be >= port width
+          if(val==-1) break; // no iterm to pop
 
 
           int num_bits = 8*data_width;
@@ -5241,7 +5260,6 @@ void port_controller_t::cycle() {
             SBDT temp = (val >> (i*num_bits)) & mask;
             vp_in.push_data(vp_in.get_byte_vector(temp, data_width));
           }
-          // vp_in.push_data(stream.pop_item());
         }
         total_pushed++;
       }

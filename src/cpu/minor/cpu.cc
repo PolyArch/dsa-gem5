@@ -114,15 +114,16 @@ void MinorCPU::wakeup()
 {
   // TODO: while used when multiple packets may be received (works when only
   // 1 packet issued per cycle)
-  if(!responseToSpu->isEmpty()) {
-  // while(!responseToSpu->isEmpty()) {
+  // if(!responseToSpu->isEmpty()) {
+  while(!responseToSpu->isEmpty()) { // same packet received from different cores?
 
+    if(!responseToSpu->isReady(clockEdge())) return;
+    const SpuRequestMsg* msg = (SpuRequestMsg*)responseToSpu->peek();
    // for global barrier
     ThreadContext *thread = getContext(0); // assume tid=0?
     thread->getSystemPtr()->inc_spu_receive();
 
     // could do dynamic cast
-    const SpuRequestMsg* msg = (SpuRequestMsg*)responseToSpu->peek();
     int64_t return_info = msg->m_addr;
 
     int num_bytes = return_info >> 16;
@@ -163,7 +164,7 @@ void MinorCPU::wakeup()
       int request_ptr = (return_info >> 16) & 63; 
       int data_bytes = (return_info >> 22) & 15;
       int reorder_entry = (return_info >> 26) & 7;
-      int req_core = (return_info >> 29);
+      int req_core = 0; // (return_info >> 29);
 
       assert(data_bytes<10);
       if(data_bytes==9) data_bytes=NUM_SCRATCH_BANKS;
@@ -173,9 +174,15 @@ void MinorCPU::wakeup()
         std::cout << "In wakeup, remote read with addr: " << addr << " x dim: " << request_ptr << " y dim: " << reorder_entry << " and data bytes: " << data_bytes << std::endl;
         }
       if(read_req) {
+        req_core=0;
+        for(int j=1; j<6; ++j) {
+          uint8_t b = (*msg).m_DataBlk.getByte(j);
+          req_core = req_core | (b << ((j-1)*8));
+        }
         if(SS_DEBUG::NET_REQ) {
           std::cout << "Read request with req core: " << req_core << std::endl;
         }
+        
         // should only use the local addr instead of global location
         addr = addr & (SCRATCH_SIZE-1);
         pipeline->receiveSpuReadRequest(req_core, request_ptr, addr, data_bytes, reorder_entry);
