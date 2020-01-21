@@ -2972,24 +2972,30 @@ void scratch_read_controller_t::push_ind_rem_read_req(bool is_remote, int req_co
   if(SS_DEBUG::NET_REQ) {
       cout << "Read request reached with requesting core: " << req_core << " x dim: " << request_ptr << " y dim: " << reorder_entry << " and addr: " << addr << " data bytes: " << data_bytes << endl;
   }
-  indirect_scr_read_req request;
-  request.data_ptr = request_ptr;
-  request.addr = addr;
-  request.bytes = data_bytes;
-  request.irob_entry_id = reorder_entry;
-  request.remote = is_remote;
-  request.req_core = req_core;
+  int num_cache_line_reqs = std::max(1, data_bytes/NUM_SCRATCH_BANKS);
+  int local_bytes = std::min(data_bytes, NUM_SCRATCH_BANKS);
+  int logical_banks = NUM_SCRATCH_BANKS / local_bytes; // ->data_bytes;
+  for(int i=0; i<num_cache_line_reqs; ++i) {
+    indirect_scr_read_req request;
+    request.data_ptr = request_ptr; // X loc
+    request.addr = addr+i*64;
+    request.bytes = local_bytes;
+    request.irob_entry_id = (reorder_entry+i)%(_accel->_ind_rob_size); // Y-dim
+    request.remote = is_remote;
+    request.req_core = req_core;
 
-  int logical_banks = NUM_SCRATCH_BANKS / data_bytes; // ->data_bytes;
 
-  // Assuming linear mapping by default
-  int bank_id = addr & (logical_banks - 1);
+    // Assuming linear mapping by default
+    int bank_id = request.addr & (logical_banks - 1);
 
-  if(SS_DEBUG::NET_REQ) {
-      cout << "Remote read request at bank: " << bank_id << " and core: " << _accel->_lsq->getCpuId() << endl;
-      // cout << "Reorder entry info, bytes: " << x->data_bytes << " req_core: " << x->req_core << " remote: " << x->remote << endl;
+    if(SS_DEBUG::NET_REQ) {
+        cout << "Remote read request at bank: " << bank_id << " and core: " << _accel->_lsq->getCpuId() << " for addr: " << request.addr << endl;
+        // cout << "Reorder entry info, bytes: " << x->data_bytes << " req_core: " << x->req_core << " remote: " << x->remote << endl;
+    }
+    assert(request.addr<SCRATCH_SIZE);
+    _indirect_scr_read_requests[bank_id].push(request);
   }
-  _indirect_scr_read_requests[bank_id].push(request);
+
 }
 
 // write the data into IROB (no arbitration modeled)
@@ -3113,10 +3119,16 @@ void scratch_read_controller_t::read_scratch_ind(
     addr_t addr=0;
     // TODO: accumulate all remote requests here (check for local and remote),
     // and then send (allowed for sequential memory location, addr, 64*C bytes)
+    int acc_remote_bytes=0; addr_t init_addr=-1;
+    int init_data_ptr=-1; int init_irob_ptr=-1;
+    int last_dest_core=-1; bool is_remote = false;
+
+    bool last_remote=false;
     for(int req=0; req<num_irob_entries_reqd; ++req) {
       assert(_ind_ROB.size() <= _accel->_ind_rob_size && "overflow of indirect rob");
 
       _cur_irob_ptr = (_cur_irob_ptr + 1)%(_accel->_ind_rob_size);
+      if(init_irob_ptr==-1) init_irob_ptr=_cur_irob_ptr;
       ind_reorder_entry_t *reorder_entry = new ind_reorder_entry_t();
 
       assert(_reorder_entry_id.find(_cur_irob_ptr)==_reorder_entry_id.end() && "allocated location should be empty in reorder buffer");
@@ -3132,7 +3144,6 @@ void scratch_read_controller_t::read_scratch_ind(
 
       // cout << "Initialized reorder entry at loc: " << _cur_irob_ptr << " and data bytes: " << reorder_entry->data_bytes << " size: " << reorder_entry->size << endl;
       // cout << "intialized at core: " << _accel->_lsq->getCpuId() << endl;
-      bool is_remote = false; // max 1 remote request can be sent per cycle (FIXME?)
 
       // just distribute the elements to the queues (for follow on requests, it
       // doesn't need to pop from indirect vector port)
@@ -3158,6 +3169,11 @@ void scratch_read_controller_t::read_scratch_ind(
         indirect_scr_read_req request;
         request.data_ptr = reorder_entry->size; // <64
         request.addr = addr + req*serve_width;
+        
+        if(init_data_ptr==-1) {
+          init_data_ptr=request.data_ptr;
+          init_addr = addr;
+        }
 
         request.bytes = serve_width;
         request.irob_entry_id = _cur_irob_ptr;
@@ -3165,12 +3181,33 @@ void scratch_read_controller_t::read_scratch_ind(
         reorder_entry->size += serve_width;
 
         int dest_core_id = request.addr/SCRATCH_SIZE;
-        if(dest_core_id==_accel->_lsq->getCpuId()-1) is_remote=false;
+        is_remote = dest_core_id!=(_accel->_lsq->getCpuId()-1);
 
         if(is_remote && SS_DEBUG::NET_REQ) {
             cout << "Sending remote scr read request for reorder x loc: " << request.data_ptr << " y loc: " << _cur_irob_ptr << " addr in scratch: " << request.addr << " and bytes to be read: " << request.bytes << endl;
         }
-        _accel->_lsq->push_rem_read_req(request.data_ptr, request.addr, request.bytes, _cur_irob_ptr);
+        if(!is_remote) { // if current request is local
+          if(last_remote) {
+            // TODO: require info for the last acc request
+            _accel->_lsq->push_rem_read_req(init_data_ptr, init_addr, acc_remote_bytes, init_irob_ptr);
+            acc_remote_bytes=0;
+            init_data_ptr=-1; init_irob_ptr=-1;
+          }
+          // for the current one
+          _accel->_lsq->push_rem_read_req(request.data_ptr, request.addr, request.bytes, _cur_irob_ptr);
+        } else {
+          last_dest_core = dest_core_id;
+          if(last_dest_core!=dest_core_id || acc_remote_bytes>=64*64) { // if core switched
+            _accel->_lsq->push_rem_read_req(init_data_ptr, init_addr, acc_remote_bytes, init_irob_ptr);
+            acc_remote_bytes=0;
+            init_data_ptr=-1; init_irob_ptr=-1;
+          } else {
+            acc_remote_bytes += request.bytes; // we can get consecutive irob ptrs from the start one (or last one?)
+            _accel->_stat_num_spu_req_coalesced++;
+          }
+        }
+        last_remote = is_remote;
+        // _accel->_lsq->push_rem_read_req(request.data_ptr, request.addr, request.bytes, _cur_irob_ptr);
       }
       // cout << "Reorder entry size in the end: " << reorder_entry->size << endl;
       assert(reorder_entry->size > 0 && reorder_entry->size <= 64);
@@ -3197,6 +3234,10 @@ void scratch_read_controller_t::read_scratch_ind(
           ind_vp.set_status(port_data_t::STATUS::FREE);
         }
       }
+    }
+    // send all pending remote requests
+    if(last_remote) {
+      _accel->_lsq->push_rem_read_req(init_data_ptr, init_addr, acc_remote_bytes, init_irob_ptr);
     }
   }
 }

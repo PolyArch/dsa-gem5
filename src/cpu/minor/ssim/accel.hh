@@ -1667,6 +1667,7 @@ int get_cur_cycle();
   int _stat_tot_mem_wait_cycles=0;
   int _stat_hit_bytes_rd=0;
   int _stat_miss_bytes_rd=0;
+  int _stat_num_spu_req_coalesced=0;
   // for backcgra
   // int _stat_mem_initiation_interval = 10000;
   double _stat_port_imbalance=0;

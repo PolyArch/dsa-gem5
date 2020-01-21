@@ -173,6 +173,7 @@ void ssim_t::print_stats() {
                                     /1000000000 << " sec\n";
 
    out << "Cycles: " << roi_cycles() << "\n";
+   out << "Number of coalesced SPU requests: " << accel_arr[0]->_stat_num_spu_req_coalesced << "\n";
    out << "Control Core Insts Issued: " << control_core_insts() << "\n";
    out << "Control Core Discarded Insts Issued: " << control_core_discarded_insts() << "\n";
    out << "Control Core Discarded Inst Stalls: " << ((double)control_core_discarded_insts()/(double)control_core_insts()) << "\n";

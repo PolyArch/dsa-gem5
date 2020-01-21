@@ -166,8 +166,7 @@ void MinorCPU::wakeup()
       int reorder_entry = (return_info >> 26) & 7;
       int req_core = 0; // (return_info >> 29);
 
-      assert(data_bytes<10);
-      if(data_bytes==9) data_bytes=NUM_SCRATCH_BANKS;
+      if(data_bytes>8) data_bytes=NUM_SCRATCH_BANKS*(data_bytes-8);
 
       if(SS_DEBUG::NET_REQ) {
         std::cout << " Request: " << read_req << "\n";
@@ -182,7 +181,6 @@ void MinorCPU::wakeup()
         if(SS_DEBUG::NET_REQ) {
           std::cout << "Read request with req core: " << req_core << std::endl;
         }
-        
         // should only use the local addr instead of global location
         addr = addr & (SCRATCH_SIZE-1);
         pipeline->receiveSpuReadRequest(req_core, request_ptr, addr, data_bytes, reorder_entry);

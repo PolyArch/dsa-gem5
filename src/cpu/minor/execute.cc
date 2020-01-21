@@ -1693,8 +1693,10 @@ bool Execute::push_rem_read_req(int request_ptr, int addr, int data_bytes, int r
   }
 
   if(data_bytes>8) {
-    assert(data_bytes==NUM_SCRATCH_BANKS);
-    data_bytes=9; // linear case
+    // assert(data_bytes==NUM_SCRATCH_BANKS);
+    assert(data_bytes%NUM_SCRATCH_BANKS==0);
+    data_bytes=8+data_bytes/NUM_SCRATCH_BANKS; // 9; // linear case
+    assert(data_bytes<15 && "exceeded the maximum multiple of cache line");
   }
    // int dest_core_id = addr & 1024; // FIXME: should be number of threads
   // int dest_core_id = addr % ssim.num_active_threads();
