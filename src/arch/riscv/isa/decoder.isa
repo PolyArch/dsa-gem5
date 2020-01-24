@@ -870,7 +870,7 @@ decode QUADRANT default Unknown::unknown() {
                 0x4: ss_const({{
                     xc->setSSReg(imm & 0x3f, SS_IN_PORT);
                     xc->setSSReg(imm >> 6, SS_FLAGS);
-                    xc->setSSReg(imm >> 8, SS_IND_TYPE);
+                    xc->setSSReg((imm >> 8) & 1, SS_IND_TYPE);
                     xc->setSSReg(imm >> 9, SS_DTYPE);
                     if(imm & (1<<7)) {
                       xc->setSSReg(Rs1,SS_CONSTANT2);

@@ -349,7 +349,7 @@ SBDT port_data_t::pop_out_data(int bytes) {
     res |= val << (i * 8);
   }
   if (SS_DEBUG::DATA_STATUS) {
-    std::cout << bytes << " byte(s) popped, value is " << res << std::endl;
+    std::cout << "bytes popped: " << bytes << ", value is " << res << " at port id: " << _port << std::endl;
     std::cout << "remain " << _port_width * _mem_data.size() << " bytes" << std::endl;
   }
   return res;
@@ -366,6 +366,7 @@ template <typename T> T port_data_t::pop_out_custom_data() {
 }
 
 // peek at output data (return original data typecasted to SBDT)
+// starting from idx, return bytes amount of data
 SBDT port_data_t::peek_out_data(int idx, int bytes) {
 
   if (bytes == -1) {
@@ -2291,7 +2292,8 @@ void dma_controller_t::port_resp(unsigned cur_port) {
 
         // FIXME: check if stats are reset at roi
         // _accel->_stat_mem_bytes_rd += data.size();
-
+ 
+        // request for all added ports
         for (int in_port : response->sdInfo->ports) {
           port_data_t &in_vp = pi.in_port(in_port);
 
@@ -2519,9 +2521,11 @@ void dma_controller_t::make_write_request() {
             _accel->port_interf().out_port(stream._out_port);
         port_data_t &ind_port =
             _accel->port_interf().out_port(stream._ind_port);
-
-        if (out_port.mem_size() > 0 && ind_port.mem_size() >= stream._index_bytes) {
-          _accel->_lsq->sd_transfers[MEM_WR_STREAM].reserve();
+        auto &subsize_vp = _accel->port_interf().out_port(stream._sn_port);
+        
+        if (out_port.mem_size() >= stream._data_bytes/out_port.get_port_width() && ind_port.mem_size() >= stream._index_bytes && 
+           (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes/subsize_vp.get_port_width())) ) {
+          // _accel->_lsq->sd_transfers[MEM_WR_STREAM].reserve();
           ind_write_req(stream);
 
           if (stream.empty()) {
@@ -3102,9 +3106,10 @@ void scratch_read_controller_t::read_scratch_ind(
     uint64_t scr_addr /*if scr is dest, also todo*/) {
 
   port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
+  int ind_vp_slices = stream._index_bytes/ind_vp.get_port_width();
 
   // STAGE 1: Push the requests to ports
-  if (stream.stream_active() && ind_vp.mem_size() >= stream._index_bytes &&
+  if (stream.stream_active() && ind_vp.mem_size() >= ind_vp_slices &&
       _ind_ROB.size() < _accel->_ind_rob_size) {
 
     int reqd = stream._data_bytes*stream._val_num/NUM_SCRATCH_BANKS;
@@ -3147,23 +3152,19 @@ void scratch_read_controller_t::read_scratch_ind(
 
       // just distribute the elements to the queues (for follow on requests, it
       // doesn't need to pop from indirect vector port)
-      while ((req>0 || (ind_vp.mem_size() >= stream._index_bytes && stream.stream_active())) && reorder_entry->size < NUM_SCRATCH_BANKS) { // && !is_remote) {
+      while ((req>0 || (ind_vp.mem_size() >= ind_vp_slices && stream.stream_active())) && reorder_entry->size < NUM_SCRATCH_BANKS) {
 
         if(req==0) { // should only be done to get the base address
-          for(int i=0; i<stream._index_bytes; ++i) {
-            uint8_t temp = ind_vp.peek_out_data(i);
-            ind = ind | (temp << i*8);
-          }
+          ind = ind_vp.peek_out_data(0, stream._index_bytes);
           addr = stream.cur_addr(ind);
-          // cout << "Index of indirect read: " << ind << " calc addr: " << addr << " num elems left: " << stream._num_elements << endl;
-          // addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
 
+          // FIXME: some problem here, should pop each time here 
           bool pop_ind_vp = stream.pop_elem();
+          // cout << "Read new index, pop value: " << pop_ind_vp << " earlier mem size: " << ind_vp.mem_size();
           if (pop_ind_vp) { // this is for sub-word granularity reads
-            for(int i=0; i<stream._index_bytes; ++i) {
-              ind_vp.pop_out_data();
-            }
+            ind_vp.pop_out_data(stream._index_bytes); // pop port_width data
           }
+          // cout << " new mem size: " << ind_vp.mem_size() << endl;
         }
 
         indirect_scr_read_req request;
@@ -3210,7 +3211,7 @@ void scratch_read_controller_t::read_scratch_ind(
         // _accel->_lsq->push_rem_read_req(request.data_ptr, request.addr, request.bytes, _cur_irob_ptr);
       }
       // cout << "Reorder entry size in the end: " << reorder_entry->size << endl;
-      assert(reorder_entry->size > 0 && reorder_entry->size <= 64);
+      assert(reorder_entry->size > 0 && reorder_entry->size <= NUM_SCRATCH_BANKS && "it should have went in the loop");
 
       if(req==num_irob_entries_reqd-1) {
 
@@ -3277,14 +3278,12 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
   }
   else { stream.cur_base_addr = 0; }
 
-  // while (ind_vp.mem_size() >= stream._index_bytes && stream.stream_active()
-     //&& (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes))) {
   while (ind_vp.mem_size() >= stream._index_bytes/ind_vp.get_port_width() && stream.stream_active() && (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes/subsize_vp.get_port_width()))) {
 
     if(stream._is_2d_stream && stream._first_ss_access) {
       uint64_t ind2=0;
 
-      // this works when subsize_vp width < stream index bytes
+      // this works when subsize_vp width <= stream index bytes
       for(int i=0; i<stream._index_bytes/subsize_vp.get_port_width(); ++i) {
         SBDT ssize = subsize_vp.peek_out_data(i);
         // cout << "8 bytes output: " << ssize << endl;
@@ -3418,7 +3417,11 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
 void dma_controller_t::ind_write_req(indirect_wr_stream_t &stream) {
  
   port_data_t &out_vp = _accel->port_interf().out_port(stream._out_port);
+  port_data_t &subsize_vp = _accel->port_interf().out_port(stream._sn_port);
   port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
+  if(!stream._is_2d_stream) { 
+    assert(stream._sn_port==1);
+  }
 
   bool first = true;
   addr_t init_addr = 0;
@@ -3437,7 +3440,39 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t &stream) {
   int stream_size = 8;
 
   int index = 0;
-  while (out_vp.mem_size() && ind_vp.mem_size() >= stream._index_bytes && stream.stream_active()) {
+  while (out_vp.mem_size() && ind_vp.mem_size() >= stream._index_bytes && stream.stream_active() && (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes/subsize_vp.get_port_width()))) {
+
+    // load the substream data size
+    if(stream._is_2d_stream && stream._first_ss_access) {
+      // uint64_t ind2=0;
+
+      // this works when subsize_vp width <= stream index bytes
+      uint64_t ind2 = subsize_vp.peek_out_data(0, stream._index_bytes);
+      /* for(int i=0; i<stream._index_bytes/subsize_vp.get_port_width(); ++i) {
+        SBDT ssize = subsize_vp.peek_out_data(i);
+        // cout << "8 bytes output: " << ssize << endl;
+        ind2 = ind2 | (ssize << i*8*subsize_vp.get_port_width());
+        // ind2 = (ind2 << i*8*subsize_vp.get_port_width()) | ssize;
+      }*/
+
+      stream._sstream_size = ind2; // should be done only in the first size
+      if(SS_DEBUG::SCR_ACC || SS_DEBUG::MEM_WR) {
+        cout << "Current ssize: " << ind2 << endl;
+      }
+      
+      // If sub-stream size is 0, then pop the corresponding element from ind
+      // port, also again set first ss access
+      if(ind2==0) {
+        stream._sstream_size = 1; // hack, assume 1 element done so we could pop this element from stream
+        stream.pop_elem();
+        ind_vp.pop_out_data(stream._index_bytes);
+        subsize_vp.pop_out_data(stream._index_bytes);
+        continue;
+      } else {
+        stream._first_ss_access=false;
+      }
+    }
+
 
     uint64_t ind=0;
     for(int i=0; i<stream._index_bytes; ++i) {
@@ -3465,27 +3500,41 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t &stream) {
     data64[index++] = val;
 
     out_vp.pop_out_data();
-    bytes_written += sizeof(SBDT);
+    bytes_written += stream._data_bytes; // sizeof(SBDT);
 
     bool pop_ind_vp = stream.pop_elem();
     if (pop_ind_vp) {
-      for(int i=0; i<stream._index_bytes; ++i) {
+      stream._first_ss_access=true;
+      ind_vp.pop_out_data(stream._index_bytes);
+      /*for(int i=0; i<stream._index_bytes; ++i) {
         ind_vp.pop_out_data();
+      }*/
+      if(stream._is_2d_stream) {
+        subsize_vp.pop_out_data(stream._index_bytes);
+        /*for(int i=0; i<stream._index_bytes/subsize_vp.get_port_width(); ++i) {
+          subsize_vp.pop_out_data();
+        }*/
       }
-      // ind_vp.pop_out_data();
     }
   }
 
+  if(bytes_written==0) return;
+
+  _accel->_lsq->sd_transfers[MEM_WR_STREAM].reserve();
+
   SSMemReqInfoPtr sdInfo =
       new SSMemReqInfo(stream.id(), _accel->_accel_index, MEM_WR_STREAM);
-
-  // cout << "bytes written: " << bytes_written << "addr: " << std::hex <<
-  // init_addr
-  //  << std::dec << " first elem: " << *data64 << "\n";
+  
   // make store request
   _accel->_lsq->pushRequest(stream.minst(), false /*isLoad*/, data8,
                             bytes_written, init_addr, 0 /*flags*/, 0 /*res*/,
                             sdInfo);
+
+  if(SS_DEBUG::MEM_WR) {
+    cout << "bytes written: " << bytes_written << "addr: " << std::hex <<
+    init_addr
+    << std::dec << " first elem: " << *data64 << "\n";
+  }
 
   if (_accel->_ssim->in_roi()) {
     add_bw(stream.src(), stream.dest(), 1, bytes_written);
@@ -4034,6 +4083,7 @@ void network_controller_t::print_status() {
 }
 
 bool scratch_read_controller_t::checkLinearSpadStream(indirect_stream_t& stream) {
+  if(!_accel->_linear_spad) return false; // could be a remote address
   port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
   addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
   return _accel->isLinearSpad(addr);
@@ -4116,7 +4166,13 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
       auto &stream = *sp;
       port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
 
-      if ((ind_vp.mem_size() >= stream._index_bytes && stream.stream_active() && !checkLinearSpadStream(stream)) && _ind_ROB.size() < _accel->_ind_rob_size) {
+      // bool x1 = (ind_vp.mem_size() >= stream._index_bytes);
+      // bool x2 = (stream.stream_active());
+      // bool x3 = x1 && x2 && (checkLinearSpadStream(stream));
+      // cout << "Reason for ind scratch stall: mem size? " << x1 << 
+       //  " stream active? " << x2 << " is linear spad?: " << x3 << " space in irob? " << (_ind_ROB.size() < _accel->_ind_rob_size) << endl;
+
+      if ((ind_vp.mem_size() >= stream._index_bytes/ind_vp.get_port_width() && stream.stream_active() && !checkLinearSpadStream(stream)) && _ind_ROB.size() < _accel->_ind_rob_size) {
         
         bool skip_check = SS_DEBUG::UNREAL_INPUTS;
 
@@ -5258,29 +5314,33 @@ void port_controller_t::cycle() {
       continue;
     }
 
-
-    int const_width = stream._const_width;
-    // TODO: fix the case when iter=0
-    
     // if consts 0 and stream active (elems popped<iter) and data in those
     // ports (lets keep both for now), update the consts
-    port_data_t &rpt1_prt = pi.out_port(stream._num_elements);
-    port_data_t &rpt2_prt = pi.out_port(stream._num_elements2);
 
     port_data_t &first_vp_in = pi.in_port(stream.first_in_port());
 
+    int const_width = stream._const_width;
+    int data_width = stream.data_width();
+    int factor = (const_width/data_width);
+
     if(first_vp_in.mem_size() < VP_LEN*8/const_width) { // enough space, so go for it
       uint64_t total_pushed=0;
-      int data_width = stream.data_width();
 
       for(int i = 0; i < PORT_WIDTH && first_vp_in.mem_size() < VP_LEN*8/const_width
                   && stream.stream_active(); i+=data_width) {
 
+        // assuming all inputs ports have same size
         for(int in_port : stream.in_ports()) {
+
+          // if(factor!=1) cout << "Came in ports\n";
 
           port_data_t& vp_in = pi.in_port(in_port);
 
-          if(!stream._elements_left && !stream._elements_left2 && stream._is_iter_port) {
+          // update elements port if number of iterations depend on a port
+          if(stream._is_iter_port && !stream._elements_left && !stream._elements_left2) {
+            port_data_t &rpt1_prt = pi.out_port(stream._num_elements);
+            port_data_t &rpt2_prt = pi.out_port(stream._num_elements2);
+
             if(rpt1_prt.mem_size() > 0 && rpt2_prt.mem_size() > 0) {
               stream._iters_left--;
               stream._elements_left = rpt1_prt.pop_out_data();
@@ -5291,16 +5351,21 @@ void port_controller_t::cycle() {
 
           // should send vector version of that
           SBDT val = stream.pop_item(); // data width of const val should be >= port width
-          if(val==-1) break; // no iterm to pop
-
+          // cout << "popped value: " << val << endl;
+          assert(val==stream._constant || val==stream._constant2);
+          // if(val==-1) break; // no item to pop
 
           int num_bits = 8*data_width;
-          for(int i=0; i<(const_width/data_width); ++i) {
+          
+          // push 4 byte data?
+          // Push (4/1) times for 1 element
+          for(int k=0; k<factor; ++k) {
             SBDT mask = (((uint64_t)1)<<(num_bits-1))-1;
             // cout << "test mask: " << hex << test_mask << endl;
-            SBDT temp = (val >> (i*num_bits)) & mask;
+            SBDT temp = (val >> (k*num_bits)) & mask;
             vp_in.push_data(vp_in.get_byte_vector(temp, data_width));
           }
+
         }
         total_pushed++;
       }
@@ -5509,9 +5574,10 @@ bool accel_t::done(bool show, int mask) {
   if (SS_DEBUG::WAIT) {
     timestamp();
     if (d) {
-      cout << "Done Check -- Done (" << mask << ")\n";
+      cout << "Done Check at core " << _lsq->getCpuId() << " -- Done (" << mask << ")\n";
     } else {
-      cout << "Done Check -- NOT DONE: (" << mask << ")\n";
+      cout << "Done Check " << _lsq->getCpuId() << " -- NOT DONE: (" << mask << ")\n";
+      // FIXME: doesn't print for global wait
       done_internal(true, mask);
     }
   }

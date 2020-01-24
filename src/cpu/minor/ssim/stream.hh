@@ -486,7 +486,6 @@ struct const_port_stream_t : public base_stream_t {
   virtual LOC dest() {return LOC::PORT;}
 
   virtual uint64_t data_volume() {
-    // return (_num_elements + _num_elements2) * _num_iters * sizeof(SBDT);
     return (_num_elements + _num_elements2) * _num_iters * _data_width;
   }
   virtual STR_PAT stream_pattern() {
@@ -523,6 +522,7 @@ struct const_port_stream_t : public base_stream_t {
                  << "/"  << _num_elements2;
      }
      std::cout << "\titers=" << _iters_left << "/" << _num_iters << "";
+     std::cout << " was iter a port? " << _is_iter_port;
 
     base_stream_t::print_status();
   }
@@ -795,7 +795,7 @@ struct indirect_base_stream_t : public base_stream_t {
     // uint64_t index =  (val >> (_index_in_word * _index_bytes * 8)) & _index_mask;
     uint64_t index =  val & _index_mask;
     if(SS_DEBUG::MEM_REQ) {
-      std::cout << "index: " << index << " mult: " << _ind_mult << " ss_ind: " << _ssind << " offset: " << unsigned(_offsets[_index_in_offsets]) << " sstream size: " << _sstream_size << "\n";
+      std::cout << "addr offset: " << _index_addr << " index: " << index << " mult: " << _ind_mult << " ss_ind: " << _ssind << " offset: " << unsigned(_offsets[_index_in_offsets]) << " sstream size: " << _sstream_size << "\n";
       addr_t x = _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes + _ssind*_sstride;
       std::cout << "The computed address is: " << x << "\n";
     }

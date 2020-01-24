@@ -223,13 +223,12 @@ public:
 
   // not used for only read (should be just for port_resp from dma)
   // associated with each port
+  // push mem_data=1 ie. port_width amount of data
   std::vector<std::pair<uint8_t, bool>> leftover;
   void push_data(std::vector<uint8_t> data, bool valid=true) {
     for(uint8_t item : data) {
       leftover.emplace_back(item, valid);
     }
-
-    // std::cout << "Port width at port: " << _port << " width: " << _port_width << std::endl;
     size_t i;
     for (i = 0; i + _port_width <= leftover.size(); i += _port_width) {
       std::vector<uint8_t> to_append;

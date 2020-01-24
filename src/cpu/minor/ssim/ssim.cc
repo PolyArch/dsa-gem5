@@ -600,22 +600,22 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
 //Configure an indirect stream with params
 void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
     uint64_t num_elem, int repeat, int repeat_str,uint64_t offset_list,
-    int dtype, uint64_t ind_mult, bool scratch, bool stream, int sstride, int sacc_size, int sn_port, int val_num) {
+    int dtype, uint64_t ind_mult, bool scratch, bool is_2d_stream, int sstride, int sacc_size, int sn_port, int val_num) {
   indirect_stream_t* s = new indirect_stream_t();
   s->_ind_port=ind_port;
   s->_ind_type=ind_type;
   s->add_in_port(in_port);;
-  s->_index_addr=index_addr;
+  s->_index_addr=index_addr; // so this is the offset
   s->_num_elements=num_elem;
   s->_repeat_in=repeat;
   s->_repeat_str=repeat_str;
   s->_offset_list=offset_list;
   s->_dtype=dtype;
   s->_ind_mult=ind_mult;
-  s->_is_2d_stream=stream;
+  s->_is_2d_stream=is_2d_stream;
   s->_val_num=val_num;
   s->_ind_mult *= val_num; // for wide accesses (real mult requires more bits)
-  if(stream) { // set sub-stream parameters here (read from ss_stride)
+  if(is_2d_stream) { // set sub-stream parameters here (read from ss_stride)
     s->_sstride = sstride;
     s->_sacc_size = sacc_size;
     s->_sn_port = sn_port;
@@ -630,7 +630,13 @@ void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr
 //Configure an indirect stream with params
 void ssim_t::indirect_write(int ind_port, int ind_type, int out_port,
     addr_t index_addr, uint64_t num_elem, uint64_t offset_list,
-    int dtype, uint64_t ind_mult, bool scratch) {
+    int dtype, uint64_t ind_mult, bool scratch, bool is_2d_stream, int sstride, int sacc_size, int sn_port, int val_num) {
+
+
+  if(SS_DEBUG::MEM_WR || SS_DEBUG::SCR_ACC) {
+    std::cout << "Identified an indirect write stream, scratch? " << scratch << " 2d: " << is_2d_stream << " num_elem port: " << sn_port << " stride: " << sstride << " access size: " << sacc_size << "\n";
+  }
+
   indirect_wr_stream_t* s = new indirect_wr_stream_t();
   s->_ind_port=ind_port;
   s->_ind_type=ind_type;
@@ -639,6 +645,16 @@ void ssim_t::indirect_write(int ind_port, int ind_type, int out_port,
   s->_num_elements=num_elem;
   s->_dtype=dtype;
   s->_ind_mult=ind_mult;
+
+  s->_is_2d_stream=is_2d_stream;
+  s->_val_num=val_num;
+  s->_ind_mult *= val_num; // for wide accesses (real mult requires more bits)
+  if(is_2d_stream) { // set sub-stream parameters here (read from ss_stride)
+    s->_sstride = sstride;
+    s->_sacc_size = sacc_size;
+    s->_sn_port = sn_port;
+  }
+
   if(scratch) s->_unit=LOC::SCR;
   else s->_unit=LOC::DMA;
   s->set_orig();
@@ -690,6 +706,7 @@ void ssim_t::insert_df_barrier(int64_t num_scr_wr, bool spad_type) {
   add_bitmask_stream(s);
 }
 
+// TODO: ss_flags/flags is not being used
 void ssim_t::write_constant(int num_strides, int in_port,
                     SBDT constant, uint64_t num_elem,
                     SBDT constant2, uint64_t num_elem2,
@@ -717,19 +734,30 @@ void ssim_t::write_constant(int num_strides, int in_port,
   add_bitmask_stream(s);
 
 
+  // so this is 2
   // std::cout << "Const width: " << const_width << std::endl;
+  // t32 is 1
 
   // use ss_const for that instead of ss_dconst
   if(const_width) {
-    //case 0: width=8;
-    //case 1: width=4;
-    //case 2: width=2;
-    //case 3: width=1;
-    s->_const_width = 1 << (3 - (const_width - 1));
+    switch(const_width) {
+      case 1: s->_const_width=8;
+              break;
+      case 2: s->_const_width=4;
+              break;
+      case 3: s->_const_width=2;
+              break;
+      case 4: s->_const_width=1;
+              break;
+      default: std::cout << " invalid data width";
+    }
+    // s->_const_width = 1 << (3 - const_width);
   } else { // assume the width of the corresponding input port
     port_data_t& cur_in_port = accel_arr[0]->_port_interf.in_port(in_port);
     s->_const_width = cur_in_port.get_port_width();
   }
+
+   std::cout << "const width: " << s->_const_width << " data width: " << s->data_width() << " is iter a port: " << s->_is_iter_port << "\n";
 
 }
 

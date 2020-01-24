@@ -46,7 +46,7 @@ public:
     int dtype, uint64_t ind_mult, bool scratch, bool stream, int sstride, int sacc_size, int sn_port, int val_num);
   void indirect_write(int ind_port, int ind_type, int out_port,
     addr_t index_addr, uint64_t num_elem, uint64_t offset_list,
-    int dtype, uint64_t ind_mult, bool scratch);
+    int dtype, uint64_t ind_mult, bool scratch, bool is_2d_stream, int sstride, int sacc_size, int sn_port, int val_num);
   bool can_receive(int out_port);
   uint64_t receive(int out_port);
   void write_constant(int num_strides, int in_port,

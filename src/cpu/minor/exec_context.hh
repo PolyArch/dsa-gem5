@@ -573,7 +573,9 @@ class ExecContext : public ::ExecContext
                 thread.getSSReg(SS_OUT_PORT), thread.getSSReg(SS_INDEX_ADDR),
                 thread.getSSReg(SS_NUM_ELEM), thread.getSSReg(SS_OFFSET_LIST),
                 thread.getSSReg(SS_DTYPE), thread.getSSReg(SS_IND_MULT),
-                thread.getSSReg(SS_IS_SCRATCH));
+                thread.getSSReg(SS_IS_SCRATCH), thread.getSSReg(SS_FLAGS),
+                thread.getSSReg(SS_STRIDE), thread.getSSReg(SS_ACCESS_SIZE),
+                thread.getSSReg(SS_STRETCH), thread.getSSReg(SS_OFFSET));
               break;
             case SS_CNS_PRT:
               ssim.write_constant(

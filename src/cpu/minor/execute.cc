@@ -964,13 +964,13 @@ void Execute::timeout_check(bool should_commit, MinorDynInstPtr inst) {
   uint64_t last_event = std::max(last_sd_issue,
                         ssim.forward_progress_cycle());
   if(!should_commit) {
-    if(cyc > 9990 + last_event) {
+    if(cyc > 99990 + last_event) {
     // if(cyc > 999000 + last_event) {
       DPRINTF(SS,"Almost Aborting because of wait", *inst);
     }
 
     // if(cyc > 1000000 + last_event) {
-    if(cyc > 10000 + last_event) {
+    if(cyc > 100000 + last_event) {
       DPRINTF(SS,"Instruction: %s is stalled for too long!!! ABORTING", *inst);
       ssim.print_stats();
       //ssim.done(true,0);
