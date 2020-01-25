@@ -893,6 +893,11 @@ decode QUADRANT default Unknown::unknown() {
                     xc->setSSReg((imm & 0x3),SS_OPCODE);
                     xc->callSSFunc(SS_ATOMIC_SCR_OP);
                 }}, IsSSStream, IsNonSpeculative, No_OpClass);
+                0x7: ss_cfg_mmap({{
+                    xc->setSSReg(Rs1,SS_CFG_SIZE);
+                    xc->setSSReg(Rs2, SS_CONTEXT);
+                    xc->setSSReg(imm,SS_GARB_ELEM);
+                }}, IsSSParam, IsNonSpeculative, No_OpClass);
 
             }
             0x16: decode FUNCT3 {

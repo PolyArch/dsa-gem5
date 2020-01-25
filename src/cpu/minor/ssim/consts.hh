@@ -11,7 +11,6 @@ typedef uint64_t addr_t;
 #define LSCRATCH_SIZE (16384) //size in bytes -- 16KB
 #define NUM_SCRATCH_BANKS 64
 #define MAX_BANK_BUFFER_SIZE 64 // 8
-// #define NUM_SCRATCH_BANKS 1024
 #define NUM_SPU_CORES 64 // for global address space
 
 #define SB_TIMING

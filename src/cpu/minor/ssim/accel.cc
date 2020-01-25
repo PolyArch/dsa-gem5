@@ -594,6 +594,10 @@ accel_t::accel_t(Minor::LSQ *lsq, int i, ssim_t *ssim)
     // scratchpad_writers.resize(SCRATCH_SIZE+LSCRATCH_SIZE);
   }
 
+  if(_lsq->getCpuId()==0) { // single-core simulation
+    _ssim->set_num_active_threads(1);
+  }
+
   // optionally used -- this is expensive
   // TODO: make it compat with linear scr case
   scratchpad_readers.resize(SCRATCH_SIZE);
@@ -3011,6 +3015,7 @@ void scratch_read_controller_t::push_ind_rem_read_data(int8_t* data, int request
     auto it = _reorder_entry_id.find(reorder_entry);
     assert(it!=_reorder_entry_id.end() && "entry should have been created in unordered map");
     ind_reorder_entry_t *x = _reorder_entry_id[reorder_entry];
+    // cout << "Being served, request ptr: " << request_ptr << " data bytes: " << data_bytes << endl;
     assert(request_ptr+data_bytes<=64 && "reorder entry can only be 64 bytes");
     std::memcpy(&x->data[request_ptr], data, data_bytes);
     // cout << "Initial completed: " << x->completed << " and data bytes: " << data_bytes << endl;
@@ -3085,7 +3090,7 @@ void scratch_read_controller_t::serve_ind_read_banks() {
       if (reorder_entry->last && stream.check_set_empty()) {
         if (SS_DEBUG::VP_SCORE2) {
           cout << "SOURCE: Indirect SCR->PORT \n";
-        }
+        } 
 
         for (int in_port : stream.in_ports()) {
           port_data_t &in_vp = _accel->port_interf().in_port(in_port);
@@ -3115,6 +3120,8 @@ void scratch_read_controller_t::read_scratch_ind(
     int reqd = stream._data_bytes*stream._val_num/NUM_SCRATCH_BANKS;
     int num_irob_entries_reqd = std::max(1, reqd);
     if(_ind_ROB.size() + num_irob_entries_reqd > _accel->_ind_rob_size) return;
+
+   // cout << "Came in with slices: " << ind_vp_slices << " irob: " << num_irob_entries_reqd << endl;
     int serve_width=stream._data_bytes;
     // FIXME: current limitation, either data width or multiple of
     // scratch banks
@@ -3129,6 +3136,7 @@ void scratch_read_controller_t::read_scratch_ind(
     int last_dest_core=-1; bool is_remote = false;
 
     bool last_remote=false;
+    bool wrap_up=false;
     for(int req=0; req<num_irob_entries_reqd; ++req) {
       assert(_ind_ROB.size() <= _accel->_ind_rob_size && "overflow of indirect rob");
 
@@ -3147,18 +3155,16 @@ void scratch_read_controller_t::read_scratch_ind(
       reorder_entry->size = 0; // paranoia
       reorder_entry->last = false;
 
-      // cout << "Initialized reorder entry at loc: " << _cur_irob_ptr << " and data bytes: " << reorder_entry->data_bytes << " size: " << reorder_entry->size << endl;
-      // cout << "intialized at core: " << _accel->_lsq->getCpuId() << endl;
 
-      // just distribute the elements to the queues (for follow on requests, it
-      // doesn't need to pop from indirect vector port)
+      // just distribute the elements to the queues
       while ((req>0 || (ind_vp.mem_size() >= ind_vp_slices && stream.stream_active())) && reorder_entry->size < NUM_SCRATCH_BANKS) {
+        wrap_up=false;
 
         if(req==0) { // should only be done to get the base address
           ind = ind_vp.peek_out_data(0, stream._index_bytes);
           addr = stream.cur_addr(ind);
+          // cout << "peeked out addr using indirect port: " << addr << endl;
 
-          // FIXME: some problem here, should pop each time here 
           bool pop_ind_vp = stream.pop_elem();
           // cout << "Read new index, pop value: " << pop_ind_vp << " earlier mem size: " << ind_vp.mem_size();
           if (pop_ind_vp) { // this is for sub-word granularity reads
@@ -3170,10 +3176,12 @@ void scratch_read_controller_t::read_scratch_ind(
         indirect_scr_read_req request;
         request.data_ptr = reorder_entry->size; // <64
         request.addr = addr + req*serve_width;
+        assert(request.addr < (SCRATCH_SIZE)*_accel->_ssim->num_active_threads() && "addr crossed the address space of 8 cores");
         
         if(init_data_ptr==-1) {
           init_data_ptr=request.data_ptr;
           init_addr = addr;
+          // cout << "init data ptr: " << init_data_ptr << " serve_width: " << serve_width << endl;
         }
 
         request.bytes = serve_width;
@@ -3181,41 +3189,62 @@ void scratch_read_controller_t::read_scratch_ind(
 
         reorder_entry->size += serve_width;
 
+        // dest_core_id for this local cache line
         int dest_core_id = request.addr/SCRATCH_SIZE;
         is_remote = dest_core_id!=(_accel->_lsq->getCpuId()-1);
+        if(_accel->_ssim->num_active_threads()==1) is_remote=false;
+        // cout << " Is request remote: " << is_remote << endl;
 
         if(is_remote && SS_DEBUG::NET_REQ) {
             cout << "Sending remote scr read request for reorder x loc: " << request.data_ptr << " y loc: " << _cur_irob_ptr << " addr in scratch: " << request.addr << " and bytes to be read: " << request.bytes << endl;
+            cout << "cur data ptr: " << init_data_ptr << " irob: " << init_irob_ptr << " addr: " << init_addr << " remote bytes: " << acc_remote_bytes << endl;
         }
         if(!is_remote) { // if current request is local
-          if(last_remote) {
-            // TODO: require info for the last acc request
+          wrap_up=true;
+          if(last_remote) { // send the last request
+            assert(init_data_ptr!=-1 && "current local, last remote");
             _accel->_lsq->push_rem_read_req(init_data_ptr, init_addr, acc_remote_bytes, init_irob_ptr);
-            acc_remote_bytes=0;
-            init_data_ptr=-1; init_irob_ptr=-1;
+            // acc_remote_bytes=0;
+            // init_data_ptr=-1; init_irob_ptr=-1;
           }
           // for the current one
+          // cout << "Sending local request with x loc: " << request.data_ptr << " bytes: " << request.bytes << " y loc: " << _cur_irob_ptr << endl;
           _accel->_lsq->push_rem_read_req(request.data_ptr, request.addr, request.bytes, _cur_irob_ptr);
+          // assert(acc_remote_bytes==0 && "no prev rem bytes should be left");
+          // init_data_ptr=-1; init_irob_ptr=-1;
         } else {
-          last_dest_core = dest_core_id;
-          if(last_dest_core!=dest_core_id || acc_remote_bytes>=64*64) { // if core switched
+          acc_remote_bytes += request.bytes;
+
+          if((last_dest_core!=-1 && last_dest_core!=dest_core_id) || acc_remote_bytes>=7*NUM_SCRATCH_BANKS) { // if core switched
+            assert(init_data_ptr!=-1 && "current remote, reached thresh or switched core");
+            // cout << "serving because it crossed the threshold of requests\n";
             _accel->_lsq->push_rem_read_req(init_data_ptr, init_addr, acc_remote_bytes, init_irob_ptr);
-            acc_remote_bytes=0;
-            init_data_ptr=-1; init_irob_ptr=-1;
+            wrap_up=true;
+            // acc_remote_bytes=0;
+            // init_data_ptr=-1; init_irob_ptr=-1;
           } else {
-            acc_remote_bytes += request.bytes; // we can get consecutive irob ptrs from the start one (or last one?)
             _accel->_stat_num_spu_req_coalesced++;
           }
         }
         last_remote = is_remote;
+        last_dest_core = dest_core_id;
         // _accel->_lsq->push_rem_read_req(request.data_ptr, request.addr, request.bytes, _cur_irob_ptr);
+        
+
+        if(wrap_up) {
+          acc_remote_bytes=0; init_data_ptr=-1; 
+          if(reorder_entry->size==NUM_SCRATCH_BANKS) init_irob_ptr=-1;
+        }
       }
+
+
       // cout << "Reorder entry size in the end: " << reorder_entry->size << endl;
       assert(reorder_entry->size > 0 && reorder_entry->size <= NUM_SCRATCH_BANKS && "it should have went in the loop");
 
       if(req==num_irob_entries_reqd-1) {
 
         if (!stream.stream_active()) { // vps -> complete state
+        // if (stream.check_set_empty()) { // vps -> complete state
           reorder_entry->last = true;
           _accel->process_stream_stats(stream);
           if (SS_DEBUG::VP_SCORE2) {
@@ -3236,8 +3265,10 @@ void scratch_read_controller_t::read_scratch_ind(
         }
       }
     }
-    // send all pending remote requests
-    if(last_remote) {
+    // send all pending remote requests (not -1 if pending)
+    if(last_remote && init_data_ptr!=-1) {
+       assert(init_addr!=-1 && acc_remote_bytes!=0 && "outside the loop");
+       assert(init_irob_ptr!=-1 && "irob should have an allocated entry");
       _accel->_lsq->push_rem_read_req(init_data_ptr, init_addr, acc_remote_bytes, init_irob_ptr);
     }
   }
@@ -3304,12 +3335,14 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
         stream._sstream_size = 1; // hack, assume 1 element done so we could pop this element from stream
         stream.pop_elem();
         // assert(stream.pop_elem() && "Stream already at end, should allow");
-        for(int i=0; i<stream._index_bytes/ind_vp.get_port_width(); ++i) {
+        ind_vp.pop_out_data(stream._index_bytes);
+        subsize_vp.pop_out_data(stream._index_bytes);
+        /*for(int i=0; i<stream._index_bytes/ind_vp.get_port_width(); ++i) {
           ind_vp.pop_out_data();
         }
         for(int i=0; i<stream._index_bytes/subsize_vp.get_port_width(); ++i) {
           subsize_vp.pop_out_data();
-        }
+        }*/
         continue;
       } else {
         // stream._sstream_size = ind2; // should be done only in the first size
@@ -4164,15 +4197,21 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
 
     } else if (auto *sp = dynamic_cast<indirect_stream_t *>(s)) {
       auto &stream = *sp;
+
+      if (stream.empty()) { // delete when all ports are free
+        delete_stream(_which_rd, sp);
+        continue;
+      }
+
       port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
 
-      // bool x1 = (ind_vp.mem_size() >= stream._index_bytes);
+      // bool x1 = (ind_vp.mem_size() >= stream._index_bytes/ind_vp.get_port_width());
       // bool x2 = (stream.stream_active());
       // bool x3 = x1 && x2 && (checkLinearSpadStream(stream));
       // cout << "Reason for ind scratch stall: mem size? " << x1 << 
-       //  " stream active? " << x2 << " is linear spad?: " << x3 << " space in irob? " << (_ind_ROB.size() < _accel->_ind_rob_size) << endl;
+      //   " stream active? " << x2 << " is linear spad?: " << x3 << " space in irob? " << (_ind_ROB.size() < _accel->_ind_rob_size) << " num elem: " << stream._num_elements << " total size: " << ind_vp.mem_size() << endl;
 
-      if ((ind_vp.mem_size() >= stream._index_bytes/ind_vp.get_port_width() && stream.stream_active() && !checkLinearSpadStream(stream)) && _ind_ROB.size() < _accel->_ind_rob_size) {
+      if ((stream.stream_active() && ind_vp.mem_size() >= stream._index_bytes/ind_vp.get_port_width()  && !checkLinearSpadStream(stream)) && _ind_ROB.size() < _accel->_ind_rob_size) {
         
         bool skip_check = SS_DEBUG::UNREAL_INPUTS;
 
@@ -4184,9 +4223,9 @@ void scratch_read_controller_t::cycle(bool &performed_read) {
 
         // if(checkLinearSpadStream(stream)) continue;
         read_scratch_ind(stream, -1 /*scratch*/);
-        if (stream.empty()) {
+        /*if (stream.empty()) {
           delete_stream(_which_rd, sp);
-        }
+        }*/
         break;
       }
     }
@@ -5321,7 +5360,7 @@ void port_controller_t::cycle() {
 
     int const_width = stream._const_width;
     int data_width = stream.data_width();
-    int factor = (const_width/data_width);
+    // int factor = (const_width/data_width);
 
     if(first_vp_in.mem_size() < VP_LEN*8/const_width) { // enough space, so go for it
       uint64_t total_pushed=0;
@@ -5355,16 +5394,22 @@ void port_controller_t::cycle() {
           assert(val==stream._constant || val==stream._constant2);
           // if(val==-1) break; // no item to pop
 
-          int num_bits = 8*data_width;
+          // int num_bits = 8*data_width;
+          // const_width=4, data_width=1
+          // now, need to push 4 elements vector<uint8_t>
+          // data[const_width] and get byte vector for const
+          // vector<uint8_t> x = vp_in.get_byte_vector(val, const_width);
+          // vp_in.push_data(data);
+          vp_in.push_data(vp_in.get_byte_vector(val, const_width));
           
           // push 4 byte data?
           // Push (4/1) times for 1 element
-          for(int k=0; k<factor; ++k) {
+          /*for(int k=0; k<factor; ++k) {
             SBDT mask = (((uint64_t)1)<<(num_bits-1))-1;
             // cout << "test mask: " << hex << test_mask << endl;
             SBDT temp = (val >> (k*num_bits)) & mask;
             vp_in.push_data(vp_in.get_byte_vector(temp, data_width));
-          }
+          }*/
 
         }
         total_pushed++;

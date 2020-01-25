@@ -111,9 +111,17 @@ struct base_stream_t {
   virtual uint64_t shift_bytes() {return 0;}
   virtual uint64_t offset_list() {return 0;}
   virtual uint64_t ind_mult()    {return 1;}
-  uint64_t data_width()    {return _data_width;}
+  uint64_t data_width()          {return _data_width;}
+  uint64_t partition_size()      {return _part_size;}
+  uint64_t active_core_bv()      {return _active_core_bv;}
+  int map_pattern()              { return _map_pattern;}
+  int num_dist_cores()              { return _num_dist_cores;}
   uint64_t straddle_bytes()    {return _straddle_bytes;}
   uint64_t wait_cycles()    {return _wait_cycles;} // waiting for whole cache line
+
+  // PART_CORE_BANK_REST
+  uint64_t get_core_id(addr_t cur_addr);
+  addr_t memory_map(addr_t logical_addr);
 
   bool timeout() {
     if(_wait_cycles > 30) {
@@ -152,6 +160,11 @@ struct base_stream_t {
   LOC _unit = LOC::PORT;
 
   virtual void set_data_width(int d) {_data_width=d;}
+  virtual void set_part_size(uint64_t d) {_part_size=d;}
+  virtual void set_dist_cores() {_num_dist_cores=_used_cores.size();}
+  virtual void push_used_core(int d) {_used_cores.push_back(d);}
+  virtual void set_active_core_bv(int d) {_active_core_bv=d;}
+  virtual void set_mapping_type(int d) {_map_pattern=d;}
   virtual void set_straddle_bytes(int d) {_straddle_bytes=d;}
   virtual void inc_wait_cycles() {_wait_cycles++;}
 
@@ -159,6 +172,11 @@ protected:
   int      _id=0;
   uint32_t _fill_mode=0; //0: none, 1 post-zero fill, 2 pre-zero fill (not implemented)
   int _data_width=DATA_WIDTH; 
+  uint64_t _part_size=0;
+  uint64_t _num_dist_cores=0;
+  uint64_t _active_core_bv=0;
+  std::vector<int> _used_cores;
+  int _map_pattern=0;
   int _straddle_bytes=0; // bytes straddling over cache lines (used only in mem streams as of now!)
   // TODO: add this in all streams
   int _wait_cycles=0; // cycles to wait to get whole cache line at ports for write streams 
@@ -785,7 +803,7 @@ struct indirect_base_stream_t : public base_stream_t {
 
   // virtual uint64_t data_volume() {return _num_elements * sizeof(SBDT);} //TODO: config
   virtual uint64_t data_volume() { return _num_elements; }
-  virtual STR_PAT stream_pattern() {return STR_PAT::IND;}
+  virtual STR_PAT stream_pattern() {return STR_PAT::IND;} 
 
   //if index < 64 bit, the index into the word from the port
   // unsigned _index_in_word=0;
@@ -799,8 +817,9 @@ struct indirect_base_stream_t : public base_stream_t {
       addr_t x = _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes + _ssind*_sstride;
       std::cout << "The computed address is: " << x << "\n";
     }
-    // return   _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes;
-    return   _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes + _ssind*_sstride;
+    // return   _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes + _ssind*_sstride;
+    addr_t addr = _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes + _ssind*_sstride;
+    return memory_map(addr);
   }
 
   virtual LOC src() {return LOC::PORT;}

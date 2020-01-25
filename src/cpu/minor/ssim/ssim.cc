@@ -600,7 +600,7 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
 //Configure an indirect stream with params
 void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
     uint64_t num_elem, int repeat, int repeat_str,uint64_t offset_list,
-    int dtype, uint64_t ind_mult, bool scratch, bool is_2d_stream, int sstride, int sacc_size, int sn_port, int val_num) {
+    int dtype, uint64_t ind_mult, bool scratch, bool is_2d_stream, int sstride, int sacc_size, int sn_port, int val_num, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type) {
   indirect_stream_t* s = new indirect_stream_t();
   s->_ind_port=ind_port;
   s->_ind_type=ind_type;
@@ -620,6 +620,21 @@ void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr
     s->_sacc_size = sacc_size;
     s->_sn_port = sn_port;
   }
+
+  // std::cout << "Came here for part size: " << partition_size << " bitvector: " << active_core_bitvector << " mapping type: " << mapping_type << "\n";
+  if(partition_size!=0) {
+    s->set_part_size(partition_size);
+    s->set_active_core_bv(active_core_bitvector);
+    s->set_mapping_type(mapping_type);
+    for(int i=0; i<64; ++i) {
+      if((active_core_bitvector >> i) & 1) {
+        s->push_used_core(i);
+        // std::cout << "number of used cores identifed as i: " << i << "\n";
+      }
+    }
+    s->set_dist_cores();
+  }
+
   if(scratch) s->_unit=LOC::SCR;
   else s->_unit=LOC::DMA;
   s->set_orig();
@@ -757,7 +772,7 @@ void ssim_t::write_constant(int num_strides, int in_port,
     s->_const_width = cur_in_port.get_port_width();
   }
 
-   std::cout << "const width: " << s->_const_width << " data width: " << s->data_width() << " is iter a port: " << s->_is_iter_port << "\n";
+   // std::cout << "const width: " << s->_const_width << " data width: " << s->data_width() << " is iter a port: " << s->_is_iter_port << "\n";
 
 }
 

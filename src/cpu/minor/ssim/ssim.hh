@@ -37,13 +37,15 @@ public:
   void load_dma_to_port(int64_t repeat_in, int64_t repeat_str);
   void add_port(int in_port);
   void load_scratch_to_port(int64_t repeat_in, int64_t repeat_str);
+  // TODO: would like to add these
+  // , uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type);
   void write_scratchpad();
   void write_dma();
   void reroute(int out_port, int in_port, uint64_t num_elem,
                int repeat, int repeat_str,  uint64_t flags, uint64_t access_size);
   void indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
     uint64_t num_elem, int repeat, int repeat_str, uint64_t offset_list,
-    int dtype, uint64_t ind_mult, bool scratch, bool stream, int sstride, int sacc_size, int sn_port, int val_num);
+    int dtype, uint64_t ind_mult, bool scratch, bool stream, int sstride, int sacc_size, int sn_port, int val_num, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type);
   void indirect_write(int ind_port, int ind_type, int out_port,
     addr_t index_addr, uint64_t num_elem, uint64_t offset_list,
     int dtype, uint64_t ind_mult, bool scratch, bool is_2d_stream, int sstride, int sacc_size, int sn_port, int val_num);

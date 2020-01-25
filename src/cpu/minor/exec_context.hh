@@ -565,7 +565,7 @@ class ExecContext : public ::ExecContext
                 thread.getSSReg(SS_DTYPE), thread.getSSReg(SS_IND_MULT),
                 thread.getSSReg(SS_IS_SCRATCH), thread.getSSReg(SS_FLAGS),
                 thread.getSSReg(SS_STRIDE), thread.getSSReg(SS_ACCESS_SIZE),
-                thread.getSSReg(SS_STRETCH), thread.getSSReg(SS_OFFSET)); // changed interpretation of stretch here
+                thread.getSSReg(SS_STRETCH), thread.getSSReg(SS_OFFSET), thread.getSSReg(SS_CFG_SIZE), thread.getSSReg(SS_CONTEXT), thread.getSSReg(SS_GARB_ELEM)); // changed interpretation of stretch here
               break;
             case SS_PRT_IND:
               ssim.indirect_write(
@@ -646,6 +646,11 @@ class ExecContext : public ::ExecContext
         setSSReg(0,SS_IND_TYPE);
         setSSReg(0,SS_DTYPE);
         setSSReg(1,SS_IND_MULT);
+        // TODO: need a better name for registers
+        setSSReg(0,SS_CFG_SIZE);
+        setSSReg(0,SS_CONTEXT);
+        setSSReg(0,SS_GARB_ELEM);
+
     }
 #endif
 

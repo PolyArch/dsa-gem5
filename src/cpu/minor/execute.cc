@@ -1677,6 +1677,32 @@ void Execute::push_rem_read_return(int dst_core, uint8_t data[64], int request_p
 
 
 bool Execute::push_rem_read_req(int request_ptr, int addr, int data_bytes, int reorder_entry) {
+  // if local request, push back to the core
+  
+  // int dest_core_id = addr & 1024; // FIXME: should be number of threads
+  // int dest_core_id = addr % ssim.num_active_threads();
+  int dest_core_id = addr/SCRATCH_SIZE;
+  assert(dest_core_id < ssim.num_active_threads());
+  dest_core_id += 1;
+
+  int req_core = cpu.cpuId();
+
+  // std::cout << "Came in for addr: " << addr << " req_core: " << req_core << " dest core: " << dest_core_id << "\n";
+
+  addr = addr & (SCRATCH_SIZE-1);
+
+  if((ssim.num_active_threads()==1) || (dest_core_id==req_core)) { // 0--host core when non-multi-threaded code
+  // if(1) {
+    if(SS_DEBUG::NET_REQ){
+      printf("LOCAL REQUEST destination core: %d\n",dest_core_id);
+    }
+    ssim.push_ind_rem_read_req(false, req_core, request_ptr, addr, data_bytes, reorder_entry);
+    return false;
+  }
+
+
+
+
   std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
   (*msg).m_MessageSize = MessageSizeType_Control;
   (*msg).m_Type = SpuRequestType_LD;
@@ -1686,7 +1712,6 @@ bool Execute::push_rem_read_req(int request_ptr, int addr, int data_bytes, int r
   (*msg).m_DataBlk.setByte(0,-1);
 
 
-  int req_core = cpu.cpuId();
   for(int j=0; j<5; ++j){
     int8_t x = (req_core >> (j*8)) & 65535;
     (*msg).m_DataBlk.setByte(j+1,x);
@@ -1696,50 +1721,33 @@ bool Execute::push_rem_read_req(int request_ptr, int addr, int data_bytes, int r
     // assert(data_bytes==NUM_SCRATCH_BANKS);
     assert(data_bytes%NUM_SCRATCH_BANKS==0);
     data_bytes=8+data_bytes/NUM_SCRATCH_BANKS; // 9; // linear case
-    assert(data_bytes<15 && "exceeded the maximum multiple of cache line");
+    assert(data_bytes<=15 && "exceeded the maximum multiple of cache line");
   }
-   // int dest_core_id = addr & 1024; // FIXME: should be number of threads
-  // int dest_core_id = addr % ssim.num_active_threads();
-  int dest_core_id = addr/SCRATCH_SIZE;
-  assert(dest_core_id < ssim.num_active_threads());
-  dest_core_id += 1;
-  addr = addr & (SCRATCH_SIZE-1);
 
   assert(addr < SCRATCH_SIZE);
-  assert(request_ptr < 64); // this would be equal to log(irob entries)
+  assert(request_ptr < NUM_SCRATCH_BANKS); // this would be equal to log(irob entries)
   assert(data_bytes<16);
 
   // global scratch size < 64 kB
   // std::cout << "sending addr: " << addr << " ptr: " << request_ptr << " data bytes: " << data_bytes << " entry: " << reorder_entry << std::endl;
   // (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 33 | req_core << 36;
   (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 26; // | req_core << 29;
-  
-  // printf("src core: %d dest core: %d\n",cpu.cpuId(), dest_core_id);
-  if(dest_core_id==req_core) { // 0--host core when non-multi-threaded code
-  // if(1) {
-    if(SS_DEBUG::NET_REQ){
-      printf("LOCAL REQUEST destination core: %d\n",dest_core_id);
-    }
-    ssim.push_ind_rem_read_req(false, req_core, request_ptr, addr, data_bytes, reorder_entry);
-    return false;
-  } else {
-    if(SS_DEBUG::NET_REQ){
-       printf("output destination core for scratchpad read: %d and requesting core: %d\n",dest_core_id, cpu.cpuId());
-      std::cout << "Remote read request, scr_addr: " << addr << " and local core(0-indexed): " << cpu.cpuId() <<" and m_addr send: " << (*msg).m_addr << std::endl; 
-    }
-    (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
-
-    push_net_req(msg);
-
-    // for global barrier
-    /*
-    ThreadContext *thread = cpu.getContext(0); // assume tid=0?
-    thread->getSystemPtr()->inc_spu_sent();
-    cpu.pushReqFromSpu(msg);
-    */
-  
-    return true;
+  if(SS_DEBUG::NET_REQ){
+     printf("output destination core for scratchpad read: %d and requesting core: %d\n",dest_core_id, cpu.cpuId());
+    std::cout << "Remote read request, scr_addr: " << addr << " and local core(0-indexed): " << cpu.cpuId() <<" and m_addr send: " << (*msg).m_addr << " request ptr: " << request_ptr << " reorder entry: " << reorder_entry << std::endl; 
   }
+  (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
+
+  push_net_req(msg);
+
+  // for global barrier
+  /*
+  ThreadContext *thread = cpu.getContext(0); // assume tid=0?
+  thread->getSystemPtr()->inc_spu_sent();
+  cpu.pushReqFromSpu(msg);
+  */
+  
+  return true;
 }
 
 void Execute::push_net_req(std::shared_ptr<SpuRequestMsg> msg) {

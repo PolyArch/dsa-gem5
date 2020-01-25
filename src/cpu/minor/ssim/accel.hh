@@ -6,6 +6,7 @@
 #include <vector>
 #include <deque>
 #include <map>
+#include <math.h>
 #include <unordered_map>
 
 #include <stdio.h>
