@@ -541,7 +541,7 @@ class ExecContext : public ::ExecContext
               return;
             case SS_SCR_PRT:
               ssim.load_scratch_to_port(thread.getSSReg(SS_REPEAT),
-                                        thread.getSSReg(SS_REPEAT_STRETCH));
+                                        thread.getSSReg(SS_REPEAT_STRETCH), thread.getSSReg(SS_CFG_SIZE), thread.getSSReg(SS_CONTEXT), thread.getSSReg(SS_GARB_ELEM));
               break;
             case SS_PRT_SCR:
               ssim.write_scratchpad();
@@ -589,7 +589,7 @@ class ExecContext : public ::ExecContext
                 thread.getSSReg(SS_OFFSET), thread.getSSReg(SS_NUM_ELEM),
                 thread.getSSReg(SS_OUT_PORT), thread.getSSReg(SS_VAL_PORT),
                 thread.getSSReg(SS_IND_TYPE), thread.getSSReg(SS_DTYPE),
-                thread.getSSReg(SS_ADDR_TYPE), thread.getSSReg(SS_OPCODE));
+                thread.getSSReg(SS_ADDR_TYPE), thread.getSSReg(SS_OPCODE), thread.getSSReg(SS_OFFSET_LIST));
               break;
             case SS_CONST_SCR:
               ssim.write_constant_scratchpad(

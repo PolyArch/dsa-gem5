@@ -1623,11 +1623,7 @@ void Execute::send_spu_scr_wr_req(uint8_t* val, int num_bytes, uint64_t scr_offs
     printf("output destination core: %d\n",dest_core_id);
   }
   (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
-  cpu.pushReqFromSpu(msg);
-
-    // for global barrier
-    ThreadContext *thread = cpu.getContext(0); // assume tid=0?
-    thread->getSystemPtr()->inc_spu_sent();
+  push_net_req(msg, 1);
 }
 
 // data from current core to the requesting core
@@ -1666,13 +1662,7 @@ void Execute::push_rem_read_return(int dst_core, uint8_t data[64], int request_p
   }
   (*msg).m_Destination.add(cpu.get_m_version(dst_core));
 
-  push_net_req(msg);
-  /*
-  cpu.pushReqFromSpu(msg);
-  ThreadContext *thread = cpu.getContext(0);
-  thread->getSystemPtr()->inc_spu_sent();
-  std::cout << "Return request sent\n";
-  */
+  push_net_req(msg, 1);
 }
 
 
@@ -1738,33 +1728,31 @@ bool Execute::push_rem_read_req(int request_ptr, int addr, int data_bytes, int r
   }
   (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
 
-  push_net_req(msg);
-
-  // for global barrier
-  /*
-  ThreadContext *thread = cpu.getContext(0); // assume tid=0?
-  thread->getSystemPtr()->inc_spu_sent();
-  cpu.pushReqFromSpu(msg);
-  */
+  push_net_req(msg, 1);
   
   return true;
 }
 
-void Execute::push_net_req(std::shared_ptr<SpuRequestMsg> msg) {
-  _pending_net_req.push(msg);
+void Execute::push_net_req(std::shared_ptr<SpuRequestMsg> msg, int num_dest) {
+  _pending_net_req.push(std::make_pair(msg,num_dest));
 }
 
 void Execute::serve_pending_net_req() {
   // requires some condition if this can be accepted or not..
+  int tot_dest_exp=0;
   if(!_pending_net_req.empty()) {
     if(SS_DEBUG::NET_REQ) {
       std::cout << "Issuing SPU network request from core: " << cpu.cpuId() << " at cycle: " << cpu.curCycle() << "\n";
     }
-    std::shared_ptr<SpuRequestMsg> msg = _pending_net_req.front();
-    ThreadContext *thread = cpu.getContext(0); // assume tid=0?
-    thread->getSystemPtr()->inc_spu_sent();
+    std::shared_ptr<SpuRequestMsg> msg = _pending_net_req.front().first;
     cpu.pushReqFromSpu(msg);
+    tot_dest_exp += _pending_net_req.front().second;
+
     _pending_net_req.pop();
+  }
+  ThreadContext *thread = cpu.getContext(0); // assume tid=0?
+  for(int i=0; i<tot_dest_exp; ++i) {
+    thread->getSystemPtr()->inc_spu_sent();
   }
 }
 
@@ -1850,12 +1838,8 @@ bool Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int op
       std::cout << "Atomic update net tuple, scr_addr: " << local_scr_addr << " and local core(0-indexed): " << cpu.cpuId() << " opcode: " << opcode << " val bytes: " << val_bytes << " out_bytes: " << out_bytes << std::endl; 
     }
     (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
-    // for global barrier
-    ThreadContext *thread = cpu.getContext(0); // assume tid=0?
-    thread->getSystemPtr()->inc_spu_sent();
-
-    cpu.pushReqFromSpu(msg);
-  
+    push_net_req(msg, 1);
+ 
     return true;
   }
   return false;
@@ -1876,8 +1860,7 @@ void Execute::send_spu_req(int src_port_id, int dest_port_id, int8_t* val, int n
   // printf("current cpu id is %d\n",cpu.cpuId());
   int dest_core_id = 0;
   std::bitset<64> core_mask(mask);
-  bool should_send=false;
-  ThreadContext *thread = cpu.getContext(0); // assume tid=0?
+  bool should_send=false; int num_dest=0;
   for(int i=0; i<core_mask.size(); ++i){
     if(core_mask.test(i)){
       dest_core_id = i+1; // because of 1 offset with tid
@@ -1893,14 +1876,14 @@ void Execute::send_spu_req(int src_port_id, int dest_port_id, int8_t* val, int n
       } else {
         // printf("dest core id is: %d\n",dest_core_id);
         (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
-        thread->getSystemPtr()->inc_spu_sent();
+        num_dest++;
         should_send = true;
       }
     }
   }
   // If all the requests were local?: Assuming this won't be the case
   if(should_send) {
-    cpu.pushReqFromSpu(msg);
+    push_net_req(msg, num_dest);
   }
 }
 

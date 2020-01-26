@@ -124,7 +124,7 @@ struct base_stream_t {
   addr_t memory_map(addr_t logical_addr);
 
   bool timeout() {
-    if(_wait_cycles > 30) {
+    if(_wait_cycles > 50) {
       _wait_cycles = 0;
       return true;
     }
@@ -315,8 +315,7 @@ struct affine_base_stream_t : public base_stream_t {
 
   // bytes: How many bytes of address to pop
   virtual uint64_t pop_addr(int bytes = -1) {
-    if (bytes == -1)
-      bytes = data_width();
+    if (bytes == -1) bytes = data_width();
     auto &current_address = address.back();
     bool continuous = true;
     int total_bytes = 0;
@@ -1148,6 +1147,8 @@ struct atomic_scr_stream_t : public base_stream_t {
   int _value_type;
   int _output_type;
   int _addr_type;
+  int _val_num=0;
+  int _sstream_left=0;
   uint64_t _num_strides;
   uint64_t _mem_addr;
   uint8_t _value_bytes, _addr_bytes, _output_bytes;
@@ -1193,6 +1194,14 @@ struct atomic_scr_stream_t : public base_stream_t {
   uint64_t num_strides() {return _num_strides;} // iters
   uint64_t mem_addr()    {return _mem_addr;}
 
+  void inc_done_update() {
+    _sstream_left--;
+    if(_sstream_left==0) { // >1) { // <_val_num) {
+      _num_strides--;
+      _sstream_left = _val_num;
+    }
+  }
+
   // FIXME: this should from most significant (Although doesn't matter much
   // because our operations our idempotent)
   uint64_t cur_offset(){
@@ -1203,7 +1212,9 @@ struct atomic_scr_stream_t : public base_stream_t {
   uint64_t cur_addr(uint64_t loc){
     // extracting from right (least significant bits)
     // return (loc >> (_cur_addr_index*_addr_bytes*8)) & _addr_mask;
-    return (loc >> ((_addr_in_word-_cur_addr_index-1)*_addr_bytes*8)) & _addr_mask;
+    addr_t addr = (loc >> ((_addr_in_word-_cur_addr_index-1)*_addr_bytes*8)) & _addr_mask;
+    addr += (_val_num-_sstream_left)*_addr_bytes;
+    return addr;
   }
   uint64_t cur_val(uint64_t val){
     // return (val >> (_cur_val_index*_value_bytes*8)) & _value_mask;
@@ -1213,6 +1224,7 @@ struct atomic_scr_stream_t : public base_stream_t {
     _cur_val_index = (_cur_val_index+1)%(_values_in_word+1);
   }
   void inc_addr_index(){
+    if(_sstream_left==_val_num)
     _cur_addr_index = (_cur_addr_index+1)%(_addr_in_word+1);
   }
 
@@ -1222,8 +1234,8 @@ struct atomic_scr_stream_t : public base_stream_t {
     return can_pop;
   }
   bool can_pop_addr(){
-    // std::cout << "_cur_addr_index: " << _cur_addr_index << " values in word: " << _addr_in_word << "\n";
-    bool can_pop = (_cur_addr_index==_addr_in_word);
+    // std::cout << "_cur_addr_index: " << _cur_addr_index << " values in word: " << _addr_in_word << " sstream left: " << _sstream_left << "\n";
+    bool can_pop = (_cur_addr_index==_addr_in_word) && (_sstream_left==_val_num);
     return can_pop;
 
   }

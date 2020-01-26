@@ -152,7 +152,8 @@ class Execute : public Named
     typedef SpuRequest *SpuRequestPtr;
 
   protected:
-    std::queue<std::shared_ptr<SpuRequestMsg>> _pending_net_req;
+    // req, num of dest
+    std::queue<std::pair<std::shared_ptr<SpuRequestMsg>,int>> _pending_net_req;
     /** Input port carrying instructions from Decode */
     Latch<ForwardInstData>::Output inp;
 
@@ -454,7 +455,7 @@ class Execute : public Named
     bool push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int opcode, int val_bytes, int out_bytes);
     bool push_rem_read_req(int request_ptr, int addr, int data_bytes, int reorder_entry);
 
-  void push_net_req(std::shared_ptr<SpuRequestMsg> msg);
+  void push_net_req(std::shared_ptr<SpuRequestMsg> msg, int num_dest);
   void serve_pending_net_req();
   bool is_pending_net_empty() { 
     // std::cout << "Number of pending req at core: " << cpu.cpuId() << " is: " << _pending_net_req.size() << "\n";

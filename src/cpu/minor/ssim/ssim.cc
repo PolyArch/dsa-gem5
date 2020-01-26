@@ -266,6 +266,21 @@ uint64_t ssim_t::forward_progress_cycle() {
   return r;
 }
 
+void ssim_t::set_memory_map_config(base_stream_t* s, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type) {
+  if(partition_size!=0) {
+    s->set_part_size(partition_size);
+    s->set_active_core_bv(active_core_bitvector);
+    s->set_mapping_type(mapping_type);
+    for(int i=0; i<64; ++i) {
+      if((active_core_bitvector >> i) & 1) {
+        s->push_used_core(i);
+        // std::cout << "number of used cores identifed as i: " << i << "\n";
+      }
+    }
+    s->set_dist_cores();
+  }
+}
+
 void ssim_t::add_bitmask_stream(base_stream_t* s, uint64_t ctx) {
   //patch with implicit stuff
   s->set_fill_mode(_fill_mode);
@@ -442,7 +457,7 @@ void ssim_t::write_dma() {
 }
 
 
-void ssim_t::load_scratch_to_port(int64_t repeat, int64_t repeat_str) {//, bool repeat_flag) {
+void ssim_t::load_scratch_to_port(int64_t repeat, int64_t repeat_str, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type) {
   int new_repeat_str = repeat_str >> 1;
   bool repeat_flag(repeat_str & 1);
 
@@ -456,6 +471,7 @@ void ssim_t::load_scratch_to_port(int64_t repeat, int64_t repeat_str) {//, bool 
   }
       
   add_bitmask_stream(s);
+  set_memory_map_config(s, partition_size, active_core_bitvector, mapping_type);
   stream_stack.clear();
 
 }
@@ -475,7 +491,7 @@ void ssim_t::write_remote_banked_scratchpad(uint8_t* val, int num_bytes, uint16_
 }
 
 // command decode for atomic stream update
-void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode) {
+void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode, int val_num) {
     atomic_scr_stream_t* s = new atomic_scr_stream_t();
     s->_mem_addr = offset;
     s->_num_strides = iters;
@@ -485,6 +501,12 @@ void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_
     s->_value_type=value_type;
     s->_output_type=output_type;
     s->_addr_type=addr_type;
+
+    s->_val_num=val_num;
+    s->_sstream_left=val_num;
+
+    // std::cout << "Atomic scr initialized with sstream size: " << val_num << "\n";
+
     s->_unit=LOC::SCR;
     s->set_orig();
 
@@ -622,24 +644,14 @@ void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr
   }
 
   // std::cout << "Came here for part size: " << partition_size << " bitvector: " << active_core_bitvector << " mapping type: " << mapping_type << "\n";
-  if(partition_size!=0) {
-    s->set_part_size(partition_size);
-    s->set_active_core_bv(active_core_bitvector);
-    s->set_mapping_type(mapping_type);
-    for(int i=0; i<64; ++i) {
-      if((active_core_bitvector >> i) & 1) {
-        s->push_used_core(i);
-        // std::cout << "number of used cores identifed as i: " << i << "\n";
-      }
-    }
-    s->set_dist_cores();
-  }
 
   if(scratch) s->_unit=LOC::SCR;
   else s->_unit=LOC::DMA;
   s->set_orig();
 
   add_bitmask_stream(s);
+  set_memory_map_config(s, partition_size, active_core_bitvector, mapping_type);
+
 }
 
 //Configure an indirect stream with params

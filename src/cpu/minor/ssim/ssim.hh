@@ -36,9 +36,7 @@ public:
   void req_config(addr_t addr, int size);
   void load_dma_to_port(int64_t repeat_in, int64_t repeat_str);
   void add_port(int in_port);
-  void load_scratch_to_port(int64_t repeat_in, int64_t repeat_str);
-  // TODO: would like to add these
-  // , uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type);
+  void load_scratch_to_port(int64_t repeat_in, int64_t repeat_str, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type);
   void write_scratchpad();
   void write_dma();
   void reroute(int out_port, int in_port, uint64_t num_elem,
@@ -55,7 +53,7 @@ public:
                       SBDT constant, uint64_t num_elem,
                       SBDT constant2, uint64_t num_elem2,
                       uint64_t flags, int const_width, bool iter_port);
-  void atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode);
+  void atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode, int val_num);
   void multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_port, int rem_port, bool dest_flag, bool spad_type, int64_t stride, int64_t access_size);
   void write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int num_elem, int const_width);
 
@@ -76,6 +74,7 @@ public:
   bool can_add_stream();
   void add_bitmask_stream(base_stream_t* s);
   void add_bitmask_stream(base_stream_t* s, uint64_t context);
+  void set_memory_map_config(base_stream_t* s, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type);
   bool done(bool show, int mask);
   bool is_in_config();
 

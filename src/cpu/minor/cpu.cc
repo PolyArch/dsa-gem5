@@ -136,6 +136,7 @@ void MinorCPU::wakeup()
       std::cout << curCycle();
       printf("Wake up accel at destination node: %d and num_bytes: %d and complete return info: %ld\n",cpuId(),num_bytes, return_info);
     }
+
     if((*msg).m_Type == SpuRequestType_UPDATE) {
       // TODO: need all the info to push into banks
       int opcode = (return_info >> 16) & 3;
@@ -193,7 +194,7 @@ void MinorCPU::wakeup()
     } else if((*msg).m_Type == SpuRequestType_ST) {
       int remote_port_id = return_info & 63;
       if(SS_DEBUG::NET_REQ) {
-        std::cout << "Received multicast message at remote port: " << remote_port_id << std::endl;
+        std::cout << "Received multicast message at remote port: " << remote_port_id << " with number of bytes: " << num_bytes << std::endl;
       }
       pipeline->receiveSpuMessage(data, num_bytes, remote_port_id);
     }

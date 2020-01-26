@@ -6,12 +6,13 @@ typedef uint64_t addr_t;
 #define SBDT uint64_t           //cgra datatype
 #define SSWORD uint8_t          //dgra datatype
 #define DATA_WIDTH sizeof(SBDT)
-#define SCRATCH_SIZE (16384) //size in bytes -- 16KB
+// #define SCRATCH_SIZE (16384) //size in bytes -- 16KB
+#define SCRATCH_SIZE (32768) //size in bytes -- 16KB
 
 #define LSCRATCH_SIZE (16384) //size in bytes -- 16KB
 #define NUM_SCRATCH_BANKS 64
 #define MAX_BANK_BUFFER_SIZE 64 // 8
-#define NUM_SPU_CORES 64 // for global address space
+// #define NUM_SPU_CORES 64 // for global address space
 
 #define SB_TIMING
 
