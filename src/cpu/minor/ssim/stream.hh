@@ -1167,6 +1167,7 @@ struct atomic_scr_stream_t : public base_stream_t {
   // be used in broadcast message)
   int _num_updates=1; // values to be reused, consume addr (Priority=1)
   bool _is_update_cnt_port=false;
+  int _num_update_port=-1;
 
   atomic_scr_stream_t() {}
   virtual void set_orig() { //like constructor but lazier
@@ -1264,7 +1265,9 @@ struct atomic_scr_stream_t : public base_stream_t {
 
   bool can_pop_val(){
     // std::cout << "_cur_val_index: " << _cur_val_index << " values in word: " << _values_in_word << "\n";
-    bool can_pop = (_cur_val_index==_values_in_word)  && (_val_sstream_left==_num_updates);
+    bool end_update = (_val_sstream_left==_num_updates);
+    bool can_pop = (_cur_val_index==_values_in_word)  && end_update;
+    if(end_update && _is_update_cnt_port) _num_updates=-1;
     return can_pop;
   }
   bool can_pop_addr(){

@@ -4553,8 +4553,6 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
   port_data_t &out_val = _accel->port_interf().out_port(stream._val_port);
 
 
-  // TODO: check if update num is a port, how to implement that..
-
   // strides left in the stream or requests left in the queue
   // if(stream.stream_active() || atomic_scr_issued_requests_active()) {
   if (stream.stream_active()) {
@@ -4562,6 +4560,23 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
 
     addr_t base_addr = stream._mem_addr; // this is like offset
     int n=0;
+
+    // for the case when num updates is 0
+    if(stream._is_update_cnt_port && stream._num_updates==-1) { // there should be port_id and real_num_updates
+      port_data_t &update_cnt = _accel->port_interf().out_port(stream._num_update_port);
+      if(update_cnt.mem_size()>0) { // same data-type
+        stream._num_updates = update_cnt.pop_out_data();
+        stream._val_sstream_left=stream._num_updates;
+        // cout << " Num updates this round: " << stream._num_updates << endl;
+        if(stream._num_updates==0) {
+          stream._num_updates=-1;
+          stream._val_sstream_left=-1;
+        }
+      } 
+      
+      if(stream._num_updates==-1) return; // can't do anything
+
+    }
 
     // TODO: coalesce remote requests in this streak (split at the remote end)
     // Can we serve in another chunk?
@@ -4604,7 +4619,7 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
       // Stage 1: push requests in scratch banks
       while (scr_addr < max_addr && stream._num_strides > 0 &&
              (stream._sstream_left==0 || out_addr.mem_size() >= (stream._addr_bytes/out_addr.get_port_width())) && out_val.mem_size()>=stream._value_bytes/out_val.get_port_width() &&
-             num_val_pops < 64/stream._value_bytes) {
+             num_val_pops < 64/stream._value_bytes && (stream._num_updates!=-1 || stream._sstream_left!=stream._val_num)) {
              // num_val_pops < 64) {
         if (SS_DEBUG::COMP) {
           std::cout << "\tupdate at index location: " << loc
@@ -5013,7 +5028,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
 
       // FIXME: mem_size based on config (this should be greater than
       // addr_bytes/out_addr.data_width
-      if(stream.stream_active() && (stream._sstream_left==0 || out_addr.mem_size() >= (stream._addr_bytes/out_addr.get_port_width())) && (stream._val_sstream_left==0 || out_val.mem_size() >= (stream._value_bytes/out_val.get_port_width())) ) {
+      if(stream.stream_active() && (stream._sstream_left==0 || out_addr.mem_size() >= (stream._addr_bytes/out_addr.get_port_width())) && (stream._val_sstream_left==0 || out_val.mem_size() >= (stream._value_bytes/out_val.get_port_width()))) {
         // Constraint: This should be same for all active atomic streams
         _logical_banks = NUM_SCRATCH_BANKS / stream._value_bytes;
         atomic_scratch_update(stream);
