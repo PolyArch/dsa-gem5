@@ -893,6 +893,10 @@ class scratch_write_controller_t : public data_controller_t {
   int _which_linear_wr=0; // for linear scratchpad
   int which_buffet{0};
 
+  // int _num_bytes_to_update=0;
+  std::vector<int> _update_broadcast_dest;
+  std::vector<int> _update_coalesce_vals;
+
   struct atomic_scr_op_req{
     addr_t _scr_addr;
     SBDT _inc;

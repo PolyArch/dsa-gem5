@@ -286,6 +286,7 @@ void ssim_t::add_bitmask_stream(base_stream_t* s, uint64_t ctx) {
   s->set_fill_mode(_fill_mode);
   s->set_id();
   s->set_context_offset(_context_offset);
+  s->set_mem_map_config();
   for(int in_port : extra_in_ports) {
     assert(s->in_ports().size()); //there should be some already...
     s->in_ports().push_back(in_port);
@@ -491,7 +492,7 @@ void ssim_t::write_remote_banked_scratchpad(uint8_t* val, int num_bytes, uint16_
 }
 
 // command decode for atomic stream update
-void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode, int val_num) {
+void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode, int val_num, int num_updates, bool is_update_cnt_port) {
     atomic_scr_stream_t* s = new atomic_scr_stream_t();
     s->_mem_addr = offset;
     s->_num_strides = iters;
@@ -502,8 +503,14 @@ void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_
     s->_output_type=output_type;
     s->_addr_type=addr_type;
 
-    s->_val_num=val_num;
-    s->_sstream_left=val_num;
+    if(val_num!=0) { // no config specified
+      s->_val_num=val_num;
+      s->_sstream_left=val_num;
+      s->_num_updates=num_updates;
+      s->_is_update_cnt_port=is_update_cnt_port;
+      if(is_update_cnt_port) s->_val_sstream_left=-1;
+      else s->_val_sstream_left=num_updates;
+    }
 
     // std::cout << "Atomic scr initialized with sstream size: " << val_num << "\n";
 

@@ -19,42 +19,50 @@ void base_stream_t::set_empty(bool b) {
   _empty=b;
 }
 
+void base_stream_t::set_mem_map_config() {
+  if(_part_size==0) return;
+  _part_bits = log2(_part_size);
+  _core_bits = log2(_num_dist_cores);
+
+}
+
 void base_stream_t::print_in_ports() {
   for(int i = 0; i < _in_ports.size();++i) {
     std::cout << soft_port_name(_in_ports[i], true) << " ";
   }
 }
 
+// TODO: set part bits in the constructor
 // based on memory mapping, extract these two information
-uint64_t base_stream_t::get_core_id(addr_t cur_addr) {
-  int part_bits = log2(_part_size);
-  int assoc_core = (cur_addr >> part_bits) & _num_dist_cores; // aware of hw param?
-  return _used_cores[assoc_core];
+uint64_t base_stream_t::get_core_id(addr_t logical_addr) {
+  if(_part_size==0) return logical_addr/SCRATCH_SIZE;
+  int core_id = (logical_addr >> _part_bits) & (_num_dist_cores-1);
+  return _used_cores[core_id];
 }
 
 // PART_CORE_REST_BANK
-addr_t base_stream_t::memory_map(addr_t logical_addr) {
+addr_t base_stream_t::memory_map(addr_t logical_addr, addr_t cur_scr_offset) {
   if(_part_size==0) return logical_addr;
 
-  // put offset logic here
-  int part_bits = log2(_part_size); // 4 (16 bytes)
-  int core_bits = log2(_num_dist_cores);
+  logical_addr -= cur_scr_offset;
 
-  int part_offset = logical_addr & (_part_size-1);
+  int part_offset = logical_addr & (_part_size-1); // address inside a partition
+
+  int part_id = logical_addr >> (_part_bits+_core_bits); // which partition index
+
+  // part_id * part_size + part_offset + core_id*SCRATCH_SIZE
+  // + local_scr_offset
 
 
-  int part_id = logical_addr >> (part_bits+core_bits);
+  int mapped_local_scr_addr = cur_scr_offset + part_offset + (part_id << _part_bits);
 
-
-  int mapped_local_scr_addr = part_offset + (part_id << part_bits);
-
-  int core_id = (logical_addr >> part_bits) & (_num_dist_cores-1);
+  int core_id = (logical_addr >> _part_bits) & (_num_dist_cores-1); // 0th core
   
   // adding the importance of core
-  mapped_local_scr_addr = SCRATCH_SIZE*core_id + mapped_local_scr_addr;
+  mapped_local_scr_addr = SCRATCH_SIZE*_used_cores[core_id] + mapped_local_scr_addr;
 
   if(SS_DEBUG::SHOW_CONFIG) {
-    std::cout << "original addr: " << logical_addr << " extracted part_offset: " << part_offset << " part_id: " << part_id << " core_id: " << core_id << " mapped scr addr: " << mapped_local_scr_addr << "\n";
+    std::cout << "original addr: " << logical_addr << " scr offset: " << cur_scr_offset << " extracted part_offset: " << part_offset << " part_id: " << part_id << " core_id: " << core_id << " mapped scr addr: " << mapped_local_scr_addr << "\n";
   }
 
   // int core_id = logical_addr >> part_bits & (N_CORES-1) + start_core + core_dist;

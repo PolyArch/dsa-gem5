@@ -3032,7 +3032,7 @@ void scratch_read_controller_t::serve_ind_read_banks() {
       // cout << "Identified a request at indirect scr bank which is remote? " << request.remote << endl;
 
       if(request.remote) {
-          uint8_t return_data[64]; // 8 byte*64 (uint64_t is 8 bytes)
+          int8_t return_data[64]; // 8 byte*64 (uint64_t is 8 bytes)
           void * copy_addr = &return_data[0];
           // FIXME: stream id is incorrect, should we send it over network
           // or just keep default stream id
@@ -3086,7 +3086,11 @@ void scratch_read_controller_t::serve_ind_read_banks() {
         }
       }
 
+      if(reorder_entry->last) assert(!stream.stream_active());
+
       // ivp totally free
+      // if this is the last reorder entry allocated in irob and no more
+      // entries to allocated in stream
       if (reorder_entry->last && stream.check_set_empty()) {
         if (SS_DEBUG::VP_SCORE2) {
           cout << "SOURCE: Indirect SCR->PORT \n";
@@ -3190,26 +3194,26 @@ void scratch_read_controller_t::read_scratch_ind(
         reorder_entry->size += serve_width;
 
         // dest_core_id for this local cache line
-        int dest_core_id = request.addr/SCRATCH_SIZE;
+        int dest_core_id = stream.get_core_id(request.addr); // request.addr/SCRATCH_SIZE;
         is_remote = dest_core_id!=(_accel->_lsq->getCpuId()-1);
         if(_accel->_ssim->num_active_threads()==1) is_remote=false;
         // cout << " Is request remote: " << is_remote << endl;
 
         if(is_remote && SS_DEBUG::NET_REQ) {
             cout << "Sending remote scr read request for reorder x loc: " << request.data_ptr << " y loc: " << _cur_irob_ptr << " addr in scratch: " << request.addr << " and bytes to be read: " << request.bytes << endl;
-            cout << "cur data ptr: " << init_data_ptr << " irob: " << init_irob_ptr << " addr: " << init_addr << " remote bytes: " << acc_remote_bytes << endl;
+            cout << "Cur core: " << _accel->_lsq->getCpuId() << " cur data ptr: " << init_data_ptr << " irob: " << init_irob_ptr << " addr: " << init_addr << " remote bytes: " << acc_remote_bytes << endl;
         }
         if(!is_remote) { // if current request is local
           wrap_up=true;
           if(last_remote) { // send the last request
             assert(init_data_ptr!=-1 && "current local, last remote");
-            _accel->_lsq->push_rem_read_req(init_data_ptr, init_addr, acc_remote_bytes, init_irob_ptr);
+            _accel->_lsq->push_rem_read_req(last_dest_core, init_data_ptr, init_addr, acc_remote_bytes, init_irob_ptr);
             // acc_remote_bytes=0;
             // init_data_ptr=-1; init_irob_ptr=-1;
           }
           // for the current one
           // cout << "Sending local request with x loc: " << request.data_ptr << " bytes: " << request.bytes << " y loc: " << _cur_irob_ptr << endl;
-          _accel->_lsq->push_rem_read_req(request.data_ptr, request.addr, request.bytes, _cur_irob_ptr);
+          _accel->_lsq->push_rem_read_req(dest_core_id, request.data_ptr, request.addr, request.bytes, _cur_irob_ptr);
           // assert(acc_remote_bytes==0 && "no prev rem bytes should be left");
           // init_data_ptr=-1; init_irob_ptr=-1;
         } else {
@@ -3218,7 +3222,7 @@ void scratch_read_controller_t::read_scratch_ind(
           if((last_dest_core!=-1 && last_dest_core!=dest_core_id) || acc_remote_bytes>=7*NUM_SCRATCH_BANKS) { // if core switched
             assert(init_data_ptr!=-1 && "current remote, reached thresh or switched core");
             // cout << "serving because it crossed the threshold of requests\n";
-            _accel->_lsq->push_rem_read_req(init_data_ptr, init_addr, acc_remote_bytes, init_irob_ptr);
+            _accel->_lsq->push_rem_read_req(last_dest_core, init_data_ptr, init_addr, acc_remote_bytes, init_irob_ptr);
             wrap_up=true;
             // acc_remote_bytes=0;
             // init_data_ptr=-1; init_irob_ptr=-1;
@@ -3269,7 +3273,7 @@ void scratch_read_controller_t::read_scratch_ind(
     if(last_remote && init_data_ptr!=-1) {
        assert(init_addr!=-1 && acc_remote_bytes!=0 && "outside the loop");
        assert(init_irob_ptr!=-1 && "irob should have an allocated entry");
-      _accel->_lsq->push_rem_read_req(init_data_ptr, init_addr, acc_remote_bytes, init_irob_ptr);
+      _accel->_lsq->push_rem_read_req(last_dest_core, init_data_ptr, init_addr, acc_remote_bytes, init_irob_ptr);
     }
   }
 }
@@ -3949,7 +3953,7 @@ void network_controller_t::write_direct_remote_scr(
   uint64_t bytes_written = 0;
   uint64_t remote_elem_sent = 0;
 
-  uint8_t val[64]; // there will be only 1 base address
+  int8_t val[64]; // there will be only 1 base address
   int message_size = 64/stream.data_width(); // num of data_width elements to be written
   if(stream._num_elements<64/stream.data_width()){
     message_size=stream._num_elements;
@@ -4548,6 +4552,9 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
   port_data_t &out_addr = _accel->port_interf().out_port(stream._out_port);
   port_data_t &out_val = _accel->port_interf().out_port(stream._val_port);
 
+
+  // TODO: check if update num is a port, how to implement that..
+
   // strides left in the stream or requests left in the queue
   // if(stream.stream_active() || atomic_scr_issued_requests_active()) {
   if (stream.stream_active()) {
@@ -4556,10 +4563,9 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
     addr_t base_addr = stream._mem_addr; // this is like offset
     int n=0;
 
-    // TODO: second dim: if(req>0) check only out_val
+    // TODO: coalesce remote requests in this streak (split at the remote end)
     // Can we serve in another chunk?
-    // It should also coalesce requests
-    if((stream._sstream_left==0 || out_addr.mem_size() >= (stream._addr_bytes/out_addr.get_port_width())) && out_val.mem_size() >= (stream._value_bytes/out_val.get_port_width()) && 
+    if((stream._sstream_left==0 || out_addr.mem_size() >= (stream._addr_bytes/out_addr.get_port_width())) && (stream._val_sstream_left==0 || out_val.mem_size() >= (stream._value_bytes/out_val.get_port_width())) && 
     // if (out_addr.mem_size() > 0 && out_val.mem_size() > 0 &&
         stream._value_bytes*n < 64 && // number of pushes should be max 
         !crossbar_backpressureOn()) { // enough in src and dest
@@ -4585,7 +4591,7 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
       scr_addr = base_addr + loc * stream._output_bytes;
       max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
 
-      //cout << "SCR ADDR: " << scr_addr << " BASE ADDR: " << base_addr << "\n";
+      // cout << "SCR ADDR: " << scr_addr << " BASE ADDR: " << base_addr << "\n";
 
       // FIXME: check if this correct
       // max_addr = (scr_addr & stream._value_mask) + stream._value_bytes;
@@ -4604,7 +4610,8 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
           std::cout << "\tupdate at index location: " << loc
                     << " and scr_addr: " << scr_addr
                     << " and scr_size is: " << SCRATCH_SIZE
-                    << " input num strides: " << stream._num_strides;
+                    << " input num strides left: " << stream._num_strides
+                    << endl;
         }
 
         // TODO: instead of assert, if this condition holds true, send a remote
@@ -4646,13 +4653,38 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
                << scr_addr << " from own core id: " << _accel->_ssim->get_core_id()
                << " to remote core id: " << local_core_id <<  endl; 
         }
-        int local_scr_addr = scr_addr;
         uint64_t x = temp_req._inc;
-        // bool rem = 
-        _accel->_lsq->push_rem_atom_op_req(x, local_scr_addr, temp_req._opcode,
+
+        // should not and as well as push from addr
+        /*
+        bool broadcast = stream.broadcast_case();
+        bool coalesce = stream.coalesce_case();;
+        if(broadcast) {
+          eupdate_broadcast_dest.push_back(local_scr_addr);
+        }
+        if(coalesce) {
+          _update_coalesce_vals.push_back(temp_req._inc);
+        }
+
+        // put a threshold of maximum 64-byte values
+        if(_update_coalesce_vals.size()>=64/stream._value_bytes || _update_broadcast_dest.size()>=64/stream._addr_bytes ||  (!broadcast && !coalesce)) {
+          _accel->_lsq->push_rem_atom_op_req(x, _update_broadcast_dest, _update_coalesce_vals, temp_req._opcode, temp_req._value_bytes, temp_req._output_bytes);
+          _update_broadcast_dest.clear();
+          _update_coalesce_vals.clear();
+        }*/
+        /*
+        int dest_core_id = stream.get_core_id(local_scr_addr);
+         * bool is_remote = _accel->_ssim->num_active_threads()==1 || (dest_core_id+1==_accel->_lsq->getCpuId()); 
+        // TODO: whenever pushing, send request using the updated information
+        if(is_remote) {
+
                                                       temp_req._value_bytes, temp_req._output_bytes);
+
+        } else {
+          _accel->_lsq->push_rem_atom_op_req(x, local_scr_addr, temp_req._opcode,
+                                                      temp_req._value_bytes, temp_req._output_bytes);
+        }*/
  
-        _accel->_stat_scratch_bank_requests_pushed++;
 
        // stream._num_strides--;
 
@@ -4667,6 +4699,7 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
                     << "\n";
         }
 
+        _accel->_stat_scratch_bank_requests_pushed++;
         stream.inc_done_update();
        // strides should reduce only when substream is done
         // cout << "strides after inc update: " << stream._num_strides << " and sstream left: " << stream._sstream_left << endl;
@@ -4674,8 +4707,16 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
         stream.inc_val_index();
         stream.inc_addr_index();
 
+        bool pop_val = stream.can_pop_val();
+        bool pop_addr = stream.can_pop_addr();
+
+        // cout << "can pop val: " << pop_val << " can pop addr: " << pop_addr << endl;
+
+        // int local_scr_addr = scr_addr & (SCRATCH_SIZE-1);
+
         // pop only if index in word is last?
-        if (stream.can_pop_val()) {
+        if (pop_val) {
+          _update_coalesce_vals.push_back(temp_req._inc);
           stream._cur_val_index = 0;
           num_val_pops++;
           out_val.pop_out_data(stream._value_bytes);
@@ -4683,7 +4724,8 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
             std::cout << "\tpopped data from val port";
           }
         }
-        if (stream.can_pop_addr()) {
+        if (pop_addr) {
+          _update_broadcast_dest.push_back(scr_addr);
           stream._cur_addr_index = 0;
           // for bank conflicts calc purposes
           num_addr_pops++;
@@ -4692,6 +4734,20 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
             std::cout << "\tpopped data from addr port";
           }
         }
+
+        /*
+        cout << "Before sending to check the case, sstream left: " << stream._sstream_left << " val ssteam: " << stream._val_sstream_left << " value count: " << _update_coalesce_vals.size() << " broadcast vals: " << _update_broadcast_dest.size() << endl;
+        stream.print_status();
+        */
+
+       if(_update_coalesce_vals.size()==stream._val_num) {
+          _accel->_lsq->push_rem_atom_op_req(x, _update_broadcast_dest, _update_coalesce_vals, temp_req._opcode, temp_req._value_bytes, temp_req._output_bytes);
+          _update_broadcast_dest.clear();
+          _update_coalesce_vals.clear();
+        }
+
+
+
         if (SS_DEBUG::COMP) {
           std::cout << "\n";
         }
@@ -4957,13 +5013,14 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
 
       // FIXME: mem_size based on config (this should be greater than
       // addr_bytes/out_addr.data_width
-      if(stream.stream_active() && (stream._sstream_left==0 || out_addr.mem_size() >= (stream._addr_bytes/out_addr.get_port_width())) && out_val.mem_size() >= (stream._value_bytes/out_val.get_port_width()) ) {
+      if(stream.stream_active() && (stream._sstream_left==0 || out_addr.mem_size() >= (stream._addr_bytes/out_addr.get_port_width())) && (stream._val_sstream_left==0 || out_val.mem_size() >= (stream._value_bytes/out_val.get_port_width())) ) {
         // Constraint: This should be same for all active atomic streams
         _logical_banks = NUM_SCRATCH_BANKS / stream._value_bytes;
         atomic_scratch_update(stream);
         // cout << "current core: " << _accel->_ssim->get_core_id() << " return number of strides: " << stream._num_strides << endl;
         bool is_empty = stream.check_set_empty();
         if (is_empty) {
+          assert(_update_broadcast_dest.size()==0 && _update_coalesce_vals.size()==0 && "all pending requests should have been served");
           _accel->process_stream_stats(stream);
           if (SS_DEBUG::VP_SCORE2) {
             cout << "SOURCE: PORT->SCR\n";
@@ -5567,7 +5624,7 @@ bool accel_t::done(bool show, int mask) {
   if (show)
     return d;
 
-  if ((mask == 0 || mask/GLOBAL_WAIT>0) && d) {
+  if ((mask == 0) && d) {
       // if (mask == 0 && d) {
     // nothing left to clean up
     _cleanup_mode = false;
@@ -5595,8 +5652,7 @@ bool accel_t::done(bool show, int mask) {
   }*/
    // _lsq->check_network_idle();
 
-  // if (mask == GLOBAL_WAIT && d) {
-  if (mask/GLOBAL_WAIT>0 && d) {
+  if (mask == GLOBAL_WAIT && d) {
     // _cleanup_mode = false; // Should this be here?
     // cout << "Came to set this core done: " << _lsq->getCpuId() << " with num_threads: " << _ssim->num_active_threads() << endl;
     // cout << "Number of active threads: " << _ssim->num_active_threads() << endl;
@@ -5723,8 +5779,7 @@ bool dma_controller_t::indirect_wr_streams_active() {
 }
 
 bool dma_controller_t::done(bool show, int mask) {
-  if (mask == 0 || mask & WAIT_CMP || mask/GLOBAL_WAIT>0 || mask == STREAM_WAIT) {
-      // if (mask == 0 || mask & WAIT_CMP || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
+  if (mask == 0 || mask & WAIT_CMP || mask == STREAM_WAIT) {
     if (dma_port_streams_active()) {
       if (show)
         cout << "DMA -> PORT Streams Not Empty\n";
@@ -5742,8 +5797,7 @@ bool dma_controller_t::done(bool show, int mask) {
     }
   }
 
-  if (mask == 0 || mask & WAIT_CMP || mask & WAIT_MEM_WR || mask/GLOBAL_WAIT>0 || mask == STREAM_WAIT) {
-      // if (mask == 0 || mask & WAIT_CMP || mask & WAIT_MEM_WR || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
+  if (mask == 0 || mask & WAIT_CMP || mask & WAIT_MEM_WR || mask == STREAM_WAIT) {
     if (port_dma_streams_active()) {
       if (show)
         cout << "PORT -> DMA Streams Not Empty\n";
@@ -5805,7 +5859,7 @@ bool scratch_write_controller_t::done(bool show, int mask) {
       _df_count = -1;
     }
   }
-  if (mask == 0 || mask & WAIT_CMP || mask & WAIT_SCR_WR || mask/GLOBAL_WAIT>0 || mask == STREAM_WAIT) {
+  if (mask == 0 || mask & WAIT_CMP || mask & WAIT_SCR_WR || mask == STREAM_WAIT) {
       // if (mask == 0 || mask & WAIT_CMP || mask & WAIT_SCR_WR || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
     if (port_scr_streams_active()) {
       if (show)
@@ -5819,7 +5873,7 @@ bool scratch_write_controller_t::done(bool show, int mask) {
     }
   }
   if (mask == 0 || mask & WAIT_CMP || mask & WAIT_SCR_WR ||
-      mask & WAIT_SCR_RD || mask & WAIT_SCR_ATOMIC || mask/GLOBAL_WAIT>0 || mask == STREAM_WAIT) {
+      mask & WAIT_SCR_RD || mask & WAIT_SCR_ATOMIC || mask == STREAM_WAIT) {
       // mask & WAIT_SCR_RD || mask & WAIT_SCR_ATOMIC || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
     if (atomic_scr_streams_active()) {
       if (show)
@@ -5848,7 +5902,7 @@ bool scratch_read_controller_t::scr_port_streams_active() {
 }
 
 bool scratch_read_controller_t::done(bool show, int mask) {
-  if (mask == 0 || mask & WAIT_CMP || mask & WAIT_SCR_RD || mask/GLOBAL_WAIT>0 || mask == STREAM_WAIT) {
+  if (mask == 0 || mask & WAIT_CMP || mask & WAIT_SCR_RD || mask == STREAM_WAIT) {
       // if (mask == 0 || mask & WAIT_CMP || mask & WAIT_SCR_RD || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
     if (scr_port_streams_active()) {
       if (show)
@@ -5870,7 +5924,7 @@ bool scratch_read_controller_t::done(bool show, int mask) {
 }
 
 bool network_controller_t::done(bool show, int mask) {
-  if (mask == 0 || mask & WAIT_CMP || mask/GLOBAL_WAIT>0 || mask == STREAM_WAIT) {
+  if (mask == 0 || mask & WAIT_CMP || mask == STREAM_WAIT) {
       // if (mask == 0 || mask & WAIT_CMP || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
     if(!_accel->_lsq->is_pending_net_empty()) {
       if (show)
@@ -5911,7 +5965,7 @@ bool port_controller_t::const_port_streams_active() {
 }
 
 bool port_controller_t::done(bool show, int mask) {
-  if (mask == 0 || mask & WAIT_CMP || mask/GLOBAL_WAIT>0 || mask == STREAM_WAIT) {
+  if (mask == 0 || mask & WAIT_CMP || mask == STREAM_WAIT) {
       // if (mask == 0 || mask & WAIT_CMP || mask == GLOBAL_WAIT || mask == STREAM_WAIT) {
     if (port_port_streams_active()) {
       if (show)
@@ -5929,7 +5983,7 @@ bool port_controller_t::done(bool show, int mask) {
 
 bool accel_t::cgra_done(bool show, int mask) {
 
-  if (mask == 0 || mask & WAIT_CMP || mask/GLOBAL_WAIT>0) {
+  if (mask == 0 || mask & WAIT_CMP) {
       // if (mask == 0 || mask & WAIT_CMP || mask == GLOBAL_WAIT) {
     for (unsigned i = 0; i < _soft_config.in_ports_active_plus.size(); ++i) {
       int cur_port = _soft_config.in_ports_active_plus[i];
@@ -5950,8 +6004,7 @@ bool accel_t::cgra_done(bool show, int mask) {
       }
     }
   }
-  if (mask == 0 || mask/GLOBAL_WAIT>0) {
-      // if (mask == 0 || mask == GLOBAL_WAIT) {
+  if (mask == 0) {
     for (unsigned i = 0; i < _soft_config.out_ports_active_plus.size(); ++i) {
       int cur_port = _soft_config.out_ports_active_plus[i];
       auto &out_vp = _port_interf.out_port(cur_port);

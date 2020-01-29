@@ -120,8 +120,9 @@ struct base_stream_t {
   uint64_t wait_cycles()    {return _wait_cycles;} // waiting for whole cache line
 
   // PART_CORE_BANK_REST
-  uint64_t get_core_id(addr_t cur_addr);
-  addr_t memory_map(addr_t logical_addr);
+  uint64_t get_core_id(addr_t logical_addr);
+  addr_t memory_map(addr_t logical_addr, addr_t cur_scr_offset);
+  void set_mem_map_config();
 
   bool timeout() {
     if(_wait_cycles > 50) {
@@ -173,6 +174,8 @@ protected:
   uint32_t _fill_mode=0; //0: none, 1 post-zero fill, 2 pre-zero fill (not implemented)
   int _data_width=DATA_WIDTH; 
   uint64_t _part_size=0;
+  uint64_t _part_bits=0;
+  uint64_t _core_bits=0;
   uint64_t _num_dist_cores=0;
   uint64_t _active_core_bv=0;
   std::vector<int> _used_cores;
@@ -739,7 +742,7 @@ struct indirect_base_stream_t : public base_stream_t {
   addr_t _index_addr;
   uint64_t _offset_list;
   uint64_t _ind_mult;
-  int _val_num=-1;
+  int _val_num=1; // -1;
   std::vector<char> _offsets;
   int _sstream_size=1; // size of sub-stream: should be extracted from the num_elem port
   int _ssind=0;
@@ -817,8 +820,9 @@ struct indirect_base_stream_t : public base_stream_t {
       std::cout << "The computed address is: " << x << "\n";
     }
     // return   _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes + _ssind*_sstride;
-    addr_t addr = _index_addr + index * _ind_mult + _offsets[_index_in_offsets]*_data_bytes + _ssind*_sstride;
-    return memory_map(addr);
+    addr_t cur_scr_offset = _index_addr + _offsets[_index_in_offsets]*_data_bytes;
+    addr_t addr = index * _ind_mult + cur_scr_offset + _ssind*_sstride;
+    return memory_map(addr, cur_scr_offset);
   }
 
   virtual LOC src() {return LOC::PORT;}
@@ -1147,8 +1151,9 @@ struct atomic_scr_stream_t : public base_stream_t {
   int _value_type;
   int _output_type;
   int _addr_type;
-  int _val_num=0;
-  int _sstream_left=0;
+  int _val_num=1; // base_addr to be reused, consume val (Priority=2)
+  int _sstream_left=1;
+  int _val_sstream_left=1;
   uint64_t _num_strides;
   uint64_t _mem_addr;
   uint8_t _value_bytes, _addr_bytes, _output_bytes;
@@ -1157,6 +1162,11 @@ struct atomic_scr_stream_t : public base_stream_t {
   uint64_t _addr_in_word;
   uint64_t _cur_val_index;
   uint64_t _cur_addr_index;
+
+  // TODO: make use to know how many addr to consume for an input value (will
+  // be used in broadcast message)
+  int _num_updates=1; // values to be reused, consume addr (Priority=1)
+  bool _is_update_cnt_port=false;
 
   atomic_scr_stream_t() {}
   virtual void set_orig() { //like constructor but lazier
@@ -1194,12 +1204,22 @@ struct atomic_scr_stream_t : public base_stream_t {
   uint64_t num_strides() {return _num_strides;} // iters
   uint64_t mem_addr()    {return _mem_addr;}
 
+  // this should also consider val sstream left (addr mode or val mode?)
   void inc_done_update() {
-    _sstream_left--;
-    if(_sstream_left==0) { // >1) { // <_val_num) {
-      _num_strides--;
-      _sstream_left = _val_num;
+    _val_sstream_left--;
+    if(_val_sstream_left==0) {
+      _sstream_left--;
+      _val_sstream_left=_num_updates;
+      if(_sstream_left==0) {
+        _num_strides--;
+        _sstream_left=_val_num;
+      }
     }
+    /*_val_sstream_left--;
+    if(_val_sstream_left==0) { 
+      _num_strides--;
+      _val_sstream_left = _num_updates;
+    }*/
   }
 
   // FIXME: this should from most significant (Although doesn't matter much
@@ -1207,13 +1227,14 @@ struct atomic_scr_stream_t : public base_stream_t {
   uint64_t cur_offset(){
     // extracting from right (least significant bits)
     // return (mem_addr() >> (_cur_addr_index*_addr_bytes*8)) & _addr_mask;
+    // std::cout << "mem addr: " << mem_addr() << " addr in word: " << _addr_in_word << " addr index: " << _cur_addr_index << " addr bytes: " << _addr_bytes << "\n";
     return (mem_addr() >> ((_addr_in_word-_cur_addr_index-1)*_addr_bytes*8)) & _addr_mask;
   }
   uint64_t cur_addr(uint64_t loc){
     // extracting from right (least significant bits)
     // return (loc >> (_cur_addr_index*_addr_bytes*8)) & _addr_mask;
     addr_t addr = (loc >> ((_addr_in_word-_cur_addr_index-1)*_addr_bytes*8)) & _addr_mask;
-    addr += (_val_num-_sstream_left)*_addr_bytes;
+    // addr += (_val_num-_sstream_left)*_addr_bytes;
     return addr;
   }
   uint64_t cur_val(uint64_t val){
@@ -1221,6 +1242,7 @@ struct atomic_scr_stream_t : public base_stream_t {
     return (val >> ((_values_in_word-_cur_val_index-1)*_value_bytes*8)) & _value_mask;
   }
   void inc_val_index(){
+    if(_val_sstream_left==_num_updates)
     _cur_val_index = (_cur_val_index+1)%(_values_in_word+1);
   }
   void inc_addr_index(){
@@ -1228,9 +1250,21 @@ struct atomic_scr_stream_t : public base_stream_t {
     _cur_addr_index = (_cur_addr_index+1)%(_addr_in_word+1);
   }
 
+  // broadcast: if only address consumed, and value did not
+  bool broadcast_case() {
+    // return _sstream_left==_val_num; // && _val_sstream_left!=_num_updates;
+    return _val_sstream_left!=_num_updates;
+  }
+
+  // coalesce: if only address consumed, and value did not
+  bool coalesce_case() {
+    return _sstream_left!=_val_num && _val_sstream_left==_num_updates;
+    // return _val_sstream_left==_num_updates;
+  }
+
   bool can_pop_val(){
     // std::cout << "_cur_val_index: " << _cur_val_index << " values in word: " << _values_in_word << "\n";
-    bool can_pop = (_cur_val_index==_values_in_word);
+    bool can_pop = (_cur_val_index==_values_in_word)  && (_val_sstream_left==_num_updates);
     return can_pop;
   }
   bool can_pop_addr(){
@@ -1249,7 +1283,8 @@ struct atomic_scr_stream_t : public base_stream_t {
   virtual void print_status() {
     std::cout << "atomic_scr " << "\tval_port=" << _val_port
               << "\taddr_port:" << _out_port  << "\top_code:" << _op_code << "\titers left: " << _num_strides
-         << std::dec << "\tinput_type:" << (int) _value_bytes << "\toutput_type:" << (int) _output_bytes << "\taddr_type:" << (int) _addr_bytes << "\n";
+         << std::dec << "\tinput_type:" << (int) _value_bytes << "\toutput_type:" << (int) _output_bytes << "\taddr_type:" << (int) _addr_bytes
+    << " num values in vector: " << _val_num << " broadcast updates: " << _num_updates << "\n";
        };
 
   // base_stream_t::print_status();

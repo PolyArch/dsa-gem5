@@ -153,6 +153,18 @@ class Execute : public Named
 
   protected:
     // req, num of dest
+    struct spu_req_info {
+      std::shared_ptr<SpuRequestMsg> msg;
+      int num_dest;
+      int8_t *data;
+      int num_data_bytes;
+      spu_req_info(std::shared_ptr<SpuRequestMsg> m, int nd, int8_t *d, int db) {
+        msg=m; num_dest=nd;
+        data=d; num_data_bytes=db;
+      }
+      spu_req_info() {}
+    };
+
     std::queue<std::pair<std::shared_ptr<SpuRequestMsg>,int>> _pending_net_req;
     /** Input port carrying instructions from Decode */
     Latch<ForwardInstData>::Output inp;
@@ -450,18 +462,18 @@ class Execute : public Named
     void send_spu_req(int src_port_id, int dest_port_id, int8_t* val, int num_bytes, uint64_t mask);
 
     /* push the port->scr request on the message buffer */
-    void send_spu_scr_wr_req(uint8_t* val, int num_bytes, uint64_t scr_offset, int dest_core_id);
+    void send_spu_scr_wr_req(int8_t* val, int num_bytes, uint64_t scr_offset, int dest_core_id);
     // void send_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id);
-    bool push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int opcode, int val_bytes, int out_bytes);
-    bool push_rem_read_req(int request_ptr, int addr, int data_bytes, int reorder_entry);
+    bool push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadcast_dest, std::vector<int> update_coalesce_vals, int opcode, int val_bytes, int out_bytes);
+    bool push_rem_read_req(int dest_core_id, int request_ptr, int addr, int data_bytes, int reorder_entry);
 
-  void push_net_req(std::shared_ptr<SpuRequestMsg> msg, int num_dest);
+  void push_net_req(spu_req_info req);
   void serve_pending_net_req();
   bool is_pending_net_empty() { 
     // std::cout << "Number of pending req at core: " << cpu.cpuId() << " is: " << _pending_net_req.size() << "\n";
     return _pending_net_req.empty(); 
   }
-  void push_rem_read_return(int dst_core, uint8_t data[64], int request_ptr, int addr, int data_bytes, int reorder_entry);
+  void push_rem_read_return(int dst_core, int8_t data[64], int request_ptr, int addr, int data_bytes, int reorder_entry);
     void receiveSpuReadRequest(int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry) {
       ssim.push_ind_rem_read_req(true, req_core, request_ptr, addr, data_bytes, reorder_entry);
     }

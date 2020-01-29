@@ -160,12 +160,11 @@ void MinorCPU::wakeup()
       // TODO: read these values from the block
       // if read request, so this will push in bank queues and read data
       int8_t x = (*msg).m_DataBlk.getByte(0);
-      bool read_req = (x==-1);
+      bool read_req = (signed(x)==-1);
       int addr = return_info && 65535;
       int request_ptr = (return_info >> 16) & 63; 
       int data_bytes = (return_info >> 22) & 15;
       int reorder_entry = (return_info >> 26) & 7;
-      int req_core = 0; // (return_info >> 29);
 
       if(data_bytes>8) data_bytes=NUM_SCRATCH_BANKS*(data_bytes-8);
 
@@ -174,7 +173,7 @@ void MinorCPU::wakeup()
         std::cout << "In wakeup, remote read with addr: " << addr << " x dim: " << request_ptr << " y dim: " << reorder_entry << " and data bytes: " << data_bytes << std::endl;
         }
       if(read_req) {
-        req_core=0;
+        int req_core=0;
         for(int j=1; j<6; ++j) {
           uint8_t b = (*msg).m_DataBlk.getByte(j);
           req_core = req_core | (b << ((j-1)*8));
@@ -186,9 +185,7 @@ void MinorCPU::wakeup()
         addr = addr & (SCRATCH_SIZE-1);
         pipeline->receiveSpuReadRequest(req_core, request_ptr, addr, data_bytes, reorder_entry);
       } else {
-        assert(req_core==0);
         // for this directly push in the irob
-        
         pipeline->receiveSpuReadData(data, request_ptr, addr, data_bytes, reorder_entry);
       }
     } else if((*msg).m_Type == SpuRequestType_ST) {

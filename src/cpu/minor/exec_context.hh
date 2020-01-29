@@ -589,7 +589,8 @@ class ExecContext : public ::ExecContext
                 thread.getSSReg(SS_OFFSET), thread.getSSReg(SS_NUM_ELEM),
                 thread.getSSReg(SS_OUT_PORT), thread.getSSReg(SS_VAL_PORT),
                 thread.getSSReg(SS_IND_TYPE), thread.getSSReg(SS_DTYPE),
-                thread.getSSReg(SS_ADDR_TYPE), thread.getSSReg(SS_OPCODE), thread.getSSReg(SS_OFFSET_LIST));
+                thread.getSSReg(SS_ADDR_TYPE), thread.getSSReg(SS_OPCODE), thread.getSSReg(SS_OFFSET_LIST),
+                thread.getSSReg(SS_STRETCH), thread.getSSReg(SS_IS_SCRATCH));
               break;
             case SS_CONST_SCR:
               ssim.write_constant_scratchpad(
@@ -616,10 +617,10 @@ class ExecContext : public ::ExecContext
                 DPRINTF(SS, "Wait Compute\n");         
               } else if(wait_mask == 16) {
                 DPRINTF(SS, "Wait mem write\n");
-              // } else if(wait_mask == 128) { // come here on commit
-              } else if(wait_mask%128==0) { // come here on commit
+              } else if(wait_mask == 128) { // come here on commit
                 ssim.set_not_in_use();
-                int t = wait_mask/128;
+                // int t = wait_mask/128;
+                int t = thread.getSSReg(SS_NUM_ELEM);
                 printf("Identified global wait with threads: %d\n",t);
                 ssim.set_num_active_threads(t);
                 DPRINTF(SS, "Wait on all threads\n");         
