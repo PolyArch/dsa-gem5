@@ -4543,8 +4543,8 @@ void scratch_write_controller_t::push_atomic_update_req(int scr_addr, int opcode
 void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stream) {
   SBDT loc;
   addr_t scr_addr, max_addr;
-  int logical_banks = NUM_SCRATCH_BANKS;
-  int bank_id = 0;
+  // int logical_banks = NUM_SCRATCH_BANKS;
+  // int bank_id = 0;
   // added to correct bank conflict calculation
   int num_addr_pops = 0;
   int num_val_pops = 0;
@@ -4552,22 +4552,24 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
   port_data_t &out_addr = _accel->port_interf().out_port(stream._out_port);
   port_data_t &out_val = _accel->port_interf().out_port(stream._val_port);
 
+  cout << "Came in for atomic update streams with cnt? " << stream._is_update_cnt_port << " and num updates: " << stream._num_updates << "\n";
 
   // strides left in the stream or requests left in the queue
   // if(stream.stream_active() || atomic_scr_issued_requests_active()) {
   if (stream.stream_active()) {
-    logical_banks = NUM_SCRATCH_BANKS / stream._value_bytes;
+    // logical_banks = NUM_SCRATCH_BANKS / stream._value_bytes;
 
     addr_t base_addr = stream._mem_addr; // this is like offset
     int n=0;
 
     // for the case when num updates is 0
-    if(stream._is_update_cnt_port && stream._num_updates==-1) { // there should be port_id and real_num_updates
+    if(stream._is_update_cnt_port && stream._sstream_left==stream._val_num && stream._num_updates==-1) { // there should be port_id and real_num_updates
       port_data_t &update_cnt = _accel->port_interf().out_port(stream._num_update_port);
       if(update_cnt.mem_size()>0) { // same data-type
         stream._num_updates = update_cnt.pop_out_data();
         stream._val_sstream_left=stream._num_updates;
-        // cout << " Num updates this round: " << stream._num_updates << endl;
+        cout << " Num updates this round: " << stream._num_updates << endl;
+        assert(stream._num_updates>=0 && stream._num_updates<10000);
         if(stream._num_updates==0) {
           stream._num_updates=-1;
           stream._val_sstream_left=-1;
@@ -4575,13 +4577,11 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
       } 
       
       if(stream._num_updates==-1) return; // can't do anything
-
     }
 
     // TODO: coalesce remote requests in this streak (split at the remote end)
     // Can we serve in another chunk?
-    if((stream._sstream_left==0 || out_addr.mem_size() >= (stream._addr_bytes/out_addr.get_port_width())) && (stream._val_sstream_left==0 || out_val.mem_size() >= (stream._value_bytes/out_val.get_port_width())) && 
-    // if (out_addr.mem_size() > 0 && out_val.mem_size() > 0 &&
+    if((stream._val_sstream_left<=0 || out_addr.mem_size() >= (stream._addr_bytes/out_addr.get_port_width())) && (stream._sstream_left<=0 || out_val.mem_size() >= (stream._value_bytes/out_val.get_port_width())) && 
         stream._value_bytes*n < 64 && // number of pushes should be max 
         !crossbar_backpressureOn()) { // enough in src and dest
       n++;
@@ -4591,9 +4591,11 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
         _accel->_stat_cycles_atomic_scr_pushed++;
       }
 
+      // FIXME: this might not be required if in the other dimension
       num_addr_pops = 0;
       num_val_pops = 0;
-      loc = out_addr.peek_out_data(0, stream._output_bytes);
+
+      loc = out_addr.peek_out_data(0, stream._addr_bytes) // ;output_bytes);
       if (SS_DEBUG::COMP) {
         std::cout << "1 cycle execution : " << std::endl;
         std::cout << "64-bit value at the addr port is: " << loc;
@@ -4618,8 +4620,10 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
       // num_value_pops should be less than 64 bytes?
       // Stage 1: push requests in scratch banks
       while (scr_addr < max_addr && stream._num_strides > 0 &&
-             (stream._sstream_left==0 || out_addr.mem_size() >= (stream._addr_bytes/out_addr.get_port_width())) && out_val.mem_size()>=stream._value_bytes/out_val.get_port_width() &&
-             num_val_pops < 64/stream._value_bytes && (stream._num_updates!=-1 || stream._sstream_left!=stream._val_num)) {
+             (stream._val_sstream_left<=0 || out_addr.mem_size() >= (stream._addr_bytes/out_addr.get_port_width())) && (stream._sstream_left<=0 || out_val.mem_size()>=stream._value_bytes/out_val.get_port_width()) &&
+             num_val_pops < 64/stream._value_bytes && 
+             stream._val_sstream_left!=-1) {
+             // (stream._val_sstream_left>0 || stream._sstream_left>0)) {
              // num_val_pops < 64) {
         if (SS_DEBUG::COMP) {
           std::cout << "\tupdate at index location: " << loc
@@ -4629,15 +4633,7 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
                     << endl;
         }
 
-        // TODO: instead of assert, if this condition holds true, send a remote
-        // request (for now let's send a complete packet -- I don't think we
-        // want to say about decomposable n/w but we can study that by
-        // increasing the network bandwidth)
-
-        // if(scr_addr + stream._output_bytes > SCRATCH_SIZE) { cout << "scratch_addr: " << scr_addr << endl; }
-        // assert(scr_addr + stream._output_bytes <= SCRATCH_SIZE);
-
-        struct atomic_scr_op_req temp_req;
+        /*struct atomic_scr_op_req temp_req;
         SBDT cur_value = out_val.peek_out_data(0, stream._value_bytes);
         if (SS_DEBUG::COMP) {
           cout << "64-bit value popped from out_val port: " << cur_value << endl;
@@ -4651,8 +4647,6 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
         // by default is row interleaving for now
         if (_accel->_banked_spad_mapping_strategy &&
             (strcmp(_accel->_banked_spad_mapping_strategy, "COL") == 0)) {
-          // bank_id = (scr_addr >> 9) & (logical_banks - 1);
-          // bank_id = (scr_addr >> 6) & (logical_banks - 1); // log64 = 6 = log2(k)
           bank_id = (scr_addr >> 5) & (logical_banks - 1); // log64 = 6 = log2(k)
         } else {
           bank_id = (scr_addr >> 1) & (logical_banks - 1);
@@ -4670,60 +4664,25 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
         }
         uint64_t x = temp_req._inc;
 
-        // should not and as well as push from addr
-        /*
-        bool broadcast = stream.broadcast_case();
-        bool coalesce = stream.coalesce_case();;
-        if(broadcast) {
-          eupdate_broadcast_dest.push_back(local_scr_addr);
-        }
-        if(coalesce) {
-          _update_coalesce_vals.push_back(temp_req._inc);
-        }
-
-        // put a threshold of maximum 64-byte values
-        if(_update_coalesce_vals.size()>=64/stream._value_bytes || _update_broadcast_dest.size()>=64/stream._addr_bytes ||  (!broadcast && !coalesce)) {
-          _accel->_lsq->push_rem_atom_op_req(x, _update_broadcast_dest, _update_coalesce_vals, temp_req._opcode, temp_req._value_bytes, temp_req._output_bytes);
-          _update_broadcast_dest.clear();
-          _update_coalesce_vals.clear();
-        }*/
-        /*
-        int dest_core_id = stream.get_core_id(local_scr_addr);
-         * bool is_remote = _accel->_ssim->num_active_threads()==1 || (dest_core_id+1==_accel->_lsq->getCpuId()); 
-        // TODO: whenever pushing, send request using the updated information
-        if(is_remote) {
-
-                                                      temp_req._value_bytes, temp_req._output_bytes);
-
-        } else {
-          _accel->_lsq->push_rem_atom_op_req(x, local_scr_addr, temp_req._opcode,
-                                                      temp_req._value_bytes, temp_req._output_bytes);
-        }*/
- 
-
-       // stream._num_strides--;
-
-        // FIXME: this is to prevent garbage value
-        assert(stream._num_strides<1000000);
-        // assert(stream._num_strides>=0);
-
         if (SS_DEBUG::COMP) {
           std::cout << "\tvalues input: " << temp_req._inc << "\tbank_id: " << bank_id
                     << "\n";
           std::cout << "stream strides left are: " << stream._num_strides
                     << "\n";
-        }
+        }*/
 
-        _accel->_stat_scratch_bank_requests_pushed++;
-        stream.inc_done_update();
        // strides should reduce only when substream is done
         // cout << "strides after inc update: " << stream._num_strides << " and sstream left: " << stream._sstream_left << endl;
    
-        stream.inc_val_index();
-        stream.inc_addr_index();
+        // stream.inc_val_index();
+        // stream.inc_addr_index();
 
-        bool pop_val = stream.can_pop_val();
-        bool pop_addr = stream.can_pop_addr();
+        // true when all addresses are already popped
+        bool pop_val = stream._sstream_left>0; // stream.can_pop_val();
+        // true when all values are already popped
+        bool pop_addr = stream._val_sstream_left>0; // stream.can_pop_addr();
+
+        uint64_t x=-1;
 
         // cout << "can pop val: " << pop_val << " can pop addr: " << pop_addr << endl;
 
@@ -4731,10 +4690,13 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
 
         // pop only if index in word is last?
         if (pop_val) {
-          _update_coalesce_vals.push_back(temp_req._inc);
+          SBDT cur_value = out_val.pop_out_data(stream._value_bytes);
+          // out_val.peek_out_data(0, stream._value_bytes);
+          x = stream.cur_val(cur_value);
+          _update_coalesce_vals.push_back(x);
           stream._cur_val_index = 0;
           num_val_pops++;
-          out_val.pop_out_data(stream._value_bytes);
+          // out_val.pop_out_data(stream._value_bytes);
           if (SS_DEBUG::COMP) {
             std::cout << "\tpopped data from val port";
           }
@@ -4750,18 +4712,35 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
           }
         }
 
-        /*
-        cout << "Before sending to check the case, sstream left: " << stream._sstream_left << " val ssteam: " << stream._val_sstream_left << " value count: " << _update_coalesce_vals.size() << " broadcast vals: " << _update_broadcast_dest.size() << endl;
-        stream.print_status();
-        */
 
-       if(_update_coalesce_vals.size()==stream._val_num) {
-          _accel->_lsq->push_rem_atom_op_req(x, _update_broadcast_dest, _update_coalesce_vals, temp_req._opcode, temp_req._value_bytes, temp_req._output_bytes);
+        cout << "Old" << " sstream left: " << stream._sstream_left << " val ssteam: " << stream._val_sstream_left << " value count: " << _update_coalesce_vals.size() << " broadcast vals: " << _update_broadcast_dest.size() << endl;
+ 
+/*
+        // and if we popped both? (NOT POSSIBLE?)
+        if(stream._val_sstream_left==stream._num_updates) stream.inc_done_val(); // should be allowed when you popped something at least?
+        if(stream._sstream_left==stream._val_num) stream.inc_done_addr(); // should be allowed when you popped something at least?
+*/
+
+        if(pop_val) stream.inc_done_val();
+        if(pop_addr) stream.inc_done_addr();
+
+        bool can_send = (_update_coalesce_vals.size()==stream._val_num) && (_update_broadcast_dest.size()==stream._num_updates);
+
+        if(can_send) stream.update_strides();
+        /*if(can_send) {
+          assert(stream._sstream_left==0);
+        }*/
+        cout << "Can send? " << can_send << " sstream left: " << stream._sstream_left << " val ssteam: " << stream._val_sstream_left << " value count: " << _update_coalesce_vals.size() << " broadcast vals: " << _update_broadcast_dest.size() << endl;
+        cout << "pop val: " << pop_val << " pop addr: " << pop_addr << " strides: " << stream._num_strides << endl;
+        stream.print_status();
+
+       if(can_send) {
+
+          _accel->_stat_scratch_bank_requests_pushed++;
+          _accel->_lsq->push_rem_atom_op_req(x, _update_broadcast_dest, _update_coalesce_vals, stream._op_code, stream._value_bytes, stream._output_bytes);
           _update_broadcast_dest.clear();
           _update_coalesce_vals.clear();
         }
-
-
 
         if (SS_DEBUG::COMP) {
           std::cout << "\n";
@@ -5022,19 +5001,28 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
       port_data_t &out_addr = _accel->port_interf().out_port(stream._out_port);
       port_data_t &out_val = _accel->port_interf().out_port(stream._val_port);
 
-      // cout << "own_core_id: " << _accel->_ssim->get_core_id() << " addr mem_size: "
-      //      << out_addr.mem_size() << " val mem_size: " << out_val.mem_size()
-      //      << " stream_active: " << stream.stream_active() << endl;
+      cout << "own_core_id: " << _accel->_ssim->get_core_id() << " addr mem_size: "
+           << out_addr.mem_size() << " val mem_size: " << out_val.mem_size()
+           << " stream_active: " << stream.stream_active()
+           << " sstream left: " << stream._sstream_left << " val sstream left: " << stream._val_sstream_left << endl;
 
       // FIXME: mem_size based on config (this should be greater than
       // addr_bytes/out_addr.data_width
-      if(stream.stream_active() && (stream._sstream_left==0 || out_addr.mem_size() >= (stream._addr_bytes/out_addr.get_port_width())) && (stream._val_sstream_left==0 || out_val.mem_size() >= (stream._value_bytes/out_val.get_port_width()))) {
+      if(stream.stream_active() && (stream._val_sstream_left<=0 || out_addr.mem_size() >= (stream._addr_bytes/out_addr.get_port_width())) && (stream._sstream_left<=0 || out_val.mem_size() >= (stream._value_bytes/out_val.get_port_width()))) {
         // Constraint: This should be same for all active atomic streams
         _logical_banks = NUM_SCRATCH_BANKS / stream._value_bytes;
+        if(stream._sstream_left==stream._val_num && stream._num_updates==-1) { // no values left
+          assert(stream._is_update_cnt_port);
+          port_data_t &update_cnt = _accel->port_interf().out_port(stream._num_update_port);
+          if(update_cnt.mem_size()==0) {
+            cout << "Could not issue due to less values in update cnt: " << stream._num_update_port << endl;
+            continue;
+          }
+        }
         atomic_scratch_update(stream);
         // cout << "current core: " << _accel->_ssim->get_core_id() << " return number of strides: " << stream._num_strides << endl;
-        bool is_empty = stream.check_set_empty();
-        if (is_empty) {
+        if (stream.check_set_empty()) {
+          cout << "Broadcast size: " << _update_broadcast_dest.size() << " and coalesce_case: " << _update_coalesce_vals.size() << endl;
           assert(_update_broadcast_dest.size()==0 && _update_coalesce_vals.size()==0 && "all pending requests should have been served");
           _accel->process_stream_stats(stream);
           if (SS_DEBUG::VP_SCORE2) {

@@ -1208,7 +1208,7 @@ struct atomic_scr_stream_t : public base_stream_t {
   // this should also consider val sstream left (addr mode or val mode?)
   void inc_done_update() {
     _val_sstream_left--;
-    if(_val_sstream_left==0) {
+    if(_val_sstream_left<=0) { // ==0) { // this can go less than 0
       _sstream_left--;
       _val_sstream_left=_num_updates;
       if(_sstream_left==0) {
@@ -1216,10 +1216,29 @@ struct atomic_scr_stream_t : public base_stream_t {
         _sstream_left=_val_num;
       }
     }
-    /*_val_sstream_left--;
-    if(_val_sstream_left==0) { 
-      _num_strides--;
-      _val_sstream_left = _num_updates;
+  }
+
+  void inc_done_val() {
+    _sstream_left--;
+    /*if(_sstream_left<=0) {
+      _sstream_left=_val_num;
+    }*/
+  }
+
+  void inc_done_addr() {
+    _val_sstream_left--;
+    /*if(_val_sstream_left<=0) { // ==0) { // this can go less than 0
+      _val_sstream_left=_num_updates=-1;
+    }*/
+  }
+
+  void update_strides() {
+    _num_strides--;
+    if(_is_update_cnt_port) _num_updates=-1;
+    std::cout << "Reducing num strides, value sstream left: " << _sstream_left << " addr left: " << _val_sstream_left << "\n";
+    _val_sstream_left=_num_updates; _sstream_left=_val_num;
+    /*if(_val_sstream_left==0 && _sstream_left==0) {
+    // if(_val_sstream_left==_num_updates && _sstream_left==_val_num) {
     }*/
   }
 
@@ -1243,36 +1262,31 @@ struct atomic_scr_stream_t : public base_stream_t {
     return (val >> ((_values_in_word-_cur_val_index-1)*_value_bytes*8)) & _value_mask;
   }
   void inc_val_index(){
-    if(_val_sstream_left==_num_updates)
+    // if(_val_sstream_left==_num_updates) // if we are looking for vals this cycle
+    if(_sstream_left>0) // if we are looking for vals this cycle
     _cur_val_index = (_cur_val_index+1)%(_values_in_word+1);
   }
+
+  // increment when some data is available
   void inc_addr_index(){
-    if(_sstream_left==_val_num)
+    // if(_sstream_left==_val_num) // if we are looking for addr this cycle
+    if(_val_sstream_left>0) // if we are looking for addr this cycle
     _cur_addr_index = (_cur_addr_index+1)%(_addr_in_word+1);
   }
 
-  // broadcast: if only address consumed, and value did not
-  bool broadcast_case() {
-    // return _sstream_left==_val_num; // && _val_sstream_left!=_num_updates;
-    return _val_sstream_left!=_num_updates;
-  }
-
-  // coalesce: if only address consumed, and value did not
-  bool coalesce_case() {
-    return _sstream_left!=_val_num && _val_sstream_left==_num_updates;
-    // return _val_sstream_left==_num_updates;
-  }
-
+  // can pop only when required data is reached
   bool can_pop_val(){
     // std::cout << "_cur_val_index: " << _cur_val_index << " values in word: " << _values_in_word << "\n";
-    bool end_update = (_val_sstream_left==_num_updates);
-    bool can_pop = (_cur_val_index==_values_in_word)  && end_update;
-    if(end_update && _is_update_cnt_port) _num_updates=-1;
+    // bool end_update = true; // (_val_sstream_left==_num_updates);
+    bool can_pop = (_cur_val_index==_values_in_word)  && (_sstream_left==_val_num);
+    // if(end_update && _is_update_cnt_port) _num_updates=-1;
     return can_pop;
   }
+
+  // cannot pop if not sufficient data arrived till now (inc index 
   bool can_pop_addr(){
     // std::cout << "_cur_addr_index: " << _cur_addr_index << " values in word: " << _addr_in_word << " sstream left: " << _sstream_left << "\n";
-    bool can_pop = (_cur_addr_index==_addr_in_word) && (_sstream_left==_val_num);
+    bool can_pop = (_cur_addr_index==_addr_in_word) && (_val_sstream_left==_num_updates); // && (_sstream_left==_val_num);
     return can_pop;
 
   }

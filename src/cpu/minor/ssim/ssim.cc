@@ -507,13 +507,13 @@ void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_
       s->_val_num=val_num;
       s->_sstream_left=val_num;
       s->_num_updates=num_updates;
+      s->_val_sstream_left=num_updates;
       s->_is_update_cnt_port=is_update_cnt_port;
       if(is_update_cnt_port) {
         s->_num_update_port = num_updates;
         s->_num_updates=-1;
         s->_val_sstream_left=-1;
       }
-      else s->_val_sstream_left=num_updates;
     }
 
     // std::cout << "Atomic scr initialized with sstream size: " << val_num << "\n";
