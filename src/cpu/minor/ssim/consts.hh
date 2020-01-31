@@ -8,6 +8,7 @@ typedef uint64_t addr_t;
 #define DATA_WIDTH sizeof(SBDT)
 // #define SCRATCH_SIZE (16384) //size in bytes -- 16KB
 #define SCRATCH_SIZE (32768) //size in bytes -- 16KB
+#define SPU_NET_PACKET_SIZE 64
 
 #define LSCRATCH_SIZE (16384) //size in bytes -- 16KB
 #define NUM_SCRATCH_BANKS 64
@@ -47,6 +48,9 @@ typedef uint64_t addr_t;
 
 #define NET_ADDR_PORT (21)
 #define NET_VAL_PORT (22)
+
+#define ATOMIC_ADDR_PORT (27)
+#define ATOMIC_BYTES_PORT (28)
 
 // #define NET_ADDR_PORT (25)
 // #define NET_VAL_PORT (32)

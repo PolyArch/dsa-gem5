@@ -126,6 +126,7 @@ void MinorCPU::wakeup()
     // could do dynamic cast
     int64_t return_info = msg->m_addr;
 
+    // general phenomenon (TODO: not sure where it applied to)
     int num_bytes = return_info >> 16;
     int8_t data[num_bytes];
     for(int i=0; i<num_bytes; ++i) {
@@ -138,17 +139,68 @@ void MinorCPU::wakeup()
     }
 
     if((*msg).m_Type == SpuRequestType_UPDATE) {
+      bool is_tagged = return_info & 1; 
+      bool is_tag_packet = (return_info >> 1) & 1; 
+      std::cout << "update request received, is tagged: " << is_tagged << " is tag packet: " << is_tag_packet << "\n";
+      // Step1: get the start address from here
+      if(is_tagged) {
+        int tag = (return_info >> 2) & 65535;
+        std::cout << "tag in the received packet: " << tag << "\n";
+        uint8_t l;
+        if(is_tag_packet) {
+          int bytes_waiting = (return_info >> 18);
+          std::vector<int> start_addr;
+          uint64_t inc = 0;
+          // TODO: I need to split which of these addresses belong to the
+          // current node!!!
+          for(int i=0; i<60; i+=3) { // limit on this?
+            inc = 0;
+            for(int k=0; k<3; k++) { // 32768
+              int8_t x = msg->m_DataBlk.getByte(i+k);
+              if(signed(x)==-1) {
+                i=60; break;
+              }
+              l=x;
+              inc = inc | (l << k*8);
+              // std::cout << "8-bit value: " << (signed)(x) << "\n";
+            }
+            std::cout << "i: " << i << " inc: " << inc << std::endl;
+            if(i!=60 && (inc/SCRATCH_SIZE==cpuId()-1)) {
+              start_addr.push_back(inc & (SCRATCH_SIZE-1));
+            }
+          }
+          std::cout << "core: " << cpuId() << " addr received: " << start_addr.size() << " and bytes waiting for each: " << bytes_waiting << "\n";
+          pipeline->insert_pending_request_queue(tag, start_addr, bytes_waiting);
+        } else {
+          std::vector<uint8_t> inc_val;
+          for(int i=0; i<64; ++i) {
+            int8_t x = msg->m_DataBlk.getByte(i);
+            if(signed(x)==-1) break;
+            l=x;
+            inc_val.push_back(l);
+          }
+          std::cout << "number of value bytes received: " << inc_val.size();
+          int num_addr = pipeline->push_and_update_addr_in_pq(tag, inc_val.size());
+          std::cout << " num addr waiting to consume all values: " << num_addr << "\n";
+          // pop values and push in the value queue (num_times is start addr)
+          // ssim.push_atomic_inc(inc_val, num_addr); // vec of values, repeat times
+          pipeline->push_atomic_inc(inc_val, num_addr);
+        }
+      } else { // TODO: like the old way to pushing both together
+
+
+      }
+
+
+      /*
+      // Step2: push values and addresses to its corresponding ports (copy
+      // duplicate data for addr mix and val)
       // TODO: need all the info to push into banks
       int opcode = (return_info >> 16) & 3;
       int val_bytes = (return_info >> 18) & 3;
       int out_bytes = (return_info >> 20) & 3;
       int scr_addr = return_info & 65535;
-      // int scr_addr = return_info & (1<<22-1);
-      uint64_t inc = 0;
-      for(int i=0; i<val_bytes; ++i) {
-        int8_t x = msg->m_DataBlk.getByte(i);
-        inc = inc | (x >> (i*8));
-      }
+
 
         if(SS_DEBUG::NET_REQ) {
         std::cout << "Received atomic update request tuple, scr_addr: " << scr_addr << " opcode: " << opcode << " val_bytes: " << val_bytes << " out_bytes: " << out_bytes << std::endl;
@@ -156,6 +208,9 @@ void MinorCPU::wakeup()
       // pipeline->receiveSpuUpdateRequest(scr_addr, opcode, val_bytes, out_bytes, inc);
       // FIXME:IMP: allocate more bits to specify datatype
       pipeline->receiveSpuUpdateRequest(scr_addr, opcode, 8, 8, inc);
+*/
+
+
     } else if((*msg).m_Type == SpuRequestType_LD) { 
       // TODO: read these values from the block
       // if read request, so this will push in bank queues and read data

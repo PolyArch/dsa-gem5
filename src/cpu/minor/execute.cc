@@ -1738,7 +1738,8 @@ bool Execute::push_rem_read_req(int dest_core_id, int request_ptr, int addr, int
 }
 
 void Execute::push_net_req(spu_req_info req) {
-  // std::cout << "To send, data bytes: " << req.num_data_bytes  << " first value: " << signed(req.data[0]) << "\n";
+  // std::cout << "To send, data bytes: " << req.num_data_bytes << " num dest: " << req.num_dest << "\n";
+  // " first value: " << signed(req.data[0]) << "\n";
 
   // so this is data and num_bytes sent to the network controller, it
   // should probably split this here before sending to the actual request queue
@@ -1747,12 +1748,11 @@ void Execute::push_net_req(spu_req_info req) {
   // as reducing the number of data_bytes allocated for the first one (for
   // addr) and from there it has all complete portion
   // TODO: add a flag if sequence or initial tag and I can just do this for now
-  
 
   // int addr_packets=1; // we could keep it maximum to register the tag so we can continue later
-  while(req.num_data_bytes!=0) {
   
-    int bytes_to_send = std::min(64, req.num_data_bytes); // 64 is the maximum bytes allowed
+  while(req.num_data_bytes!=0) {
+    int bytes_to_send = std::min(SPU_NET_PACKET_SIZE, req.num_data_bytes); // 64 is the maximum bytes allowed
     for(int j=0; j<bytes_to_send; ++j){ // non-zero if data-request
       (*req.msg).m_DataBlk.setByte(j,req.data[j]);
     }
@@ -1762,6 +1762,7 @@ void Execute::push_net_req(spu_req_info req) {
   }
 }
 
+// TODO: this should be called at each network cycle not spu?
 void Execute::serve_pending_net_req() {
   // requires some condition if this can be accepted or not..
   // check if a control or data message
@@ -1769,7 +1770,6 @@ void Execute::serve_pending_net_req() {
 
     // std::cout << "num_dest: " << info.num_dest << " data start: " << signed(info.data[0]) << " num data bytes: " << info.num_data_bytes << "\n";
 
-    cpu.pushReqFromSpu(_pending_net_req.front().first);
     if(SS_DEBUG::NET_REQ) {
       std::cout << "Issuing SPU network request from core: " << cpu.cpuId() << " at cycle: " << cpu.curCycle() << "\n";
     }
@@ -1778,14 +1778,133 @@ void Execute::serve_pending_net_req() {
     for(int i=0; i<_pending_net_req.front().second; ++i) {
       thread->getSystemPtr()->inc_spu_sent();
     }
+    // somehow we modified enqueue time
+    cpu.pushReqFromSpu(_pending_net_req.front().first);
     _pending_net_req.pop();
   }
 }
 
+
+// TODO: when num_vals is not large (tagging not required), mix in one packet only
+// TODO: also adapt it to different datatypes of values (lets keep addresses of
+// fixed data-type)
+bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadcast_dest, std::vector<int> update_coalesce_vals, int opcode, int val_bytes, int out_bytes) {
+
+  std::cout << "Received an atomic op request with dest size: " << update_broadcast_dest.size() << " and coalesce size: " << update_coalesce_vals.size() << "\n";
+
+  for(unsigned k=0; k<update_broadcast_dest.size(); ++k) {
+    std::cout << "addr: " << update_broadcast_dest[k] << " ";
+   }
+
+  assert(update_coalesce_vals.size()<=64/val_bytes && "cannot coalesce more than 64-byte update request");
+  std::shared_ptr<SpuRequestMsg> msg1 = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
+  std::shared_ptr<SpuRequestMsg> msg2 = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
+  (*msg1).m_MessageSize = MessageSizeType_Control;
+  (*msg1).m_Type = SpuRequestType_UPDATE;
+  (*msg1).m_Requestor = cpu.get_m_version();
+
+  (*msg2).m_MessageSize = MessageSizeType_Control;
+  (*msg2).m_Type = SpuRequestType_UPDATE;
+  (*msg2).m_Requestor = cpu.get_m_version();
+
+  int num_updates = update_broadcast_dest.size();
+  int sent_size=0;
+  int num_vals = update_coalesce_vals.size();
+  int values_to_send =  num_vals*val_bytes; // 2*8>
+  int req_core = cpu.cpuId();
+  std::vector<bool> dest_done;
+  dest_done.resize(ssim.num_active_threads(), 0);
+
+  int num_dest=0;
+  int num_dest_per_packet=20; // if we need to send complete scratch addr
+  int addr_bytes=3;
+
+  unsigned d=0, j=0;
+  int tag=-1;
+  // Step1: create the tagged packet
+  _last_tag = (_last_tag+1)%1024;
+  tag = req_core << 10 | _last_tag; // 10 bits of ID and 6 bits of core_id
+
+  // FIXME: doesn't work for more packets, need to create new msg ptrs
+  for(unsigned t=0; t<num_updates; t=d) { // should be tiled by a number
+
+    std::vector<int> dest_scratch_addr;
+    // std::vector<int> dest_scratch_addr[dest_id];
+    num_dest=0;
+    for(d=t; num_dest<t+num_dest_per_packet && d<num_updates; ++d) {
+      int local_scr_addr = update_broadcast_dest[d] & (SCRATCH_SIZE-1);
+      int dest_core_id = update_broadcast_dest[d]/SCRATCH_SIZE;
+      dest_core_id += 1; // this should be 1 to 8
+
+      // std::cout << "scr addr: " << local_scr_addr << " dest core id: " << dest_core_id << "\n";
+
+      if(ssim.num_active_threads()==1 || dest_core_id==cpu.cpuId()) { // 0--host core when non-multi-threaded code
+        if(SS_DEBUG::NET_REQ){
+          printf("LOCAL REQUEST destination core: %d\n",dest_core_id);
+        }
+        ssim.push_atomic_update_req(local_scr_addr, opcode, val_bytes, out_bytes, val);
+        continue;
+      } 
+      // TODO: not sure why we need multiple?
+      // dest_scratch_addr.push_back(local_scr_addr);
+      // (*msg).m_addr = local_scr_addr | opcode << 16 | val_bytes << 18 | out_bytes << 20;
+
+      /*if(SS_DEBUG::NET_REQ){
+         printf("output destination core: %d\n",dest_core_id);
+        std::cout << "Atomic update net tuple, scr_addr: " << local_scr_addr << " and local core(0-indexed): " << cpu.cpuId() << " opcode: " << opcode << " val bytes: " << val_bytes << " out_bytes: " << out_bytes << std::endl; 
+      }*/
+      if(!dest_done[dest_core_id-1]) {
+        num_dest++;
+      }
+      dest_done[dest_core_id-1]=true;
+      dest_scratch_addr.push_back(update_broadcast_dest[d]);
+      (*msg1).m_Destination.add(cpu.get_m_version(dest_core_id));
+      (*msg2).m_Destination.add(cpu.get_m_version(dest_core_id));
+    }
+    if(num_dest!=0) {
+      // tagged | tag packet | tag...
+      // destinations)
+      unsigned addr_to_send =  num_dest*addr_bytes;
+      sent_size=addr_to_send;
+      if(addr_to_send<64) sent_size++;
+      int8_t a[sent_size];
+      for(j=0; j<addr_to_send; ++j){ 
+        int i = j/addr_bytes;
+        int k = j%addr_bytes;
+        a[j] = (dest_scratch_addr[i] >> (k*8)) & 255; // since signed?
+      }
+      if(j!=64) a[j]=-1; // delimeter
+      (*msg1).m_addr = 1 | (1<<1) | (tag << 2) | (values_to_send << 18);
+      spu_req_info req(msg1, num_dest, a, sent_size);
+      push_net_req(req);
+      dest_scratch_addr.clear();
+      std::cout << "Send tagged packet with num dest: " << num_dest << " tag: " << tag << " values bytes to wait for: " << values_to_send << " and num addr bytes: " << addr_to_send << " -1th bit: " << j << "\n";
+
+    }
+  }
+
+  // Step2: send the value packets
+  sent_size = values_to_send;
+  if(values_to_send<64) sent_size++;
+  int8_t v[sent_size];
+  for(j=0; j<values_to_send; ++j){ 
+    int i = j/val_bytes;
+    int k = j%val_bytes;
+    v[j] = (update_coalesce_vals[i] >> (k*8)) & 255;
+  }
+  if(j!=64) v[j]=-1; // delimeter
+  (*msg2).m_addr = 1 | 0<<1 | tag << 2;
+  spu_req_info req_seq(msg2, num_dest, v, sent_size);
+  push_net_req(req_seq);
+
+  return true;
+}
+
+#if 0
 // TODO: adapt it to multiple vals and ...
 bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadcast_dest, std::vector<int> update_coalesce_vals, int opcode, int val_bytes, int out_bytes) {
 
-  // std::cout << "Received an atomic op request with dest size: " << update_broadcast_dest.size() << " and coalesce size: " << update_coalesce_vals.size() << "\n";
+  std::cout << "Received an atomic op request with dest size: " << update_broadcast_dest.size() << " and coalesce size: " << update_coalesce_vals.size() << "\n";
 
   assert(update_coalesce_vals.size()<=64/val_bytes && "cannot coalesce more than 64-byte update request");
   std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
@@ -1798,12 +1917,11 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
   int num_vals = update_broadcast_dest.size();
 
   int num_dest=0;
-  // TODO: if packet to same dest but diff. info, will it reach multiple times?
   unsigned d=0;
   for(unsigned t=0; t<num_updates; t=d) { // should be tiled by a number
     // TODO: initialize new message with a new tid
     std::vector<int> dest_scratch_addr;
-    for(unsigned v=0;  v<num_vals; v+=4) {
+    // for(unsigned v=0;  v<num_vals; v+=4) {
       num_dest=0;
       for(d=t; num_dest<t+4 && d<num_updates; ++d) {
         int local_scr_addr = update_broadcast_dest[d] & (SCRATCH_SIZE-1);
@@ -1849,7 +1967,9 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
         (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
       }
       if(num_dest!=0) {
-        unsigned max_values_left = std::min((num_vals-v)*val_bytes, unsigned(64));
+        // TODO: send most addresses? (num_vals should reduce for the local
+        // destinations)
+        unsigned max_values_left =  num_vals*val_bytes; // std::min((num_vals-v)*val_bytes, unsigned(64));
         // get 4 values from update coalesce vals
         int8_t a[max_values_left];
         for(unsigned j=0; j<max_values_left; ++j){ 
@@ -1857,14 +1977,18 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
           int k = j%val_bytes;
           a[j] = (update_coalesce_vals[val+i] >> (k*8)) & 255;
         }
-        // TODO: store dest scratch addr somewhere
+        // TODO: store dest scratch addr somewhere (giving seg fault)
+        /*int addr_bits=16; // (32/16=2?)
+        for(int j=0; j<num_dest; ++j) {
+          (*msg).m_addr |= (update_broadcast_dest[j] << (j*addr_bits));
+        }*/
         // std::cout << "Atomic update tupe for bytes: " << max_values_left << "\n";
+        // TODO: no need to tiling in values, it will be split later
         spu_req_info req(msg, 1, a, max_values_left);
         push_net_req(req);
         dest_scratch_addr.clear();
-
       }
-    }
+    // }
   }
 
  
@@ -1911,6 +2035,7 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
   }*/
 // 
 }
+#endif
 
 void Execute::send_spu_req(int src_port_id, int dest_port_id, int8_t* val, int num_bytes, uint64_t mask){
 

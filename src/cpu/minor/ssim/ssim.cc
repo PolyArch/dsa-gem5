@@ -433,8 +433,6 @@ void ssim_t::load_dma_to_port(int64_t repeat, int64_t repeat_str) {
   int new_repeat_str = repeat_str >> 1;
   bool repeat_flag(repeat_str & 1);
 
-  // bool repeat_flag = repeat_str & 1;
-
   affine_read_stream_t* s = new affine_read_stream_t(LOC::DMA, stream_stack,
                                                      {(int) stream_stack.back()},
                                                      repeat, new_repeat_str);
@@ -491,9 +489,24 @@ void ssim_t::write_remote_banked_scratchpad(uint8_t* val, int num_bytes, uint16_
   accel_arr[0]->push_scratch_remote_buf(val, num_bytes, scr_addr); // hopefully, we use single accel per CC
 }
 
+void ssim_t::atomic_update_hardware_config(int addr_port, int val_port, int out_port) {
+
+    // set up the associated stream here
+  accel_arr[0]->_scr_w_c.set_atomic_cgra_addr_port(addr_port);
+  accel_arr[0]->_scr_w_c.set_atomic_cgra_val_port(val_port);
+  accel_arr[0]->_scr_w_c.set_atomic_cgra_out_port(out_port);
+  accel_arr[0]->_scr_w_c.set_atomic_addr_bytes(2); // get_bytes_from_type(addr_type));
+
+  port_data_t& value_port = accel_arr[0]->_port_interf.in_port(val_port);
+  accel_arr[0]->_scr_w_c.set_atomic_val_bytes(value_port.get_port_width());
+  std::cout << " Addr port: " << addr_port << " val port: " << val_port << " out port: " << out_port << "\n";
+
+}
+
 // command decode for atomic stream update
 void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode, int val_num, int num_updates, bool is_update_cnt_port) {
     atomic_scr_stream_t* s = new atomic_scr_stream_t();
+    
     s->_mem_addr = offset;
     s->_num_strides = iters;
     s->_out_port = addr_port;
@@ -522,6 +535,7 @@ void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_
     s->set_orig();
 
     add_bitmask_stream(s);
+
 }
 
 // TODO: make it neater
@@ -901,3 +915,15 @@ void ssim_t::instantiate_buffet(int repeat, int repeat_str) {
   add_bitmask_stream(buffet);
   stream_stack.clear();
 }
+
+int ssim_t::get_bytes_from_type(int t) {
+  switch(t) {
+    case T64: return 8;
+    case T32: return 4;
+    case T16: return 2;
+    case T08: return 1;
+    default: assert(0);
+  }
+}
+
+

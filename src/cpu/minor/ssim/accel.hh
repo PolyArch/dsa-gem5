@@ -834,11 +834,26 @@ class scratch_write_controller_t : public data_controller_t {
   void write_scratch_remote_direct(direct_remote_scr_stream_t& stream);
   void atomic_scratch_update(atomic_scr_stream_t& stream);
   void serve_atomic_requests(bool &performed_atomic_scr);
+  void serve_atomic_requests_local(bool &performed_atomic_scr);
   void push_remote_wr_req(uint8_t *val, int num_bytes, addr_t scr_addr);
   void scr_write(addr_t addr, affine_write_stream_t& stream, port_data_t& out_vp);
   // for remote atomic update
   void push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int out_bytes, uint64_t inc);
 
+  void insert_pending_request_queue(int tid, std::vector<int> start_addr, int bytes_waiting);
+  int push_and_update_addr_in_pq(int tid, int num_bytes);
+  void push_atomic_inc(std::vector<uint8_t> inc, int repeat_times);
+
+  // declare pending request queue and other information associated with the
+  // atomic update stream 
+  /*struct pending_net {
+    int last_start_addr;
+    int bytes_left;
+  };*/
+  // tid, start_addr, waiting_flag
+  // std::unordered_map<int, pending_net> _pending_request_queue;
+  // indexed by tid, then bytes_left same for all, then assoc. start_addr
+  
   void reset_stream_engines() {
     _port_scr_streams.clear();
     _const_scr_streams.clear();
@@ -888,6 +903,12 @@ class scratch_write_controller_t : public data_controller_t {
     _df_count = df_count;
   }
 
+  void set_atomic_cgra_addr_port(int p) { _atomic_cgra_addr_port=p; }
+  void set_atomic_cgra_val_port(int p) { _atomic_cgra_val_port=p; }
+  void set_atomic_cgra_out_port(int p) { _atomic_cgra_out_port=p; }
+  void set_atomic_addr_bytes(int p) { _atomic_addr_bytes=p; }
+  void set_atomic_val_bytes(int p) { _atomic_val_bytes=p; }
+
   private:
   int _which_wr=0; // for banked scratchpad
   int _which_linear_wr=0; // for linear scratchpad
@@ -896,6 +917,17 @@ class scratch_write_controller_t : public data_controller_t {
   // int _num_bytes_to_update=0;
   std::vector<int> _update_broadcast_dest;
   std::vector<int> _update_coalesce_vals;
+
+  int _atomic_cgra_addr_port=-1;
+  int _atomic_cgra_val_port=-1;
+  int _atomic_cgra_out_port=-1;
+  int _atomic_addr_bytes=8;
+  int _atomic_val_bytes=8;
+  // for each bank
+  std::unordered_map<int, std::pair<int, std::vector<int>>> _pending_request_queue; // [NUM_SCRATCH_BANKS];
+  // std::unordered_map<int, int> _conflict_detection_queue;
+  // addr, bytes
+  std::queue<std::pair<int,int>> _conflict_detection_queue;
 
   struct atomic_scr_op_req{
     addr_t _scr_addr;
@@ -1526,12 +1558,23 @@ private:
 
   // void push_scratch_remote_buf(int64_t val, int16_t scr_addr){
   void push_scratch_remote_buf(uint8_t* val, int num_bytes, uint16_t scr_addr){
-      // _scr_w_c.push_remote_wr_req(val,scr_addr);
       _scr_w_c.push_remote_wr_req(val, num_bytes, scr_addr);
   }
 
   void push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int out_bytes, uint64_t inc) {
     _scr_w_c.push_atomic_update_req(scr_addr, opcode, val_bytes, out_bytes, inc);
+  }
+
+  void insert_pending_request_queue(int tid, std::vector<int> start_addr, int bytes_waiting) {
+    _scr_w_c.insert_pending_request_queue(tid, start_addr, bytes_waiting);
+  }
+
+  int push_and_update_addr_in_pq(int tid, int num_bytes) {
+    return _scr_w_c.push_and_update_addr_in_pq(tid, num_bytes);
+  }
+  
+  void push_atomic_inc(std::vector<uint8_t> inc, int repeat_times) {
+    _scr_w_c.push_atomic_inc(inc, repeat_times);
   }
 
   void push_ind_rem_read_req(bool is_remote, int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry) {

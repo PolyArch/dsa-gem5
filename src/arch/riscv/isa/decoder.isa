@@ -886,12 +886,16 @@ decode QUADRANT default Unknown::unknown() {
                     Rd = xc->receiveSS();
                 }}, uint64_t, IsSSRecv, IsNonSpeculative, No_OpClass);
                 0x6: ss_atom_op({{
-                    xc->setSSReg(Rs1 & 0xffffff,SS_OFFSET);
-                    xc->setSSReg(Rs2,SS_NUM_ELEM);
-                    xc->setSSReg((Rs1 >> 24) & 0x1f, SS_OUT_PORT);
-                    xc->setSSReg((imm >> 2) & 0x1f, SS_VAL_PORT);
-                    xc->setSSReg((imm & 0x3),SS_OPCODE);
-                    xc->callSSFunc(SS_ATOMIC_SCR_OP);
+                    if (imm & 1) {
+					  xc->setSSReg(Rs1 & 0xffffff,SS_OFFSET);
+                      xc->setSSReg(Rs2,SS_NUM_ELEM);
+                      xc->setSSReg((Rs1 >> 24) & 0x1f, SS_OUT_PORT);
+                      xc->setSSReg((imm >> 3) & 0x1f, SS_VAL_PORT);
+                      xc->setSSReg((imm >> 1 & 0x3),SS_OPCODE);
+                      xc->callSSFunc(SS_ATOMIC_SCR_OP);
+					} else {
+					  xc->configAtomicHardware(Rs1, Rs2, imm>1);
+					}
                 }}, IsSSStream, IsNonSpeculative, No_OpClass);
                 0x7: ss_cfg_mmap({{
                     xc->setSSReg(Rs1,SS_CFG_SIZE);

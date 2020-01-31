@@ -494,6 +494,10 @@ class ExecContext : public ::ExecContext
       execute.getSSIM().pushStreamDimension(a, b, c);
     }
 
+    void configAtomicHardware(uint64_t a, uint64_t b, uint64_t c) {
+      execute.getSSIM().atomic_update_hardware_config(a,b,c);
+    }
+
     uint64_t receiveSS() {
       DPRINTF(SS, "Do SS_COMMAND RECEIVE\n");
       ssim_t& ssim = execute.getSSIM();

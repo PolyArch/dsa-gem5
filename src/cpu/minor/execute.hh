@@ -166,6 +166,7 @@ class Execute : public Named
     };
 
     std::queue<std::pair<std::shared_ptr<SpuRequestMsg>,int>> _pending_net_req;
+    int _last_tag=-1;
     /** Input port carrying instructions from Decode */
     Latch<ForwardInstData>::Output inp;
 

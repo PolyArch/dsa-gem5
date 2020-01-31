@@ -1145,6 +1145,11 @@ struct direct_remote_scr_stream_t : public remote_scr_stream_t {
 //Indirect Read Port -> SCR
 struct atomic_scr_stream_t;
 struct atomic_scr_stream_t : public base_stream_t {
+
+  // int _atomic_cgra_addr_port=-1;
+  // int _atomic_cgra_val_port=-1;
+  // int _atomic_cgra_out_port=-1;
+
   int _val_port;
   int _out_port;
   int _op_code;
@@ -1235,7 +1240,7 @@ struct atomic_scr_stream_t : public base_stream_t {
   void update_strides() {
     _num_strides--;
     if(_is_update_cnt_port) _num_updates=-1;
-    std::cout << "Reducing num strides, value sstream left: " << _sstream_left << " addr left: " << _val_sstream_left << "\n";
+    // std::cout << "Reducing num strides, value sstream left: " << _sstream_left << " addr left: " << _val_sstream_left << "\n";
     _val_sstream_left=_num_updates; _sstream_left=_val_num;
     /*if(_val_sstream_left==0 && _sstream_left==0) {
     // if(_val_sstream_left==_num_updates && _sstream_left==_val_num) {
