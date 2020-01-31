@@ -6,13 +6,13 @@ typedef uint64_t addr_t;
 #define SBDT uint64_t           //cgra datatype
 #define SSWORD uint8_t          //dgra datatype
 #define DATA_WIDTH sizeof(SBDT)
-#define SCRATCH_SIZE (16384) //size in bytes -- 16KB
+// #define SCRATCH_SIZE (16384) //size in bytes -- 16KB
+#define SCRATCH_SIZE (32768) //size in bytes -- 16KB
 
 #define LSCRATCH_SIZE (16384) //size in bytes -- 16KB
 #define NUM_SCRATCH_BANKS 64
 #define MAX_BANK_BUFFER_SIZE 64 // 8
-// #define NUM_SCRATCH_BANKS 1024
-#define NUM_SPU_CORES 64 // for global address space
+// #define NUM_SPU_CORES 64 // for global address space
 
 #define SB_TIMING
 
@@ -73,7 +73,7 @@ typedef uint64_t addr_t;
 #define WAIT_SCR_ATOMIC   32//wait for all atomics to be done, delay the core
 #define WAIT_SCR_WR_DF    64//wait for N remote writes to be done, delay the core
 #define GLOBAL_WAIT       128//wait for all cores (threads) to be done
-#define STREAM_WAIT       256//wait only for streams to be done
+#define STREAM_WAIT       66//wait only for streams to be done
 
 
 //fill modes

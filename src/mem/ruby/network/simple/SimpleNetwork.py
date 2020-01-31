@@ -39,8 +39,8 @@ class SimpleNetwork(RubyNetwork):
     buffer_size = Param.Int(0,
         "default buffer size; 0 indicates infinite buffering");
     endpoint_bandwidth = Param.Int(1000, "bandwidth adjustment factor");
-    adaptive_routing = Param.Bool(False, "enable adaptive routing");
-    # adaptive_routing = Param.Bool(True, "enable adaptive routing");
+    # adaptive_routing = Param.Bool(False, "enable adaptive routing");
+    adaptive_routing = Param.Bool(True, "enable adaptive routing");
     int_link_buffers = VectorParam.MessageBuffer("Buffers for int_links")
 
     def setup_buffers(self):

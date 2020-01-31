@@ -6,6 +6,7 @@
 #include <vector>
 #include <deque>
 #include <map>
+#include <math.h>
 #include <unordered_map>
 
 #include <stdio.h>
@@ -28,6 +29,8 @@
 #include "cpu/minor/lsq.hh"
 #include "stream.hh"
 #include "consts.hh"
+
+
 
 using namespace SS_CONFIG;
 
@@ -171,7 +174,7 @@ public:
         unsigned extra = width - remainder;
         for(int i = 0; i < extra; ++i) {
           // push_data((SBDT)0,valid_flag); // need typecast because of template
-          push_data(dummy_val,valid_flag);
+        push_data(dummy_val,valid_flag);
         }
       }
     }
@@ -221,12 +224,12 @@ public:
 
   // not used for only read (should be just for port_resp from dma)
   // associated with each port
+  // push mem_data=1 ie. port_width amount of data
   std::vector<std::pair<uint8_t, bool>> leftover;
   void push_data(std::vector<uint8_t> data, bool valid=true) {
     for(uint8_t item : data) {
       leftover.emplace_back(item, valid);
     }
-
     size_t i;
     for (i = 0; i + _port_width <= leftover.size(); i += _port_width) {
       std::vector<uint8_t> to_append;
@@ -234,6 +237,7 @@ public:
         to_append.push_back(leftover[i + j].first);
         assert(leftover[i + j].second == leftover[i].second);
       }
+      // std::cout << "pushed to mem data\n";
       _mem_data.push_back(to_append);
       _valid_data.push_back(leftover[i].second);
       _total_pushed += valid;
@@ -463,6 +467,7 @@ public:
   void set_port_width(int num_bits){
     assert(num_bits % 8 == 0);
     _port_width = num_bits / 8;
+      // std::cout << "Setting port width of port: " << _port << " is: " << _port_width << "\n";
   }
 
   // in bytes
@@ -494,7 +499,7 @@ private:
   // 23: 1, 2   24: 3, 4
   bool _isInput;
   int _port=-1;
-  int _port_width=8; // take 8 bytes by default
+  int _port_width=-1; // 8; // take 8 bytes by default
   int _outstanding=0;
   STATUS _status=STATUS::FREE;
   LOC _loc=LOC::NONE;
@@ -733,6 +738,7 @@ class scratch_read_controller_t : public data_controller_t {
   // void cycle();
   void cycle(bool &performed_read);
   void linear_scratch_cycle();
+  void serve_ind_read_banks();
   // banked scratchpad read buffers
   bool indirect_scr_read_requests_active();
 
@@ -748,6 +754,8 @@ class scratch_read_controller_t : public data_controller_t {
   void cycle_status();
 
   bool scr_port_streams_active();
+  void push_ind_rem_read_req(bool is_remote, int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry);
+  void push_ind_rem_read_data(int8_t* data, int request_ptr, int addr, int data_bytes, int reorder_entry);
 
   private:
   int _which_rd=0;
@@ -760,13 +768,24 @@ class scratch_read_controller_t : public data_controller_t {
     int data_bytes;
     base_stream_t* stream;
     bool last = false;
+    int id = -1; // should store this I guess
   };
 
+  // a single entry (which entry it is associated with)
+  // should be id?
+  // FIXME: should be deleted once done..
+  std::unordered_map<int, ind_reorder_entry_t*> _reorder_entry_id;
+  int _cur_irob_ptr = -1;
+
   struct indirect_scr_read_req{
-    void *ptr;
+    // void *ptr;
+    int data_ptr;
     uint64_t addr;
     size_t bytes;
-    ind_reorder_entry_t* reorder_entry=NULL;
+    int irob_entry_id;
+    bool remote = false;
+    int req_core = -1;
+    // ind_reorder_entry_t* reorder_entry=NULL;
   };
 
   std::vector<base_stream_t*> _read_streams;
@@ -874,6 +893,10 @@ class scratch_write_controller_t : public data_controller_t {
   int _which_linear_wr=0; // for linear scratchpad
   int which_buffet{0};
 
+  // int _num_bytes_to_update=0;
+  std::vector<int> _update_broadcast_dest;
+  std::vector<int> _update_coalesce_vals;
+
   struct atomic_scr_op_req{
     addr_t _scr_addr;
     SBDT _inc;
@@ -940,6 +963,7 @@ class network_controller_t : public data_controller_t {
     reset_stream_engines();
   }
 
+  void serve_pending_net_req();
   void multicast_data(remote_port_multicast_stream_t& stream, int message_size);
   void write_remote_scr(remote_scr_stream_t& stream);
   void write_direct_remote_scr(direct_remote_scr_stream_t& stream);
@@ -1481,7 +1505,7 @@ private:
     }
   }
 
-  void receive_message(uint8_t* data, int num_bytes, int remote_in_port) {
+  void receive_message(int8_t* data, int num_bytes, int remote_in_port) {
     port_data_t& in_vp = _port_interf.in_port(remote_in_port);
     // TODO: Check the max port size here and apply backpressure
     
@@ -1492,8 +1516,8 @@ private:
       temp.push_back(data[i]);
     }
     if(SS_DEBUG::NET_REQ) {
-      std::cout << "Received value: " << *reinterpret_cast<SBDT*>(&temp[0])
-                << " at remote port: " << remote_in_port << "\n";
+        std::cout << "Received value: " << *reinterpret_cast<SBDT *>(&temp[0])
+                  << " at remote port: " << remote_in_port << "\n";
     }
     in_vp.push_data(temp);
     // inc remote values received at this port
@@ -1510,9 +1534,19 @@ private:
     _scr_w_c.push_atomic_update_req(scr_addr, opcode, val_bytes, out_bytes, inc);
   }
 
+  void push_ind_rem_read_req(bool is_remote, int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry) {
+      _scr_r_c.push_ind_rem_read_req(is_remote, req_core, request_ptr, addr, data_bytes, reorder_entry);
+  }
+
+  void push_ind_rem_read_data(int8_t* data, int request_ptr, int addr, int data_bytes, int reorder_entry) {
+      _scr_r_c.push_ind_rem_read_data(data, request_ptr, addr, data_bytes, reorder_entry);
+  }
+
 bool isLinearSpad(addr_t addr){
+  if(!_linear_spad) return false;
   // int spad_offset_bits = log2(SCRATCH_SIZE+LSCRATCH_SIZE);
-  assert(addr < (SCRATCH_SIZE+LSCRATCH_SIZE));
+  // could be remote location
+  // assert(addr < (SCRATCH_SIZE+LSCRATCH_SIZE));
   int spad_offset_bits = log2(SCRATCH_SIZE);
   int spad_type = (addr >> spad_offset_bits) & 1;
   return spad_type; // for 1, it is linear
@@ -1637,6 +1671,7 @@ int get_cur_cycle();
   int _stat_tot_mem_wait_cycles=0;
   int _stat_hit_bytes_rd=0;
   int _stat_miss_bytes_rd=0;
+  int _stat_num_spu_req_coalesced=0;
   // for backcgra
   // int _stat_mem_initiation_interval = 10000;
   double _stat_port_imbalance=0;

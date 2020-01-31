@@ -111,10 +111,19 @@ class Pipeline : public Ticked {
   public:
 	// TODO:FIXME: need to access execute from cpu to talk to accel
 	// void receiveSpuMessage(int64_t val, int in_port)
-	void receiveSpuMessage(uint8_t* val, int num_bytes, int in_port)
+	void receiveSpuMessage(int8_t* val, int num_bytes, int in_port)
 	{
 	  return execute.receiveSpuMessage(val, num_bytes, in_port);
 	}
+	void receiveSpuReadRequest(int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry)
+	{
+	  return execute.receiveSpuReadRequest(req_core, request_ptr, addr, data_bytes, reorder_entry);
+	}
+
+void receiveSpuReadData(int8_t* data, int request_ptr, int addr, int data_bytes, int reorder_entry)
+{
+  return execute.receiveSpuReadData(data, request_ptr, addr, data_bytes, reorder_entry);
+}
 
 	// void receiveSpuMessage(bool scr_type, int64_t val, int16_t remote_scr_offset)
 	void receiveSpuMessage(uint8_t* val, int num_bytes, uint16_t remote_scr_offset)

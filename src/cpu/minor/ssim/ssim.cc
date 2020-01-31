@@ -21,7 +21,7 @@ ssim_t::ssim_t(Minor::LSQ* lsq) : _lsq(lsq) {
   if (req_core_id_str != nullptr) {
     _req_core_id = atoi(req_core_id_str);
   }
-  // cout << "DEBUG PRED FOR CORE " << get_core_id() << ": " << debug_pred() << endl;
+  // cout << "DEBUG PRED FOR CORE " << gee_core_id() << ": " << debug_pred() << endl;
   SS_DEBUG::check_env(debug_pred());
 
   for(int i = 0; i < NUM_ACCEL_TOTAL; ++i) {
@@ -83,7 +83,7 @@ void ssim_t::req_config(addr_t addr, int size) {
 
 // receive network message at the given input port id
 // void ssim_t::push_in_accel_port(int accel_id, int64_t val, int in_port) {
-void ssim_t::push_in_accel_port(int accel_id, uint8_t* val, int num_bytes, int in_port) {
+void ssim_t::push_in_accel_port(int accel_id, int8_t* val, int num_bytes, int in_port) {
   assert(accel_id<NUM_ACCEL_TOTAL);
   accel_arr[accel_id]->receive_message(val, num_bytes, in_port);
 }
@@ -91,6 +91,14 @@ void ssim_t::push_in_accel_port(int accel_id, uint8_t* val, int num_bytes, int i
 // SPU has only 1 DGRA in a core
 void ssim_t::push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int out_bytes, uint64_t inc) {
   accel_arr[0]->push_atomic_update_req(scr_addr, opcode, val_bytes, out_bytes, inc);
+}
+
+void ssim_t::push_ind_rem_read_req(bool is_remote, int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry) {
+    accel_arr[0]->push_ind_rem_read_req(is_remote, req_core, request_ptr, addr, data_bytes, reorder_entry);
+}
+
+void ssim_t::push_ind_rem_read_data(int8_t* data, int request_ptr, int addr, int data_bytes, int reorder_entry) {
+    accel_arr[0]->push_ind_rem_read_data(data, request_ptr, addr, data_bytes, reorder_entry);
 }
 
 bool ssim_t::can_add_stream() {
@@ -165,6 +173,7 @@ void ssim_t::print_stats() {
                                     /1000000000 << " sec\n";
 
    out << "Cycles: " << roi_cycles() << "\n";
+   out << "Number of coalesced SPU requests: " << accel_arr[0]->_stat_num_spu_req_coalesced << "\n";
    out << "Control Core Insts Issued: " << control_core_insts() << "\n";
    out << "Control Core Discarded Insts Issued: " << control_core_discarded_insts() << "\n";
    out << "Control Core Discarded Inst Stalls: " << ((double)control_core_discarded_insts()/(double)control_core_insts()) << "\n";
@@ -184,7 +193,8 @@ void ssim_t::print_stats() {
      if(mask & WAIT_SCR_WR) {
        out << "SCR_WR";
      }
-     if(mask & GLOBAL_WAIT) {
+     if(mask/GLOBAL_WAIT>0) {
+         // if(mask & GLOBAL_WAIT) {
        out << "GLOBAL_WAIT";
      }
      if(mask & STREAM_WAIT) {
@@ -256,11 +266,27 @@ uint64_t ssim_t::forward_progress_cycle() {
   return r;
 }
 
+void ssim_t::set_memory_map_config(base_stream_t* s, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type) {
+  if(partition_size!=0) {
+    s->set_part_size(partition_size);
+    s->set_active_core_bv(active_core_bitvector);
+    s->set_mapping_type(mapping_type);
+    for(int i=0; i<64; ++i) {
+      if((active_core_bitvector >> i) & 1) {
+        s->push_used_core(i);
+        // std::cout << "number of used cores identifed as i: " << i << "\n";
+      }
+    }
+    s->set_dist_cores();
+  }
+}
+
 void ssim_t::add_bitmask_stream(base_stream_t* s, uint64_t ctx) {
   //patch with implicit stuff
   s->set_fill_mode(_fill_mode);
   s->set_id();
   s->set_context_offset(_context_offset);
+  s->set_mem_map_config();
   for(int in_port : extra_in_ports) {
     assert(s->in_ports().size()); //there should be some already...
     s->in_ports().push_back(in_port);
@@ -432,7 +458,7 @@ void ssim_t::write_dma() {
 }
 
 
-void ssim_t::load_scratch_to_port(int64_t repeat, int64_t repeat_str) {//, bool repeat_flag) {
+void ssim_t::load_scratch_to_port(int64_t repeat, int64_t repeat_str, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type) {
   int new_repeat_str = repeat_str >> 1;
   bool repeat_flag(repeat_str & 1);
 
@@ -446,6 +472,7 @@ void ssim_t::load_scratch_to_port(int64_t repeat, int64_t repeat_str) {//, bool 
   }
       
   add_bitmask_stream(s);
+  set_memory_map_config(s, partition_size, active_core_bitvector, mapping_type);
   stream_stack.clear();
 
 }
@@ -465,7 +492,7 @@ void ssim_t::write_remote_banked_scratchpad(uint8_t* val, int num_bytes, uint16_
 }
 
 // command decode for atomic stream update
-void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode) {
+void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode, int val_num, int num_updates, bool is_update_cnt_port) {
     atomic_scr_stream_t* s = new atomic_scr_stream_t();
     s->_mem_addr = offset;
     s->_num_strides = iters;
@@ -475,6 +502,22 @@ void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_
     s->_value_type=value_type;
     s->_output_type=output_type;
     s->_addr_type=addr_type;
+
+    if(val_num!=0) { // no config specified
+      s->_val_num=val_num;
+      s->_sstream_left=val_num;
+      s->_num_updates=num_updates;
+      s->_val_sstream_left=num_updates;
+      s->_is_update_cnt_port=is_update_cnt_port;
+      if(is_update_cnt_port) {
+        s->_num_update_port = num_updates;
+        s->_num_updates=-1;
+        s->_val_sstream_left=-1;
+      }
+    }
+
+    // std::cout << "Atomic scr initialized with sstream size: " << val_num << "\n";
+
     s->_unit=LOC::SCR;
     s->set_orig();
 
@@ -590,35 +633,48 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
 //Configure an indirect stream with params
 void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
     uint64_t num_elem, int repeat, int repeat_str,uint64_t offset_list,
-    int dtype, uint64_t ind_mult, bool scratch, bool stream, int sstride, int sacc_size, int sn_port) {
+    int dtype, uint64_t ind_mult, bool scratch, bool is_2d_stream, int sstride, int sacc_size, int sn_port, int val_num, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type) {
   indirect_stream_t* s = new indirect_stream_t();
   s->_ind_port=ind_port;
   s->_ind_type=ind_type;
   s->add_in_port(in_port);;
-  s->_index_addr=index_addr;
+  s->_index_addr=index_addr; // so this is the offset
   s->_num_elements=num_elem;
   s->_repeat_in=repeat;
   s->_repeat_str=repeat_str;
   s->_offset_list=offset_list;
   s->_dtype=dtype;
   s->_ind_mult=ind_mult;
-  s->_is_2d_stream=stream;
-  if(stream) { // set sub-stream parameters here (read from ss_stride)
+  s->_is_2d_stream=is_2d_stream;
+  s->_val_num=val_num;
+  s->_ind_mult *= val_num; // for wide accesses (real mult requires more bits)
+  if(is_2d_stream) { // set sub-stream parameters here (read from ss_stride)
     s->_sstride = sstride;
     s->_sacc_size = sacc_size;
     s->_sn_port = sn_port;
   }
+
+  // std::cout << "Came here for part size: " << partition_size << " bitvector: " << active_core_bitvector << " mapping type: " << mapping_type << "\n";
+
   if(scratch) s->_unit=LOC::SCR;
   else s->_unit=LOC::DMA;
   s->set_orig();
 
   add_bitmask_stream(s);
+  set_memory_map_config(s, partition_size, active_core_bitvector, mapping_type);
+
 }
 
 //Configure an indirect stream with params
 void ssim_t::indirect_write(int ind_port, int ind_type, int out_port,
     addr_t index_addr, uint64_t num_elem, uint64_t offset_list,
-    int dtype, uint64_t ind_mult, bool scratch) {
+    int dtype, uint64_t ind_mult, bool scratch, bool is_2d_stream, int sstride, int sacc_size, int sn_port, int val_num) {
+
+
+  if(SS_DEBUG::MEM_WR || SS_DEBUG::SCR_ACC) {
+    std::cout << "Identified an indirect write stream, scratch? " << scratch << " 2d: " << is_2d_stream << " num_elem port: " << sn_port << " stride: " << sstride << " access size: " << sacc_size << "\n";
+  }
+
   indirect_wr_stream_t* s = new indirect_wr_stream_t();
   s->_ind_port=ind_port;
   s->_ind_type=ind_type;
@@ -627,6 +683,16 @@ void ssim_t::indirect_write(int ind_port, int ind_type, int out_port,
   s->_num_elements=num_elem;
   s->_dtype=dtype;
   s->_ind_mult=ind_mult;
+
+  s->_is_2d_stream=is_2d_stream;
+  s->_val_num=val_num;
+  s->_ind_mult *= val_num; // for wide accesses (real mult requires more bits)
+  if(is_2d_stream) { // set sub-stream parameters here (read from ss_stride)
+    s->_sstride = sstride;
+    s->_sacc_size = sacc_size;
+    s->_sn_port = sn_port;
+  }
+
   if(scratch) s->_unit=LOC::SCR;
   else s->_unit=LOC::DMA;
   s->set_orig();
@@ -678,10 +744,11 @@ void ssim_t::insert_df_barrier(int64_t num_scr_wr, bool spad_type) {
   add_bitmask_stream(s);
 }
 
+// TODO: ss_flags/flags is not being used
 void ssim_t::write_constant(int num_strides, int in_port,
                     SBDT constant, uint64_t num_elem,
                     SBDT constant2, uint64_t num_elem2,
-                    uint64_t flags, int const_width) {
+                    uint64_t flags, int const_width, bool iter_port) {
 
   const_port_stream_t* s = new const_port_stream_t();
   s->add_in_port(in_port);
@@ -698,25 +765,37 @@ void ssim_t::write_constant(int num_strides, int in_port,
 
   s->_constant2=constant;
   s->_num_elements2=num_elem;
+  s->_is_iter_port=iter_port;
 
   // data-width according to port should be set earlier?
   s->set_orig();
   add_bitmask_stream(s);
 
 
+  // so this is 2
   // std::cout << "Const width: " << const_width << std::endl;
+  // t32 is 1
 
   // use ss_const for that instead of ss_dconst
   if(const_width) {
-    //case 0: width=8;
-    //case 1: width=4;
-    //case 2: width=2;
-    //case 3: width=1;
-    s->_const_width = 1 << (3 - (const_width - 1));
+    switch(const_width) {
+      case 1: s->_const_width=8;
+              break;
+      case 2: s->_const_width=4;
+              break;
+      case 3: s->_const_width=2;
+              break;
+      case 4: s->_const_width=1;
+              break;
+      default: std::cout << " invalid data width";
+    }
+    // s->_const_width = 1 << (3 - const_width);
   } else { // assume the width of the corresponding input port
     port_data_t& cur_in_port = accel_arr[0]->_port_interf.in_port(in_port);
     s->_const_width = cur_in_port.get_port_width();
   }
+
+   // std::cout << "const width: " << s->_const_width << " data width: " << s->data_width() << " is iter a port: " << s->_is_iter_port << "\n";
 
 }
 

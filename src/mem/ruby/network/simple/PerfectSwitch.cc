@@ -94,7 +94,6 @@ void
 PerfectSwitch::addOutPort(const vector<MessageBuffer*>& out,
                           const NetDest& routing_table_entry)
 {
-  printf("CAME in perfect switch out port adds\n");
     // Setup link order
     LinkOrder l;
     l.m_value = 0;
@@ -104,7 +103,7 @@ PerfectSwitch::addOutPort(const vector<MessageBuffer*>& out,
     // Add to routing table
     m_out.push_back(out);
     m_routing_table.push_back(routing_table_entry);
-    std::cout << "New routing table size: " << m_routing_table.size() << "\n";
+    // std::cout << "New routing table size: " << m_routing_table.size() << "\n";
 }
 
 PerfectSwitch::~PerfectSwitch()
@@ -171,6 +170,12 @@ PerfectSwitch::operateMessageBuffer(MessageBuffer *buffer, int incoming,
         output_link_destinations.clear();
 		// printf("MESSAGE DETECTED AT THE BUFFER, ready to be routed on the n/w\n");
         NetDest msg_dsts = net_msg_ptr->getDestination();
+
+        // Lets get the total destinations for this packet
+        /*std::vector<NodeID> x = msg_dsts.getAllDest();
+        for(unsigned i=0; i<x.size(); ++i) {
+            printf("dest i: %d is %d\n",i,x[i]);
+        }*/
 		// printf("destination in the network: %lu\n",msg_dsts);
 
         // Unfortunately, the token-protocol sends some
@@ -211,10 +216,11 @@ PerfectSwitch::operateMessageBuffer(MessageBuffer *buffer, int incoming,
             // pick the next link to look at
             int link = m_link_order[i].m_link;
             // cout << "This link map to: " << link << endl;
+            // all destinations which can be reached via this link
             NetDest dst = m_routing_table[link];
             DPRINTF(RubyNetwork, "dst: %s\n", dst);
 
-            // if this is not in the current dst
+            // if this is not in the current dst list
             if (!msg_dsts.intersectionIsNotEmpty(dst))
                 continue;
 
@@ -225,14 +231,25 @@ PerfectSwitch::operateMessageBuffer(MessageBuffer *buffer, int incoming,
             // another vector.  This Set is the intersection of the
             // routing_table entry and the current destination set.  The
             // intersection must not be empty, since we are inside "if"
-            output_link_destinations.push_back(msg_dsts.AND(dst));
+            output_link_destinations.push_back(msg_dsts.AND(dst)); // select these destinationa
+            // DPRINTF(RubyNetwork, "spu common dest: %s\n", msg_dsts.AND(dst));
 
             // Next, we update the msg_destination not to include
             // those nodes that were already handled by this link
-            msg_dsts.removeNetDest(dst);
+            msg_dsts.removeNetDest(dst); // A-B
+            DPRINTF(RubyNetwork, "spu left dest: %s\n", msg_dsts);
+            /*std::vector<NodeID> left_nodes = msg_dsts.getAllDest();
+            // Step 1: 11,12,14,15
+            // Next, 14
+            for(unsigned i=0; i<left_nodes.size(); ++i) {
+                printf("left nodes at i: %d are id: %d\n",i,left_nodes[i]);
+            }*/
         }
         // std::cout << "message dest left: " << msg_dsts.count() << "\n";
-
+        std::vector<NodeID> left_nodes = msg_dsts.getAllDest();
+        for(unsigned i=0; i<left_nodes.size(); ++i) {
+            printf("left nodes at i: %d are id: %d\n",i,left_nodes[i]);
+        }
         assert(msg_dsts.count() == 0);
 
         // Check for resources - for all outgoing queues

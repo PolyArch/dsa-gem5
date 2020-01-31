@@ -1281,22 +1281,37 @@ LSQ::canSendToMemorySystem()
 
 /* Push PORT MULTICAST request into the SPU network buffer, FIXME: it could directly push here also? */
 // void LSQ::push_spu_req(int dest_port_id, uint64_t val, int64_t mask)
-void LSQ::push_spu_req(int src_port_id, int dest_port_id, uint8_t* val, int num_bytes, uint64_t mask)
+void LSQ::push_spu_req(int src_port_id, int dest_port_id, int8_t* val, int num_bytes, uint64_t mask)
 {
   execute.send_spu_req(src_port_id, dest_port_id, val, num_bytes, mask);
 }
 /* Push SCR WR request into the SPU network buffer */
 // void LSQ::push_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id, int stream_id)
-void LSQ::push_spu_scr_wr_req(uint8_t* val, int num_bytes, uint64_t scr_offset, int dest_core_id, int stream_id)
+void LSQ::push_spu_scr_wr_req(int8_t* val, int num_bytes, uint64_t scr_offset, int dest_core_id, int stream_id)
 {
   // execute.send_spu_scr_wr_req(scr_type, val, scr_offset, dest_core_id);
   execute.send_spu_scr_wr_req(val, num_bytes, scr_offset, dest_core_id);
 }
 
-bool LSQ::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int opcode, int val_bytes, int out_bytes) {
-  return execute.push_rem_atom_op_req(val, local_scr_addr, opcode, val_bytes, out_bytes);
+bool LSQ::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadcast_dest, std::vector<int> update_coalesce_vals, int opcode, int val_bytes, int out_bytes) {
+  return execute.push_rem_atom_op_req(val, update_broadcast_dest, update_coalesce_vals, opcode, val_bytes, out_bytes);
 }
 
+bool LSQ::push_rem_read_req(int dest_core_id, int request_ptr, int addr, int data_bytes, int reorder_entry) {
+  return execute.push_rem_read_req(dest_core_id, request_ptr, addr, data_bytes, reorder_entry);
+}
+
+void LSQ::push_rem_read_return(int dst_core, int8_t data[64], int request_ptr, int addr, int data_bytes, int reorder_entry) {
+  execute.push_rem_read_return(dst_core, data, request_ptr, addr, data_bytes, reorder_entry);
+}
+
+void LSQ::serve_pending_net_req() {
+  execute.serve_pending_net_req();
+}
+
+bool LSQ::is_pending_net_empty() {
+  return execute.is_pending_net_empty();
+}
 
 bool
 LSQ::recvTimingResp(PacketPtr response)

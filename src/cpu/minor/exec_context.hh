@@ -541,7 +541,7 @@ class ExecContext : public ::ExecContext
               return;
             case SS_SCR_PRT:
               ssim.load_scratch_to_port(thread.getSSReg(SS_REPEAT),
-                                        thread.getSSReg(SS_REPEAT_STRETCH));
+                                        thread.getSSReg(SS_REPEAT_STRETCH), thread.getSSReg(SS_CFG_SIZE), thread.getSSReg(SS_CONTEXT), thread.getSSReg(SS_GARB_ELEM));
               break;
             case SS_PRT_SCR:
               ssim.write_scratchpad();
@@ -565,7 +565,7 @@ class ExecContext : public ::ExecContext
                 thread.getSSReg(SS_DTYPE), thread.getSSReg(SS_IND_MULT),
                 thread.getSSReg(SS_IS_SCRATCH), thread.getSSReg(SS_FLAGS),
                 thread.getSSReg(SS_STRIDE), thread.getSSReg(SS_ACCESS_SIZE),
-                thread.getSSReg(SS_STRETCH)); // changed interpretation of stretch here
+                thread.getSSReg(SS_STRETCH), thread.getSSReg(SS_OFFSET), thread.getSSReg(SS_CFG_SIZE), thread.getSSReg(SS_CONTEXT), thread.getSSReg(SS_GARB_ELEM)); // changed interpretation of stretch here
               break;
             case SS_PRT_IND:
               ssim.indirect_write(
@@ -573,21 +573,24 @@ class ExecContext : public ::ExecContext
                 thread.getSSReg(SS_OUT_PORT), thread.getSSReg(SS_INDEX_ADDR),
                 thread.getSSReg(SS_NUM_ELEM), thread.getSSReg(SS_OFFSET_LIST),
                 thread.getSSReg(SS_DTYPE), thread.getSSReg(SS_IND_MULT),
-                thread.getSSReg(SS_IS_SCRATCH));
+                thread.getSSReg(SS_IS_SCRATCH), thread.getSSReg(SS_FLAGS),
+                thread.getSSReg(SS_STRIDE), thread.getSSReg(SS_ACCESS_SIZE),
+                thread.getSSReg(SS_STRETCH), thread.getSSReg(SS_OFFSET));
               break;
             case SS_CNS_PRT:
               ssim.write_constant(
                 thread.getSSReg(SS_NUM_STRIDES), thread.getSSReg(SS_IN_PORT),
                 thread.getSSReg(SS_CONSTANT), thread.getSSReg(SS_NUM_ELEM),     
                 thread.getSSReg(SS_CONSTANT2), thread.getSSReg(SS_NUM_ELEM2),    
-                thread.getSSReg(SS_FLAGS), thread.getSSReg(SS_DTYPE));
+                thread.getSSReg(SS_FLAGS), thread.getSSReg(SS_DTYPE), thread.getSSReg(SS_IND_TYPE));
               break;
             case SS_ATOMIC_SCR_OP:
               ssim.atomic_update_scratchpad(
                 thread.getSSReg(SS_OFFSET), thread.getSSReg(SS_NUM_ELEM),
                 thread.getSSReg(SS_OUT_PORT), thread.getSSReg(SS_VAL_PORT),
                 thread.getSSReg(SS_IND_TYPE), thread.getSSReg(SS_DTYPE),
-                thread.getSSReg(SS_ADDR_TYPE), thread.getSSReg(SS_OPCODE));
+                thread.getSSReg(SS_ADDR_TYPE), thread.getSSReg(SS_OPCODE), thread.getSSReg(SS_OFFSET_LIST),
+                thread.getSSReg(SS_STRETCH), thread.getSSReg(SS_IS_SCRATCH));
               break;
             case SS_CONST_SCR:
               ssim.write_constant_scratchpad(
@@ -615,7 +618,11 @@ class ExecContext : public ::ExecContext
               } else if(wait_mask == 16) {
                 DPRINTF(SS, "Wait mem write\n");
               } else if(wait_mask == 128) { // come here on commit
-                ssim.set_not_in_use(); // FIXME:check
+                ssim.set_not_in_use();
+                // int t = wait_mask/128;
+                int t = thread.getSSReg(SS_NUM_ELEM);
+                printf("Identified global wait with threads: %d\n",t);
+                ssim.set_num_active_threads(t);
                 DPRINTF(SS, "Wait on all threads\n");         
               } else if(wait_mask == 66) {
                 ssim.set_not_in_use(); // FIXME:check
@@ -640,6 +647,11 @@ class ExecContext : public ::ExecContext
         setSSReg(0,SS_IND_TYPE);
         setSSReg(0,SS_DTYPE);
         setSSReg(1,SS_IND_MULT);
+        // TODO: need a better name for registers
+        setSSReg(0,SS_CFG_SIZE);
+        setSSReg(0,SS_CONTEXT);
+        setSSReg(0,SS_GARB_ELEM);
+
     }
 #endif
 

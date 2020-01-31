@@ -36,29 +36,31 @@ public:
   void req_config(addr_t addr, int size);
   void load_dma_to_port(int64_t repeat_in, int64_t repeat_str);
   void add_port(int in_port);
-  void load_scratch_to_port(int64_t repeat_in, int64_t repeat_str);
+  void load_scratch_to_port(int64_t repeat_in, int64_t repeat_str, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type);
   void write_scratchpad();
   void write_dma();
   void reroute(int out_port, int in_port, uint64_t num_elem,
                int repeat, int repeat_str,  uint64_t flags, uint64_t access_size);
   void indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
     uint64_t num_elem, int repeat, int repeat_str, uint64_t offset_list,
-    int dtype, uint64_t ind_mult, bool scratch, bool stream, int sstride, int sacc_size, int sn_port);
+    int dtype, uint64_t ind_mult, bool scratch, bool stream, int sstride, int sacc_size, int sn_port, int val_num, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type);
   void indirect_write(int ind_port, int ind_type, int out_port,
     addr_t index_addr, uint64_t num_elem, uint64_t offset_list,
-    int dtype, uint64_t ind_mult, bool scratch);
+    int dtype, uint64_t ind_mult, bool scratch, bool is_2d_stream, int sstride, int sacc_size, int sn_port, int val_num);
   bool can_receive(int out_port);
   uint64_t receive(int out_port);
   void write_constant(int num_strides, int in_port,
                       SBDT constant, uint64_t num_elem,
                       SBDT constant2, uint64_t num_elem2,
-                      uint64_t flags, int const_width);
-  void atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode);
+                      uint64_t flags, int const_width, bool iter_port);
+  void atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode, int val_num, int num_updates, bool is_update_cnt_port);
   void multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_port, int rem_port, bool dest_flag, bool spad_type, int64_t stride, int64_t access_size);
   void write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int num_elem, int const_width);
 
-  void push_in_accel_port(int accel_id, uint8_t* val, int num_bytes, int in_port);
+  void push_in_accel_port(int accel_id, int8_t* val, int num_bytes, int in_port);
   void push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int out_bytes, uint64_t inc);
+  void push_ind_rem_read_req(bool is_remote, int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry);
+  void push_ind_rem_read_data(int8_t* data, int request_ptr, int addr, int data_bytes, int reorder_entry);
   void write_remote_banked_scratchpad(uint8_t* val, int num_bytes, uint16_t scr_addr);
 
   // We integrate Buffet to achieve double-buffering.
@@ -72,6 +74,7 @@ public:
   bool can_add_stream();
   void add_bitmask_stream(base_stream_t* s);
   void add_bitmask_stream(base_stream_t* s, uint64_t context);
+  void set_memory_map_config(base_stream_t* s, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type);
   bool done(bool show, int mask);
   bool is_in_config();
 
@@ -161,7 +164,9 @@ public:
   static bool stall_core(uint64_t mask) {
     // std::cout << "Came in stall core with mask: " << mask << std::endl;
     return (mask==0) || (mask&WAIT_CMP) ||
-      (mask&WAIT_MEM_WR) || (mask&WAIT_SCR_ATOMIC) || (mask&GLOBAL_WAIT) || (mask&STREAM_WAIT);
+      (mask&WAIT_MEM_WR) || (mask&WAIT_SCR_ATOMIC) || (mask/GLOBAL_WAIT>0) || (mask&STREAM_WAIT);
+      // (mask&WAIT_MEM_WR) || (mask&WAIT_SCR_ATOMIC) || (mask&GLOBAL_WAIT) || (mask&STREAM_WAIT);
+
   }
 
   uint64_t roi_cycles() {return _roi_cycles;}
@@ -217,7 +222,7 @@ private:
 
   accel_t* accel_arr[NUM_ACCEL+1]; //LAST ONE IS SHARED SCRATCH
 
-  int _num_active_threads=8; // for global barrier
+  int _num_active_threads=-1; // for global barrier
 
   bool _prev_done = true;
 

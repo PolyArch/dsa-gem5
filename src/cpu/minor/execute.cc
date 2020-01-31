@@ -964,12 +964,13 @@ void Execute::timeout_check(bool should_commit, MinorDynInstPtr inst) {
   uint64_t last_event = std::max(last_sd_issue,
                         ssim.forward_progress_cycle());
   if(!should_commit) {
-    // if(cyc > 9990 + last_event) {
-    if(cyc > 999000 + last_event) {
+    if(cyc > 99990 + last_event) {
+    // if(cyc > 999000 + last_event) {
       DPRINTF(SS,"Almost Aborting because of wait", *inst);
     }
 
-    if(cyc > 1000000 + last_event) {
+    // if(cyc > 1000000 + last_event) {
+    if(cyc > 100000 + last_event) {
       DPRINTF(SS,"Instruction: %s is stalled for too long!!! ABORTING", *inst);
       ssim.print_stats();
       //ssim.done(true,0);
@@ -1103,7 +1104,7 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
         //break down by type
         if ( (inst->staticInst->isSSStream()  ||
               (inst->staticInst->isSSWait() &&
-                  ssim_t::stall_core(inst->staticInst->get_imm())) )
+                  (ssim_t::stall_core(inst->staticInst->get_imm()))) )
               && !ssim.can_add_stream()) {
           
   /*        if((inst->staticInst->isSSWait() &&
@@ -1603,7 +1604,7 @@ Execute::check_network_idle() {
 // TODO: see how to set custom messages
 // pack the message to send request on the SPU network to write on remote scratchpad
 // void Execute::send_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id) {
-void Execute::send_spu_scr_wr_req(uint8_t* val, int num_bytes, uint64_t scr_offset, int dest_core_id) {
+void Execute::send_spu_scr_wr_req(int8_t* val, int num_bytes, uint64_t scr_offset, int dest_core_id) {
 
   std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
   (*msg).m_MessageSize = MessageSizeType_Control;
@@ -1611,9 +1612,9 @@ void Execute::send_spu_scr_wr_req(uint8_t* val, int num_bytes, uint64_t scr_offs
   (*msg).m_Type = SpuRequestType_ST;
   (*msg).m_Requestor = cpu.get_m_version();
   (*msg).m_addr = 0;
-  for(int j=0; j<num_bytes; ++j){
+  /*for(int j=0; j<num_bytes; ++j){
     (*msg).m_DataBlk.setByte(j,val[j]);
-  }
+  }*/
 
   // (*msg).m_addr = scr_offset;
   (*msg).m_addr = scr_offset | num_bytes << 16; // TODO: encode data_width
@@ -1622,38 +1623,253 @@ void Execute::send_spu_scr_wr_req(uint8_t* val, int num_bytes, uint64_t scr_offs
     printf("output destination core: %d\n",dest_core_id);
   }
   (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
-  cpu.pushReqFromSpu(msg);
+  spu_req_info req(msg, 1, val, num_bytes);
+  push_net_req(req);
 }
 
-bool Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int opcode, int val_bytes, int out_bytes) {
+// data from current core to the requesting core
+void Execute::push_rem_read_return(int dst_core, int8_t data[64], int request_ptr, int addr, int data_bytes, int reorder_entry) {
+  std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
+  (*msg).m_MessageSize = MessageSizeType_Control;
+  (*msg).m_Type = SpuRequestType_LD;
+  (*msg).m_Requestor = cpu.get_m_version();
+
+  int orig_data_bytes = data_bytes;
+  
+  /*for(int j=0; j<data_bytes; ++j){
+    // int8_t x = (data >> (j*8)) & 65535;
+    // (*msg).m_DataBlk.setByte(j,x);
+    (*msg).m_DataBlk.setByte(j,data[j]);
+  }*/
+
+  if(data_bytes>8) {
+    assert(data_bytes==NUM_SCRATCH_BANKS);
+    data_bytes=9; // linear case
+  }
+
+  assert(addr < (64*1024));
+  assert(request_ptr < 64); // this would be equal to log(irob entries)
+  assert(data_bytes < 16); // could be 1 to 8 bytes
+  // global scratch size < 64 kB
+  // (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 33;
+  (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 26;
+  
+  int src_core = cpu.cpuId();
+  assert(src_core!=dst_core && "Same core should not have been remote");
+
+  if(SS_DEBUG::NET_REQ){
+     printf("Remote read return data src core: %d dest core: %d\n",src_core, dst_core);
+     std::cout << "Returning remote read data addr: " << addr << " and x dim: " << request_ptr << " y dim: " << reorder_entry << " and original data bytes: " << orig_data_bytes << std::endl;
+  }
+  (*msg).m_Destination.add(cpu.get_m_version(dst_core));
+
+  spu_req_info req(msg, 1, data, orig_data_bytes);
+  push_net_req(req);
+}
+
+
+bool Execute::push_rem_read_req(int dest_core_id, int request_ptr, int addr, int data_bytes, int reorder_entry) {
+  // if local request, push back to the core
+  
+  // int dest_core_id = addr & 1024; // FIXME: should be number of threads
+  // int dest_core_id = addr % ssim.num_active_threads();
+  // int dest_core_id = addr/SCRATCH_SIZE;
+  
+  assert(dest_core_id < ssim.num_active_threads());
+  dest_core_id += 1;
+
+  int req_core = cpu.cpuId();
+
+  // std::cout << "Came in for addr: " << addr << " req_core: " << req_core << " dest core: " << dest_core_id << "\n";
+
+  addr = addr & (SCRATCH_SIZE-1);
+
+  if((ssim.num_active_threads()==1) || (dest_core_id==req_core)) { // 0--host core when non-multi-threaded code
+  // if(1) {
+    if(SS_DEBUG::NET_REQ){
+      printf("LOCAL REQUEST destination core: %d\n",dest_core_id);
+    }
+    ssim.push_ind_rem_read_req(false, req_core, request_ptr, addr, data_bytes, reorder_entry);
+    return false;
+  }
+
+  std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
+  (*msg).m_MessageSize = MessageSizeType_Control;
+  (*msg).m_Type = SpuRequestType_LD;
+  (*msg).m_Requestor = cpu.get_m_version();
+
+  // FIXME: does it work for a signal that it is a read request?
+  /*(*msg).m_DataBlk.setByte(0,-1);
+  for(int j=0; j<5; ++j){
+    int8_t x = (req_core >> (j*8)) & 65535;
+    (*msg).m_DataBlk.setByte(j+1,x);
+  }*/
+
+  if(data_bytes>8) {
+    // assert(data_bytes==NUM_SCRATCH_BANKS);
+    assert(data_bytes%NUM_SCRATCH_BANKS==0);
+    data_bytes=8+data_bytes/NUM_SCRATCH_BANKS; // 9; // linear case
+    assert(data_bytes<=15 && "exceeded the maximum multiple of cache line");
+  }
+
+  assert(addr < SCRATCH_SIZE);
+  assert(request_ptr < NUM_SCRATCH_BANKS); // this would be equal to log(irob entries)
+  assert(data_bytes<16);
+
+  // global scratch size < 64 kB
+  // std::cout << "sending addr: " << addr << " ptr: " << request_ptr << " data bytes: " << data_bytes << " entry: " << reorder_entry << std::endl;
+  // (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 33 | req_core << 36;
+  (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 26; // | req_core << 29;
+  if(SS_DEBUG::NET_REQ){
+     printf("output destination core for scratchpad read: %d and requesting core: %d\n",dest_core_id, cpu.cpuId());
+    std::cout << "Remote read request, scr_addr: " << addr << " and local core(0-indexed): " << cpu.cpuId() <<" and m_addr send: " << (*msg).m_addr << " request ptr: " << request_ptr << " reorder entry: " << reorder_entry << std::endl; 
+  }
+  (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
+
+  int8_t val[9];
+  val[0]=-1;
+  for(int j=0; j<8; ++j){
+    val[j+1] = (req_core >> (j*8)) & 65535;
+  }
+  spu_req_info req(msg, 1, val, 9);
+  push_net_req(req);
+  
+  return true;
+}
+
+void Execute::push_net_req(spu_req_info req) {
+  // std::cout << "To send, data bytes: " << req.num_data_bytes  << " first value: " << signed(req.data[0]) << "\n";
+
+  // so this is data and num_bytes sent to the network controller, it
+  // should probably split this here before sending to the actual request queue
+  // TODO: for these wide network packets, we probably need to tag the first
+  // packet and for rest of the packets we only send data, I can also emulate
+  // as reducing the number of data_bytes allocated for the first one (for
+  // addr) and from there it has all complete portion
+  // TODO: add a flag if sequence or initial tag and I can just do this for now
+  
+
+  // int addr_packets=1; // we could keep it maximum to register the tag so we can continue later
+  while(req.num_data_bytes!=0) {
+  
+    int bytes_to_send = std::min(64, req.num_data_bytes); // 64 is the maximum bytes allowed
+    for(int j=0; j<bytes_to_send; ++j){ // non-zero if data-request
+      (*req.msg).m_DataBlk.setByte(j,req.data[j]);
+    }
+    _pending_net_req.push(std::make_pair(req.msg,req.num_dest)); // ordering may be changed
+    req.num_data_bytes -= bytes_to_send;
+    req.data += bytes_to_send;
+  }
+}
+
+void Execute::serve_pending_net_req() {
+  // requires some condition if this can be accepted or not..
+  // check if a control or data message
+  if(!_pending_net_req.empty()) {
+
+    // std::cout << "num_dest: " << info.num_dest << " data start: " << signed(info.data[0]) << " num data bytes: " << info.num_data_bytes << "\n";
+
+    cpu.pushReqFromSpu(_pending_net_req.front().first);
+    if(SS_DEBUG::NET_REQ) {
+      std::cout << "Issuing SPU network request from core: " << cpu.cpuId() << " at cycle: " << cpu.curCycle() << "\n";
+    }
+
+    ThreadContext *thread = cpu.getContext(0); // assume tid=0?
+    for(int i=0; i<_pending_net_req.front().second; ++i) {
+      thread->getSystemPtr()->inc_spu_sent();
+    }
+    _pending_net_req.pop();
+  }
+}
+
+// TODO: adapt it to multiple vals and ...
+bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadcast_dest, std::vector<int> update_coalesce_vals, int opcode, int val_bytes, int out_bytes) {
+
+  // std::cout << "Received an atomic op request with dest size: " << update_broadcast_dest.size() << " and coalesce size: " << update_coalesce_vals.size() << "\n";
+
+  assert(update_coalesce_vals.size()<=64/val_bytes && "cannot coalesce more than 64-byte update request");
   std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
   (*msg).m_MessageSize = MessageSizeType_Control;
   // (*msg).m_MessageSize = MessageSizeType_Response_Data;
   (*msg).m_Type = SpuRequestType_UPDATE;
   (*msg).m_Requestor = cpu.get_m_version();
-  (*msg).m_addr = local_scr_addr;
-  for(int j=0; j<val_bytes; ++j){ // check this!
-    int8_t x = (val >> (j*8)) & 255;
-    (*msg).m_DataBlk.setByte(j,x);
-    // (*msg).m_DataBlk.setByte(j,val[j]);
+
+  int num_updates = update_broadcast_dest.size();
+  int num_vals = update_broadcast_dest.size();
+
+  int num_dest=0;
+  // TODO: if packet to same dest but diff. info, will it reach multiple times?
+  unsigned d=0;
+  for(unsigned t=0; t<num_updates; t=d) { // should be tiled by a number
+    // TODO: initialize new message with a new tid
+    std::vector<int> dest_scratch_addr;
+    for(unsigned v=0;  v<num_vals; v+=4) {
+      num_dest=0;
+      for(d=t; num_dest<t+4 && d<num_updates; ++d) {
+        int local_scr_addr = update_broadcast_dest[d] & (SCRATCH_SIZE-1);
+        dest_scratch_addr.push_back(local_scr_addr);
+
+        int dest_core_id = update_broadcast_dest[d]/SCRATCH_SIZE;
+        
+        dest_core_id += 1; // this should be 1 to 8
+
+        // std::cout << "scr addr: " << local_scr_addr << " dest core id: " << dest_core_id << "\n";
+
+        if(ssim.num_active_threads()==1 || dest_core_id==cpu.cpuId()) { // 0--host core when non-multi-threaded code
+          if(SS_DEBUG::NET_REQ){
+            printf("LOCAL REQUEST destination core: %d\n",dest_core_id);
+          }
+          ssim.push_atomic_update_req(local_scr_addr, opcode, val_bytes, out_bytes, val);
+          continue;
+         // return false;
+        } 
+        num_dest++;
+        local_scr_addr = local_scr_addr & (SCRATCH_SIZE-1);
+
+        // (*msg).m_addr = local_scr_addr | opcode << 16 | val_bytes << 18 | out_bytes << 20;
+        // FIXME: assuming only banked scratchpad address space: take only last
+        // 14-bits
+        const char *col_map_str = std::getenv("COLMAP");
+        bool col_map = false;
+        if (col_map_str != NULL) {
+          col_map = true;
+        }
+ 
+        if(col_map) {
+          local_scr_addr = local_scr_addr & 1; // for just 2 cores
+        } else {
+          local_scr_addr = local_scr_addr & 16383;
+        }
+        (*msg).m_addr = local_scr_addr | opcode << 16 | val_bytes << 18 | out_bytes << 20;
+
+        /*if(SS_DEBUG::NET_REQ){
+           printf("output destination core: %d\n",dest_core_id);
+          std::cout << "Atomic update net tuple, scr_addr: " << local_scr_addr << " and local core(0-indexed): " << cpu.cpuId() << " opcode: " << opcode << " val bytes: " << val_bytes << " out_bytes: " << out_bytes << std::endl; 
+        }*/
+        (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
+      }
+      if(num_dest!=0) {
+        unsigned max_values_left = std::min((num_vals-v)*val_bytes, unsigned(64));
+        // get 4 values from update coalesce vals
+        int8_t a[max_values_left];
+        for(unsigned j=0; j<max_values_left; ++j){ 
+          int i = j/val_bytes;
+          int k = j%val_bytes;
+          a[j] = (update_coalesce_vals[val+i] >> (k*8)) & 255;
+        }
+        // TODO: store dest scratch addr somewhere
+        // std::cout << "Atomic update tupe for bytes: " << max_values_left << "\n";
+        spu_req_info req(msg, 1, a, max_values_left);
+        push_net_req(req);
+        dest_scratch_addr.clear();
+
+      }
+    }
   }
 
-  // (*msg).m_addr = local_scr_addr | opcode << 16 | val_bytes << 18 | out_bytes << 20;
-  // FIXME: assuming only banked scratchpad address space: take only last
-  // 14-bits
-  const char *col_map_str = std::getenv("COLMAP");
-  bool col_map = false;
-  if (col_map_str != NULL) {
-    col_map = true;
-  }
  
-  if(col_map) {
-    local_scr_addr = local_scr_addr & 1; // for just 2 cores
-  } else {
-    local_scr_addr = local_scr_addr & 16383;
-  }
-  (*msg).m_addr = local_scr_addr | opcode << 16 | val_bytes << 18 | out_bytes << 20;
-  
+  return true;
+    /*
   // 50515 is definitely greater -- to test, I could use a smaller graph but
   //  mix of mapping for example, local_scr_addr >> 10 & (core_cnt-1);
   
@@ -1662,11 +1878,23 @@ bool Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int op
   // because this is always in the local core, 
   // Okay I want to divide the available thing equally
   // 1 + 3352/8 = 1 + log(419) = 1+8.5 = 9.5
-  int dest_core_id = local_scr_addr >> 9;
+  // printf("received local scr addr: %ld\n",local_scr_addr);
+  int dst_id = local_scr_addr/4;
+  int vert_per_core = 3352/8;
+  int dest_core_id = dst_id/vert_per_core;
+  // int dest_core_id = local_scr_addr >> 9; // this should be 0 to 7
+  // dest_core_id = local_scr_addr%ssim.num_active_threads(); // this should be 0 to 7
+  // printf("src core: %d dest core: %d\n",cpu.cpuId(), dest_core_id);
+  int p = rand()%32; // ssim.num_active_threads();
+  if(p<31) dest_core_id = cpu.cpuId()-1;
+  else dest_core_id = rand()%8; // ssim.num_active_threads();
+*/
+
+
   // Ok, to maintain locality -- 
   // std::cout << "local scratch addr: " << local_scr_addr << std::endl;
   // dest_core_id = (local_scr_addr>>11)&7; // + rand()%2; // always even number
-  dest_core_id = (local_scr_addr/1583)&7; // + rand()%2; // always even number
+  // dest_core_id = (local_scr_addr/1583)&7; // + rand()%2; // always even number
   // std::cout << "dest core id: " << dest_core_id << std::endl;
   
   // TODO: scratch addr mapping (if we change this, then above decoding also
@@ -1674,52 +1902,32 @@ bool Execute::push_rem_atom_op_req(uint64_t val, uint64_t local_scr_addr, int op
   // int dest_core_id = local_scr_addr >> 12 & 7;
   // int dest_core_id = rand()%1;
   // int dest_core_id = (local_scr_addr >> 1) & 1; // FIXME: just to debug
-  dest_core_id += 1;
-  if(SS_DEBUG::NET_REQ){
+  /*if(SS_DEBUG::NET_REQ){
     printf("output destination core: %d\n",dest_core_id);
-  }
+  }*/
   // FIXME: should not push more than 2 values in the same cycle
   /*if(cpu.cpuId()!=dest_core_id) {
     dest_core_id = 2; // it has to be 1
   }*/
 // 
-  // push message to local buffers
-  if(dest_core_id==cpu.cpuId() || cpu.cpuId()==0) { // 0--host core when non-multi-threaded code
-    if(SS_DEBUG::NET_REQ){
-      printf("LOCAL REQUEST destination core: %d\n",dest_core_id);
-    }
-    ssim.push_atomic_update_req(local_scr_addr, opcode, val_bytes, out_bytes, val);
-  } else {
-    if(SS_DEBUG::NET_REQ){
-      std::cout << "Atomic update tuple, scr_addr: " << local_scr_addr << " and local core(0-indexed): " << cpu.cpuId() << " opcode: " << opcode << " val bytes: " << val_bytes << " out_bytes: " << out_bytes << std::endl; 
-    }
-    (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
-    cpu.pushReqFromSpu(msg);
-  
-    // for global barrier
-    ThreadContext *thread = cpu.getContext(0); // assume tid=0?
-    thread->getSystemPtr()->inc_spu_sent();
-    return true;
-  }
-  return false;
 }
 
-void Execute::send_spu_req(int src_port_id, int dest_port_id, uint8_t* val, int num_bytes, uint64_t mask){
+void Execute::send_spu_req(int src_port_id, int dest_port_id, int8_t* val, int num_bytes, uint64_t mask){
 
   std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
   (*msg).m_MessageSize = MessageSizeType_Control;
   // (*msg).m_MessageSize = MessageSizeType_Writeback_Data;
-  (*msg).m_Type = SpuRequestType_LD;
+  (*msg).m_Type = SpuRequestType_ST;
   (*msg).m_Requestor = cpu.get_m_version();
-  for(int i=0; i<num_bytes; ++i){
+  /*for(int i=0; i<num_bytes; ++i){
     (*msg).m_DataBlk.setByte(i,val[i]);
-  }
+  }*/
   (*msg).m_addr = dest_port_id | num_bytes << 16; // TODO: encode data_width
   // printf("mask is %ld\n",mask);
   // printf("current cpu id is %d\n",cpu.cpuId());
   int dest_core_id = 0;
   std::bitset<64> core_mask(mask);
-  bool should_send=false;
+  bool should_send=false; int num_dest=0;
   for(int i=0; i<core_mask.size(); ++i){
     if(core_mask.test(i)){
       dest_core_id = i+1; // because of 1 offset with tid
@@ -1735,12 +1943,16 @@ void Execute::send_spu_req(int src_port_id, int dest_port_id, uint8_t* val, int 
       } else {
         // printf("dest core id is: %d\n",dest_core_id);
         (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
+        num_dest++;
         should_send = true;
       }
     }
   }
   // If all the requests were local?: Assuming this won't be the case
-  if(should_send) cpu.pushReqFromSpu(msg);
+  if(should_send) {
+    spu_req_info req(msg, num_dest, val, num_bytes);
+    push_net_req(req);
+  }
 }
 
 void
