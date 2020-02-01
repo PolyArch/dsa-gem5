@@ -1606,41 +1606,26 @@ Execute::check_network_idle() {
 // void Execute::send_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id) {
 void Execute::send_spu_scr_wr_req(int8_t* val, int num_bytes, uint64_t scr_offset, int dest_core_id) {
 
-  std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
-  (*msg).m_MessageSize = MessageSizeType_Control;
-  // (*msg).m_MessageSize = MessageSizeType_Response_Data;
-  (*msg).m_Type = SpuRequestType_ST;
-  (*msg).m_Requestor = cpu.get_m_version();
-  (*msg).m_addr = 0;
-  /*for(int j=0; j<num_bytes; ++j){
-    (*msg).m_DataBlk.setByte(j,val[j]);
-  }*/
+  int req_type=1;
+  uint64_t addr_to_send;
+  int mcast_dest[1];
 
-  // (*msg).m_addr = scr_offset;
-  (*msg).m_addr = scr_offset | num_bytes << 16; // TODO: encode data_width
+  addr_to_send = scr_offset | num_bytes << 16; // TODO: encode data_width
   dest_core_id += 1;
   if(SS_DEBUG::NET_REQ){
     printf("output destination core: %d\n",dest_core_id);
   }
-  (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
-  spu_req_info req(msg, 1, val, num_bytes);
+  mcast_dest[0] = dest_core_id;
+  spu_req_info req(1, val, num_bytes, addr_to_send, mcast_dest, req_type);
   push_net_req(req);
 }
 
 // data from current core to the requesting core
 void Execute::push_rem_read_return(int dst_core, int8_t data[64], int request_ptr, int addr, int data_bytes, int reorder_entry) {
-  std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
-  (*msg).m_MessageSize = MessageSizeType_Control;
-  (*msg).m_Type = SpuRequestType_LD;
-  (*msg).m_Requestor = cpu.get_m_version();
-
+  int req_type=0;
   int orig_data_bytes = data_bytes;
-  
-  /*for(int j=0; j<data_bytes; ++j){
-    // int8_t x = (data >> (j*8)) & 65535;
-    // (*msg).m_DataBlk.setByte(j,x);
-    (*msg).m_DataBlk.setByte(j,data[j]);
-  }*/
+  uint32_t addr_to_send;
+  int mcast_dest[1];
 
   if(data_bytes>8) {
     assert(data_bytes==NUM_SCRATCH_BANKS);
@@ -1651,8 +1636,7 @@ void Execute::push_rem_read_return(int dst_core, int8_t data[64], int request_pt
   assert(request_ptr < 64); // this would be equal to log(irob entries)
   assert(data_bytes < 16); // could be 1 to 8 bytes
   // global scratch size < 64 kB
-  // (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 33;
-  (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 26;
+  addr_to_send = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 26;
   
   int src_core = cpu.cpuId();
   assert(src_core!=dst_core && "Same core should not have been remote");
@@ -1661,9 +1645,9 @@ void Execute::push_rem_read_return(int dst_core, int8_t data[64], int request_pt
      printf("Remote read return data src core: %d dest core: %d\n",src_core, dst_core);
      std::cout << "Returning remote read data addr: " << addr << " and x dim: " << request_ptr << " y dim: " << reorder_entry << " and original data bytes: " << orig_data_bytes << std::endl;
   }
-  (*msg).m_Destination.add(cpu.get_m_version(dst_core));
+  mcast_dest[0] = dst_core;
 
-  spu_req_info req(msg, 1, data, orig_data_bytes);
+  spu_req_info req(1, data, orig_data_bytes, addr_to_send, mcast_dest, req_type);
   push_net_req(req);
 }
 
@@ -1693,17 +1677,10 @@ bool Execute::push_rem_read_req(int dest_core_id, int request_ptr, int addr, int
     return false;
   }
 
-  std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
-  (*msg).m_MessageSize = MessageSizeType_Control;
-  (*msg).m_Type = SpuRequestType_LD;
-  (*msg).m_Requestor = cpu.get_m_version();
+  int req_type=0;
 
-  // FIXME: does it work for a signal that it is a read request?
-  /*(*msg).m_DataBlk.setByte(0,-1);
-  for(int j=0; j<5; ++j){
-    int8_t x = (req_core >> (j*8)) & 65535;
-    (*msg).m_DataBlk.setByte(j+1,x);
-  }*/
+  uint32_t addr_to_send;
+  int mcast_dest[1];
 
   if(data_bytes>8) {
     // assert(data_bytes==NUM_SCRATCH_BANKS);
@@ -1716,27 +1693,25 @@ bool Execute::push_rem_read_req(int dest_core_id, int request_ptr, int addr, int
   assert(request_ptr < NUM_SCRATCH_BANKS); // this would be equal to log(irob entries)
   assert(data_bytes<16);
 
-  // global scratch size < 64 kB
-  // std::cout << "sending addr: " << addr << " ptr: " << request_ptr << " data bytes: " << data_bytes << " entry: " << reorder_entry << std::endl;
-  // (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 33 | req_core << 36;
-  (*msg).m_addr = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 26; // | req_core << 29;
+  addr_to_send = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 26; // | req_core << 29;
   if(SS_DEBUG::NET_REQ){
      printf("output destination core for scratchpad read: %d and requesting core: %d\n",dest_core_id, cpu.cpuId());
-    std::cout << "Remote read request, scr_addr: " << addr << " and local core(0-indexed): " << cpu.cpuId() <<" and m_addr send: " << (*msg).m_addr << " request ptr: " << request_ptr << " reorder entry: " << reorder_entry << std::endl; 
+    std::cout << "Remote read request, scr_addr: " << addr << " and local core(0-indexed): " << cpu.cpuId() <<" and m_addr send: " << addr_to_send << " request ptr: " << request_ptr << " reorder entry: " << reorder_entry << std::endl; 
   }
-  (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
+  mcast_dest[0] = dest_core_id;
 
   int8_t val[9];
   val[0]=-1;
   for(int j=0; j<8; ++j){
     val[j+1] = (req_core >> (j*8)) & 65535;
   }
-  spu_req_info req(msg, 1, val, 9);
+  spu_req_info req(1, val, 9, addr_to_send, mcast_dest, req_type);
   push_net_req(req);
   
   return true;
 }
 
+/*
 void Execute::push_net_req(spu_req_info req) {
   // std::cout << "To send, data bytes: " << req.num_data_bytes << " num dest: " << req.num_dest << "\n";
   // " first value: " << signed(req.data[0]) << "\n";
@@ -1750,13 +1725,45 @@ void Execute::push_net_req(spu_req_info req) {
   // TODO: add a flag if sequence or initial tag and I can just do this for now
 
   // int addr_packets=1; // we could keep it maximum to register the tag so we can continue later
-  
+ 
+  // TODO: need to make multiple packets here...
+  // msg should be created here (just send multicast dest and addr)
   while(req.num_data_bytes!=0) {
     int bytes_to_send = std::min(SPU_NET_PACKET_SIZE, req.num_data_bytes); // 64 is the maximum bytes allowed
     for(int j=0; j<bytes_to_send; ++j){ // non-zero if data-request
       (*req.msg).m_DataBlk.setByte(j,req.data[j]);
     }
     _pending_net_req.push(std::make_pair(req.msg,req.num_dest)); // ordering may be changed
+    req.num_data_bytes -= bytes_to_send;
+    req.data += bytes_to_send;
+  }
+}
+*/
+
+void Execute::push_net_req(spu_req_info req) {
+  while(req.num_data_bytes!=0) {
+
+    std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
+    (*msg).m_MessageSize = MessageSizeType_Control;
+    (*msg).m_Requestor = cpu.get_m_version();
+    switch(req.type) {
+      case 0: (*msg).m_Type = SpuRequestType_LD;
+              break;
+      case 1: (*msg).m_Type = SpuRequestType_ST;
+              break;
+      case 2: (*msg).m_Type = SpuRequestType_UPDATE;
+              break;
+      default: assert(0);
+    }
+    (*msg).m_addr = req.addr_to_send;
+    int bytes_to_send = std::min(SPU_NET_PACKET_SIZE, req.num_data_bytes);
+    for(int j=0; j<bytes_to_send; ++j){ // non-zero if data-request
+      (*msg).m_DataBlk.setByte(j,req.data[j]);
+    }
+    for(int j=0; j<req.num_dest; ++j){ // non-zero if data-request
+      (*msg).m_Destination.add(cpu.get_m_version(req.mcast_dest[j]));
+    }
+    _pending_net_req.push(std::make_pair(msg,req.num_dest)); // ordering may be changed
     req.num_data_bytes -= bytes_to_send;
     req.data += bytes_to_send;
   }
@@ -1795,18 +1802,7 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
   for(unsigned k=0; k<update_broadcast_dest.size(); ++k) {
     std::cout << "addr: " << update_broadcast_dest[k] << " ";
    }
-
-  assert(update_coalesce_vals.size()<=64/val_bytes && "cannot coalesce more than 64-byte update request");
-  std::shared_ptr<SpuRequestMsg> msg1 = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
-  std::shared_ptr<SpuRequestMsg> msg2 = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
-  (*msg1).m_MessageSize = MessageSizeType_Control;
-  (*msg1).m_Type = SpuRequestType_UPDATE;
-  (*msg1).m_Requestor = cpu.get_m_version();
-
-  (*msg2).m_MessageSize = MessageSizeType_Control;
-  (*msg2).m_Type = SpuRequestType_UPDATE;
-  (*msg2).m_Requestor = cpu.get_m_version();
-
+  int req_type = 2;
   int num_updates = update_broadcast_dest.size();
   int sent_size=0;
   int num_vals = update_coalesce_vals.size();
@@ -1816,7 +1812,7 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
   dest_done.resize(ssim.num_active_threads(), 0);
 
   int num_dest=0;
-  int num_dest_per_packet=20; // if we need to send complete scratch addr
+  // int num_dest_per_packet=20; // if we need to send complete scratch addr
   int addr_bytes=3;
 
   unsigned d=0, j=0;
@@ -1824,86 +1820,116 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
   // Step1: create the tagged packet
   _last_tag = (_last_tag+1)%1024;
   tag = req_core << 10 | _last_tag; // 10 bits of ID and 6 bits of core_id
+  std::vector<int> local_dest_scratch_addr;
+  int num_active_threads = ssim.num_active_threads();
+  int multicast_dest[num_active_threads];
+  uint64_t addr_to_send;
 
-  // FIXME: doesn't work for more packets, need to create new msg ptrs
-  for(unsigned t=0; t<num_updates; t=d) { // should be tiled by a number
+  std::shared_ptr<SpuRequestMsg> msg1 = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
+  (*msg1).m_MessageSize = MessageSizeType_Control;
+  (*msg1).m_Type = SpuRequestType_UPDATE;
+  (*msg1).m_Requestor = cpu.get_m_version();
 
-    std::vector<int> dest_scratch_addr;
-    // std::vector<int> dest_scratch_addr[dest_id];
-    num_dest=0;
-    for(d=t; num_dest<t+num_dest_per_packet && d<num_updates; ++d) {
-      int local_scr_addr = update_broadcast_dest[d] & (SCRATCH_SIZE-1);
-      int dest_core_id = update_broadcast_dest[d]/SCRATCH_SIZE;
-      dest_core_id += 1; // this should be 1 to 8
+  std::vector<int> dest_scratch_addr;
+  num_dest=0;
+  for(d=0; d<num_updates; ++d) {
+    int local_scr_addr = update_broadcast_dest[d] & (SCRATCH_SIZE-1);
+    int dest_core_id = update_broadcast_dest[d]/SCRATCH_SIZE;
+    dest_core_id += 1; // this should be 1 to 8
 
-      // std::cout << "scr addr: " << local_scr_addr << " dest core id: " << dest_core_id << "\n";
+    // std::cout << "scr addr: " << local_scr_addr << " dest core id: " << dest_core_id << "\n";
 
-      if(ssim.num_active_threads()==1 || dest_core_id==cpu.cpuId()) { // 0--host core when non-multi-threaded code
-        if(SS_DEBUG::NET_REQ){
-          printf("LOCAL REQUEST destination core: %d\n",dest_core_id);
-        }
-        ssim.push_atomic_update_req(local_scr_addr, opcode, val_bytes, out_bytes, val);
-        continue;
-      } 
-      // TODO: not sure why we need multiple?
-      // dest_scratch_addr.push_back(local_scr_addr);
-      // (*msg).m_addr = local_scr_addr | opcode << 16 | val_bytes << 18 | out_bytes << 20;
-
-      /*if(SS_DEBUG::NET_REQ){
-         printf("output destination core: %d\n",dest_core_id);
-        std::cout << "Atomic update net tuple, scr_addr: " << local_scr_addr << " and local core(0-indexed): " << cpu.cpuId() << " opcode: " << opcode << " val bytes: " << val_bytes << " out_bytes: " << out_bytes << std::endl; 
-      }*/
-      if(!dest_done[dest_core_id-1]) {
-        num_dest++;
+    if(num_active_threads==1 || dest_core_id==cpu.cpuId()) { // 0--host core when non-multi-threaded code
+      if(SS_DEBUG::NET_REQ){
+        printf("LOCAL REQUEST destination core: %d\n",dest_core_id);
       }
-      dest_done[dest_core_id-1]=true;
-      dest_scratch_addr.push_back(update_broadcast_dest[d]);
-      (*msg1).m_Destination.add(cpu.get_m_version(dest_core_id));
-      (*msg2).m_Destination.add(cpu.get_m_version(dest_core_id));
+      local_dest_scratch_addr.push_back(local_scr_addr);
+      continue;
+    } 
+    if(!dest_done[dest_core_id-1]) {
+      multicast_dest[num_dest] = dest_core_id;
+      num_dest++;
     }
-    if(num_dest!=0) {
-      // tagged | tag packet | tag...
-      // destinations)
-      unsigned addr_to_send =  num_dest*addr_bytes;
-      sent_size=addr_to_send;
-      if(addr_to_send<64) sent_size++;
-      int8_t a[sent_size];
-      for(j=0; j<addr_to_send; ++j){ 
-        int i = j/addr_bytes;
-        int k = j%addr_bytes;
-        a[j] = (dest_scratch_addr[i] >> (k*8)) & 255; // since signed?
-      }
-      if(j!=64) a[j]=-1; // delimeter
-      (*msg1).m_addr = 1 | (1<<1) | (tag << 2) | (values_to_send << 18);
-      spu_req_info req(msg1, num_dest, a, sent_size);
-      push_net_req(req);
-      dest_scratch_addr.clear();
-      std::cout << "Send tagged packet with num dest: " << num_dest << " tag: " << tag << " values bytes to wait for: " << values_to_send << " and num addr bytes: " << addr_to_send << " -1th bit: " << j << "\n";
+    dest_done[dest_core_id-1]=true;
+    dest_scratch_addr.push_back(update_broadcast_dest[d]);
+    (*msg1).m_Destination.add(cpu.get_m_version(dest_core_id));
+  }
+  if(num_dest!=0) {
+    // tagged | tag packet | tag...
+    // destinations)
+    unsigned addr_to_send =  num_dest*addr_bytes;
+    sent_size=addr_to_send;
+    if(addr_to_send<64) sent_size++;
+    int8_t a[sent_size];
+    for(j=0; j<addr_to_send; ++j){ 
+      int i = j/addr_bytes;
+      int k = j%addr_bytes;
+      a[j] = (dest_scratch_addr[i] >> (k*8)) & 255; // since signed?
+    }
+    if(j!=64) a[j]=-1; // delimeter
 
-    }
+    addr_to_send = 1 | (1<<1) | (tag << 2) | (values_to_send << 18);
+    // (*msg1).m_addr = 1 | (1<<1) | (tag << 2) | (values_to_send << 18);
+    spu_req_info req(num_dest, a, sent_size, addr_to_send, multicast_dest, req_type);
+    push_net_req(req);
+    dest_scratch_addr.clear();
+    std::cout << "Send tagged packet with num dest: " << num_dest << " tag: " << tag << " values bytes to wait for: " << values_to_send << " and num addr bytes: " << addr_to_send << " -1th bit: " << j << "\n";
+
   }
 
-  // Step2: send the value packets
+  // TODO: this should be split int multiple packets corresponding to number of
+  // values
   sent_size = values_to_send;
   if(values_to_send<64) sent_size++;
   int8_t v[sent_size];
-  for(j=0; j<values_to_send; ++j){ 
-    int i = j/val_bytes;
-    int k = j%val_bytes;
-    v[j] = (update_coalesce_vals[i] >> (k*8)) & 255;
+  // Step2: send the value packets
+  if(num_dest!=0) {
+    // loop over bunch of values (create new messages)
+    /*
+    std::shared_ptr<SpuRequestMsg> msg2 = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
+    (*msg2).m_MessageSize = MessageSizeType_Control;
+    (*msg2).m_Type = SpuRequestType_UPDATE;
+    (*msg2).m_Requestor = cpu.get_m_version();
+
+    for(unsigned i=0; i<multicast_dest.size(); ++i) {
+      (*msg2).m_Destination.add(cpu.get_m_version(multicast_dest[i]));
+    }
+    */
+    for(j=0; j<values_to_send; ++j){ 
+      int i = j/val_bytes;
+      int k = j%val_bytes;
+      v[j] = (update_coalesce_vals[i] >> (k*8)) & 255;
+    }
+    if(j!=64) v[j]=-1; // delimeter
+    // (*msg2).m_addr = 1 | 0<<1 | tag << 2;
+    addr_to_send = 1 | 0<<1 | tag << 2;
+    spu_req_info req_seq(num_dest, v, sent_size, addr_to_send, multicast_dest, req_type);
+    push_net_req(req_seq);
   }
-  if(j!=64) v[j]=-1; // delimeter
-  (*msg2).m_addr = 1 | 0<<1 | tag << 2;
-  spu_req_info req_seq(msg2, num_dest, v, sent_size);
-  push_net_req(req_seq);
+
+  if(local_dest_scratch_addr.size()>0) {
+    getSSIM().insert_pending_request_queue(tag, local_dest_scratch_addr, values_to_send);
+    int num_addr = getSSIM().push_and_update_addr_in_pq(tag, values_to_send);
+    std::vector<uint8_t> sent_val;
+    for(int i=0; i<values_to_send; ++i) {
+      sent_val.push_back(uint8_t(v[0]));
+    }
+    getSSIM().push_atomic_inc(sent_val, num_addr);
+
+  }
 
   return true;
 }
 
-#if 0
-// TODO: adapt it to multiple vals and ...
-bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadcast_dest, std::vector<int> update_coalesce_vals, int opcode, int val_bytes, int out_bytes) {
+// this should also broadcast updates (combine values with packets and limit
+// broadcast to maximum allowed) -- scalar values can be upto 64-bits?
+// TODO: need to make a plan for this...
+bool Execute::push_scalar_rem_atom_op_req(uint64_t val, std::vector<int> update_broadcast_dest, std::vector<int> update_coalesce_vals, int opcode, int val_bytes, int out_bytes) {
+  // FIXME: may not be applicable for others too (now I have move to delimeter
+  // way)
+  return false;
 
+#if 0
   std::cout << "Received an atomic op request with dest size: " << update_broadcast_dest.size() << " and coalesce size: " << update_coalesce_vals.size() << "\n";
 
   assert(update_coalesce_vals.size()<=64/val_bytes && "cannot coalesce more than 64-byte update request");
@@ -2034,22 +2060,15 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
     dest_core_id = 2; // it has to be 1
   }*/
 // 
-}
 #endif
+}
 
 void Execute::send_spu_req(int src_port_id, int dest_port_id, int8_t* val, int num_bytes, uint64_t mask){
 
-  std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
-  (*msg).m_MessageSize = MessageSizeType_Control;
-  // (*msg).m_MessageSize = MessageSizeType_Writeback_Data;
-  (*msg).m_Type = SpuRequestType_ST;
-  (*msg).m_Requestor = cpu.get_m_version();
-  /*for(int i=0; i<num_bytes; ++i){
-    (*msg).m_DataBlk.setByte(i,val[i]);
-  }*/
-  (*msg).m_addr = dest_port_id | num_bytes << 16; // TODO: encode data_width
-  // printf("mask is %ld\n",mask);
-  // printf("current cpu id is %d\n",cpu.cpuId());
+ 
+  int req_type=1;
+  uint32_t addr_to_send = dest_port_id | num_bytes << 16; // TODO: encode data_width
+  std::vector<int> mcast_dest;
   int dest_core_id = 0;
   std::bitset<64> core_mask(mask);
   bool should_send=false; int num_dest=0;
@@ -2065,9 +2084,8 @@ void Execute::send_spu_req(int src_port_id, int dest_port_id, int8_t* val, int n
         if(SS_DEBUG::NET_REQ){
             printf("Local write at port_id: %d\n", dest_port_id);
         }
-      } else {
-        // printf("dest core id is: %d\n",dest_core_id);
-        (*msg).m_Destination.add(cpu.get_m_version(dest_core_id));
+      } else { // no flag reqd, each core only covered once
+        mcast_dest.push_back(dest_core_id);
         num_dest++;
         should_send = true;
       }
@@ -2075,7 +2093,11 @@ void Execute::send_spu_req(int src_port_id, int dest_port_id, int8_t* val, int n
   }
   // If all the requests were local?: Assuming this won't be the case
   if(should_send) {
-    spu_req_info req(msg, num_dest, val, num_bytes);
+    int mcast_destinations[num_dest];
+    for(unsigned i=0; i<num_dest; ++i) {
+      mcast_destinations[i]=mcast_dest[i];
+    }
+    spu_req_info req(num_dest, val, num_bytes, addr_to_send, mcast_destinations, req_type);
     push_net_req(req);
   }
 }

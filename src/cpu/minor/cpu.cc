@@ -126,11 +126,15 @@ void MinorCPU::wakeup()
     // could do dynamic cast
     int64_t return_info = msg->m_addr;
 
-    // general phenomenon (TODO: not sure where it applied to)
     int num_bytes = return_info >> 16;
     int8_t data[num_bytes];
-    for(int i=0; i<num_bytes; ++i) {
-      data[i] = (*msg).m_DataBlk.getByte(i);
+
+    // FIXME: may not be applicable for others too (now I have move to
+    // delimeter way)
+    if((*msg).m_Type != SpuRequestType_UPDATE) {
+      for(int i=0; i<num_bytes; ++i) {
+        data[i] = (*msg).m_DataBlk.getByte(i);
+      }
     }
     if(SS_DEBUG::NET_REQ){
       // timestamp();

@@ -154,14 +154,26 @@ class Execute : public Named
   protected:
     // req, num of dest
     struct spu_req_info {
-      std::shared_ptr<SpuRequestMsg> msg;
+      // std::shared_ptr<SpuRequestMsg> msg;
       int num_dest;
       int8_t *data;
       int num_data_bytes;
-      spu_req_info(std::shared_ptr<SpuRequestMsg> m, int nd, int8_t *d, int db) {
+      uint32_t addr_to_send;
+      int *mcast_dest;
+      int type; // 0 for ld, 1 for st, 2 for update
+
+      spu_req_info(int nd, int8_t *d, int db, uint32_t addr, int *mdest, int t) {
+        num_dest=nd;
+        data=d; num_data_bytes=db;
+        addr_to_send=addr; 
+        mcast_dest=mdest; type=t;
+      }
+      /*spu_req_info(std::shared_ptr<SpuRequestMsg> m, int nd, int8_t *d, int db, uint32_t addr, int *mdest) {
         msg=m; num_dest=nd;
         data=d; num_data_bytes=db;
-      }
+        addr_to_send=addr; 
+        mcast_dest=mdest;
+      }*/
       spu_req_info() {}
     };
 
@@ -466,6 +478,7 @@ class Execute : public Named
     void send_spu_scr_wr_req(int8_t* val, int num_bytes, uint64_t scr_offset, int dest_core_id);
     // void send_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id);
     bool push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadcast_dest, std::vector<int> update_coalesce_vals, int opcode, int val_bytes, int out_bytes);
+    bool push_scalar_rem_atom_op_req(uint64_t val, std::vector<int> update_broadcast_dest, std::vector<int> update_coalesce_vals, int opcode, int val_bytes, int out_bytes);
     bool push_rem_read_req(int dest_core_id, int request_ptr, int addr, int data_bytes, int reorder_entry);
 
   void push_net_req(spu_req_info req);

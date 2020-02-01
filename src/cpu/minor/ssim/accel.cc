@@ -4450,11 +4450,11 @@ void scratch_write_controller_t::serve_atomic_requests(bool &performed_atomic_sc
   // TODO: also atomic cgra in can take data, and bandwidth limitations
   while (atomic_in.mem_size()>=_atomic_addr_bytes/atomic_in.get_port_width()) {
     num_bytes = bytes_prt.peek_out_data();
-    vector<uint8_t> read_value; // [num_bytes];
+    vector<uint8_t> read_value;
     read_value.resize(num_bytes);
     scr_addr = atomic_in.peek_out_data(0, _atomic_addr_bytes); // it->second.second[index];
 
-    // cout << "Received addr: " << scr_addr << " and num bytes: " << num_bytes << endl;
+    cout << "Received addr: " << scr_addr << " and num bytes: " << num_bytes << endl;
     // update check_conflict here
     if(!is_conflict) {
       bytes_prt.pop_out_data();
@@ -4623,7 +4623,7 @@ void scratch_write_controller_t::push_atomic_update_req(int scr_addr, int opcode
 
 void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stream) {
   SBDT loc;
-  addr_t scr_addr, max_addr;
+  addr_t scr_addr=0, max_addr=0;
   // int logical_banks = NUM_SCRATCH_BANKS;
   // int bank_id = 0;
   // added to correct bank conflict calculation
@@ -4649,14 +4649,15 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
       if(update_cnt.mem_size()>0) { // same data-type
         stream._num_updates = update_cnt.pop_out_data();
         stream._val_sstream_left=stream._num_updates;
-        // cout << " Num updates this round: " << stream._num_updates << endl;
+        cout << " Num updates this round: " << stream._num_updates << endl;
         assert(stream._num_updates>=0 && stream._num_updates<10000);
         if(stream._num_updates==0) {
           stream._num_updates=-1;
           stream._val_sstream_left=-1;
+          stream._num_strides--; // should not consider this stride
+          stream._sstream_left=stream._val_num;
         }
       } 
-      
       if(stream._num_updates==-1) return; // can't do anything
     }
 
@@ -4664,7 +4665,7 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
     // Can we serve in another chunk?
     if((stream._val_sstream_left<=0 || out_addr.mem_size() >= (stream._addr_bytes/out_addr.get_port_width())) && (stream._sstream_left<=0 || out_val.mem_size() >= (stream._value_bytes/out_val.get_port_width())) && 
         stream._value_bytes*n < 64 && // number of pushes should be max 
-        !crossbar_backpressureOn()) { // enough in src and dest
+        !crossbar_backpressureOn() && stream._val_sstream_left!=-1) { // enough in src and dest
       n++;
 
       // hopefully it pushes data here
@@ -4676,22 +4677,24 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
       num_addr_pops = 0;
       num_val_pops = 0;
 
-      loc = out_addr.peek_out_data(0, stream._addr_bytes); // ;output_bytes);
-      if (SS_DEBUG::COMP) {
-        std::cout << "1 cycle execution : " << std::endl;
-        std::cout << "64-bit value at the addr port is: " << loc;
-      }
-      loc = stream.cur_addr(loc);
-      // cout << "cur addr index: " << stream._cur_addr_index << " addr bytes: " << stream._addr_bytes << endl;
-      // std::cout << "updated loc: " << loc << "\n";
+      if(stream._val_sstream_left>0) {
+        loc = out_addr.peek_out_data(0, stream._addr_bytes); // ;output_bytes);
+        if (SS_DEBUG::COMP) {
+          std::cout << "1 cycle execution : " << std::endl;
+          std::cout << "64-bit value at the addr port is: " << loc;
+        }
+        loc = stream.cur_addr(loc);
+        // cout << "cur addr index: " << stream._cur_addr_index << " addr bytes: " << stream._addr_bytes << endl;
+        // std::cout << "updated loc: " << loc << "\n";
 
-      base_addr = stream.cur_offset() * stream._output_bytes;
-      scr_addr = base_addr + loc * stream._output_bytes;
-      max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
+        base_addr = stream.cur_offset() * stream._output_bytes;
+        scr_addr = base_addr + loc * stream._output_bytes;
+        max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
+      }
 
       // TODO: num_value_pops should be less than 64 bytes?
       // Stage 1: push requests in scratch banks
-      while (scr_addr < max_addr && stream._num_strides > 0 &&
+      while (scr_addr <= max_addr && stream._num_strides > 0 &&
              (stream._val_sstream_left<=0 || out_addr.mem_size() >= (stream._addr_bytes/out_addr.get_port_width())) && (stream._sstream_left<=0 || out_val.mem_size()>=stream._value_bytes/out_val.get_port_width()) &&
              num_val_pops < 64/stream._value_bytes && 
              stream._val_sstream_left!=-1) {
@@ -4815,7 +4818,8 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
         }
         // should be decremented after every computation
         // new loop added for vector ports
-        if (out_addr.mem_size() > 0 && out_val.mem_size() > 0) {
+        if(stream._val_sstream_left>0 && out_addr.mem_size() >= (stream._addr_bytes/out_addr.get_port_width())) {
+        // if (out_addr.mem_size() > 0 && out_val.mem_size() > 0) {
           loc = out_addr.peek_out_data();
           if (SS_DEBUG::COMP) {
             std::cout << "64-bit value at the addr port is: " << loc;
@@ -5073,11 +5077,18 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
       //      << out_addr.mem_size() << " val mem_size: " << out_val.mem_size()
       //      << " stream_active: " << stream.stream_active()
       //      << " sstream left: " << stream._sstream_left << " val sstream left: " << stream._val_sstream_left 
-      //      << " out port: " << stream._out_port << " val port: " << stream._val_port << endl;
+      //      << " out port: " << stream._out_port << " val port: " << stream._val_port <<           " strides left: " << stream._num_strides << endl;
+
+
+      // Oh the issue is even though the stream is active, and there is no data
+      // on the value port but that is not required because num_updates size is
+      // going to be 0
 
       // FIXME: mem_size based on config (this should be greater than
       // addr_bytes/out_addr.data_width
-      if(stream.stream_active() && (stream._val_sstream_left<=0 || out_addr.mem_size() >= (stream._addr_bytes/out_addr.get_port_width())) && (stream._sstream_left<=0 || out_val.mem_size() >= (stream._value_bytes/out_val.get_port_width()))) {
+      
+      if(stream.stream_active() && (stream._val_sstream_left<=0 || out_addr.mem_size() >= (stream._addr_bytes/out_addr.get_port_width()))) {
+      // if(stream.stream_active() && (stream._val_sstream_left<=0 || out_addr.mem_size() >= (stream._addr_bytes/out_addr.get_port_width())) && (stream._sstream_left<=0 || out_val.mem_size() >= (stream._value_bytes/out_val.get_port_width()))) {
         // Constraint: This should be same for all active atomic streams
         _logical_banks = NUM_SCRATCH_BANKS / stream._value_bytes;
         if(stream._sstream_left==stream._val_num && stream._num_updates==-1) { // no values left
@@ -6328,6 +6339,7 @@ int scratch_write_controller_t::push_and_update_addr_in_pq(int tid, int num_byte
   cout << "port width of addr: " << in_addr.get_port_width() << " and bytes: " << bytes_prt.get_port_width() << endl;
   // push num_addr bytes while these are addresses in int
   for(int i=0; i<num_addr; ++i) {
+    cout << "Pushing addresses: " << it->second.second[i] << endl;
     in_addr.push_data(in_addr.get_byte_vector(it->second.second[i], _atomic_addr_bytes));
     bytes_prt.push_data(bytes_prt.get_byte_vector(num_bytes,1));
     it->second.second[i] += num_bytes; // update address

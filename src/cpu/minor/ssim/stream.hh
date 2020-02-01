@@ -1241,7 +1241,9 @@ struct atomic_scr_stream_t : public base_stream_t {
     _num_strides--;
     if(_is_update_cnt_port) _num_updates=-1;
     // std::cout << "Reducing num strides, value sstream left: " << _sstream_left << " addr left: " << _val_sstream_left << "\n";
+    //i if strides are set to 0, not an issue...
     _val_sstream_left=_num_updates; _sstream_left=_val_num;
+    
     /*if(_val_sstream_left==0 && _sstream_left==0) {
     // if(_val_sstream_left==_num_updates && _sstream_left==_val_num) {
     }*/
