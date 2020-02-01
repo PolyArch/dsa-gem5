@@ -143,6 +143,7 @@ public:
 
   bool can_push_bytes_vp(int num_bytes) {
     int num_elem = num_bytes/_port_width;
+    // std::cout << "num elem: " << num_elem << " num can push: " << num_can_push() << "\n";
     return num_elem <= num_can_push();
   }
 
@@ -286,29 +287,6 @@ public:
 
   int port() {return _port;}
 
-  /*
-  template <typename T>
-  void push_cgra_port(unsigned cgra_port, T val, bool valid) {
-    int data_size = sizeof(T);
-    assert(data_size=_port_width && "data size doesn't match the port width in dfg");
-    // std::cout << "Data being pushed to cgra port" << std::hex << val << std::endl;
-    // _cgra_data[cgra_port].push_back(val);
-    // _cgra_data[cgra_port].push_back(get_byte_vector(val,_port_width));
-    // _cgra_valid[cgra_port].push_back(valid);
-
-    int num_chunks = sizeof(T)/_port_width;
-    // std::cout << "Data being pushed to cgra" << std::hex << val << std::endl;
-    for(int i=0; i<num_chunks; ++i){
-      // std::cout << "Scalar data beng sent to cgra" << std::hex << (data >> (i*_port_width*8)) << std::endl;
-      std::vector<uint8_t> v = get_byte_vector(val >> (i*_port_width*8),_port_width);
-      // std::cout << "Data after conversion to vector and back" << std::hex << get_sbdt_val(v,_port_width) << std::endl;
-        _cgra_data[cgra_port].push_back(v);
-        _cgra_valid[cgra_port].push_back(valid);
-        //_total_pushed+=valid;
-    }
-
-  }
-  */
 
   void push_cgra_port(unsigned cgra_port, SBDT val, bool valid) {
     std::vector<uint8_t> v(sizeof(SBDT));
@@ -486,6 +464,27 @@ public:
   // stats info (see if I need it)
   void inc_rem_wr(int x) { _num_rem_wr+=x; }
   unsigned get_rem_wr() { return _num_rem_wr; }
+
+  void set_is_bytes_waiting_final() {
+    _is_bytes_waiting_final=true;
+  }
+
+  void inc_bytes_waiting(int x) {
+    _bytes_waiting += x;
+    // std::cout << "New bytes waiting: " << _bytes_waiting << " and inc: " << x << "\n";
+  }
+
+  bool is_bytes_waiting_zero() {
+    return _bytes_waiting==0;
+  }
+
+  bool get_is_bytes_waiting_final() {
+    return _is_bytes_waiting_final;
+  }
+
+  int get_bytes_waiting() {
+    return _bytes_waiting;
+  }
  
 private:
   //Programmable Repeat:
@@ -517,6 +516,8 @@ private:
   unsigned _num_rem_wr=0;
 
   uint64_t _total_pushed=0;
+  int _bytes_waiting=0;
+  bool _is_bytes_waiting_final=false;
 };
 
 //Entire Port interface with each being port_data_t

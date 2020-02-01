@@ -1440,8 +1440,8 @@ LSQ::LSQ(std::string name_, std::string dcache_port_name_,
     lineWidth((line_width == 0 ? cpu.cacheLineSize() : line_width)),
     // requests(name_ + ".requests", "addr", requests_queue_size + 1),
     // transfers(name_ + ".transfers", "addr", transfers_queue_size + 1),
-    requests(name_ + ".requests", "addr", requests_queue_size + 10),
-    transfers(name_ + ".transfers", "addr", transfers_queue_size + 10),
+    requests(name_ + ".requests", "addr", requests_queue_size + 1), // 22),
+    transfers(name_ + ".transfers", "addr", transfers_queue_size + 1), // 22),
     storeBuffer(name_ + ".storeBuffer",
         *this, store_buffer_size, store_buffer_cycle_store_limit),
     numAccessesInMemorySystem(0),
@@ -1457,7 +1457,9 @@ LSQ::LSQ(std::string name_, std::string dcache_port_name_,
      */
     for(int i = 0; i < 100; ++i) {
         //Logically this would be implemented with a single queue
+      // sd_transfers.emplace_back(name_ + ".sd_transfers", "addr", 21);
       sd_transfers.emplace_back(name_ + ".sd_transfers", "addr", 22);
+
     }
 
     if (in_memory_system_limit < 1) {

@@ -27,6 +27,8 @@ typedef uint64_t addr_t;
 #define ACCEL_MASK 0xFF
 #define SHARED_MASK (ACCEL_MASK+1)
 
+#define SD_TRANSFERS_ALLOWED 22
+
 #define MEM_WIDTH (64)
 #define MEM_MASK ~(MEM_WIDTH-1)
 
@@ -51,6 +53,7 @@ typedef uint64_t addr_t;
 
 #define ATOMIC_ADDR_PORT (27)
 #define ATOMIC_BYTES_PORT (28)
+#define BYTES_PORT_DATA_WIDTH (2)
 
 // #define NET_ADDR_PORT (25)
 // #define NET_VAL_PORT (32)

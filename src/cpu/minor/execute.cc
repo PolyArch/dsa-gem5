@@ -1711,38 +1711,11 @@ bool Execute::push_rem_read_req(int dest_core_id, int request_ptr, int addr, int
   return true;
 }
 
-/*
 void Execute::push_net_req(spu_req_info req) {
-  // std::cout << "To send, data bytes: " << req.num_data_bytes << " num dest: " << req.num_dest << "\n";
-  // " first value: " << signed(req.data[0]) << "\n";
-
-  // so this is data and num_bytes sent to the network controller, it
-  // should probably split this here before sending to the actual request queue
-  // TODO: for these wide network packets, we probably need to tag the first
-  // packet and for rest of the packets we only send data, I can also emulate
-  // as reducing the number of data_bytes allocated for the first one (for
-  // addr) and from there it has all complete portion
-  // TODO: add a flag if sequence or initial tag and I can just do this for now
-
-  // int addr_packets=1; // we could keep it maximum to register the tag so we can continue later
- 
-  // TODO: need to make multiple packets here...
-  // msg should be created here (just send multicast dest and addr)
+  int j=0;
+  int split_count=0;
   while(req.num_data_bytes!=0) {
-    int bytes_to_send = std::min(SPU_NET_PACKET_SIZE, req.num_data_bytes); // 64 is the maximum bytes allowed
-    for(int j=0; j<bytes_to_send; ++j){ // non-zero if data-request
-      (*req.msg).m_DataBlk.setByte(j,req.data[j]);
-    }
-    _pending_net_req.push(std::make_pair(req.msg,req.num_dest)); // ordering may be changed
-    req.num_data_bytes -= bytes_to_send;
-    req.data += bytes_to_send;
-  }
-}
-*/
-
-void Execute::push_net_req(spu_req_info req) {
-  while(req.num_data_bytes!=0) {
-
+    split_count++;
     std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
     (*msg).m_MessageSize = MessageSizeType_Control;
     (*msg).m_Requestor = cpu.get_m_version();
@@ -1757,16 +1730,19 @@ void Execute::push_net_req(spu_req_info req) {
     }
     (*msg).m_addr = req.addr_to_send;
     int bytes_to_send = std::min(SPU_NET_PACKET_SIZE, req.num_data_bytes);
-    for(int j=0; j<bytes_to_send; ++j){ // non-zero if data-request
+    for(j=0; j<bytes_to_send; ++j){ // non-zero if data-request
       (*msg).m_DataBlk.setByte(j,req.data[j]);
     }
-    for(int j=0; j<req.num_dest; ++j){ // non-zero if data-request
+    // delimeter used in atomic update requests
+    if(j!=SPU_NET_PACKET_SIZE) (*msg).m_DataBlk.setByte(j,-1);
+    for(j=0; j<req.num_dest; ++j){ // non-zero if data-request
       (*msg).m_Destination.add(cpu.get_m_version(req.mcast_dest[j]));
     }
     _pending_net_req.push(std::make_pair(msg,req.num_dest)); // ordering may be changed
     req.num_data_bytes -= bytes_to_send;
     req.data += bytes_to_send;
   }
+  std::cout << "Split count this cycle: " << split_count << "\n";
 }
 
 // TODO: this should be called at each network cycle not spu?
@@ -1797,14 +1773,13 @@ void Execute::serve_pending_net_req() {
 // fixed data-type)
 bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadcast_dest, std::vector<int> update_coalesce_vals, int opcode, int val_bytes, int out_bytes) {
 
-  std::cout << "Received an atomic op request with dest size: " << update_broadcast_dest.size() << " and coalesce size: " << update_coalesce_vals.size() << "\n";
+  // std::cout << "Received an atomic op request with dest size: " << update_broadcast_dest.size() << " and coalesce size: " << update_coalesce_vals.size() << "\n";
 
   for(unsigned k=0; k<update_broadcast_dest.size(); ++k) {
     std::cout << "addr: " << update_broadcast_dest[k] << " ";
    }
   int req_type = 2;
   int num_updates = update_broadcast_dest.size();
-  int sent_size=0;
   int num_vals = update_coalesce_vals.size();
   int values_to_send =  num_vals*val_bytes; // 2*8>
   int req_core = cpu.cpuId();
@@ -1857,53 +1832,34 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
   if(num_dest!=0) {
     // tagged | tag packet | tag...
     // destinations)
-    unsigned addr_to_send =  num_dest*addr_bytes;
-    sent_size=addr_to_send;
-    if(addr_to_send<64) sent_size++;
-    int8_t a[sent_size];
-    for(j=0; j<addr_to_send; ++j){ 
+    unsigned num_addr_to_send =  dest_scratch_addr.size()*addr_bytes;
+    int8_t a[num_addr_to_send];
+    for(j=0; j<num_addr_to_send; ++j){ 
       int i = j/addr_bytes;
       int k = j%addr_bytes;
       a[j] = (dest_scratch_addr[i] >> (k*8)) & 255; // since signed?
     }
-    if(j!=64) a[j]=-1; // delimeter
+    // if(j!=64) a[j]=-1; // delimeter
 
     addr_to_send = 1 | (1<<1) | (tag << 2) | (values_to_send << 18);
-    // (*msg1).m_addr = 1 | (1<<1) | (tag << 2) | (values_to_send << 18);
-    spu_req_info req(num_dest, a, sent_size, addr_to_send, multicast_dest, req_type);
+    spu_req_info req(num_dest, a, num_addr_to_send, addr_to_send, multicast_dest, req_type);
     push_net_req(req);
     dest_scratch_addr.clear();
-    std::cout << "Send tagged packet with num dest: " << num_dest << " tag: " << tag << " values bytes to wait for: " << values_to_send << " and num addr bytes: " << addr_to_send << " -1th bit: " << j << "\n";
+    // std::cout << "Send tagged packet with num dest: " << num_dest << " tag: " << tag << " values bytes to wait for: " << values_to_send << " and num addr bytes: " << addr_to_send << " -1th bit: " << j << "\n";
 
   }
 
-  // TODO: this should be split int multiple packets corresponding to number of
   // values
-  sent_size = values_to_send;
-  if(values_to_send<64) sent_size++;
-  int8_t v[sent_size];
+  int8_t v[values_to_send];
   // Step2: send the value packets
   if(num_dest!=0) {
-    // loop over bunch of values (create new messages)
-    /*
-    std::shared_ptr<SpuRequestMsg> msg2 = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
-    (*msg2).m_MessageSize = MessageSizeType_Control;
-    (*msg2).m_Type = SpuRequestType_UPDATE;
-    (*msg2).m_Requestor = cpu.get_m_version();
-
-    for(unsigned i=0; i<multicast_dest.size(); ++i) {
-      (*msg2).m_Destination.add(cpu.get_m_version(multicast_dest[i]));
-    }
-    */
     for(j=0; j<values_to_send; ++j){ 
       int i = j/val_bytes;
       int k = j%val_bytes;
       v[j] = (update_coalesce_vals[i] >> (k*8)) & 255;
     }
-    if(j!=64) v[j]=-1; // delimeter
-    // (*msg2).m_addr = 1 | 0<<1 | tag << 2;
     addr_to_send = 1 | 0<<1 | tag << 2;
-    spu_req_info req_seq(num_dest, v, sent_size, addr_to_send, multicast_dest, req_type);
+    spu_req_info req_seq(num_dest, v, values_to_send, addr_to_send, multicast_dest, req_type);
     push_net_req(req_seq);
   }
 

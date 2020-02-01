@@ -145,11 +145,11 @@ void MinorCPU::wakeup()
     if((*msg).m_Type == SpuRequestType_UPDATE) {
       bool is_tagged = return_info & 1; 
       bool is_tag_packet = (return_info >> 1) & 1; 
-      std::cout << "update request received, is tagged: " << is_tagged << " is tag packet: " << is_tag_packet << "\n";
+      // std::cout << "update request received, is tagged: " << is_tagged << " is tag packet: " << is_tag_packet << "\n";
       // Step1: get the start address from here
       if(is_tagged) {
         int tag = (return_info >> 2) & 65535;
-        std::cout << "tag in the received packet: " << tag << "\n";
+        // std::cout << "tag in the received packet: " << tag << "\n";
         uint8_t l;
         if(is_tag_packet) {
           int bytes_waiting = (return_info >> 18);
@@ -168,12 +168,12 @@ void MinorCPU::wakeup()
               inc = inc | (l << k*8);
               // std::cout << "8-bit value: " << (signed)(x) << "\n";
             }
-            std::cout << "i: " << i << " inc: " << inc << std::endl;
+            // std::cout << "i: " << i << " inc: " << inc << std::endl;
             if(i!=60 && (inc/SCRATCH_SIZE==cpuId()-1)) {
               start_addr.push_back(inc & (SCRATCH_SIZE-1));
             }
           }
-          std::cout << "core: " << cpuId() << " addr received: " << start_addr.size() << " and bytes waiting for each: " << bytes_waiting << "\n";
+          // std::cout << "core: " << cpuId() << " addr received: " << start_addr.size() << " and bytes waiting for each: " << bytes_waiting << "\n";
           pipeline->insert_pending_request_queue(tag, start_addr, bytes_waiting);
         } else {
           std::vector<uint8_t> inc_val;
@@ -183,9 +183,9 @@ void MinorCPU::wakeup()
             l=x;
             inc_val.push_back(l);
           }
-          std::cout << "number of value bytes received: " << inc_val.size();
+          // std::cout << "number of value bytes received: " << inc_val.size();
           int num_addr = pipeline->push_and_update_addr_in_pq(tag, inc_val.size());
-          std::cout << " num addr waiting to consume all values: " << num_addr << "\n";
+          // std::cout << " num addr waiting to consume all values: " << num_addr << "\n";
           // pop values and push in the value queue (num_times is start addr)
           // ssim.push_atomic_inc(inc_val, num_addr); // vec of values, repeat times
           pipeline->push_atomic_inc(inc_val, num_addr);
