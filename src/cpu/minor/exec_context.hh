@@ -625,6 +625,7 @@ class ExecContext : public ::ExecContext
                 ssim.set_not_in_use();
                 // int t = wait_mask/128;
                 int t = thread.getSSReg(SS_NUM_ELEM);
+                if(SS_DEBUG::WAIT)
                 printf("Identified global wait with threads: %d\n",t);
                 ssim.set_num_active_threads(t);
                 DPRINTF(SS, "Wait on all threads\n");         

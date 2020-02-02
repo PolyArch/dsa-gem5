@@ -1664,6 +1664,7 @@ bool Execute::push_rem_read_req(int dest_core_id, int request_ptr, int addr, int
 
   int req_core = cpu.cpuId();
 
+  // std::cout << "Address for indirect read: " << addr << "\n";
   // std::cout << "Came in for addr: " << addr << " req_core: " << req_core << " dest core: " << dest_core_id << "\n";
 
   addr = addr & (SCRATCH_SIZE-1);
@@ -1711,6 +1712,9 @@ bool Execute::push_rem_read_req(int dest_core_id, int request_ptr, int addr, int
   return true;
 }
 
+// FIXME: for addresses, it will split at weird point..
+// also, if address tag is split, it should consider other packet as tagged and
+// just add new number of bytes
 void Execute::push_net_req(spu_req_info req) {
   int j=0;
   int split_count=0;
@@ -1742,7 +1746,7 @@ void Execute::push_net_req(spu_req_info req) {
     req.num_data_bytes -= bytes_to_send;
     req.data += bytes_to_send;
   }
-  std::cout << "Split count this cycle: " << split_count << "\n";
+  // std::cout << "Split count this cycle: " << split_count << "\n";
 }
 
 // TODO: this should be called at each network cycle not spu?
@@ -1775,9 +1779,10 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
 
   // std::cout << "Received an atomic op request with dest size: " << update_broadcast_dest.size() << " and coalesce size: " << update_coalesce_vals.size() << "\n";
 
-  for(unsigned k=0; k<update_broadcast_dest.size(); ++k) {
-    std::cout << "addr: " << update_broadcast_dest[k] << " ";
-   }
+  /*for(unsigned k=0; k<update_broadcast_dest.size(); ++k) {
+    std::cout << "broadcast addr: " << update_broadcast_dest[k] << " ";
+  }*/
+  std::cout << "\n";
   int req_type = 2;
   int num_updates = update_broadcast_dest.size();
   int num_vals = update_coalesce_vals.size();
@@ -1787,8 +1792,7 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
   dest_done.resize(ssim.num_active_threads(), 0);
 
   int num_dest=0;
-  // int num_dest_per_packet=20; // if we need to send complete scratch addr
-  int addr_bytes=3;
+  int addr_bytes=4; // FIXME: can be 2 to improve multicast, but currently lets keep it a power-of-2
 
   unsigned d=0, j=0;
   int tag=-1;
@@ -1799,15 +1803,13 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
   int num_active_threads = ssim.num_active_threads();
   int multicast_dest[num_active_threads];
   uint64_t addr_to_send;
-
-  std::shared_ptr<SpuRequestMsg> msg1 = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
-  (*msg1).m_MessageSize = MessageSizeType_Control;
-  (*msg1).m_Type = SpuRequestType_UPDATE;
-  (*msg1).m_Requestor = cpu.get_m_version();
-
   std::vector<int> dest_scratch_addr;
   num_dest=0;
-  for(d=0; d<num_updates; ++d) {
+
+  // TODO: only the last round will be sent with a tag
+  // for others, it will record the start addr until a tagged packet is
+  // received 
+  for(d=0; d<num_updates; ++d) { 
     int local_scr_addr = update_broadcast_dest[d] & (SCRATCH_SIZE-1);
     int dest_core_id = update_broadcast_dest[d]/SCRATCH_SIZE;
     dest_core_id += 1; // this should be 1 to 8
@@ -1827,7 +1829,6 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
     }
     dest_done[dest_core_id-1]=true;
     dest_scratch_addr.push_back(update_broadcast_dest[d]);
-    (*msg1).m_Destination.add(cpu.get_m_version(dest_core_id));
   }
   if(num_dest!=0) {
     // tagged | tag packet | tag...

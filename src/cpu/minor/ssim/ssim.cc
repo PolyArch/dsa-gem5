@@ -499,7 +499,7 @@ void ssim_t::atomic_update_hardware_config(int addr_port, int val_port, int out_
 
   port_data_t& value_port = accel_arr[0]->_port_interf.in_port(val_port);
   accel_arr[0]->_scr_w_c.set_atomic_val_bytes(value_port.get_port_width());
-  std::cout << " Addr port: " << addr_port << " val port: " << val_port << " out port: " << out_port << "\n";
+  // std::cout << " Addr port: " << addr_port << " val port: " << val_port << " out port: " << out_port << "\n";
 
 }
 
@@ -674,8 +674,8 @@ void ssim_t::indirect(int ind_port, int ind_type, int in_port, addr_t index_addr
   else s->_unit=LOC::DMA;
   s->set_orig();
 
-  add_bitmask_stream(s);
   set_memory_map_config(s, partition_size, active_core_bitvector, mapping_type);
+  add_bitmask_stream(s);
 
 }
 

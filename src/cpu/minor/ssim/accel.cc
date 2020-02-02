@@ -2275,12 +2275,10 @@ void dma_controller_t::port_resp(unsigned cur_port) {
         apply_map(packet->getPtr<uint8_t>(), response->sdInfo->map, data);
       }
 
-      cout << "Data bytes received: " << data.size() << " at core: " << _accel->_lsq->getCpuId() << endl;
-
-
       //-----------------
 
       bool port_in_okay = true;
+
       // push in byte-by-byte at the ports
       for (int in_port : response->sdInfo->ports) {
         port_data_t &in_vp = pi.in_port(in_port);
@@ -2327,6 +2325,9 @@ void dma_controller_t::port_resp(unsigned cur_port) {
 
             in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE,
                              response->sdInfo->fill_mode);
+
+            assert(in_vp.is_bytes_waiting_zero());
+            in_vp.reset_is_bytes_waiting_final();
           }
         }
 
@@ -2350,7 +2351,6 @@ void dma_controller_t::port_resp(unsigned cur_port) {
         _accel->_lsq->popResponse(cur_port);
 
         _mem_read_reqs--;
-        cout << "Left memory read reqs: " << _mem_read_reqs << endl;
         return;
       }
     }
@@ -2559,13 +2559,15 @@ void dma_controller_t::make_write_request() {
 
 #define MAX_PORT_READY 100000
 
+// FIXME: if this is 0? (somehow arbitrate among cores in that case)
 void dma_controller_t::make_read_request() {
   //--------------------------
   float min_port_ready = -2;
   int num_cores = _accel->_ssim->num_active_threads();
   if(_accel->_lsq->getCpuId()==0) num_cores=1;
-  int max_reqs=SD_TRANSFERS_ALLOWED/num_cores;
-  // if(mem_reqs()>=max_reqs) return; // may be in worse case
+  int max_reqs=SD_TRANSFERS_ALLOWED/num_cores; // 22/16=1
+  if(max_reqs==0) if(_accel->get_cur_cycle()%2) max_reqs=1;
+  if(mem_reqs()>=max_reqs) return; // may be in worse case
   //----------------------------
 
   for (unsigned i = 0; i < _read_streams.size(); ++i) {
@@ -2610,8 +2612,7 @@ void dma_controller_t::make_read_request() {
         bool x1 = _accel->_lsq->sd_transfers[in_port].unreservedRemainingSpace() > 0;
         bool x2 = _accel->_lsq->canRequest();
 
-        cout << "core: " << _accel->_lsq->getCpuId() << " cond1: " << x1 << " cond2: " << x2 << " in port: " << in_port << endl;
-
+        // cout << "core: " << _accel->_lsq->getCpuId() << " cond1: " << x1 << " cond2: " << x2 << " in port: " << in_port << endl;
 
         if (x1 && x2) {
 
@@ -2677,9 +2678,6 @@ void dma_controller_t::make_read_request() {
 
           auto &in_vp = _accel->port_interf().in_port(in_port);
           if (in_vp.num_can_push() > 8) { // FIXME:CHECKME: make sure vp isn't full
-            // _accel->_lsq->sd_transfers[in_port].reserve();
-
-            // pull_data_indirect(ind_s,data,mem_complete_cyc);
             ind_read_req(stream);
 
             if (stream.empty()) {
@@ -2687,7 +2685,9 @@ void dma_controller_t::make_read_request() {
               if (SS_DEBUG::VP_SCORE2) {
                 cout << "SOURCE: Indirect DMA->PORT \n";
               }
-              in_vp.set_status(port_data_t::STATUS::COMPLETE, LOC::DMA);
+              /*if(in_vp.in_use()) { // not sure why is it required..
+                in_vp.set_status(port_data_t::STATUS::COMPLETE, LOC::DMA);
+              }*/
 
               // out_ind_vp is where we keep track of the resource
               if (SS_DEBUG::VP_SCORE2) {
@@ -3782,7 +3782,7 @@ vector<uint8_t> scratch_read_controller_t::read_scratch(affine_read_stream_t &st
     } else {
       if(!(addr + data_width >= SCRATCH_SIZE &&
              addr + data_width <= SCRATCH_SIZE + LSCRATCH_SIZE)) {
-        cout << "Addr: " << addr << " data_width: " << data_width << endl;
+        // cout << "Addr: " << addr << " data_width: " << data_width << endl;
       }
       assert(addr + data_width >= SCRATCH_SIZE &&
              addr + data_width <= SCRATCH_SIZE + LSCRATCH_SIZE);
@@ -4710,7 +4710,7 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
       if(update_cnt.mem_size()>0) { // same data-type
         stream._num_updates = update_cnt.pop_out_data();
         stream._val_sstream_left=stream._num_updates;
-        cout << " Num updates this round: " << stream._num_updates << endl;
+        // cout << " Num updates this round: " << stream._num_updates << endl;
         assert(stream._num_updates>=0 && stream._num_updates<10000);
         if(stream._num_updates==0) {
           stream._num_updates=-1;
@@ -4740,17 +4740,18 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
 
       if(stream._val_sstream_left>0) {
         loc = out_addr.peek_out_data(0, stream._addr_bytes); // ;output_bytes);
+        // cout << "value popped from port: " << loc << " ";
         if (SS_DEBUG::COMP) {
           std::cout << "1 cycle execution : " << std::endl;
           std::cout << "64-bit value at the addr port is: " << loc;
         }
-        loc = stream.cur_addr(loc);
+        // loc = stream.cur_addr(loc);
         // cout << "cur addr index: " << stream._cur_addr_index << " addr bytes: " << stream._addr_bytes << endl;
-        // std::cout << "updated loc: " << loc << "\n";
 
         base_addr = stream.cur_offset() * stream._output_bytes;
         scr_addr = base_addr + loc * stream._output_bytes;
         max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
+        // std::cout << "updated loc: " << loc << " and stream op bytes: " << stream._output_bytes << " base_addr: " << base_addr << "\n";
       }
 
       // TODO: num_value_pops should be less than 64 bytes?
@@ -4885,7 +4886,7 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
           if (SS_DEBUG::COMP) {
             std::cout << "64-bit value at the addr port is: " << loc;
           }
-          loc = stream.cur_addr(loc);
+          // loc = stream.cur_addr(loc);
           // std::cout << "loc: " << loc << "\n";
           // making offset also configurable (same configuration as the
           // address)
@@ -5156,7 +5157,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
           assert(stream._is_update_cnt_port);
           port_data_t &update_cnt = _accel->port_interf().out_port(stream._num_update_port);
           if(update_cnt.mem_size()==0) {
-            cout << "Could not issue due to less values in update cnt: " << stream._num_update_port << endl;
+            // cout << "Could not issue due to less values in update cnt: " << stream._num_update_port << endl;
             continue;
           }
         }
@@ -5805,16 +5806,18 @@ bool accel_t::done(bool show, int mask) {
 
     // Check network as well
     if(d) { // if done, check network as well
-      cout << "All cores done, checking network\n";
+      if(SS_DEBUG::WAIT) cout << "All cores done, checking network\n";
       bool x = _lsq->spu_net_done();// _lsq->check_network_idle();
       if(!x) d = x;
-      else cout << "Network done for number of threads: " << _ssim->num_active_threads() << "\n";
-      // else cout << "Network idle\n";
+      else {
+        if(SS_DEBUG::WAIT)
+        cout << "Network done for number of threads: " << _ssim->num_active_threads() << "\n";
+      }
     }
 
     if(d) {
-      // if(SS_DEBUG::WAIT) {
-      if(1) {
+      if(SS_DEBUG::WAIT) {
+      // if(1) {
         cout << "GLOBAL WAIT RELEASED for core id: " << _lsq->getCpuId() << "\n";
         cout << "CORE ID: " << _lsq->getCpuId() << "\n";
       }
@@ -6388,11 +6391,14 @@ bool scratch_write_controller_t::schedule_buffet(BuffetStream *buffet) {
 void scratch_write_controller_t::insert_pending_request_queue(int tid, vector<int> start_addr, int bytes_waiting) {
   if(start_addr.size()==0) return; // for current bad impl
   auto it = _pending_request_queue.find(tid);
-  assert(it==_pending_request_queue.end());
+  if(it!=_pending_request_queue.end()) return; // already there!
+  // assert(it==_pending_request_queue.end() && "this tid already present...");
   // cout << "Inserted a task in pq for tid: " << tid << " at core: " << _accel->_lsq->getCpuId() << endl;
   _pending_request_queue.insert(make_pair(tid, make_pair(bytes_waiting, start_addr)));
 }
 
+// TODO: we could set repeat count of byte port to current broadcast length
+// (another port which pushes this like vrepeat_port)
 int scratch_write_controller_t::push_and_update_addr_in_pq(int tid, int num_bytes) {
   // cout << "Searching for a task in pq for tid: " << tid << " at core: " << _accel->_lsq->getCpuId() << endl;
   auto it = _pending_request_queue.find(tid);

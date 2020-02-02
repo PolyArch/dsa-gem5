@@ -32,7 +32,6 @@ void base_stream_t::print_in_ports() {
   }
 }
 
-// TODO: set part bits in the constructor
 // based on memory mapping, extract these two information
 uint64_t base_stream_t::get_core_id(addr_t logical_addr) {
   if(_part_size==0) return logical_addr/SCRATCH_SIZE;

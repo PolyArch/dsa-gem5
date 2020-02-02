@@ -50,5 +50,6 @@ class SimpleMemory(AbstractMemory):
     latency_var = Param.Latency('0ns', "Request to response latency variance")
     # The memory bandwidth limit default is set to 12.8GB/s which is
     # representative of a x64 DDR3-1600 channel.
+    # bandwidth = Param.MemoryBandwidth('12.8GB/s',
     bandwidth = Param.MemoryBandwidth('12.8GB/s',
                                       "Combined read and write bandwidth")

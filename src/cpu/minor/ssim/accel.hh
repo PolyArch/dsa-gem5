@@ -469,6 +469,11 @@ public:
     _is_bytes_waiting_final=true;
   }
 
+
+  void reset_is_bytes_waiting_final() {
+    _is_bytes_waiting_final=false;
+  }
+
   void inc_bytes_waiting(int x) {
     _bytes_waiting += x;
     // std::cout << "New bytes waiting: " << _bytes_waiting << " and inc: " << x << "\n";

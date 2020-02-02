@@ -131,7 +131,7 @@ void MinorCPU::wakeup()
 
     // FIXME: may not be applicable for others too (now I have move to
     // delimeter way)
-    if((*msg).m_Type != SpuRequestType_UPDATE) {
+    if((*msg).m_Type != SpuRequestType_UPDATE && num_bytes<=64) {
       for(int i=0; i<num_bytes; ++i) {
         data[i] = (*msg).m_DataBlk.getByte(i);
       }
@@ -157,7 +157,8 @@ void MinorCPU::wakeup()
           uint64_t inc = 0;
           // TODO: I need to split which of these addresses belong to the
           // current node!!!
-          for(int i=0; i<60; i+=3) { // limit on this?
+          // int limit = SPU_NET_PACKET_SIZE/3 ;
+          for(int i=0; i<SPU_NET_PACKET_SIZE; i+=4) { // limit on this?
             inc = 0;
             for(int k=0; k<3; k++) { // 32768
               int8_t x = msg->m_DataBlk.getByte(i+k);
@@ -173,11 +174,13 @@ void MinorCPU::wakeup()
               start_addr.push_back(inc & (SCRATCH_SIZE-1));
             }
           }
+
           // std::cout << "core: " << cpuId() << " addr received: " << start_addr.size() << " and bytes waiting for each: " << bytes_waiting << "\n";
           pipeline->insert_pending_request_queue(tag, start_addr, bytes_waiting);
+          start_addr.clear();
         } else {
           std::vector<uint8_t> inc_val;
-          for(int i=0; i<64; ++i) {
+          for(int i=0; i<SPU_NET_PACKET_SIZE; ++i) {
             int8_t x = msg->m_DataBlk.getByte(i);
             if(signed(x)==-1) break;
             l=x;
