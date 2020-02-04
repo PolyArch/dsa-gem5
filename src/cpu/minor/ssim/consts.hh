@@ -54,6 +54,7 @@ typedef uint64_t addr_t;
 #define ATOMIC_ADDR_PORT (27)
 #define ATOMIC_BYTES_PORT (28)
 #define BYTES_PORT_DATA_WIDTH (2)
+#define ATOMIC_ADDR_DATA_WIDTH (2)
 
 // #define NET_ADDR_PORT (25)
 // #define NET_VAL_PORT (32)

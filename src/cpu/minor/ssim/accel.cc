@@ -211,11 +211,10 @@ void soft_config_t::reset() {
 }
 
 // ------------------------------ VECTOR PORTS
-// ------------------------------------- void port_data_t::initialize(SSModel*
-// ssconfig, int port, bool isInput, int port_width) {
 void port_data_t::initialize(SSModel *ssconfig, int port, bool isInput) {
   _isInput = isInput;
   _port = port;
+  _bytes_waiting=0;
 }
 
 void port_data_t::reset() {
@@ -282,8 +281,7 @@ void port_data_t::reformat_in() { // rearrange data for CGRA
 }
 
 void port_data_t::reformat_in_one_vec() { // rearrange data for CGRA
-  if (_mem_data.size() >= port_vec_elem() &&
-      _num_ready + port_depth() <= CGRA_FIFO_LEN) {
+  if (_mem_data.size() >= port_vec_elem() && _num_ready + port_depth() <= CGRA_FIFO_LEN) {
     reformat_in_work();
   }
 }
@@ -985,6 +983,7 @@ void accel_t::tick() {
 // simpler than it used to be
 void accel_t::cycle_indirect_interf() {
   for (unsigned i = START_IND_PORTS; i < STOP_IND_PORTS; ++i) { // ind read ports
+    if(i==ATOMIC_ADDR_PORT || i==ATOMIC_BYTES_PORT) continue; //dedicated ports
     auto &ind_in_port = _port_interf.in_port(i);
     auto &ind_out_port = _port_interf.out_port(i);
     
@@ -1038,6 +1037,7 @@ void accel_t::cycle_cgra_backpressure() {
   auto &active_in_ports = _soft_config.in_ports_active_backcgra;
 
   // for stats, this may make simulation slower--have separate mode for it: TODO
+  /*
   int count_avail;
   count_avail = 0;
   for (int i = 0; i < active_in_ports.size(); ++i) {
@@ -1063,6 +1063,7 @@ void accel_t::cycle_cgra_backpressure() {
   // bottleneck)
   double ratio = (double)count_avail / (double)active_in_ports.size();
   _stat_ss_data_avail_ratio += std::max(ratio, 1 - ratio);
+  */
 
   for (int i = 0; i < active_in_ports.size(); ++i) {
     int port_index = active_in_ports[i];
@@ -1444,6 +1445,7 @@ void accel_t::clear_cycle() {
 }
 
 void accel_t::print_status() {
+  if(!_lsq->spu_net_done()) cout << "SPU net not done\n";
   if (done(false, 0)) {
     return;
   }
@@ -1463,6 +1465,14 @@ void accel_t::print_status() {
   cout << "Waiting SEs: (" << _cmd_queue.size() << ")\n";
   for (auto i : _cmd_queue) {
     i->print_status();
+  }
+
+  cout << "Non-empty buffers:\n";
+  if (_scr_w_c.atomic_scr_issued_requests_active()) {
+    cout << "ATOMIC SCR buffers not empty\n";
+  }
+  if(!_lsq->is_pending_net_empty()) {
+    cout << "SPU network requests pending in queue\n";
   }
 
   cout << "Ports:\n";
@@ -2288,11 +2298,10 @@ void dma_controller_t::port_resp(unsigned cur_port) {
       if (port_in_okay) {
         bool last = response->sdInfo->last;
         port_data_t &sample_vp = pi.in_port(response->sdInfo->ports[0]);
+        sample_vp.inc_bytes_waiting(-data.size());
         if(indirect) { // only for mem requests
-          sample_vp.inc_bytes_waiting(-data.size());
           last = sample_vp.is_bytes_waiting_zero() && sample_vp.get_is_bytes_waiting_final();
-        } else {
-          sample_vp.inc_bytes_waiting(-64);
+          if(last) sample_vp.reset_is_bytes_waiting_final();
         }
 
         if (SS_DEBUG::MEM_REQ) {
@@ -2326,8 +2335,6 @@ void dma_controller_t::port_resp(unsigned cur_port) {
             in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE,
                              response->sdInfo->fill_mode);
 
-            assert(in_vp.is_bytes_waiting_zero());
-            in_vp.reset_is_bytes_waiting_final();
           }
         }
 
@@ -2566,7 +2573,7 @@ void dma_controller_t::make_read_request() {
   int num_cores = _accel->_ssim->num_active_threads();
   if(_accel->_lsq->getCpuId()==0) num_cores=1;
   int max_reqs=SD_TRANSFERS_ALLOWED/num_cores; // 22/16=1
-  if(max_reqs==0) if(_accel->get_cur_cycle()%2) max_reqs=1;
+  // if(max_reqs==0) if(_accel->get_cur_cycle()%2) max_reqs=1;
   if(mem_reqs()>=max_reqs) return; // may be in worse case
   //----------------------------
 
@@ -2623,7 +2630,6 @@ void dma_controller_t::make_read_request() {
           // _accel->_lsq->sd_transfers[in_port].reserve();
 
           req_read(stream);
-          in_vp.inc_bytes_waiting(64);
           if (stream.empty()) {
             if (SS_DEBUG::VP_SCORE2) {
               cout << "SOURCE: DMA->PORT \n";
@@ -2714,16 +2720,20 @@ int dma_controller_t::req_read(affine_read_stream_t &stream) {
   addr_t prev_addr = 0;
   addr_t addr = stream.cur_addr();
   addr_t base_addr = addr & MEM_MASK; // this is the request address...
+  int bytes_read=0;
+
 
   // base_addr is base of cache line
   addr_t max_addr = base_addr + MEM_WIDTH;
 
   assert(addr != 0 && "cannot load address 0x0");
   std::fill(mask.begin(), mask.end(), 0);
-  int elems = stream.straddle_bytes();
-  for(int i=0; i<elems; ++i) {
+  int init_elem = stream.straddle_bytes();
+  for(int i=0; i<init_elem; ++i) {
     mask[i]=1;
   }
+  bytes_read += init_elem;
+  int elems=0;
   stream.set_straddle_bytes(0);
   while (addr < max_addr && addr > prev_addr && stream.stream_active()) {
     prev_addr = addr;
@@ -2739,11 +2749,15 @@ int dma_controller_t::req_read(affine_read_stream_t &stream) {
       break;
     }
   }
+  bytes_read += elems*data_width;
 
   if(elems==0) {
     cout << "FIXME: not sure how is it possible\n"; 
     return 0;
   }
+  int in_port = stream.first_in_port();
+  auto &in_vp = _accel->port_interf().in_port(in_port);
+  in_vp.inc_bytes_waiting(bytes_read);
   // TODO: add l2_miss statistics -- probably somewhere else....
   if (_accel->_ssim->in_roi()) {
     add_bw(stream.src(), stream.dest(), 1, elems * data_width);
@@ -4485,6 +4499,20 @@ void scratch_write_controller_t::scr_write(addr_t addr,
   }
 }
 
+bool scratch_write_controller_t::is_conflict(addr_t scr_addr, int num_bytes) {
+  // return false;
+  // cout << "Checking for scr_addr: " << scr_addr << " and bytes: " << num_bytes << endl;
+  for(auto it=_conflict_detection_queue.begin(); it!=_conflict_detection_queue.end(); ++it) {
+    // cout << "Found addr: " << it->first << " bytes: " << it->second;
+    // if scr_addr, and scr_addr + num_bytes lie in the range
+    if(scr_addr+num_bytes>=it->first && scr_addr<it->first+it->second) {
+      // cout << "conflict true\n";
+      return true;
+    } // else cout << " false\n";
+  }
+  return false;
+}
+
 // for an atomic dfg: keeping this as default
 // Step1: check atomic request queue? 
 // Step2: if no conflict, copy the data from queue to the corresponding ports
@@ -4495,48 +4523,55 @@ void scratch_write_controller_t::serve_atomic_requests(bool &performed_atomic_sc
   addr_t scr_addr; 
   int num_bytes=0;
   SBDT bytes_written=0;
-  bool is_conflict = false; // TODO: implement this
 
   port_data_t &atomic_in = _accel->port_interf().in_port(ATOMIC_ADDR_PORT);
   port_data_t &bytes_prt = _accel->port_interf().in_port(ATOMIC_BYTES_PORT);
   port_data_t &atomic_cgra_in = _accel->port_interf().in_port(_atomic_cgra_addr_port);
+  port_data_t &atomic_in_val = _accel->port_interf().in_port(_atomic_cgra_val_port);
   // cout << "Found pending queue size: " << _pending_request_queue.size() << endl;
 
   // cout << "core: " << _accel->_lsq->getCpuId() << " Memory size in atomic input port: " << atomic_in.mem_size() << " bytes port: " << bytes_prt.mem_size() << endl;
   // TODO: also atomic cgra in can take data, and bandwidth limitations
-  while (atomic_in.mem_size()>=_atomic_addr_bytes/atomic_in.get_port_width() && bytes_prt.mem_size()>=BYTES_PORT_DATA_WIDTH/bytes_prt.get_port_width()) {
+  while (atomic_in.mem_size()>=ATOMIC_ADDR_DATA_WIDTH/atomic_in.get_port_width() && bytes_prt.mem_size()>=BYTES_PORT_DATA_WIDTH/bytes_prt.get_port_width()) {
     num_bytes = bytes_prt.peek_out_data(0, BYTES_PORT_DATA_WIDTH);
+    scr_addr = atomic_in.peek_out_data(0, ATOMIC_ADDR_DATA_WIDTH);
+
     vector<uint8_t> read_value;
     read_value.resize(num_bytes);
-    scr_addr = atomic_in.peek_out_data(0, _atomic_addr_bytes); // it->second.second[index];
+
+    // bool can_push = atomic_cgra_in.can_push_bytes_vp(num_bytes);
 
     // cout << "Received addr: " << scr_addr << " and num bytes: " << num_bytes << endl;
     // update check_conflict here
-    if(!is_conflict) {
+    if(!is_conflict(scr_addr, num_bytes) && !_atom_val_store.empty()) {
       bytes_prt.pop_out_data(BYTES_PORT_DATA_WIDTH);
-      atomic_in.pop_out_data(_atomic_addr_bytes);
+      atomic_in.pop_out_data(ATOMIC_ADDR_DATA_WIDTH);
       // Push at the top of pending requests
       // Push the blocked data to the DGRA
 
       // cout << "Number of bytes required for atomic update: " << num_bytes << endl;
-      _conflict_detection_queue.push(make_pair(scr_addr, num_bytes));
+      _conflict_detection_queue.push_back(make_pair(scr_addr, num_bytes));
       _accel->read_scratchpad(&read_value[0], scr_addr, num_bytes, 0);
 
+      assert(_atom_val_store.front().size()==read_value.size() && "same number of bytes from scratch and update data");
+
       atomic_cgra_in.push_data(read_value);
+      atomic_in_val.push_data(_atom_val_store.front());
+      _atom_val_store.pop();
       if(SS_DEBUG::COMP) {
         cout << "Atomic update value being read from scratchpad\n";
       }
-    }
+    } else break;
   }
 
   // consume data from DGRA to update in scratch and update conflict queue
-  port_data_t &atomic_out = _accel->port_interf().out_port(_atomic_cgra_out_port);
-  int data_bytes = atomic_out.get_port_width();
+  port_data_t &atomic_cgra_out = _accel->port_interf().out_port(_atomic_cgra_out_port);
+  int data_bytes = atomic_cgra_out.get_port_width();
   // cout << "Data in cgra out port: " << atomic_out.mem_size() << endl;
-  while(atomic_out.mem_size()>0) {
+  while(atomic_cgra_out.mem_size()>0) {
     // pop out data and write to scratch (how much is written?)
     int scr_addr = _conflict_detection_queue.front().first;
-    SBDT correct_val = atomic_out.pop_out_data();
+    SBDT correct_val = atomic_cgra_out.pop_out_data();
     _accel->write_scratchpad(scr_addr,
                      &correct_val,
                      data_bytes, 0);
@@ -4547,7 +4582,7 @@ void scratch_write_controller_t::serve_atomic_requests(bool &performed_atomic_sc
     _conflict_detection_queue.front().second -= data_bytes;
     if(_conflict_detection_queue.front().second==0) {
       // cout << "Popped from conflict detection\n";
-      _conflict_detection_queue.pop();
+      _conflict_detection_queue.pop_front();
     }
 
     if(SS_DEBUG::COMP) {
@@ -4568,7 +4603,7 @@ void scratch_write_controller_t::serve_atomic_requests(bool &performed_atomic_sc
     _accel->_stat_cycles_atomic_scr_executed++;
   }
   // to implement the functionality of common scratch controller
-  performed_atomic_scr = true;
+  // performed_atomic_scr = true;
 }
 
 void scratch_write_controller_t::serve_atomic_requests_local(bool &performed_atomic_scr) {
@@ -4745,11 +4780,11 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
           std::cout << "1 cycle execution : " << std::endl;
           std::cout << "64-bit value at the addr port is: " << loc;
         }
-        // loc = stream.cur_addr(loc);
+        loc = stream.cur_addr(loc);
         // cout << "cur addr index: " << stream._cur_addr_index << " addr bytes: " << stream._addr_bytes << endl;
 
-        base_addr = stream.cur_offset() * stream._output_bytes;
-        scr_addr = base_addr + loc * stream._output_bytes;
+        base_addr = stream.cur_offset() * stream._value_bytes; // _output_bytes;
+        scr_addr = base_addr + loc;
         max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
         // std::cout << "updated loc: " << loc << " and stream op bytes: " << stream._output_bytes << " base_addr: " << base_addr << "\n";
       }
@@ -4882,18 +4917,18 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
         // new loop added for vector ports
         if(stream._val_sstream_left>0 && out_addr.mem_size() >= (stream._addr_bytes/out_addr.get_port_width())) {
         // if (out_addr.mem_size() > 0 && out_val.mem_size() > 0) {
-          loc = out_addr.peek_out_data();
+          loc = out_addr.peek_out_data(0, stream._addr_bytes);
           if (SS_DEBUG::COMP) {
             std::cout << "64-bit value at the addr port is: " << loc;
           }
-          // loc = stream.cur_addr(loc);
+          loc = stream.cur_addr(loc);
           // std::cout << "loc: " << loc << "\n";
           // making offset also configurable (same configuration as the
           // address)
           base_addr = stream.cur_offset() * stream._value_bytes;
 
           // scr_addr = base_addr + loc*stream._value_bytes;
-          scr_addr = base_addr + loc * stream._value_bytes;
+          scr_addr = base_addr + loc;
           // max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
           max_addr = (scr_addr & stream._value_mask) + stream._value_bytes;
         }
@@ -5217,6 +5252,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
       // I see, this info should not be associated with the stream, but in bank buffers
       // serve_atomic_requests(stream, performed_atomic_scr);
       serve_atomic_requests(performed_atomic_scr);
+      push_atomic_val();
       // break;
     }
   }
@@ -6391,20 +6427,23 @@ bool scratch_write_controller_t::schedule_buffet(BuffetStream *buffet) {
 void scratch_write_controller_t::insert_pending_request_queue(int tid, vector<int> start_addr, int bytes_waiting) {
   if(start_addr.size()==0) return; // for current bad impl
   auto it = _pending_request_queue.find(tid);
-  if(it!=_pending_request_queue.end()) return; // already there!
+  if(it!=_pending_request_queue.end()) {
+    for(unsigned i=0; i<start_addr.size(); ++i) {
+      it->second.second.push_back(start_addr[i]);
+    }
+  } else {
+    _pending_request_queue.insert(make_pair(tid, make_pair(bytes_waiting, start_addr)));
+  }
   // assert(it==_pending_request_queue.end() && "this tid already present...");
   // cout << "Inserted a task in pq for tid: " << tid << " at core: " << _accel->_lsq->getCpuId() << endl;
-  _pending_request_queue.insert(make_pair(tid, make_pair(bytes_waiting, start_addr)));
 }
 
-// TODO: we could set repeat count of byte port to current broadcast length
-// (another port which pushes this like vrepeat_port)
 int scratch_write_controller_t::push_and_update_addr_in_pq(int tid, int num_bytes) {
   // cout << "Searching for a task in pq for tid: " << tid << " at core: " << _accel->_lsq->getCpuId() << endl;
   auto it = _pending_request_queue.find(tid);
   // Step2: push new addresses
-  // FIXME: if not space in the port?
   assert(it!=_pending_request_queue.end());
+  // TODO: allowed to push data if values complete, and enough bytes available
   unsigned num_addr = it->second.second.size();
   // cout << "Came to push new atomic addresses, with num_addr: " << num_addr << " atomic cgra addr port: " << ATOMIC_ADDR_PORT << " and num bytes: " << num_bytes << endl;
   port_data_t &in_addr = _accel->port_interf().in_port(ATOMIC_ADDR_PORT);
@@ -6414,7 +6453,7 @@ int scratch_write_controller_t::push_and_update_addr_in_pq(int tid, int num_byte
   // push num_addr bytes while these are addresses in int
   for(int i=0; i<num_addr; ++i) {
     // cout << "Pushing addresses: " << it->second.second[i] << endl;
-    in_addr.push_data(in_addr.get_byte_vector(it->second.second[i], _atomic_addr_bytes));
+    in_addr.push_data(in_addr.get_byte_vector(it->second.second[i], ATOMIC_ADDR_DATA_WIDTH));
     bytes_prt.push_data(bytes_prt.get_byte_vector(num_bytes,BYTES_PORT_DATA_WIDTH));
     it->second.second[i] += num_bytes; // update address
   }
@@ -6430,9 +6469,21 @@ int scratch_write_controller_t::push_and_update_addr_in_pq(int tid, int num_byte
 }
 
 void scratch_write_controller_t::push_atomic_inc(std::vector<uint8_t> inc, int repeat_times) {
-  port_data_t &in_val = _accel->port_interf().in_port(_atomic_cgra_val_port);
-  // FIXME: didn't make sure if the data is in there or not...
+  /* port_data_t &in_val = _accel->port_interf().in_port(_atomic_cgra_val_port);
   for(int i=0; i<repeat_times; ++i) {
     in_val.push_data(inc);
+  }*/
+  for(int i=0; i<repeat_times; ++i) {
+    _atom_val_store.push(inc);
+  }
+}
+
+void scratch_write_controller_t::push_atomic_val() {
+  return;
+  // cout << "Size of atom val: " << _atom_val_store.size() << endl;
+  port_data_t &in_val = _accel->port_interf().in_port(_atomic_cgra_val_port);
+  while(!_atom_val_store.empty() && in_val.can_push_bytes_vp(_atom_val_store.front().size())) {
+    in_val.push_data(_atom_val_store.front());
+    _atom_val_store.pop();
   }
 }

@@ -149,28 +149,30 @@ void MinorCPU::wakeup()
       // Step1: get the start address from here
       if(is_tagged) {
         int tag = (return_info >> 2) & 65535;
-        // std::cout << "tag in the received packet: " << tag << "\n";
+        if(SS_DEBUG::NET_REQ) {
+          std::cout << "Received tag in the received packet: " << tag << "\n";
+        }
         uint8_t l;
         if(is_tag_packet) {
+
           int bytes_waiting = (return_info >> 18);
           std::vector<int> start_addr;
           uint64_t inc = 0;
           // TODO: I need to split which of these addresses belong to the
           // current node!!!
-          // int limit = SPU_NET_PACKET_SIZE/3 ;
           for(int i=0; i<SPU_NET_PACKET_SIZE; i+=4) { // limit on this?
             inc = 0;
             for(int k=0; k<3; k++) { // 32768
               int8_t x = msg->m_DataBlk.getByte(i+k);
               if(signed(x)==-1) {
-                i=60; break;
+                i=SPU_NET_PACKET_SIZE; break;
               }
               l=x;
               inc = inc | (l << k*8);
               // std::cout << "8-bit value: " << (signed)(x) << "\n";
             }
             // std::cout << "i: " << i << " inc: " << inc << std::endl;
-            if(i!=60 && (inc/SCRATCH_SIZE==cpuId()-1)) {
+            if(i!=SPU_NET_PACKET_SIZE && (inc/SCRATCH_SIZE==cpuId()-1)) {
               start_addr.push_back(inc & (SCRATCH_SIZE-1));
             }
           }

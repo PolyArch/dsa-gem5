@@ -914,6 +914,8 @@ class scratch_write_controller_t : public data_controller_t {
   void set_atomic_cgra_out_port(int p) { _atomic_cgra_out_port=p; }
   void set_atomic_addr_bytes(int p) { _atomic_addr_bytes=p; }
   void set_atomic_val_bytes(int p) { _atomic_val_bytes=p; }
+  bool is_conflict(addr_t scr_addr, int num_bytes);
+  void push_atomic_val();
 
   private:
   int _which_wr=0; // for banked scratchpad
@@ -933,7 +935,10 @@ class scratch_write_controller_t : public data_controller_t {
   std::unordered_map<int, std::pair<int, std::vector<int>>> _pending_request_queue; // [NUM_SCRATCH_BANKS];
   // std::unordered_map<int, int> _conflict_detection_queue;
   // addr, bytes
-  std::queue<std::pair<int,int>> _conflict_detection_queue;
+  std::deque<std::pair<int,int>> _conflict_detection_queue;
+  // tid, and the vector waiting for..
+  // std::unordered_map<std::pair<int,std::vector<uint8_t>>> _atom_val_store;
+  std::queue<std::vector<uint8_t>> _atom_val_store;
 
   struct atomic_scr_op_req{
     addr_t _scr_addr;
