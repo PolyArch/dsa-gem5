@@ -964,13 +964,13 @@ void Execute::timeout_check(bool should_commit, MinorDynInstPtr inst) {
   uint64_t last_event = std::max(last_sd_issue,
                         ssim.forward_progress_cycle());
   if(!should_commit) {
-    if(cyc > 99990 + last_event) {
+    if(cyc > 999990 + last_event) {
     // if(cyc > 999000 + last_event) {
       DPRINTF(SS,"Almost Aborting because of wait", *inst);
     }
 
     // if(cyc > 1000000 + last_event) {
-    if(cyc > 100000 + last_event) {
+    if(cyc > 1000000 + last_event) {
       DPRINTF(SS,"Instruction: %s is stalled for too long!!! ABORTING", *inst);
       ssim.print_stats();
       //ssim.done(true,0);
@@ -1118,11 +1118,6 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
             //continue;
         } else if(inst->staticInst->isSSWait() &&
                   ssim_t::stall_core(inst->staticInst->get_imm())) {
-          // TODO:FIXME: not reading correct value from core
-          // set the global barrier count
-          // ssim.set_num_active_threads(context.getSSReg(SS_STRETCH));
-          // int num_active_threads = (inst->staticInst->get_imm()) >> 7;
-          // ssim.set_num_active_threads(num_active_threads);
           if(!ssim.done(false,inst->staticInst->get_imm()) ) {
             // std::cout << "Should commit is false due to ss wait instruction\n";
             should_commit = false;
@@ -1653,6 +1648,10 @@ void Execute::push_rem_read_return(int dst_core, int8_t data[64], int request_pt
 
 
 bool Execute::push_rem_read_req(int dest_core_id, int request_ptr, int addr, int data_bytes, int reorder_entry) {
+
+
+  // TODO: to coalesce, can I accumulate this info somewhere until
+
   // if local request, push back to the core
   
   // int dest_core_id = addr & 1024; // FIXME: should be number of threads
@@ -1690,6 +1689,7 @@ bool Execute::push_rem_read_req(int dest_core_id, int request_ptr, int addr, int
     assert(data_bytes<=15 && "exceeded the maximum multiple of cache line");
   }
 
+  // TODO: could be more, move data bytes to the data arrat
   assert(addr < SCRATCH_SIZE);
   assert(request_ptr < NUM_SCRATCH_BANKS); // this would be equal to log(irob entries)
   assert(data_bytes<16);
@@ -1697,7 +1697,7 @@ bool Execute::push_rem_read_req(int dest_core_id, int request_ptr, int addr, int
   addr_to_send = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 26; // | req_core << 29;
   if(SS_DEBUG::NET_REQ){
      printf("output destination core for scratchpad read: %d and requesting core: %d\n",dest_core_id, cpu.cpuId());
-    std::cout << "Remote read request, scr_addr: " << addr << " and local core(0-indexed): " << cpu.cpuId() <<" and m_addr send: " << addr_to_send << " request ptr: " << request_ptr << " reorder entry: " << reorder_entry << std::endl; 
+    std::cout << "Remote read request, scr_addr: " << addr << " and local core(0-indexed): " << cpu.cpuId() <<" and data_bytes: " << data_bytes << " request ptr: " << request_ptr << " reorder entry: " << reorder_entry << std::endl; 
   }
   mcast_dest[0] = dest_core_id;
 
@@ -1712,9 +1712,6 @@ bool Execute::push_rem_read_req(int dest_core_id, int request_ptr, int addr, int
   return true;
 }
 
-// FIXME: for addresses, it will split at weird point..
-// also, if address tag is split, it should consider other packet as tagged and
-// just add new number of bytes
 void Execute::push_net_req(spu_req_info req) {
   int j=0;
   int split_count=0;
@@ -1779,13 +1776,18 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
 
   // std::cout << "Received an atomic op request with dest size: " << update_broadcast_dest.size() << " and coalesce size: " << update_coalesce_vals.size() << "\n";
 
-  /*for(unsigned k=0; k<update_broadcast_dest.size(); ++k) {
-    std::cout << "broadcast addr: " << update_broadcast_dest[k] << " ";
-  }*/
-  std::cout << "\n";
-  int req_type = 2;
   int num_updates = update_broadcast_dest.size();
   int num_vals = update_coalesce_vals.size();
+
+  if(SS_DEBUG::NET_REQ) {
+    std::cout << "number of bdcast: " << num_updates << "\n";
+    for(unsigned k=0; k<update_broadcast_dest.size(); ++k) {
+      std::cout << "broadcast addr: " << update_broadcast_dest[k] << " ";
+    }
+    std::cout << "\n";
+  }
+  
+  int req_type = 2;
   int values_to_send =  num_vals*val_bytes; // 2*8>
   int req_core = cpu.cpuId();
   std::vector<bool> dest_done;

@@ -81,8 +81,10 @@ class DRAMCtrl(AbstractMemory):
     # that each entry corresponds to a burst for the specific DRAM
     # configuration (e.g. x32 with burst length 8 is 32 bytes) and not
     # the cacheline size or request/packet size
-    write_buffer_size = Param.Unsigned(64, "Number of write queue entries")
-    read_buffer_size = Param.Unsigned(32, "Number of read queue entries")
+    write_buffer_size = Param.Unsigned(128, "Number of write queue entries")
+    read_buffer_size = Param.Unsigned(64, "Number of read queue entries")
+    # write_buffer_size = Param.Unsigned(64, "Number of write queue entries")
+    # read_buffer_size = Param.Unsigned(32, "Number of read queue entries")
 
     # threshold in percent for when to forcefully trigger writes and
     # start emptying the write buffer

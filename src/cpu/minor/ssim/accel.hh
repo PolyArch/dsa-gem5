@@ -849,6 +849,7 @@ class scratch_write_controller_t : public data_controller_t {
   void insert_pending_request_queue(int tid, std::vector<int> start_addr, int bytes_waiting);
   int push_and_update_addr_in_pq(int tid, int num_bytes);
   void push_atomic_inc(std::vector<uint8_t> inc, int repeat_times);
+  bool is_conflict(addr_t scr_addr, int num_bytes);
 
   // declare pending request queue and other information associated with the
   // atomic update stream 
@@ -933,7 +934,7 @@ class scratch_write_controller_t : public data_controller_t {
   std::unordered_map<int, std::pair<int, std::vector<int>>> _pending_request_queue; // [NUM_SCRATCH_BANKS];
   // std::unordered_map<int, int> _conflict_detection_queue;
   // addr, bytes
-  std::queue<std::pair<int,int>> _conflict_detection_queue;
+  std::deque<std::pair<int,int>> _conflict_detection_queue;
 
   struct atomic_scr_op_req{
     addr_t _scr_addr;

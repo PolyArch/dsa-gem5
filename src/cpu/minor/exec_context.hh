@@ -594,7 +594,7 @@ class ExecContext : public ::ExecContext
                 thread.getSSReg(SS_OUT_PORT), thread.getSSReg(SS_VAL_PORT),
                 thread.getSSReg(SS_IND_TYPE), thread.getSSReg(SS_DTYPE),
                 thread.getSSReg(SS_ADDR_TYPE), thread.getSSReg(SS_OPCODE), thread.getSSReg(SS_OFFSET_LIST),
-                thread.getSSReg(SS_STRETCH), thread.getSSReg(SS_IS_SCRATCH));
+                thread.getSSReg(SS_STRETCH), thread.getSSReg(SS_IS_SCRATCH), thread.getSSReg(SS_CFG_SIZE), thread.getSSReg(SS_CONTEXT), thread.getSSReg(SS_GARB_ELEM));
               break;
             case SS_CONST_SCR:
               ssim.write_constant_scratchpad(

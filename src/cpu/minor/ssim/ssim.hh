@@ -55,7 +55,9 @@ public:
                       uint64_t flags, int const_width, bool iter_port);
 
   void atomic_update_hardware_config(int addr_port, int val_port, int out_port);
-  void atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode, int val_num, int num_updates, bool is_update_cnt_port);
+
+  void atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode, int val_num, int num_updates, bool is_update_cnt_port, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type);
+
   void multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_port, int rem_port, bool dest_flag, bool spad_type, int64_t stride, int64_t access_size);
   void write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int num_elem, int const_width);
 
@@ -183,8 +185,7 @@ void push_atomic_inc(std::vector<uint8_t> inc, int repeat_times) {
   static bool stall_core(uint64_t mask) {
     // std::cout << "Came in stall core with mask: " << mask << std::endl;
     return (mask==0) || (mask&WAIT_CMP) ||
-      (mask&WAIT_MEM_WR) || (mask&WAIT_SCR_ATOMIC) || (mask/GLOBAL_WAIT>0) || (mask&STREAM_WAIT);
-      // (mask&WAIT_MEM_WR) || (mask&WAIT_SCR_ATOMIC) || (mask&GLOBAL_WAIT) || (mask&STREAM_WAIT);
+      (mask&WAIT_MEM_WR) || (mask&WAIT_SCR_ATOMIC) || (mask&GLOBAL_WAIT) || (mask&STREAM_WAIT);
 
   }
 

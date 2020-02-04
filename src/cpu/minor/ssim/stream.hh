@@ -1258,11 +1258,12 @@ struct atomic_scr_stream_t : public base_stream_t {
     return (mem_addr() >> ((_addr_in_word-_cur_addr_index-1)*_addr_bytes*8)) & _addr_mask;
   }
   uint64_t cur_addr(uint64_t loc){
-    // extracting from right (least significant bits)
-    // return (loc >> (_cur_addr_index*_addr_bytes*8)) & _addr_mask;
-    addr_t addr = (loc >> ((_addr_in_word-_cur_addr_index-1)*_addr_bytes*8)) & _addr_mask;
+    addr_t addr = loc*_val_num*_value_bytes;
+    /*if(SS_DEBUG::SHOW_CONFIG) {
+      std::cout << "input loc: " << loc << " val num: " << _val_num << " value bytes: " << _value_bytes << " computd addr: " << addr << "\n";
+    }*/
     // addr += (_val_num-_sstream_left)*_addr_bytes;
-    return addr;
+    return memory_map(addr, 0);
   }
   uint64_t cur_val(uint64_t val){
     // return (val >> (_cur_val_index*_value_bytes*8)) & _value_mask;

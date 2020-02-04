@@ -184,6 +184,9 @@ void ssim_t::print_stats() {
    for(auto& i : _wait_map) {
      out << ((double)i.second/roi_cycles()) << " (";
      uint64_t mask = i.first;
+     if(mask & GLOBAL_WAIT) {
+       out << "GLOBAL_WAIT";
+     }
      if(mask == 0) {
        out << "ALL";
      }
@@ -192,10 +195,6 @@ void ssim_t::print_stats() {
      }
      if(mask & WAIT_SCR_WR) {
        out << "SCR_WR";
-     }
-     if(mask/GLOBAL_WAIT>0) {
-         // if(mask & GLOBAL_WAIT) {
-       out << "GLOBAL_WAIT";
      }
      if(mask & STREAM_WAIT) {
        out << "STREAM_WAIT";
@@ -469,8 +468,8 @@ void ssim_t::load_scratch_to_port(int64_t repeat, int64_t repeat_str, uint64_t p
     prt.set_cur_repeat_lim(-1);
   }
       
-  add_bitmask_stream(s);
   set_memory_map_config(s, partition_size, active_core_bitvector, mapping_type);
+  add_bitmask_stream(s);
   stream_stack.clear();
 
 }
@@ -504,7 +503,7 @@ void ssim_t::atomic_update_hardware_config(int addr_port, int val_port, int out_
 }
 
 // command decode for atomic stream update
-void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode, int val_num, int num_updates, bool is_update_cnt_port) {
+void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode, int val_num, int num_updates, bool is_update_cnt_port, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type) {
     atomic_scr_stream_t* s = new atomic_scr_stream_t();
     
     s->_mem_addr = offset;
@@ -534,6 +533,7 @@ void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_
     s->_unit=LOC::SCR;
     s->set_orig();
 
+    set_memory_map_config(s, partition_size, active_core_bitvector, mapping_type);
     add_bitmask_stream(s);
 
 }
