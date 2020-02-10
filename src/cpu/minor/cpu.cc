@@ -112,17 +112,10 @@ bool MinorCPU::check_network_idle() {
 
 void MinorCPU::wakeup()
 {
-  // TODO: while used when multiple packets may be received (works when only
-  // 1 packet issued per cycle)
-  // if(!responseToSpu->isEmpty()) {
-  while(!responseToSpu->isEmpty()) { // same packet received from different cores?
+  while(!responseToSpu->isEmpty()) {
 
     if(!responseToSpu->isReady(clockEdge())) return;
     const SpuRequestMsg* msg = (SpuRequestMsg*)responseToSpu->peek();
-   // for global barrier
-    ThreadContext *thread = getContext(0); // assume tid=0?
-    thread->getSystemPtr()->inc_spu_receive();
-
     // could do dynamic cast
     int64_t return_info = msg->m_addr;
 
@@ -149,11 +142,21 @@ void MinorCPU::wakeup()
       // Step1: get the start address from here
       if(is_tagged) {
         int tag = (return_info >> 2) & 65535;
+<<<<<<< HEAD
         uint8_t l;
         if(is_tag_packet) {
           if(SS_DEBUG::NET_REQ) {
             std::cout << "Received tag in the received packet: " << tag << "\n";
           }
+=======
+        if(SS_DEBUG::NET_REQ) {
+          std::cout << "Received tag in the received packet: " << tag << "\n";
+        }
+        uint8_t l;
+        if(is_tag_packet) {
+          if(pipeline->pending_request_queue_full()) return;
+
+>>>>>>> ca1dbbc89e0b96f78c93eb8376d02f5171debc7b
           int bytes_waiting = (return_info >> 18);
           std::vector<int> start_addr;
           uint64_t inc = 0;
@@ -179,11 +182,15 @@ void MinorCPU::wakeup()
           // std::cout << "core: " << cpuId() << " addr received: " << start_addr.size() << " and bytes waiting for each: " << bytes_waiting << "\n";
           pipeline->insert_pending_request_queue(tag, start_addr, bytes_waiting);
           start_addr.clear();
+<<<<<<< HEAD
         } else {
 
           if(SS_DEBUG::NET_REQ) {
             std::cout << "Received value packet with tag: " << tag << "\n";
           }
+=======
+        } else {          
+>>>>>>> ca1dbbc89e0b96f78c93eb8376d02f5171debc7b
           std::vector<uint8_t> inc_val;
           for(int i=0; i<SPU_NET_PACKET_SIZE; ++i) {
             int8_t x = msg->m_DataBlk.getByte(i);
@@ -191,8 +198,15 @@ void MinorCPU::wakeup()
             l=x;
             inc_val.push_back(l);
           }
+
+          int num_atom_bytes = inc_val.size();
+          if(pipeline->atomic_addr_full(num_atom_bytes)) return;
+          // assume we push in fixed size scratch, hence do not consider
+          // repeatition
+          if(pipeline->atomic_val_full(num_atom_bytes)) return;
+
           // std::cout << "number of value bytes received: " << inc_val.size();
-          int num_addr = pipeline->push_and_update_addr_in_pq(tag, inc_val.size());
+          int num_addr = pipeline->push_and_update_addr_in_pq(tag, num_atom_bytes);
           // std::cout << " num addr waiting to consume all values: " << num_addr << "\n";
           // pop values and push in the value queue (num_times is start addr)
           // ssim.push_atomic_inc(inc_val, num_addr); // vec of values, repeat times
@@ -264,6 +278,9 @@ void MinorCPU::wakeup()
       assert(0 && "unknown SPU message type");
     }
     responseToSpu->dequeue(clockEdge());
+    // for global barrier
+    ThreadContext *thread = getContext(0); // assume tid=0?
+    thread->getSystemPtr()->inc_spu_receive();
   };
 }
 

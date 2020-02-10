@@ -1648,10 +1648,7 @@ void Execute::push_rem_read_return(int dst_core, int8_t data[64], int request_pt
 
 
 bool Execute::push_rem_read_req(int dest_core_id, int request_ptr, int addr, int data_bytes, int reorder_entry) {
-
-
   // TODO: to coalesce, can I accumulate this info somewhere until
-
   // if local request, push back to the core
   
   // int dest_core_id = addr & 1024; // FIXME: should be number of threads
@@ -1694,10 +1691,12 @@ bool Execute::push_rem_read_req(int dest_core_id, int request_ptr, int addr, int
   assert(request_ptr < NUM_SCRATCH_BANKS); // this would be equal to log(irob entries)
   assert(data_bytes<16);
 
+  // TODO: could be more, move data bytes to the data arrat
   addr_to_send = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 26; // | req_core << 29;
   if(SS_DEBUG::NET_REQ){
      printf("output destination core for scratchpad read: %d and requesting core: %d\n",dest_core_id, cpu.cpuId());
-    std::cout << "Remote read request, scr_addr: " << addr << " and local core(0-indexed): " << cpu.cpuId() <<" and data_bytes: " << data_bytes << " request ptr: " << request_ptr << " reorder entry: " << reorder_entry << std::endl; 
+
+    std::cout << "Remote read request, scr_addr: " << addr << " and local core(0-indexed): " << cpu.cpuId() <<" and addr to send: " << addr_to_send << " request ptr: " << request_ptr << " reorder entry: " << reorder_entry << std::endl; 
   }
   mcast_dest[0] = dest_core_id;
 
@@ -1716,6 +1715,8 @@ void Execute::push_net_req(spu_req_info req) {
   int j=0;
   int split_count=0;
   while(req.num_data_bytes!=0) {
+    if(req.num_dest==0) return;
+    assert(req.mcast_dest[0]<=ssim.num_active_threads());
     split_count++;
     std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
     (*msg).m_MessageSize = MessageSizeType_Control;
@@ -1736,7 +1737,10 @@ void Execute::push_net_req(spu_req_info req) {
     }
     // delimeter used in atomic update requests
     if(j!=SPU_NET_PACKET_SIZE) (*msg).m_DataBlk.setByte(j,-1);
+
+    // std::cout << "Number of dest: " << req.num_dest << "\n";
     for(j=0; j<req.num_dest; ++j){ // non-zero if data-request
+      // std::cout << "mast dest: " << req.mcast_dest[j] << "\n";
       (*msg).m_Destination.add(cpu.get_m_version(req.mcast_dest[j]));
     }
     _pending_net_req.push(std::make_pair(msg,req.num_dest)); // ordering may be changed
@@ -1775,25 +1779,28 @@ void Execute::serve_pending_net_req() {
 bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadcast_dest, std::vector<int> update_coalesce_vals, int opcode, int val_bytes, int out_bytes) {
 
   // std::cout << "Received an atomic op request with dest size: " << update_broadcast_dest.size() << " and coalesce size: " << update_coalesce_vals.size() << "\n";
+  
+
+  if(ssim.num_active_threads()<0) assert(0);
 
   int num_updates = update_broadcast_dest.size();
   int num_vals = update_coalesce_vals.size();
 
+
   if(SS_DEBUG::NET_REQ) {
-    std::cout << "number of bdcast: " << num_updates << "\n";
+    std::cout << "number of broacast: " << num_updates << "\n";
     for(unsigned k=0; k<update_broadcast_dest.size(); ++k) {
       std::cout << "broadcast addr: " << update_broadcast_dest[k] << " ";
     }
     std::cout << "\n";
   }
-  
+
   int req_type = 2;
   int values_to_send =  num_vals*val_bytes; // 2*8>
   int req_core = cpu.cpuId();
   std::vector<bool> dest_done;
   dest_done.resize(ssim.num_active_threads(), 0);
 
-  int num_dest=0;
   int addr_bytes=4; // FIXME: can be 2 to improve multicast, but currently lets keep it a power-of-2
 
   unsigned d=0, j=0;
@@ -1806,7 +1813,7 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
   int multicast_dest[num_active_threads];
   uint64_t addr_to_send;
   std::vector<int> dest_scratch_addr;
-  num_dest=0;
+  int num_dest=0;
 
   // TODO: only the last round will be sent with a tag
   // for others, it will record the start addr until a tagged packet is
@@ -1816,7 +1823,8 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
     int dest_core_id = update_broadcast_dest[d]/SCRATCH_SIZE;
     dest_core_id += 1; // this should be 1 to 8
 
-    // std::cout << "scr addr: " << local_scr_addr << " dest core id: " << dest_core_id << "\n";
+    // std::cout << "input: " << update_broadcast_dest[d] << "scr addr: " << local_scr_addr << " dest core id: " << dest_core_id << "\n";
+    assert(dest_core_id<=num_active_threads);
 
     if(num_active_threads==1 || dest_core_id==cpu.cpuId()) { // 0--host core when non-multi-threaded code
       if(SS_DEBUG::NET_REQ){
@@ -1845,7 +1853,9 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
     // if(j!=64) a[j]=-1; // delimeter
 
     addr_to_send = 1 | (1<<1) | (tag << 2) | (values_to_send << 18);
+    if(num_dest==1) std::cout << "Destination: " << multicast_dest[0] << "\n";
     spu_req_info req(num_dest, a, num_addr_to_send, addr_to_send, multicast_dest, req_type);
+    if(num_dest==1) std::cout << "Destination: " << req.mcast_dest[0] << "\n";
     push_net_req(req);
     dest_scratch_addr.clear();
     // std::cout << "Send tagged packet with num dest: " << num_dest << " tag: " << tag << " values bytes to wait for: " << values_to_send << " and num addr bytes: " << addr_to_send << " -1th bit: " << j << "\n";
@@ -1862,11 +1872,15 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
       v[j] = (update_coalesce_vals[i] >> (k*8)) & 255;
     }
     addr_to_send = 1 | 0<<1 | tag << 2;
+    if(num_dest==1) std::cout << "Value Destination: " << multicast_dest[0] << "\n";
     spu_req_info req_seq(num_dest, v, values_to_send, addr_to_send, multicast_dest, req_type);
+    if(num_dest==1) std::cout << "Value Destination: " << req_seq.mcast_dest[0] << "\n";
     push_net_req(req_seq);
   }
 
   if(local_dest_scratch_addr.size()>0) {
+    _last_tag = (_last_tag+1)%1024;
+    tag = req_core << 10 | _last_tag;
     getSSIM().insert_pending_request_queue(tag, local_dest_scratch_addr, values_to_send);
     int num_addr = getSSIM().push_and_update_addr_in_pq(tag, values_to_send);
     std::vector<uint8_t> sent_val;
@@ -1874,7 +1888,6 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
       sent_val.push_back(uint8_t(v[0]));
     }
     getSSIM().push_atomic_inc(sent_val, num_addr);
-
   }
 
   return true;

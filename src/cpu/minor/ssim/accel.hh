@@ -875,6 +875,9 @@ class scratch_write_controller_t : public data_controller_t {
   }
 
   bool crossbar_backpressureOn();
+  bool atomic_addr_full(int bytes);
+  bool atomic_val_full(int bytes);
+  bool pending_request_queue_full();
 
   // void cycle();
   void cycle(bool can_perform_atomic_scr, bool &performed_atomic_scr);
@@ -915,6 +918,8 @@ class scratch_write_controller_t : public data_controller_t {
   void set_atomic_cgra_out_port(int p) { _atomic_cgra_out_port=p; }
   void set_atomic_addr_bytes(int p) { _atomic_addr_bytes=p; }
   void set_atomic_val_bytes(int p) { _atomic_val_bytes=p; }
+  bool is_conflict(addr_t scr_addr, int num_bytes);
+  void push_atomic_val();
 
   private:
   int _which_wr=0; // for banked scratchpad
@@ -935,6 +940,7 @@ class scratch_write_controller_t : public data_controller_t {
   // std::unordered_map<int, int> _conflict_detection_queue;
   // addr, bytes
   std::deque<std::pair<int,int>> _conflict_detection_queue;
+  std::queue<std::vector<uint8_t>> _atom_val_store;
 
   struct atomic_scr_op_req{
     addr_t _scr_addr;
@@ -1003,6 +1009,7 @@ class network_controller_t : public data_controller_t {
   }
 
   void serve_pending_net_req();
+  void check_cpu_response_queue();
   void multicast_data(remote_port_multicast_stream_t& stream, int message_size);
   void write_remote_scr(remote_scr_stream_t& stream);
   void write_direct_remote_scr(direct_remote_scr_stream_t& stream);
@@ -1722,6 +1729,8 @@ int get_cur_cycle();
   int _stat_hit_bytes_rd=0;
   int _stat_miss_bytes_rd=0;
   int _stat_num_spu_req_coalesced=0;
+  int _stat_conflict_cycles=0;
+  int _stat_tot_atom_cycles=0;
   // for backcgra
   // int _stat_mem_initiation_interval = 10000;
   double _stat_port_imbalance=0;

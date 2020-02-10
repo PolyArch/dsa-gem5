@@ -69,8 +69,11 @@ class RubySequencer(RubyPort):
    # TODO: Latencies should be migrated into each top-level cache controller
    icache_hit_latency = Param.Cycles(1, "Inst cache hit latency")
    dcache_hit_latency = Param.Cycles(1, "Data cache hit latency")
-   max_outstanding_requests = Param.Int(16,
+   max_outstanding_requests = Param.Int(256,
        "max requests (incl. prefetches) outstanding")
+ 
+   # max_outstanding_requests = Param.Int(16,
+   #     "max requests (incl. prefetches) outstanding")
    deadlock_threshold = Param.Cycles(500000,
        "max outstanding cycles for a request before deadlock/livelock declared")
    garnet_standalone = Param.Bool(False, "")
@@ -81,4 +84,5 @@ class RubySequencer(RubyPort):
 class DMASequencer(RubyPort):
    type = 'DMASequencer'
    cxx_header = "mem/ruby/system/DMASequencer.hh"
-   max_outstanding_requests = Param.Int(64, "max outstanding requests")
+   # max_outstanding_requests = Param.Int(64, "max outstanding requests")
+   max_outstanding_requests = Param.Int(256, "max outstanding requests")
