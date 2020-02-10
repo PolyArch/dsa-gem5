@@ -1713,6 +1713,8 @@ void Execute::push_net_req(spu_req_info req) {
   int j=0;
   int split_count=0;
   while(req.num_data_bytes!=0) {
+    if(req.num_dest==0) return;
+    assert(req.mcast_dest[0]<=ssim.num_active_threads());
     split_count++;
     std::shared_ptr<SpuRequestMsg> msg = std::make_shared<SpuRequestMsg>(cpu.clockEdge());
     (*msg).m_MessageSize = MessageSizeType_Control;
@@ -1733,6 +1735,8 @@ void Execute::push_net_req(spu_req_info req) {
     }
     // delimeter used in atomic update requests
     if(j!=SPU_NET_PACKET_SIZE) (*msg).m_DataBlk.setByte(j,-1);
+
+    // std::cout << "Number of dest: " << req.num_dest << "\n";
     for(j=0; j<req.num_dest; ++j){ // non-zero if data-request
       // std::cout << "mast dest: " << req.mcast_dest[j] << "\n";
       (*msg).m_Destination.add(cpu.get_m_version(req.mcast_dest[j]));
@@ -1773,6 +1777,9 @@ void Execute::serve_pending_net_req() {
 bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadcast_dest, std::vector<int> update_coalesce_vals, int opcode, int val_bytes, int out_bytes) {
 
   // std::cout << "Received an atomic op request with dest size: " << update_broadcast_dest.size() << " and coalesce size: " << update_coalesce_vals.size() << "\n";
+  
+
+  if(ssim.num_active_threads()<0) assert(0);
 
   int num_updates = update_broadcast_dest.size();
   int num_vals = update_coalesce_vals.size();
@@ -1844,7 +1851,9 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
     // if(j!=64) a[j]=-1; // delimeter
 
     addr_to_send = 1 | (1<<1) | (tag << 2) | (values_to_send << 18);
+    if(num_dest==1) std::cout << "Destination: " << multicast_dest[0] << "\n";
     spu_req_info req(num_dest, a, num_addr_to_send, addr_to_send, multicast_dest, req_type);
+    if(num_dest==1) std::cout << "Destination: " << req.mcast_dest[0] << "\n";
     push_net_req(req);
     dest_scratch_addr.clear();
     // std::cout << "Send tagged packet with num dest: " << num_dest << " tag: " << tag << " values bytes to wait for: " << values_to_send << " and num addr bytes: " << addr_to_send << " -1th bit: " << j << "\n";
@@ -1861,7 +1870,9 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
       v[j] = (update_coalesce_vals[i] >> (k*8)) & 255;
     }
     addr_to_send = 1 | 0<<1 | tag << 2;
+    if(num_dest==1) std::cout << "Value Destination: " << multicast_dest[0] << "\n";
     spu_req_info req_seq(num_dest, v, values_to_send, addr_to_send, multicast_dest, req_type);
+    if(num_dest==1) std::cout << "Value Destination: " << req_seq.mcast_dest[0] << "\n";
     push_net_req(req_seq);
   }
 

@@ -67,6 +67,16 @@ public:
 
   int get_bytes_from_type(int t);
 
+  bool atomic_addr_full(int bytes) {
+    return accel_arr[0]->_scr_w_c.atomic_addr_full(bytes);
+  }
+  bool atomic_val_full(int bytes) {
+    return accel_arr[0]->_scr_w_c.atomic_val_full(bytes);
+  }
+  bool pending_request_queue_full() {
+    return accel_arr[0]->_scr_w_c.pending_request_queue_full();
+  }
+
 
   void insert_pending_request_queue(int tid, std::vector<int> start_addr, int bytes_waiting) {
     accel_arr[0]->insert_pending_request_queue(tid, start_addr, bytes_waiting);

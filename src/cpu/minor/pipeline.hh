@@ -122,6 +122,20 @@ class Pipeline : public Ticked {
       execute.getSSIM().insert_pending_request_queue(tid, start_addr, bytes_waiting);
     }
 
+
+    bool atomic_addr_full(int bytes) {
+      return execute.getSSIM().atomic_addr_full(bytes);
+    }
+    bool atomic_val_full(int bytes) {
+      return execute.getSSIM().atomic_val_full(bytes);
+    }
+    bool pending_request_queue_full() {
+      return execute.getSSIM().pending_request_queue_full();
+    }
+
+
+
+
 	// TODO:FIXME: need to access execute from cpu to talk to accel
 	void receiveSpuMessage(int8_t* val, int num_bytes, int in_port)
 	{

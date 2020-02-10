@@ -781,6 +781,7 @@ class LSQ : public Named
     bool push_rem_read_req(int dest_core_id, int request_ptr, int addr, int data_bytes, int reorder_entry);
     void push_rem_read_return(int dst_core, int8_t data[64], int request_ptr, int addr, int data_bytes, int reorder_entry);
     void serve_pending_net_req();
+    void check_cpu_response_queue() { cpu.wakeup(); }
     bool is_pending_net_empty();
     // void push_spu_scr_wr_req(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id, int stream_id);
     int getCpuId() { return cpu.cpuId(); }

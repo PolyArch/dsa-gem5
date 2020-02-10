@@ -874,6 +874,9 @@ class scratch_write_controller_t : public data_controller_t {
   }
 
   bool crossbar_backpressureOn();
+  bool atomic_addr_full(int bytes);
+  bool atomic_val_full(int bytes);
+  bool pending_request_queue_full();
 
   // void cycle();
   void cycle(bool can_perform_atomic_scr, bool &performed_atomic_scr);
@@ -1007,6 +1010,7 @@ class network_controller_t : public data_controller_t {
   }
 
   void serve_pending_net_req();
+  void check_cpu_response_queue();
   void multicast_data(remote_port_multicast_stream_t& stream, int message_size);
   void write_remote_scr(remote_scr_stream_t& stream);
   void write_direct_remote_scr(direct_remote_scr_stream_t& stream);
@@ -1726,6 +1730,8 @@ int get_cur_cycle();
   int _stat_hit_bytes_rd=0;
   int _stat_miss_bytes_rd=0;
   int _stat_num_spu_req_coalesced=0;
+  int _stat_conflict_cycles=0;
+  int _stat_tot_atom_cycles=0;
   // for backcgra
   // int _stat_mem_initiation_interval = 10000;
   double _stat_port_imbalance=0;
