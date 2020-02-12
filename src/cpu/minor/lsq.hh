@@ -788,6 +788,7 @@ class LSQ : public Named
 
     void set_spu_done(int spu_id);
     bool all_spu_done(int num_active_threads);
+    void print_spu_stats(int spu_id);
     bool spu_net_done();
     void reset_all_spu();
     void reset_all_spu_global_wait();

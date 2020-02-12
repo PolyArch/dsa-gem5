@@ -55,13 +55,7 @@ public:
                       uint64_t flags, int const_width, bool iter_port);
 
   void atomic_update_hardware_config(int addr_port, int val_port, int out_port);
-<<<<<<< HEAD
-
   void atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode, int val_num, int num_updates, bool is_update_cnt_port, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type);
-
-=======
-  void atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode, int val_num, int num_updates, bool is_update_cnt_port, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type);
->>>>>>> ca1dbbc89e0b96f78c93eb8376d02f5171debc7b
   void multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_port, int rem_port, bool dest_flag, bool spad_type, int64_t stride, int64_t access_size);
   void write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int num_elem, int const_width);
 
@@ -93,8 +87,8 @@ public:
     return accel_arr[0]->push_and_update_addr_in_pq(tid, num_bytes);
   }
   
-void push_atomic_inc(std::vector<uint8_t> inc, int repeat_times) {
-    accel_arr[0]->push_atomic_inc(inc, repeat_times);
+void push_atomic_inc(int tag, std::vector<uint8_t> inc, int repeat_times) {
+    accel_arr[0]->push_atomic_inc(tag, inc, repeat_times);
   }
 
 

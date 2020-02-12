@@ -142,13 +142,6 @@ void MinorCPU::wakeup()
       // Step1: get the start address from here
       if(is_tagged) {
         int tag = (return_info >> 2) & 65535;
-<<<<<<< HEAD
-        uint8_t l;
-        if(is_tag_packet) {
-          if(SS_DEBUG::NET_REQ) {
-            std::cout << "Received tag in the received packet: " << tag << "\n";
-          }
-=======
         if(SS_DEBUG::NET_REQ) {
           std::cout << "Received tag in the received packet: " << tag << "\n";
         }
@@ -156,7 +149,6 @@ void MinorCPU::wakeup()
         if(is_tag_packet) {
           if(pipeline->pending_request_queue_full()) return;
 
->>>>>>> ca1dbbc89e0b96f78c93eb8376d02f5171debc7b
           int bytes_waiting = (return_info >> 18);
           std::vector<int> start_addr;
           uint64_t inc = 0;
@@ -182,15 +174,11 @@ void MinorCPU::wakeup()
           // std::cout << "core: " << cpuId() << " addr received: " << start_addr.size() << " and bytes waiting for each: " << bytes_waiting << "\n";
           pipeline->insert_pending_request_queue(tag, start_addr, bytes_waiting);
           start_addr.clear();
-<<<<<<< HEAD
         } else {
 
           if(SS_DEBUG::NET_REQ) {
             std::cout << "Received value packet with tag: " << tag << "\n";
           }
-=======
-        } else {          
->>>>>>> ca1dbbc89e0b96f78c93eb8376d02f5171debc7b
           std::vector<uint8_t> inc_val;
           for(int i=0; i<SPU_NET_PACKET_SIZE; ++i) {
             int8_t x = msg->m_DataBlk.getByte(i);
@@ -210,7 +198,7 @@ void MinorCPU::wakeup()
           // std::cout << " num addr waiting to consume all values: " << num_addr << "\n";
           // pop values and push in the value queue (num_times is start addr)
           // ssim.push_atomic_inc(inc_val, num_addr); // vec of values, repeat times
-          pipeline->push_atomic_inc(inc_val, num_addr);
+          pipeline->push_atomic_inc(tag, inc_val, num_addr);
         }
       } else { // TODO: like the old way to pushing both together
       }

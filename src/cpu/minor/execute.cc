@@ -1826,7 +1826,7 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
     // std::cout << "input: " << update_broadcast_dest[d] << "scr addr: " << local_scr_addr << " dest core id: " << dest_core_id << "\n";
     assert(dest_core_id<=num_active_threads);
 
-    if(num_active_threads==1 || dest_core_id==cpu.cpuId()) { // 0--host core when non-multi-threaded code
+    if((num_active_threads==1 || dest_core_id==cpu.cpuId())) { // 0--host core when non-multi-threaded code
       if(SS_DEBUG::NET_REQ){
         printf("LOCAL REQUEST destination core: %d\n",dest_core_id);
       }
@@ -1853,9 +1853,9 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
     // if(j!=64) a[j]=-1; // delimeter
 
     addr_to_send = 1 | (1<<1) | (tag << 2) | (values_to_send << 18);
-    if(num_dest==1) std::cout << "Destination: " << multicast_dest[0] << "\n";
+    // if(num_dest==1) std::cout << "Destination: " << multicast_dest[0] << "\n";
     spu_req_info req(num_dest, a, num_addr_to_send, addr_to_send, multicast_dest, req_type);
-    if(num_dest==1) std::cout << "Destination: " << req.mcast_dest[0] << "\n";
+    // if(num_dest==1) std::cout << "Destination: " << req.mcast_dest[0] << "\n";
     push_net_req(req);
     dest_scratch_addr.clear();
     // std::cout << "Send tagged packet with num dest: " << num_dest << " tag: " << tag << " values bytes to wait for: " << values_to_send << " and num addr bytes: " << addr_to_send << " -1th bit: " << j << "\n";
@@ -1872,9 +1872,9 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
       v[j] = (update_coalesce_vals[i] >> (k*8)) & 255;
     }
     addr_to_send = 1 | 0<<1 | tag << 2;
-    if(num_dest==1) std::cout << "Value Destination: " << multicast_dest[0] << "\n";
+    // if(num_dest==1) std::cout << "Value Destination: " << multicast_dest[0] << "\n";
     spu_req_info req_seq(num_dest, v, values_to_send, addr_to_send, multicast_dest, req_type);
-    if(num_dest==1) std::cout << "Value Destination: " << req_seq.mcast_dest[0] << "\n";
+    // if(num_dest==1) std::cout << "Value Destination: " << req_seq.mcast_dest[0] << "\n";
     push_net_req(req_seq);
   }
 
@@ -1887,7 +1887,7 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
     for(int i=0; i<values_to_send; ++i) {
       sent_val.push_back(uint8_t(v[0]));
     }
-    getSSIM().push_atomic_inc(sent_val, num_addr);
+    getSSIM().push_atomic_inc(tag, sent_val, num_addr);
   }
 
   return true;

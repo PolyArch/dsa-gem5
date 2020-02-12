@@ -168,6 +168,7 @@ class Process : public SimObject
     // SPU things
     void set_spu_done(int spu_id);
     void reset_all_spu();
+    // void print_spu_stats(int spu_id);
     bool all_spu_done();
     bool is_last_spu();
     void set_spu_global_wait_released(int spu_id);

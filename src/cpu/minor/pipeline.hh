@@ -110,8 +110,8 @@ class Pipeline : public Ticked {
 
   public:
 
-    void push_atomic_inc(std::vector<uint8_t> inc, int repeat_times) {
-      execute.getSSIM().push_atomic_inc(inc, repeat_times);
+    void push_atomic_inc(int tid, std::vector<uint8_t> inc, int repeat_times) {
+      execute.getSSIM().push_atomic_inc(tid, inc, repeat_times);
     }
 
     int push_and_update_addr_in_pq(int tid, int num_bytes) {

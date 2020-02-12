@@ -848,19 +848,8 @@ class scratch_write_controller_t : public data_controller_t {
 
   void insert_pending_request_queue(int tid, std::vector<int> start_addr, int bytes_waiting);
   int push_and_update_addr_in_pq(int tid, int num_bytes);
-  void push_atomic_inc(std::vector<uint8_t> inc, int repeat_times);
-  bool is_conflict(addr_t scr_addr, int num_bytes);
+  void push_atomic_inc(int tid, std::vector<uint8_t> inc, int repeat_times);
 
-  // declare pending request queue and other information associated with the
-  // atomic update stream 
-  /*struct pending_net {
-    int last_start_addr;
-    int bytes_left;
-  };*/
-  // tid, start_addr, waiting_flag
-  // std::unordered_map<int, pending_net> _pending_request_queue;
-  // indexed by tid, then bytes_left same for all, then assoc. start_addr
-  
   void reset_stream_engines() {
     _port_scr_streams.clear();
     _const_scr_streams.clear();
@@ -878,6 +867,10 @@ class scratch_write_controller_t : public data_controller_t {
   bool atomic_addr_full(int bytes);
   bool atomic_val_full(int bytes);
   bool pending_request_queue_full();
+
+  int atomic_val_size() { return _atom_val_store.size(); }
+  int pending_request_queue_size() { return _pending_request_queue.size(); }
+  int conflict_queue_size() { return _conflict_detection_queue.size(); }
 
   // void cycle();
   void cycle(bool can_perform_atomic_scr, bool &performed_atomic_scr);
@@ -940,7 +933,25 @@ class scratch_write_controller_t : public data_controller_t {
   // std::unordered_map<int, int> _conflict_detection_queue;
   // addr, bytes
   std::deque<std::pair<int,int>> _conflict_detection_queue;
-  std::queue<std::vector<uint8_t>> _atom_val_store;
+  // std::queue<std::vector<uint8_t>> _atom_val_store;
+  // tid, and its corresponding data
+  /*
+  struct atomic_reorder_entry { // create when you receive an address
+    std::vector<uint8_t> data;
+    int tid;
+    bool done;
+    int req_bytes;
+    int repeat_times;
+  };
+  atomic_reorder_entry reorder_buffer[MAX_ATOM_REQ_QUEUE_SIZE]; // tid, done?
+  */
+
+  std::unordered_map<int, std::vector<uint8_t>> _atom_val_store;
+  // tid, repeat_times, done?
+  std::pair<int,std::pair<int,bool>> reorder_buffer[MAX_ATOM_REQ_QUEUE_SIZE]; // tid, done?
+  int _cur_drob_fill_ptr=0;
+  int _cur_drob_pop_ptr=0;
+  // std::vector<uint8_t> _temp_accum;
 
   struct atomic_scr_op_req{
     addr_t _scr_addr;
@@ -1587,8 +1598,8 @@ private:
     return _scr_w_c.push_and_update_addr_in_pq(tid, num_bytes);
   }
   
-  void push_atomic_inc(std::vector<uint8_t> inc, int repeat_times) {
-    _scr_w_c.push_atomic_inc(inc, repeat_times);
+  void push_atomic_inc(int tid, std::vector<uint8_t> inc, int repeat_times) {
+    _scr_w_c.push_atomic_inc(tid, inc, repeat_times);
   }
 
   void push_ind_rem_read_req(bool is_remote, int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry) {
@@ -1741,6 +1752,7 @@ int get_cur_cycle();
 
   //FIXME: just for debug, fix later
   int _num_cycles_issued=0;
+  int _num_atomic_sent=0;
 
   // int _bytes_rd5=0;
 
