@@ -951,6 +951,7 @@ class scratch_write_controller_t : public data_controller_t {
   std::pair<int,std::pair<int,bool>> reorder_buffer[MAX_ATOM_REQ_QUEUE_SIZE]; // tid, done?
   int _cur_drob_fill_ptr=0;
   int _cur_drob_pop_ptr=0;
+  int _drob_size_used=0;
   // std::vector<uint8_t> _temp_accum;
 
   struct atomic_scr_op_req{
@@ -1753,6 +1754,7 @@ int get_cur_cycle();
   //FIXME: just for debug, fix later
   int _num_cycles_issued=0;
   int _num_atomic_sent=0;
+  int _assumed_bytes=512; // to debug
 
   // int _bytes_rd5=0;
 

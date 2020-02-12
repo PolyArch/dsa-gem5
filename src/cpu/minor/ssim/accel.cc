@@ -4614,6 +4614,7 @@ void scratch_write_controller_t::serve_atomic_requests(bool &performed_atomic_sc
         _cur_drob_pop_ptr = (_cur_drob_pop_ptr+1)%MAX_ATOM_REQ_QUEUE_SIZE;
         // delete in atom val store
         _atom_val_store.erase(tid);
+        _drob_size_used--;
       }
       bytes_prt.pop_out_data(BYTES_PORT_DATA_WIDTH);
       atomic_in.pop_out_data(ATOMIC_ADDR_DATA_WIDTH);
@@ -4652,7 +4653,7 @@ void scratch_write_controller_t::serve_atomic_requests(bool &performed_atomic_sc
                      &correct_val,
                      data_bytes, 0);
 
-    if(_conflict_detection_queue.front().second==256) {
+    if(_conflict_detection_queue.front().second==_accel->_assumed_bytes) {
       cout << "Value written is: " << correct_val << " scr addr: " << scr_addr << " and bytes: " << data_bytes << endl;
     }
     // cout << "Number of bytes written from atomic update: " << data_bytes << endl;
@@ -6549,7 +6550,7 @@ void scratch_write_controller_t::insert_pending_request_queue(int tid, vector<in
   } else {
     _pending_request_queue.insert(make_pair(tid, make_pair(bytes_waiting, start_addr)));
   }
-  assert(bytes_waiting==256);
+  assert(bytes_waiting==_accel->_assumed_bytes);
   // assert(it==_pending_request_queue.end() && "this tid already present...");
   // cout << "Inserted a task in pq for tid: " << tid << " at core: " << _accel->_lsq->getCpuId() << endl;
 }
@@ -6569,9 +6570,10 @@ int scratch_write_controller_t::push_and_update_addr_in_pq(int tid, int num_byte
   
   // SPECIAL CASE WHEN TASKS CANNOT BE INTERLEAVED WITH OTHER TASKS
   if(it->second.first!=0) return 0;
-  num_bytes=256; // TODO: fix later
+  num_bytes=_accel->_assumed_bytes; // TODO: fix later
   reorder_buffer[_cur_drob_fill_ptr] = make_pair(tid,make_pair(num_addr, false)); // assuming value is not received yet!
   _cur_drob_fill_ptr = (_cur_drob_fill_ptr+1)%MAX_ATOM_REQ_QUEUE_SIZE;
+  _drob_size_used++;
 
   // TODO: allowed to push data if values complete, and enough bytes available
 
@@ -6608,8 +6610,8 @@ void scratch_write_controller_t::push_atomic_inc(int tid, std::vector<uint8_t> i
 
   // if done, sets its corresponding reorder entry to be true
   auto it2 = _atom_val_store.find(tid);
-  assert(it2->second.size()<=256);
-  if(it2->second.size()==256) {
+  assert(it2->second.size()<=_accel->_assumed_bytes);
+  if(it2->second.size()==_accel->_assumed_bytes) {
     bool set=false;
     for(int i=0; i<MAX_ATOM_REQ_QUEUE_SIZE; ++i) { // can be optimized
       if(reorder_buffer[i].first==tid) {
@@ -6656,7 +6658,7 @@ void scratch_write_controller_t::push_atomic_val() {
 }
 
 bool scratch_write_controller_t::atomic_addr_full(int bytes) {
-  return false;
+  // return false;
   port_data_t &in_addr = _accel->port_interf().in_port(ATOMIC_ADDR_PORT);
   unsigned num_addr = _accel->_ssim->num_active_threads(); // it->second.second.size();
 
@@ -6667,7 +6669,8 @@ bool scratch_write_controller_t::atomic_addr_full(int bytes) {
 }
 
 bool scratch_write_controller_t::atomic_val_full(int bytes) { // no space in drob?
-  return false;
+  // return false;
+  return _drob_size_used > MAX_ATOM_REQ_QUEUE_SIZE; 
   return _atom_val_store.size() > MAX_ATOM_REQ_QUEUE_SIZE;
   return false;
   port_data_t &in_val = _accel->port_interf().in_port(_atomic_cgra_val_port);
