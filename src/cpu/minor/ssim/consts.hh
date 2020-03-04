@@ -1,3 +1,5 @@
+#include <cstdint>
+
 #ifndef __SS_CONSTS_H__
 #define __SS_CONSTS_H__
 
@@ -9,7 +11,7 @@ typedef uint64_t addr_t;
 // #define SCRATCH_SIZE (16384) //size in bytes -- 16KB
 #define SCRATCH_SIZE (32768) //size in bytes -- 16KB
 
-#define LSCRATCH_SIZE (16384) //size in bytes -- 16KB
+#define LSCRATCH_SIZE (1 << 20) //size in bytes -- 16KB
 #define NUM_SCRATCH_BANKS 64
 #define MAX_BANK_BUFFER_SIZE 64 // 8
 // #define NUM_SPU_CORES 64 // for global address space
@@ -20,10 +22,10 @@ typedef uint64_t addr_t;
 #define DEFAULT_IND_ROB_SIZE 8
 
 
-#define NUM_ACCEL 8
+//#define NUM_ACCEL 8
 #define NUM_ACCEL_TOTAL (NUM_ACCEL+1)
 #define SHARED_SP (NUM_ACCEL)
-#define ACCEL_MASK 0xFF
+#define ACCEL_MASK ((1 << NUM_ACCEL) - 1)
 #define SHARED_MASK (ACCEL_MASK+1)
 
 #define MEM_WIDTH (64)

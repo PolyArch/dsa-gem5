@@ -851,7 +851,7 @@ decode QUADRANT default Unknown::unknown() {
                     xc->callSSFunc(SS_ADD_PRT);
                 }}, IsNonSpeculative, No_OpClass);
                 0x1: ss_scr_rd({{
-                    xc->pushStreamDimension(Rs1, Rs2, (imm >> 2) & 63);
+                    xc->pushStreamDimension(Rs1, Rs2, imm >> 2);
                     if (~imm & 1) {
                       if (imm >> 1 & 1) {
                         // Invoke a Buffet stream!

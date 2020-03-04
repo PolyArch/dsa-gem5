@@ -16,7 +16,7 @@ using namespace std;
 
 // Vector-Stream Commands (all of these are context-dependent)
 
-ssim_t::ssim_t(Minor::LSQ* lsq) : _lsq(lsq) {
+ssim_t::ssim_t(Minor::LSQ* lsq) : NUM_ACCEL(getenv("LANES") ? std::stoi(getenv("LANES")) : 8), _lsq(lsq) {
   const char *req_core_id_str = std::getenv("DBG_CORE_ID");
   if (req_core_id_str != nullptr) {
     _req_core_id = atoi(req_core_id_str);
@@ -24,6 +24,7 @@ ssim_t::ssim_t(Minor::LSQ* lsq) : _lsq(lsq) {
   // cout << "DEBUG PRED FOR CORE " << gee_core_id() << ": " << debug_pred() << endl;
   SS_DEBUG::check_env(debug_pred());
 
+  accel_arr.resize(NUM_ACCEL_TOTAL);
   for(int i = 0; i < NUM_ACCEL_TOTAL; ++i) {
     accel_arr[i] = new accel_t(lsq, i, this);
   }
@@ -39,6 +40,7 @@ ssim_t::ssim_t(Minor::LSQ* lsq) : _lsq(lsq) {
     port_data_t& cur_in_port = accel_arr[0]->_port_interf.in_port(i);
     cur_in_port.set_port_width(8);
   }
+
 }
 void ssim_t::req_config(addr_t addr, int size) {
   if(addr==0 && size==0) {
@@ -430,7 +432,7 @@ void ssim_t::add_port(int in_port) {
 }
 
 void ssim_t::load_dma_to_port(int64_t repeat, int64_t repeat_str) {
-  int new_repeat_str = repeat_str >> 1;
+  int64_t new_repeat_str = repeat_str >> 1;
   bool repeat_flag(repeat_str & 1);
 
   // bool repeat_flag = repeat_str & 1;
@@ -459,7 +461,7 @@ void ssim_t::write_dma() {
 
 
 void ssim_t::load_scratch_to_port(int64_t repeat, int64_t repeat_str, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type) {
-  int new_repeat_str = repeat_str >> 1;
+  int64_t new_repeat_str = repeat_str >> 1;
   bool repeat_flag(repeat_str & 1);
 
   affine_read_stream_t* s = new affine_read_stream_t(LOC::SCR, stream_stack,
@@ -600,6 +602,7 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
       auto &prt = accel_arr[0]->port_interf().out_port(repeat);
       prt.set_cur_repeat_lim(-1);
     }
+    s->set_fill_mode(_fill_mode);
   } else {
     auto S = new remote_port_stream_t(out_port,in_port,num_elem,
         repeat,new_repeat_str,core_d,true, padding_iter, repeat_flag);
@@ -609,6 +612,8 @@ void ssim_t::reroute(int out_port, int in_port, uint64_t num_elem,
     R->_remote_stream=S;
     s=S;
     r=R;
+    s->set_fill_mode(_fill_mode);
+    r->set_fill_mode(_fill_mode);
   }
 
   add_bitmask_stream(s);

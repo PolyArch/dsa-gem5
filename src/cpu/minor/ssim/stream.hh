@@ -20,6 +20,8 @@ enum class STR_PAT {PURE_CONTIG, SIMPLE_REPEATED,
 struct base_stream_t {
   static int ID_SOURCE;
 
+  int on_the_fly{0};
+
   virtual bool stream_active() = 0;
   bool empty() {return _empty;} //This must be set by controller itself
 
@@ -1128,7 +1130,7 @@ struct direct_remote_scr_stream_t : public remote_scr_stream_t {
   // port
   virtual void print_status() override {
     std::cout << "direct port->remote scratch";
-    std::cout << "\tval_port=" << _out_port;
+    std::cout << "\tval_port=" << _out_port << "(" << soft_port_name(_out_port, false) << ")";
     // std::cout << "\tremote_scratch_base_addr:" << _mem_addr << "\telem_left=" << _num_elements;
     std::cout << "\telem_left=" << _num_elements;
     std::cout << "\tdata_width=" << _data_width;

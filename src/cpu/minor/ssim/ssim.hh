@@ -22,7 +22,9 @@ class ssim_t
   friend class dma_controller_t;
   friend class port_port_controller_t;
 
+
 public:
+  const int NUM_ACCEL;
   //Simulator Interface
   ssim_t(Minor::LSQ* lsq);
 
@@ -220,7 +222,7 @@ private:
   Minor::LSQ* _lsq;
   // Minor::Execute* _execute; (not sure if we need it)
 
-  accel_t* accel_arr[NUM_ACCEL+1]; //LAST ONE IS SHARED SCRATCH
+  std::vector<accel_t*> accel_arr;
 
   int _num_active_threads=-1; // for global barrier
 

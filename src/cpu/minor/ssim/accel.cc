@@ -493,7 +493,7 @@ void port_interf_t::initialize(SSModel *ssconfig) {
 uint64_t accel_t::now() { return _lsq->get_cpu().curCycle(); }
 
 accel_t::accel_t(Minor::LSQ *lsq, int i, ssim_t *ssim)
-    : _ssim(ssim), _lsq(lsq), _accel_index(i), _accel_mask(1 << i),
+    : NUM_ACCEL(ssim->NUM_ACCEL), _ssim(ssim), _lsq(lsq), _accel_index(i), _accel_mask(1 << i),
       _dma_c(this, &_scr_r_c, &_scr_w_c, &_net_c), _scr_r_c(this, &_dma_c),
       _scr_w_c(this, &_dma_c), _net_c(this, &_dma_c), _port_c(this) {
 
@@ -621,7 +621,7 @@ accel_t::accel_t(Minor::LSQ *lsq, int i, ssim_t *ssim)
 
 void accel_t::timestamp() {
   _ssim->timestamp();
-  cout << "acc" << _accel_index << " ";
+  std::cerr << "acc" << _accel_index << " ";
 }
 
 bool accel_t::in_use() { return _ssim->in_use(); }
@@ -1137,7 +1137,7 @@ void accel_t::cycle_cgra_backpressure() {
         if(SS_DEBUG::COMP) {
           cout << "Vec name: " << vec_in->name() << " allowed to push input: ";
           for (size_t i = 0; i < data.size(); ++i) {
-            std::cout << data[i] << "(" << data_valid[i] << ") ";
+            std::cout << vec_in->values()[i] << "|" << data[i] << "(" << data_valid[i] << ") ";
           }
           cout << std::endl;
         }
@@ -1158,12 +1158,11 @@ void accel_t::cycle_cgra_backpressure() {
 
   // calling with the default parameters for now
   //num_computed = _dfg->cycle(print, true);
-  num_computed = _dfg->forward(_back_cgra);
+  num_computed = _dfg->forward(_back_cgra, _sched);
 
-  if (num_computed) {
-    _cgra_issued++;
-    _backcgra_issued++;
-  }
+  _cgra_issued += _dfg->total_dyn_insts(0) + _dfg->total_dyn_insts(1);
+  _dedicated_cgra_issued += _dfg->total_dyn_insts(0);
+  _backcgra_issued += _dfg->total_dyn_insts(1);
 
   if (in_roi()) {
     _stat_ss_insts += num_computed;
@@ -1195,7 +1194,10 @@ void accel_t::cycle_cgra_backpressure() {
 
       if(SS_DEBUG::COMP) {
         cout << "outvec[" << vec_output->name() << "] allowed to pop output: ";
-        for(auto &d : data) cout << d << " ";
+        assert(data_valid.size() == data.size());
+        for (int j = 0, n = data.size(); j < n; ++j) {
+          std::cout << data[j] << "(" << data_valid[j] << ") ";
+        }
         cout << "\n";
       }
       if (in_roi()) {
@@ -2030,9 +2032,7 @@ void accel_t::schedule_streams() {
 
       str_issued++;
       if (SS_DEBUG::COMMAND_I) {
-        timestamp();
-        cout << " ISSUED \tid:" << ip->id() << " ";
-        ip->print_status();
+        timestamp(); std::cerr << " ISSUED \tid:" << ip->id() << " "; ip->print_status();
       }
 
       // delete ip; this is a std::shared_ptr now
@@ -2041,6 +2041,7 @@ void accel_t::schedule_streams() {
         _stat_commands_issued++;
       }
     } else {
+      //timestamp(); std::cerr << " BUFFERED \tid:" << ip->id() << " "; ip->print_status();
       // we failed to schedule anything!
       if (_ssconfig->dispatch_inorder()) { // if INORDER-dispatch, stop!
         break;
@@ -2384,6 +2385,7 @@ void dma_controller_t::cycle() {
           _accel->_lsq->findResponse(CONFIG_STREAM)) {
     PacketPtr packet = response->packet;
     uint64_t context = response->sdInfo->which_accel;
+    int NUM_ACCEL = _accel->NUM_ACCEL;
     for (uint64_t i = 0, b = 1; i < NUM_ACCEL_TOTAL; ++i, b <<= 1) {
       if (context & b) {
         _accel->_ssim->accel_arr[i]->configure(packet->getAddr(),
@@ -2549,11 +2551,26 @@ void dma_controller_t::make_write_request() {
 
 void dma_controller_t::make_read_request() {
   //--------------------------
-  float min_port_ready = -2;
+  int min_port_ready = -2;
   //----------------------------
 
-  for (unsigned i = 0; i < _read_streams.size(); ++i) {
-    _which_rd = (_which_rd + 1) >= _read_streams.size() ? 0 : _which_rd + 1;
+  auto to_sort = _read_streams;
+
+  auto to_key = [this](base_stream_t *s) {
+    int ready = 0, on_the_fly;
+    for (auto &port : s->in_ports())
+      ready += _accel->port_interf().in_port(port).mem_size();
+    on_the_fly = s->on_the_fly;
+    return std::pair<int, int>(ready, on_the_fly);
+  };
+
+  std::sort(to_sort.begin(), to_sort.end(), [to_key](base_stream_t *a, base_stream_t *b) {
+    return to_key(a) < to_key(b);
+  });
+
+  for (unsigned i = 0, n = to_sort.size(); i < n; ++i) {
+    _which_rd = i;
+
     base_stream_t *s = _read_streams[_which_rd];
 
     if (auto *sp = dynamic_cast<affine_read_stream_t *>(s)) {
@@ -2579,8 +2596,8 @@ void dma_controller_t::make_read_request() {
           continue;
         }
 
-        if (_accel->_lsq->sd_transfers[in_port].unreservedRemainingSpace() >
-                0 && _accel->_lsq->canRequest()) {
+        if (_accel->_lsq->sd_transfers[in_port].unreservedRemainingSpace() > 0 &&
+            _accel->_lsq->canRequest()) {
 
           _accel->_lsq->sd_transfers[in_port].reserve();
 
@@ -5524,9 +5541,9 @@ void port_controller_t::cycle() {
 
     int acc_index = _accel->accel_index() - stream._which_core;
     if (acc_index == -1) {
-      acc_index = (NUM_ACCEL - 1);
+      acc_index = (_accel->NUM_ACCEL - 1);
     }
-    if (acc_index == (NUM_ACCEL)) {
+    if (acc_index == (_accel->NUM_ACCEL)) {
       acc_index = 0;
     }
     accel_t *rem_acc = _accel->get_ssim()->get_acc(acc_index);
@@ -5543,23 +5560,25 @@ void port_controller_t::cycle() {
 
     if (vp_out.mem_size() && port_in_okay) { // okay go for it
       uint64_t total_pushed = 0;
-      for (int i = 0;
-           i < PORT_WIDTH && vp_out.mem_size() && stream.stream_active(); ++i) {
+      for (int i = 0; i < PORT_WIDTH && vp_out.mem_size() && stream.stream_active(); ++i) {
         SBDT val = vp_out.pop_out_data();
-        // timestamp(); cout << "POPPED b/c port -> remote_port WRITE: " <<
-        // vp_out.port() << " " << vp_out.mem_size() <<  "\n";
 
         stream._num_elements--;
         if (stream._padding_size != NO_PADDING)
           (++stream._padding_cnt) %= stream._padding_size;
 
+        //timestamp();
+        //std::cerr << "POPPED b/c port -> remote_port WRITE: " << vp_out.port() << " stream: "
+        //          << stream._num_elements << " vp: " << vp_out.mem_size() << std::endl;
+
         for (int in_port : stream.in_ports()) {
           port_data_t &in_vp = _accel->port_interf().in_port(in_port);
           in_vp.push_data(val);
           if (stream._padding_size != NO_PADDING && stream._padding_cnt == 0) {
-            if (stream.fill_mode() == STRIDE_ZERO_FILL ||
-                stream.fill_mode() == STRIDE_DISCARD_FILL) {
-              in_vp.fill(stream.fill_mode());
+            int to_fill = in_vp.port_cgra_elem() - stream._padding_size % in_vp.port_cgra_elem();
+            std::vector<uint8_t> data(in_vp.get_port_width(), 0);
+            for (int i = 0; i < to_fill; ++i) {
+              in_vp.push_data(data, stream.fill_mode() != STRIDE_DISCARD_FILL);
             }
           }
         }

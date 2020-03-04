@@ -77,7 +77,7 @@ public:
 
   std::vector<bool> cgra_in_ports_active;
 
-  std::map<SS_CONFIG::ss_inst_t,int> inst_histo;
+  std::map<SS_CONFIG::OpCode, int> inst_histo;
   void reset();
 };
 
@@ -167,14 +167,10 @@ public:
       unsigned width = port_cgra_elem();
       unsigned remainder = _mem_data.size() % width;
       if(remainder != 0) {
-        std::vector<uint8_t> dummy_val;
-        for(int i=0; i<_port_width; ++i){
-          dummy_val.push_back(0);
-        }
+        std::vector<uint8_t> dummy_val(_port_width, 0);
         unsigned extra = width - remainder;
         for(int i = 0; i < extra; ++i) {
-          // push_data((SBDT)0,valid_flag); // need typecast because of template
-        push_data(dummy_val,valid_flag);
+          push_data(dummy_val, valid_flag);
         }
       }
     }
@@ -1009,9 +1005,9 @@ class network_controller_t : public data_controller_t {
 class port_controller_t : public data_controller_t {
   public:
   port_controller_t(accel_t* host) : data_controller_t(host) {
-    _port_port_streams.resize(8);  //IS THIS ENOUGH?
-    _const_port_streams.resize(8);  //IS THIS ENOUGH?
-    _remote_port_streams.resize(8);  //IS THIS ENOUGH?
+    _port_port_streams.resize(32);  //IS THIS ENOUGH?
+    _const_port_streams.resize(32);  //IS THIS ENOUGH?
+    _remote_port_streams.resize(32);  //IS THIS ENOUGH?
     for(auto& i : _port_port_streams) {i.reset();}
     for(auto& i : _const_port_streams) {i.reset();}
     for(auto& i : _remote_port_streams) {i.reset();}
@@ -1246,6 +1242,8 @@ class accel_t
 
 public:
 
+  const int NUM_ACCEL;
+
   accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim);
 
   bool in_use();
@@ -1441,6 +1439,7 @@ private:
     assert(cur_minst());
     s->set_minst(cur_minst());
     _cmd_queue.push_back(s);
+    //timestamp(); std::cerr << "ENQUEUE "; s->print_status();
     forward_progress();
     // forward progress later? this was also giving seg fault
     // printf("stream pushed into the command queue\n");
@@ -1578,7 +1577,6 @@ int get_cur_cycle();
 // }
 
   //members------------------------
-  soft_config_t _soft_config;
   port_interf_t _port_interf;
 
   bool _in_config=false;
@@ -1617,7 +1615,8 @@ int get_cur_cycle();
   uint64_t _waiting_cycles=0;
   uint64_t _forward_progress_cycle=0;
 
-  public:
+ public:
+  soft_config_t _soft_config;
   //* running variables
   bool _cgra_issued_group[NUM_GROUPS];
   int _cgra_issued;
@@ -1691,7 +1690,7 @@ int get_cur_cycle();
   // newly added
   const char* _banked_spad_mapping_strategy = "";
 
-  std::map<SS_CONFIG::ss_inst_t,int> _total_histo;
+  std::map<SS_CONFIG::OpCode,int> _total_histo;
   std::map<int,int> _vport_histo;
 
   stream_stats_t _stream_stats;
