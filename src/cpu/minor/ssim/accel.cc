@@ -4612,7 +4612,7 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
       num_addr_pops = 0;
       num_val_pops = 0;
 
-      loc = out_addr.peek_out_data(0, stream._addr_bytes) // ;output_bytes);
+      loc = out_addr.peek_out_data(0, stream._addr_bytes); // output_bytes);
       if (SS_DEBUG::COMP) {
         std::cout << "1 cycle execution : " << std::endl;
         std::cout << "64-bit value at the addr port is: " << loc;
