@@ -24,4 +24,5 @@ m5out
 /system/arm/simple_bootloader/boot_emm.arm
 /system/arm/aarch64_bootloader/boot_emm.arm64
 *compile_commands.json
+.vscode/*
 .ycm_extra_conf.py

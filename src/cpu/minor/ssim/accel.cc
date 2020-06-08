@@ -3,8 +3,12 @@
 #include <iostream>
 #include <unordered_set>
 #include <utility>
+
+#include "dsa/dfg/utils.h"
+
 #include "../cpu.hh"
 #include "ssim.hh"
+
 
 
 using namespace std;
@@ -48,7 +52,7 @@ void accel_t::req_config(addr_t addr, int size, uint64_t context) {
 
   if (debug && (SS_DEBUG::COMMAND || SS_DEBUG::SCR_BARRIER)) {
     timestamp();
-    cout << "SS_CONFIGURE(request): "
+    cout << "dsaURE(request): "
          << "0x" << std::hex << addr << " " << std::dec << size << "\n";
   }
   SSMemReqInfoPtr sdInfo = new SSMemReqInfo(-4, context, CONFIG_STREAM);
@@ -1193,23 +1197,22 @@ void accel_t::cycle_cgra_backpressure() {
       vec_output->pop(data, data_valid);
 
       if(SS_DEBUG::COMP) {
-        cout << "outvec[" << vec_output->name() << "] allowed to pop output: ";
+        cerr << "outvec[" << vec_output->name() << "] allowed to pop output: ";
         assert(data_valid.size() == data.size());
         for (int j = 0, n = data.size(); j < n; ++j) {
           std::cout << data[j] << "(" << data_valid[j] << ") ";
         }
-        cout << "\n";
+        cerr << "\n";
       }
       if (in_roi()) {
         // _stat_comp_instances += 1;
         _stat_comp_instances += len; // number of scalar inputs
       }
-      if(data_valid.size() != len) {
-        cout << "port vec elem: " << cur_out_port.port_vec_elem() << " port width: " << cur_out_port.get_port_width() << endl;
-        cout << "Length of output required: " << len << " and size: " << data_valid.size() << endl;
 
-      }
-      assert(data_valid.size()==len);
+      CHECK(data_valid.size() == len) << "port vec elem: " << cur_out_port.port_vec_elem()
+                                      << " port width: " << cur_out_port.get_port_width()
+                                      << " length of output required: " << len
+                                      << " and size: " << data_valid.size();
 
       int j = 0, n_times=0;
       for (j = 0; j < len; ++j) {
@@ -1234,7 +1237,8 @@ void accel_t::cycle_cgra_backpressure() {
 
   // Statistics to measure port imbalance
   if(_ssim->in_roi() && _ssim->in_use()) { // would measure only when something was issued
-    _stat_port_imbalance += _dfg->count_starving_nodes();
+    // TODO(@were): Fix this.
+    // _stat_port_imbalance += _dfg->count_starving_nodes();
   }
 }
 
@@ -1583,7 +1587,7 @@ void accel_t::print_statistics(std::ostream &out) {
       << ((double)_stat_comp_instances) / ((double)roi_cycles()) << "\n";
   if (_dfg) {
     out << "For backcgra, Average thoughput of all ports (overall): "
-      << ((double)_stat_comp_instances)/((double)roi_cycles()*_dfg->num_vec_output()) // gives seg fault when no dfg
+      << ((double)_stat_comp_instances)/((double)roi_cycles()*_dfg->nodes<SSDfgVecOutput*>().size()) // gives seg fault when no dfg
       << ", CGRA outputs/cgra busy cycles: "
       <<  ((double)_stat_comp_instances)/((double)_stat_cgra_busy_cycles)  << "\n";
   }
@@ -6057,7 +6061,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
 
   if (debug && (SS_DEBUG::COMMAND || SS_DEBUG::SCR_BARRIER)) {
     timestamp();
-    cout << "SS_CONFIGURE(response): "
+    cout << "dsaURE(response): "
          << "0x" << std::hex << addr << " " << std::dec << size << "\n";
     // for(int i = 0; i < size/8; ++i) {
     //  cout << "0x" << std::hex << bits[i] << " ";
@@ -6075,43 +6079,15 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
     _sched->clear_ssdfg();
     delete _sched;
   }
-  _sched = new Schedule(_ssconfig);
-  // assert(_sched);
 
-  _soft_config.inst_histo = _sched->interpretConfigBits(size, bits);
+  {
+    std::string basename = ((char*)(bits) + 9);
+    SSDfg *dfg = dsa::dfg::Import("sched/" + basename + ".dfg.json");
+    _sched = new Schedule(_ssconfig, dfg);
+    _sched->LoadMappingInJson("sched/" + basename + ".sched.json");
+  }
 
   _dfg = _sched->ssdfg();                 // now we have the dfg!
-  _dfg->set_dbg_stream(_cgra_dbg_stream); // change debug stream for dfg
-
-  //for(auto i : _dfg->nodes<SSDfgVecInput*>()) {
-  //  ssvport* vp = dynamic_cast<ssvport*>(_sched->locationOf(i));
-
-  //  int port_number = vp->port();
-
-  //  cout << i->name() << " is mapped to " << vp->name() 
-  //    << " with id: " << vp->id() << " and vp pointer:" << vp << " and port: " << port_number << "\n";
-
-  //  vp =_sched->ssModel()->subModel()->node_list()[vp->id()];
-
-  //  cout << "and also is mapped to " << vp->name() 
-  //    << " with id: " << vp->id() << " and vp pointer:" << vp << " and port: " << port_number << "\n";
-
-
-  //  SSDfgVecInput* vertex = dynamic_cast<SSDfgVecInput*>(_sched->dfgNodeOf(vp));
-  //  if(vertex) {
-  //    cout << vertex->name() << "is what schedule recorded \n";
-  //  }
-  //  assert(vertex);
-
-  //}
-
-  //for(auto i : _dfg->nodes<SSDfgVecOutput*>()) {
-  //  ssnode* n = _sched->locationOf(i);
-
-  //  cout << i->name() << " is mapped to " << n->name() 
-  //    << " with id: " << n->id() << " and vp pointer:" << n << "\n";
-  //}
-
 
   // Lets print it for debugging purposes
   std::ofstream ofs("viz/dfg-reconstructed.dot", std::ios::out);
@@ -6133,9 +6109,11 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
   _soft_config.in_ports_name.resize(64);
   _soft_config.out_ports_name.resize(64);
 
-  for (int ind = 0; ind < _dfg->num_vec_input(); ++ind) {
-    SSDfgVec *vec_in = _dfg->vec_in(ind);
+  auto &in_vecs = _dfg->nodes<SSDfgVecInput*>();
+  for (int ind = 0; ind < in_vecs.size(); ++ind) {
+    SSDfgVec *vec_in = in_vecs[ind];
     int i = _sched->vecPortOf(vec_in);
+    CHECK(i != -1);
     _soft_config.in_ports_active.push_back(i); // activate input vector port
 
     SSDfgVecInput *vec_input = dynamic_cast<SSDfgVecInput *>(vec_in);
@@ -6165,8 +6143,9 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
 
   //SSDfgNode *dfg_node = vec_output->at(port_idx*vec_output->get_port_width()/64 );
 
-  for (int ind = 0; ind < _dfg->num_vec_output(); ++ind) {
-    SSDfgVec *vec_out = _dfg->vec_out(ind);
+  auto &out_vecs = _dfg->nodes<SSDfgVecOutput*>();
+  for (int ind = 0; ind < out_vecs.size(); ++ind) {
+    SSDfgVec *vec_out = out_vecs[ind];
     int i = _sched->vecPortOf(vec_out);
 
     _soft_config.out_ports_active.push_back(i);
