@@ -32,7 +32,6 @@ ssim_t::ssim_t(Minor::LSQ* lsq) : NUM_ACCEL(getenv("LANES") ? std::stoi(getenv("
   //TODO: inform accel_arr
 
   // set indirect ports to be 1-byte by default
-  // for(int i=22; i<32; ++i) {
   for(int i=START_IND_PORTS; i<STOP_IND_PORTS; ++i) {
     port_data_t& cur_out_port = accel_arr[0]->_port_interf.out_port(i);
     cur_out_port.set_port_width(8);
@@ -41,6 +40,8 @@ ssim_t::ssim_t(Minor::LSQ* lsq) : NUM_ACCEL(getenv("LANES") ? std::stoi(getenv("
     cur_in_port.set_port_width(8);
   }
 
+  DEBUG(MEM_VIO) << "lsq: " << lsq << " cpu: " << &lsq->get_cpu()
+                 << " clockdomain: " << &lsq->get_cpu().clockDomain;
 }
 void ssim_t::req_config(addr_t addr, int size) {
   if(addr==0 && size==0) {
@@ -153,12 +154,13 @@ void ssim_t::cycle_shared_busses() {
 }
 
 void ssim_t::step() {
-  if(!_in_use) {
+  if (!_in_use) {
     return;
   }
   cycle_shared_busses();
   for(uint64_t i=0,b=1; i < NUM_ACCEL; ++i, b<<=1) {
     if(_ever_used_bitmask & b) {
+      DEBUG(MEM_VIO) << i << ", " << accel_arr[i]->now();
       accel_arr[i]->tick();
     }
   }

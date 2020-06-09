@@ -104,6 +104,8 @@ Execute::Execute(const std::string &name_,
     issuePriority(0),
     commitPriority(0)
 {
+    DEBUG(MEM_VIO) << "lsq: " << &lsq << " cpu: " << &lsq.get_cpu()
+                   << " clock domain:" << &lsq.get_cpu().clockDomain;
     if (commitLimit < 1) {
         fatal("%s: executeCommitLimit must be >= 1 (%d)\n", name_,
             commitLimit);

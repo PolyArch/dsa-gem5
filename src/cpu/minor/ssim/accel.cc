@@ -1161,7 +1161,6 @@ void accel_t::cycle_cgra_backpressure() {
   }
 
   // calling with the default parameters for now
-  //num_computed = _dfg->cycle(print, true);
   num_computed = _dfg->forward(_back_cgra, _sched);
 
   _cgra_issued += _dfg->total_dyn_insts(0) + _dfg->total_dyn_insts(1);

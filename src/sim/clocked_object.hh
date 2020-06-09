@@ -106,6 +106,7 @@ class Clocked
     /**
      * The clock domain this clocked object belongs to
      */
+  public:
     ClockDomain &clockDomain;
 
   protected:

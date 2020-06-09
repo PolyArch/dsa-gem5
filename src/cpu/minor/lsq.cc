@@ -1451,6 +1451,7 @@ LSQ::LSQ(std::string name_, std::string dcache_port_name_,
     retryRequest(NULL),
     cacheBlockMask(~(cpu_.cacheLineSize() - 1))
 {
+    DEBUG(MEM_VIO) << "construct lsq, clockdomain: " << &cpu_.clockDomain;
     /*TODO:  Fix this to separate out:
      * 1. The number of streams supported (currently 100, too high)
      * 2. The size of each transfer queue (currently identical to transfers)
