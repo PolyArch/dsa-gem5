@@ -25,8 +25,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Alec Roelke
  */
 
 #ifndef __ARCH_RISCV_INSTS_AMO_HH__
@@ -41,31 +39,69 @@
 namespace RiscvISA
 {
 
-class LoadReserved : public MemInst
+// memfence micro instruction
+class MemFenceMicro : public RiscvMicroInst
 {
+  public:
+    MemFenceMicro(ExtMachInst _machInst, OpClass __opClass)
+        : RiscvMicroInst("fence", _machInst, __opClass)
+    { }
   protected:
-    using MemInst::MemInst;
+    using RiscvMicroInst::RiscvMicroInst;
 
+    Fault execute(ExecContext *, Trace::InstRecord *) const override;
     std::string generateDisassembly(
-        Addr pc, const SymbolTable *symtab) const override;
+        Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
-class StoreCond : public MemInst
+// load-reserved
+class LoadReserved : public RiscvMacroInst
 {
   protected:
-    using MemInst::MemInst;
+    using RiscvMacroInst::RiscvMacroInst;
 
     std::string generateDisassembly(
-        Addr pc, const SymbolTable *symtab) const override;
+        Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
+class LoadReservedMicro : public RiscvMicroInst
+{
+  protected:
+    Request::Flags memAccessFlags;
+    using RiscvMicroInst::RiscvMicroInst;
+
+    std::string generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const override;
+};
+
+// store-cond
+class StoreCond : public RiscvMacroInst
+{
+  protected:
+    using RiscvMacroInst::RiscvMacroInst;
+
+    std::string generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const override;
+};
+
+class StoreCondMicro : public RiscvMicroInst
+{
+  protected:
+    Request::Flags memAccessFlags;
+    using RiscvMicroInst::RiscvMicroInst;
+
+    std::string generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const override;
+};
+
+// AMOs
 class AtomicMemOp : public RiscvMacroInst
 {
   protected:
     using RiscvMacroInst::RiscvMacroInst;
 
     std::string generateDisassembly(
-        Addr pc, const SymbolTable *symtab) const override;
+        Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 class AtomicMemOpMicro : public RiscvMicroInst
@@ -75,7 +111,24 @@ class AtomicMemOpMicro : public RiscvMicroInst
     using RiscvMicroInst::RiscvMicroInst;
 
     std::string generateDisassembly(
-        Addr pc, const SymbolTable *symtab) const override;
+        Addr pc, const Loader::SymbolTable *symtab) const override;
+};
+
+/**
+ * A generic atomic op class
+ */
+
+template<typename T>
+class AtomicGenericOp : public TypedAtomicOpFunctor<T>
+{
+  public:
+    AtomicGenericOp(T _a, std::function<void(T*,T)> _op)
+      : a(_a), op(_op) { }
+    AtomicOpFunctor* clone() { return new AtomicGenericOp<T>(*this); }
+    void execute(T *b) { op(b, a); }
+  private:
+    T a;
+    std::function<void(T*,T)> op;
 };
 
 }

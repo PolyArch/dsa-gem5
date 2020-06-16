@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andreas Sandberg
  */
 
 #include <fcntl.h>
@@ -169,13 +167,24 @@ PerfKvmCounter::attach(PerfKvmCounterConfig &config,
                  group_fd,
                  0); // Flags
     if (fd == -1)
-        panic("PerfKvmCounter::open failed (%i)\n", errno);
+    {
+        if (errno == EACCES)
+        {
+            panic("PerfKvmCounter::attach recieved error EACCESS\n"
+            "  This error may be caused by a too restrictive setting\n"
+            "  in the file '/proc/sys/kernel/perf_event_paranoid'\n"
+            "  The default value was changed to 2 in kernel 4.6\n"
+            "  A value greater than 1 prevents gem5 from making\n"
+            "  the syscall to perf_event_open");
+        }
+        panic("PerfKvmCounter::attach failed (%i)\n", errno);
+    }
 
     mmapPerf(1);
 }
 
 pid_t
-PerfKvmCounter::gettid()
+PerfKvmCounter::sysGettid()
 {
     return syscall(__NR_gettid);
 }

@@ -25,10 +25,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
- *          Gabe Black
- *          Steve Reinhardt
  */
 
 #include "arch/sparc/insts/priv.hh"
@@ -37,7 +33,7 @@ namespace SparcISA
 {
 
 std::string
-Priv::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+Priv::generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream response;
 
@@ -47,7 +43,7 @@ Priv::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-RdPriv::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+RdPriv::generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream response;
 
@@ -60,7 +56,7 @@ RdPriv::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-WrPriv::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+WrPriv::generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream response;
 
@@ -80,7 +76,8 @@ WrPriv::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-WrPrivImm::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+WrPrivImm::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream response;
 

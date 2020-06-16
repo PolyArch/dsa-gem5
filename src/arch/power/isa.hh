@@ -25,14 +25,12 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
- *          Timothy M. Jones
  */
 
 #ifndef __ARCH_POWER_ISA_HH__
 #define __ARCH_POWER_ISA_HH__
 
+#include "arch/generic/isa.hh"
 #include "arch/power/registers.hh"
 #include "arch/power/types.hh"
 #include "base/logging.hh"
@@ -47,28 +45,36 @@ class EventManager;
 namespace PowerISA
 {
 
-class ISA : public SimObject
+class ISA : public BaseISA
 {
   protected:
-    MiscReg dummy;
-    MiscReg miscRegs[NumMiscRegs];
+    RegVal dummy;
+    RegVal miscRegs[NumMiscRegs];
 
   public:
     typedef PowerISAParams Params;
 
     void
+    clear(ThreadContext *tc)
+    {
+        clear();
+    }
+
+  protected:
+    void
     clear()
     {
     }
 
-    MiscReg
+  public:
+    RegVal
     readMiscRegNoEffect(int misc_reg) const
     {
         fatal("Power does not currently have any misc regs defined\n");
         return dummy;
     }
 
-    MiscReg
+    RegVal
     readMiscReg(int misc_reg, ThreadContext *tc)
     {
         fatal("Power does not currently have any misc regs defined\n");
@@ -76,13 +82,13 @@ class ISA : public SimObject
     }
 
     void
-    setMiscRegNoEffect(int misc_reg, const MiscReg &val)
+    setMiscRegNoEffect(int misc_reg, RegVal val)
     {
         fatal("Power does not currently have any misc regs defined\n");
     }
 
     void
-    setMiscReg(int misc_reg, const MiscReg &val, ThreadContext *tc)
+    setMiscReg(int misc_reg, RegVal val, ThreadContext *tc)
     {
         fatal("Power does not currently have any misc regs defined\n");
     }
@@ -113,6 +119,12 @@ class ISA : public SimObject
         return reg;
     }
 
+    int
+    flattenVecPredIndex(int reg) const
+    {
+        return reg;
+    }
+
     // dummy
     int
     flattenCCIndex(int reg) const
@@ -129,7 +141,7 @@ class ISA : public SimObject
     void startup(ThreadContext *tc) {}
 
     /// Explicitly import the otherwise hidden startup
-    using SimObject::startup;
+    using BaseISA::startup;
 
     const Params *params() const;
 

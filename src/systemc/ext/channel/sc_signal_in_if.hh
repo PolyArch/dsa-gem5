@@ -23,8 +23,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __SYSTEMC_EXT_CHANNEL_SC_SIGNAL_IN_IF_HH__
@@ -38,6 +36,13 @@ namespace sc_dt
 class sc_logic;
 
 };
+
+namespace sc_gem5
+{
+
+class Reset;
+
+} // namespace sc_gem5
 
 namespace sc_core
 {
@@ -83,6 +88,13 @@ class sc_signal_in_if<bool> : virtual public sc_interface
     sc_signal_in_if() : sc_interface() {}
 
   private:
+    friend class sc_gem5::Reset;
+    virtual bool
+    _addReset(sc_gem5::Reset *reset) const
+    {
+        return false;
+    }
+
     // Disabled
     sc_signal_in_if(const sc_signal_in_if<bool> &) : sc_interface() {}
     sc_signal_in_if<bool> &

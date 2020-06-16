@@ -33,9 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: William Wang
- *          Ali Saidi
  */
 
 #include "dev/arm/pl111.hh"
@@ -185,7 +182,7 @@ Pl111::read(PacketPtr pkt)
       default:
         if (readId(pkt, AMBA_ID, pioAddr)) {
             // Hack for variable size accesses
-            data = pkt->get<uint32_t>();
+            data = pkt->getLE<uint32_t>();
             break;
         } else if (daddr >= CrsrImage && daddr <= 0xBFC) {
             // CURSOR IMAGE
@@ -208,13 +205,13 @@ Pl111::read(PacketPtr pkt)
 
     switch(pkt->getSize()) {
       case 1:
-        pkt->set<uint8_t>(data);
+        pkt->setLE<uint8_t>(data);
         break;
       case 2:
-        pkt->set<uint16_t>(data);
+        pkt->setLE<uint16_t>(data);
         break;
       case 4:
-        pkt->set<uint32_t>(data);
+        pkt->setLE<uint32_t>(data);
         break;
       default:
         panic("CLCD controller read size too big?\n");
@@ -236,13 +233,13 @@ Pl111::write(PacketPtr pkt)
 
     switch(pkt->getSize()) {
       case 1:
-        data = pkt->get<uint8_t>();
+        data = pkt->getLE<uint8_t>();
         break;
       case 2:
-        data = pkt->get<uint16_t>();
+        data = pkt->getLE<uint16_t>();
         break;
       case 4:
-        data = pkt->get<uint32_t>();
+        data = pkt->getLE<uint32_t>();
         break;
       default:
         panic("PL111 CLCD controller write size too big?\n");
@@ -255,7 +252,7 @@ Pl111::write(PacketPtr pkt)
     Addr daddr = pkt->getAddr() - pioAddr;
 
     DPRINTF(PL111, " write register %#x value %#x size=%d\n", daddr,
-            pkt->get<uint8_t>(), pkt->getSize());
+            pkt->getLE<uint8_t>(), pkt->getSize());
 
     switch (daddr) {
       case LcdTiming0:

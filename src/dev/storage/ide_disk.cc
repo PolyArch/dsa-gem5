@@ -36,9 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andrew Schultz
- *          Ali Saidi
  */
 
 /** @file
@@ -56,15 +53,11 @@
 #include "base/chunk_generator.hh"
 #include "base/cprintf.hh" // csprintf
 #include "base/trace.hh"
-#include "config/the_isa.hh"
 #include "debug/IdeDisk.hh"
 #include "dev/storage/disk_image.hh"
 #include "dev/storage/ide_ctrl.hh"
 #include "sim/core.hh"
 #include "sim/sim_object.hh"
-
-using namespace std;
-using namespace TheISA;
 
 IdeDisk::IdeDisk(const Params *p)
     : SimObject(p), ctrl(NULL), image(p->image), diskDelay(p->delay),
@@ -443,7 +436,7 @@ IdeDisk::doDmaRead()
         // clear out the data buffer
         memset(dataBuffer, 0, MAX_DMA_SIZE);
         dmaReadCG = new ChunkGenerator(curPrd.getBaseAddr(),
-                curPrd.getByteCount(), TheISA::PageBytes);
+                curPrd.getByteCount(), pageBytes);
 
     }
     if (ctrl->dmaPending() || ctrl->drainState() != DrainState::Running) {
@@ -455,7 +448,7 @@ IdeDisk::doDmaRead()
                 &dmaReadWaitEvent, dataBuffer + dmaReadCG->complete());
         dmaReadBytes += dmaReadCG->size();
         dmaReadTxs++;
-        if (dmaReadCG->size() == TheISA::PageBytes)
+        if (dmaReadCG->size() == pageBytes)
             dmaReadFullPages++;
         dmaReadCG->next();
     } else {
@@ -526,7 +519,7 @@ IdeDisk::doDmaWrite()
     if (!dmaWriteCG) {
         // clear out the data buffer
         dmaWriteCG = new ChunkGenerator(curPrd.getBaseAddr(),
-                curPrd.getByteCount(), TheISA::PageBytes);
+                curPrd.getByteCount(), pageBytes);
     }
     if (ctrl->dmaPending() || ctrl->drainState() != DrainState::Running) {
         schedule(dmaWriteWaitEvent, curTick() + DMA_BACKOFF_PERIOD);
@@ -540,7 +533,7 @@ IdeDisk::doDmaWrite()
                 curPrd.getByteCount(), curPrd.getEOT());
         dmaWriteBytes += dmaWriteCG->size();
         dmaWriteTxs++;
-        if (dmaWriteCG->size() == TheISA::PageBytes)
+        if (dmaWriteCG->size() == pageBytes)
             dmaWriteFullPages++;
         dmaWriteCG->next();
     } else {

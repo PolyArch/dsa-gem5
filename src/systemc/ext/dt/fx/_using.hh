@@ -23,8 +23,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __SYSTEMC_EXT_DT_FX__USING_HH__
@@ -72,5 +70,17 @@ using sc_dt::SC_E;
 using sc_dt::sc_context_begin;
 using sc_dt::SC_NOW;
 using sc_dt::SC_LATER;
+
+using sc_core::SC_ID_INVALID_WL_;
+using sc_core::SC_ID_INVALID_N_BITS_;
+using sc_core::SC_ID_INVALID_DIV_WL_;
+using sc_core::SC_ID_INVALID_CTE_WL_;
+using sc_core::SC_ID_INVALID_MAX_WL_;
+using sc_core::SC_ID_INVALID_FX_VALUE_;
+using sc_core::SC_ID_INVALID_O_MODE_;
+using sc_core::SC_ID_OUT_OF_RANGE_;
+using sc_core::SC_ID_CONTEXT_BEGIN_FAILED_;
+using sc_core::SC_ID_CONTEXT_END_FAILED_;
+using sc_core::SC_ID_WRAP_SM_NOT_DEFINED_;
 
 #endif  //__SYSTEMC_EXT_DT_FX__USING_HH__

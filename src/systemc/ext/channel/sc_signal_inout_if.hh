@@ -23,8 +23,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __SYSTEMC_EXT_CHANNEL_SC_SIGNAL_INOUT_IF_HH__
@@ -84,6 +82,10 @@ class sc_signal_inout_if : public sc_signal_in_if<T>,
         return *this;
     }
 };
+
+// Deprecated.
+template <class T>
+using sc_signal_out_if = sc_signal_inout_if<T>;
 
 } // namespace sc_core
 

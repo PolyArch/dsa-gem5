@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Korey Sewell
  */
 
 #include "arch/mips/utility.hh"
@@ -34,12 +32,10 @@
 
 #include "arch/mips/isa_traits.hh"
 #include "arch/mips/registers.hh"
-#include "arch/mips/vtophys.hh"
 #include "base/bitfield.hh"
 #include "base/logging.hh"
 #include "cpu/static_inst.hh"
 #include "cpu/thread_context.hh"
-#include "mem/fs_translating_port_proxy.hh"
 #include "sim/serialize.hh"
 
 using namespace MipsISA;
@@ -217,27 +213,6 @@ isSnan(void *val_ptr, int size)
     }
 }
 
-template <class CPU>
-void
-zeroRegisters(CPU *cpu)
-{
-    // Insure ISA semantics
-    // (no longer very clean due to the change in setIntReg() in the
-    // cpu model.  Consider changing later.)
-    cpu->thread->setIntReg(ZeroReg, 0);
-    cpu->thread->setFloatReg(ZeroReg, 0.0);
-}
-
-void
-startupCPU(ThreadContext *tc, int cpuId)
-{
-    tc->activate();
-}
-
-void
-initCPU(ThreadContext *tc, int cpuId)
-{}
-
 void
 copyRegs(ThreadContext *src, ThreadContext *dest)
 {
@@ -265,13 +240,5 @@ copyMiscRegs(ThreadContext *src, ThreadContext *dest)
 {
     panic("Copy Misc. Regs Not Implemented Yet\n");
 }
-void
-skipFunction(ThreadContext *tc)
-{
-    TheISA::PCState newPC = tc->pcState();
-    newPC.set(tc->readIntReg(ReturnAddressReg));
-    tc->pcState(newPC);
-}
-
 
 } // namespace MipsISA

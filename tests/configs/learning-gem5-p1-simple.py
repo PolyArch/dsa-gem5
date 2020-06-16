@@ -24,8 +24,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Jason Lowe-Power
 
 # A wrapper around configs/learning_gem5/part1/simple.py
 
@@ -33,12 +31,4 @@
 root = None
 
 def run_test(root):
-        # Called from tests/run.py
-
-        # Set the working directory in case we are executing from
-        # outside gem5's source tree
-        import os
-        os.chdir(os.path.join(os.path.dirname(__file__), "../"))
-
-        # Execute the script we are wrapping
-        execfile(srcpath('configs/learning_gem5/part1/simple.py'))
+        run_config('configs/learning_gem5/part1/simple.py')

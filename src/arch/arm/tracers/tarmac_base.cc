@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 ARM Limited
+ * Copyright (c) 2017-2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Giacomo Travaglini
  */
 
 #include "arch/arm/tracers/tarmac_base.hh"
@@ -47,7 +45,7 @@
 #include "cpu/static_inst.hh"
 #include "cpu/thread_context.hh"
 
-using namespace TheISA;
+using namespace ArmISA;
 
 namespace Trace {
 
@@ -83,8 +81,11 @@ TarmacBaseRecord::InstEntry::InstEntry(
 }
 
 TarmacBaseRecord::RegEntry::RegEntry(PCState pc)
-  : isetstate(pcToISetState(pc))
+  : isetstate(pcToISetState(pc)),
+    values(2, 0)
 {
+    // values vector is constructed with size = 2, for
+    // holding Lo and Hi values.
 }
 
 TarmacBaseRecord::MemEntry::MemEntry (

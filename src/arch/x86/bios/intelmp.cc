@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #include "arch/x86/bios/intelmp.hh"
@@ -73,8 +71,8 @@ template<class T>
 uint8_t
 writeOutField(PortProxy& proxy, Addr addr, T val)
 {
-    uint64_t guestVal = X86ISA::htog(val);
-    proxy.writeBlob(addr, (uint8_t *)(&guestVal), sizeof(T));
+    uint64_t guestVal = htole(val);
+    proxy.writeBlob(addr, &guestVal, sizeof(T));
 
     uint8_t checkSum = 0;
     while (guestVal) {
@@ -98,7 +96,7 @@ writeOutString(PortProxy& proxy, Addr addr, string str, int length)
         memcpy(cleanedString, str.c_str(), str.length());
         memset(cleanedString + str.length(), 0, length - str.length());
     }
-    proxy.writeBlob(addr, (uint8_t *)(&cleanedString), length);
+    proxy.writeBlob(addr, &cleanedString, length);
 
     uint8_t checkSum = 0;
     for (int i = 0; i < length; i++)
@@ -121,7 +119,7 @@ X86ISA::IntelMP::FloatingPointer::writeOut(PortProxy& proxy, Addr addr)
 
     uint8_t checkSum = 0;
 
-    proxy.writeBlob(addr, (uint8_t *)signature, 4);
+    proxy.writeBlob(addr, signature, 4);
     for (int i = 0; i < 4; i++)
         checkSum += signature[i];
 
@@ -194,13 +192,13 @@ X86ISA::IntelMP::ConfigTable::writeOut(PortProxy& proxy, Addr addr)
 {
     uint8_t checkSum = 0;
 
-    proxy.writeBlob(addr, (uint8_t *)signature, 4);
+    proxy.writeBlob(addr, signature, 4);
     for (int i = 0; i < 4; i++)
         checkSum += signature[i];
 
     // Base table length goes here but will be calculated later.
 
-    proxy.writeBlob(addr + 6, (uint8_t *)(&specRev), 1);
+    proxy.writeBlob(addr + 6, &specRev, 1);
     checkSum += specRev;
 
     // The checksum goes here but is still being calculated.
@@ -272,8 +270,8 @@ X86ISA::IntelMP::Processor::writeOut(
     checkSum += writeOutField(proxy, addr + 8, featureFlags);
 
     uint32_t reserved = 0;
-    proxy.writeBlob(addr + 12, (uint8_t *)(&reserved), 4);
-    proxy.writeBlob(addr + 16, (uint8_t *)(&reserved), 4);
+    proxy.writeBlob(addr + 12, &reserved, 4);
+    proxy.writeBlob(addr + 16, &reserved, 4);
     return 20;
 }
 
@@ -414,7 +412,7 @@ X86ISA::IntelMP::BusHierarchy::writeOut(
     checkSum += writeOutField(proxy, addr + 4, parentBus);
 
     uint32_t reserved = 0;
-    proxy.writeBlob(addr + 5, (uint8_t *)(&reserved), 3);
+    proxy.writeBlob(addr + 5, &reserved, 3);
 
     return length;
 }

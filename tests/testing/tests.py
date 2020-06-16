@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 #
 # Copyright (c) 2016-2017 ARM Limited
 # All rights reserved
@@ -34,13 +34,18 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Andreas Sandberg
 
 from abc import ABCMeta, abstractmethod
 import os
 from collections import namedtuple
+
+from six import add_metaclass
+
+import sys
+sys.path.append(os.path.dirname(__file__))
+
 from units import *
+from helpers import FileIgnoreList
 from results import TestResult
 import shutil
 
@@ -102,6 +107,7 @@ arch_configs = {
         'realview-minor-dual',
         'realview-switcheroo-atomic',
         'realview-switcheroo-timing',
+        'realview-switcheroo-noncaching-timing',
         'realview-switcheroo-o3',
         'realview-switcheroo-full',
         'realview64-simple-atomic',
@@ -125,7 +131,7 @@ arch_configs = {
         't1000-simple-x86',
     ),
 
-    ("timing", None) : (
+    ("x86", None) : (
         'pc-simple-atomic',
         'pc-simple-timing',
         'pc-o3-timing',
@@ -172,6 +178,7 @@ def get_default_protocol(arch):
 all_categories = ("quick", "long")
 all_modes = ("fs", "se")
 
+@add_metaclass(ABCMeta)
 class Test(object):
     """Test case base class.
 
@@ -181,8 +188,6 @@ class Test(object):
     the run phase fails.
 
     """
-
-    __metaclass__ = ABCMeta
 
     def __init__(self, name):
         self.test_name = name

@@ -32,14 +32,12 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Andreas Sandberg
 
 from m5.params import *
 from m5.proxy import *
 
-from Gic import Pl390
+from m5.objects.Gic import GicV2
 
-class MuxingKvmGic(Pl390):
+class MuxingKvmGic(GicV2):
     type = 'MuxingKvmGic'
     cxx_header = "arch/arm/kvm/gic.hh"

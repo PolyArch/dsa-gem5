@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2014 ARM Limited
+ * Copyright (c) 2013-2014, 2018 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andrew Bardsley
  */
 
 /**
@@ -188,9 +186,6 @@ class LSQ : public Named
         /** The underlying request of this LSQRequest */
         RequestPtr request;
 
-        /** Fault generated performing this request */
-        Fault fault;
-
         /** Res from pushRequest */
         uint64_t *res;
 
@@ -202,6 +197,9 @@ class LSQ : public Named
         /** This in an access other than a normal cacheable load
          *  that's visited the memory system */
         bool issuedToMemory;
+
+        /** Address translation is delayed due to table walk */
+        bool isTranslationDelayed;
 
         enum LSQRequestState
         {
@@ -229,7 +227,14 @@ class LSQ : public Named
 
       protected:
         /** BaseTLB::Translation interface */
-        void markDelayed() { }
+        void markDelayed() { isTranslationDelayed = true; }
+
+        /** Instructions may want to suppress translation faults (e.g.
+         *  non-faulting vector loads).*/
+        void tryToSuppressFault();
+
+        void disableMemAccess();
+        void completeDisabledMemAccess();
 
       public:
         LSQRequest(LSQ &port_, MinorDynInstPtr inst_, bool isLoad_,
@@ -487,7 +492,8 @@ class LSQ : public Named
         { return numIssuedFragments != numRetiredFragments; }
 
         /** Have we stepped past the end of fragmentPackets? */
-        bool sentAllPackets() { return numIssuedFragments == numFragments; }
+        bool sentAllPackets()
+        { return numIssuedFragments == numTranslatedFragments; }
 
         /** For loads, paste the response data into the main
          *  response packet */
@@ -755,15 +761,14 @@ class LSQ : public Named
     void completeMemBarrierInst(MinorDynInstPtr inst,
         bool committed);
 
-    /** Single interface for readMem/writeMem to issue requests into
+    /** Single interface for readMem/writeMem/amoMem to issue requests into
      *  the LSQ */
-    void pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
-                     unsigned int size, Addr addr, Request::Flags flags,
-                     uint64_t *res);
-
-    void pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
-                     unsigned int size, Addr addr, Request::Flags flags,
-                     uint64_t *res, SSMemReqInfoPtr sdInfo);
+    Fault pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
+                      unsigned int size, Addr addr, Request::Flags flags,
+                      uint64_t *res, AtomicOpFunctorPtr amo_op,
+                      const std::vector<bool>& byte_enable =
+                          std::vector<bool>(),
+                      SSMemReqInfoPtr sdInfo = nullptr);
 
     /** Push a predicate failed-representing request into the queues just
      *  to maintain commit order */

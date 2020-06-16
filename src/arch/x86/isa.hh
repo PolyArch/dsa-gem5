@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __ARCH_X86_ISA_HH__
@@ -34,9 +32,10 @@
 #include <iostream>
 #include <string>
 
+#include "arch/generic/isa.hh"
+#include "arch/x86/registers.hh"
 #include "arch/x86/regs/float.hh"
 #include "arch/x86/regs/misc.hh"
-#include "arch/x86/registers.hh"
 #include "base/types.hh"
 #include "cpu/reg_class.hh"
 #include "sim/sim_object.hh"
@@ -48,27 +47,28 @@ struct X86ISAParams;
 
 namespace X86ISA
 {
-    class ISA : public SimObject
+    class ISA : public BaseISA
     {
       protected:
-        MiscReg regVal[NUM_MISCREGS];
+        RegVal regVal[NUM_MISCREGS];
         void updateHandyM5Reg(Efer efer, CR0 cr0,
                 SegAttr csAttr, SegAttr ssAttr, RFLAGS rflags,
                 ThreadContext *tc);
+        void clear();
 
       public:
         typedef X86ISAParams Params;
 
-        void clear();
+        void clear(ThreadContext *tc) { clear(); }
 
         ISA(Params *p);
         const Params *params() const;
 
-        MiscReg readMiscRegNoEffect(int miscReg) const;
-        MiscReg readMiscReg(int miscReg, ThreadContext *tc);
+        RegVal readMiscRegNoEffect(int miscReg) const;
+        RegVal readMiscReg(int miscReg, ThreadContext *tc);
 
-        void setMiscRegNoEffect(int miscReg, MiscReg val);
-        void setMiscReg(int miscReg, MiscReg val, ThreadContext *tc);
+        void setMiscRegNoEffect(int miscReg, RegVal val);
+        void setMiscReg(int miscReg, RegVal val, ThreadContext *tc);
 
         RegId
         flattenRegId(const RegId& regId) const
@@ -117,6 +117,12 @@ namespace X86ISA
         }
 
         int
+        flattenVecPredIndex(int reg) const
+        {
+            return reg;
+        }
+
+        int
         flattenCCIndex(int reg) const
         {
             return reg;
@@ -134,7 +140,7 @@ namespace X86ISA
         void startup(ThreadContext *tc);
 
         /// Explicitly import the otherwise hidden startup
-        using SimObject::startup;
+        using BaseISA::startup;
 
     };
 }

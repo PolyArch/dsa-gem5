@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2013 ARM Limited
+ * Copyright (c) 2010-2013, 2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #include "arch/arm/insts/vfp.hh"
@@ -47,7 +45,7 @@
 
 std::string
 FpCondCompRegOp::generateDisassembly(
-        Addr pc, const SymbolTable *symtab) const
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss, "", false);
@@ -62,7 +60,7 @@ FpCondCompRegOp::generateDisassembly(
 
 std::string
 FpCondSelOp::generateDisassembly(
-        Addr pc, const SymbolTable *symtab) const
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss, "", false);
@@ -77,7 +75,8 @@ FpCondSelOp::generateDisassembly(
 }
 
 std::string
-FpRegRegOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+FpRegRegOp::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -88,7 +87,8 @@ FpRegRegOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-FpRegImmOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+FpRegImmOp::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -98,7 +98,8 @@ FpRegImmOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-FpRegRegImmOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+FpRegRegImmOp::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -110,7 +111,8 @@ FpRegRegImmOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-FpRegRegRegOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+FpRegRegRegOp::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -123,7 +125,8 @@ FpRegRegRegOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-FpRegRegRegCondOp::generateDisassembly(Addr pc, const SymbolTable *symtab)
+FpRegRegRegCondOp::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab)
     const
 {
     std::stringstream ss;
@@ -138,7 +141,8 @@ FpRegRegRegCondOp::generateDisassembly(Addr pc, const SymbolTable *symtab)
 }
 
 std::string
-FpRegRegRegRegOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+FpRegRegRegRegOp::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -153,7 +157,8 @@ FpRegRegRegRegOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-FpRegRegRegImmOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+FpRegRegRegImmOp::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -890,6 +895,17 @@ unsignedRecipEstimate(uint32_t op)
         return (1 << 31) | bits(estimate, 51, 21);
     }
 }
+
+FPSCR
+fpStandardFPSCRValue(const FPSCR &fpscr)
+{
+    FPSCR new_fpscr(0);
+    new_fpscr.ahp = fpscr.ahp;
+    new_fpscr.dn = 1;
+    new_fpscr.fz = 1;
+    new_fpscr.fz16 = fpscr.fz16;
+    return new_fpscr;
+};
 
 template <class fpType>
 fpType

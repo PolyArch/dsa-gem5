@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andrew Bardsley
  */
 
 #include "cpu/minor/cpu.hh"
@@ -47,7 +45,7 @@
 #include "debug/MinorCPU.hh"
 #include "debug/Quiesce.hh"
 #include "mem/ruby/slicc_interface/RubySlicc_ComponentMapping.hh"
-#include "mem/protocol/MachineType.hh"
+#include "mem/ruby/protocol/MachineType.hh"
 #include "mem/ruby/slicc_interface/RubySlicc_Util.hh"
 
 #include "mem/ruby/network/MessageBuffer.hh"
@@ -236,17 +234,6 @@ MinorCPU::init()
         tc->initMemProxies(tc);
     }
 
-    /* Initialise CPUs (== threads in the ISA) */
-    if (FullSystem && !params()->switched_out) {
-        for (ThreadID thread_id = 0; thread_id < threads.size(); thread_id++)
-        {
-            ThreadContext *tc = getContext(thread_id);
-
-            /* Initialize CPU, including PC */
-            TheISA::initCPU(tc, cpuId());
-        }
-    }
-
 }
 
 /** Stats interface from SimObject (by way of BaseCPU) */
@@ -282,15 +269,6 @@ MinorCPU::unserialize(CheckpointIn &cp)
 {
     pipeline->unserialize(cp);
     BaseCPU::unserialize(cp);
-}
-
-Addr
-MinorCPU::dbg_vtophys(Addr addr)
-{
-    /* Note that this gives you the translation for thread 0 */
-    panic("No implementation for vtophy\n");
-
-    return 0;
 }
 
 void
@@ -485,12 +463,14 @@ MinorCPUParams::create()
     return new MinorCPU(this);
 }
 
-MasterPort &MinorCPU::getInstPort()
+Port &
+MinorCPU::getInstPort()
 {
     return pipeline->getInstPort();
 }
 
-MasterPort &MinorCPU::getDataPort()
+Port &
+MinorCPU::getDataPort()
 {
     return pipeline->getDataPort();
 }

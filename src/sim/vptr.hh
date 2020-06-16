@@ -24,14 +24,12 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
  */
 
-#ifndef __ARCH_ALPHA_VPTR_HH__
-#define __ARCH_ALPHA_VPTR_HH__
+#ifndef __SIM_VPTR_HH__
+#define __SIM_VPTR_HH__
 
-#include "mem/fs_translating_port_proxy.hh"
+#include "mem/port_proxy.hh"
 
 class ThreadContext;
 
@@ -69,7 +67,7 @@ class VPtr
         if (!ptr)
             return;
 
-        FSTranslatingPortProxy &proxy = tc->getVirtProxy();
+        PortProxy &proxy = tc->getVirtProxy();
         proxy.readBlob(ptr, buffer, sizeof(T));
     }
 
@@ -132,4 +130,4 @@ class VPtr
     }
 };
 
-#endif // __ARCH_ALPHA_VPTR_HH__
+#endif // __SIM_VPTR_HH__

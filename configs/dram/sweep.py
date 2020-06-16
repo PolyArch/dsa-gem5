@@ -1,4 +1,4 @@
-# Copyright (c) 2014-2015, 2018 ARM Limited
+# Copyright (c) 2014-2015, 2018-2020 ARM Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -32,10 +32,9 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Andreas Hansson
 
 from __future__ import print_function
+from __future__ import absolute_import
 
 import math
 import optparse
@@ -47,6 +46,7 @@ from m5.stats import periodicStatDump
 
 addToPath('../')
 
+from common import ObjectList
 from common import MemConfig
 
 # this script is helpful to sweep the efficiency of a specific memory
@@ -63,7 +63,7 @@ dram_generators = {
 
 # Use a single-channel DDR3-1600 x64 (8x8 topology) by default
 parser.add_option("--mem-type", type="choice", default="DDR3_1600_8x8",
-                  choices=MemConfig.mem_names(),
+                  choices=ObjectList.mem_list.get_names(),
                   help = "type of memory to use")
 
 parser.add_option("--mem-ranks", "-r", type="int", default=1,
@@ -73,12 +73,13 @@ parser.add_option("--rd_perc", type="int", default=100,
                   help = "Percentage of read commands")
 
 parser.add_option("--mode", type="choice", default="DRAM",
-                  choices=dram_generators.keys(),
+                  choices=list(dram_generators.keys()),
                   help = "DRAM: Random traffic; \
                           DRAM_ROTATE: Traffic rotating across banks and ranks")
 
-parser.add_option("--addr_map", type="int", default=1,
-                  help = "0: RoCoRaBaCh; 1: RoRaBaCoCh/RoRaBaChCo")
+parser.add_option("--addr-map", type="choice",
+                  choices=ObjectList.dram_addr_map_list.get_names(),
+                  default="RoRaBaCoCh", help = "DRAM address map policy")
 
 (options, args) = parser.parse_args()
 
@@ -121,13 +122,7 @@ if not isinstance(system.mem_ctrls[0], m5.objects.DRAMCtrl):
 system.mem_ctrls[0].null = True
 
 # Set the address mapping based on input argument
-# Default to RoRaBaCoCh
-if options.addr_map == 0:
-   system.mem_ctrls[0].addr_mapping = "RoCoRaBaCh"
-elif options.addr_map == 1:
-   system.mem_ctrls[0].addr_mapping = "RoRaBaCoCh"
-else:
-    fatal("Did not specify a valid address map argument")
+system.mem_ctrls[0].addr_mapping = options.addr_map
 
 # stay in each state for 0.25 ms, long enough to warm things up, and
 # short enough to avoid hitting a refresh
@@ -151,7 +146,8 @@ page_size = system.mem_ctrls[0].devices_per_rank.value * \
 
 # match the maximum bandwidth of the memory, the parameter is in seconds
 # and we need it in ticks (ps)
-itt = system.mem_ctrls[0].tBURST.value * 1000000000000
+itt =  getattr(system.mem_ctrls[0].tBURST_MIN, 'value',
+               system.mem_ctrls[0].tBURST.value) * 1000000000000
 
 # assume we start at 0
 max_addr = mem_range.end
@@ -183,20 +179,21 @@ root.system.mem_mode = 'timing'
 m5.instantiate()
 
 def trace():
+    addr_map = ObjectList.dram_addr_map_list.get(options.addr_map)
     generator = dram_generators[options.mode](system.tgen)
-    for bank in range(1, nbr_banks + 1):
-        for stride_size in range(burst_size, max_stride + 1, burst_size):
+    for stride_size in range(burst_size, max_stride + 1, burst_size):
+        for bank in range(1, nbr_banks + 1):
             num_seq_pkts = int(math.ceil(float(stride_size) / burst_size))
             yield generator(period,
                             0, max_addr, burst_size, int(itt), int(itt),
                             options.rd_perc, 0,
                             num_seq_pkts, page_size, nbr_banks, bank,
-                            options.addr_map, options.mem_ranks)
+                            addr_map, options.mem_ranks)
     yield system.tgen.createExit(0)
 
 system.tgen.start(trace())
 
 m5.simulate()
 
-print("DRAM sweep with burst: %d, banks: %d, max stride: %d" %
-    (burst_size, nbr_banks, max_stride))
+print("DRAM sweep with burst: %d, banks: %d, max stride: %d, request \
+       generation period: %d" % (burst_size, nbr_banks, max_stride, itt))

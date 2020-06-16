@@ -28,16 +28,21 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Sooraj Puthoor
 
+import six
 import math
 import m5
 from m5.objects import *
 from m5.defines import buildEnv
-from Ruby import send_evicts
+from m5.util import addToPath
+from .Ruby import send_evicts
+
+addToPath('../')
 
 from topologies.Cluster import Cluster
+
+if six.PY3:
+    long = int
 
 class CntrlBase:
     _seqs = 0
@@ -72,7 +77,7 @@ class L1Cache(RubyCache):
     def create(self, size, assoc, options):
         self.size = MemorySize(size)
         self.assoc = assoc
-        self.replacement_policy = PseudoLRUReplacementPolicy()
+        self.replacement_policy = TreePLRURP()
 
 class L2Cache(RubyCache):
     resourceStalls = False
@@ -82,7 +87,7 @@ class L2Cache(RubyCache):
     def create(self, size, assoc, options):
         self.size = MemorySize(size)
         self.assoc = assoc
-        self.replacement_policy = PseudoLRUReplacementPolicy()
+        self.replacement_policy = TreePLRURP()
 
 class CPCntrl(CorePair_Controller, CntrlBase):
 
@@ -136,7 +141,7 @@ class TCPCache(RubyCache):
         self.dataAccessLatency = 4
         self.tagAccessLatency = 1
         self.resourceStalls = options.no_tcc_resource_stalls
-        self.replacement_policy = PseudoLRUReplacementPolicy(assoc = self.assoc)
+        self.replacement_policy = TreePLRURP(num_leaves = self.assoc)
 
 class TCPCntrl(TCP_Controller, CntrlBase):
 
@@ -153,6 +158,11 @@ class TCPCntrl(TCP_Controller, CntrlBase):
         self.coalescer.ruby_system = ruby_system
         self.coalescer.support_inst_reqs = False
         self.coalescer.is_cpu_sequencer = False
+        if options.tcp_deadlock_threshold:
+          self.coalescer.deadlock_threshold = \
+            options.tcp_deadlock_threshold
+        self.coalescer.max_coalesces_per_cycle = \
+            options.max_coalesces_per_cycle
 
         self.sequencer = RubySequencer()
         self.sequencer.version = self.seqCount()
@@ -176,7 +186,7 @@ class SQCCache(RubyCache):
     def create(self, options):
         self.size = MemorySize(options.sqc_size)
         self.assoc = options.sqc_assoc
-        self.replacement_policy = PseudoLRUReplacementPolicy(assoc = self.assoc)
+        self.replacement_policy = TreePLRURP(num_leaves = self.assoc)
 
 class SQCCntrl(SQC_Controller, CntrlBase):
 
@@ -192,6 +202,10 @@ class SQCCntrl(SQC_Controller, CntrlBase):
         self.sequencer.ruby_system = ruby_system
         self.sequencer.support_data_reqs = False
         self.sequencer.is_cpu_sequencer = False
+        if options.sqc_deadlock_threshold:
+          self.sequencer.deadlock_threshold = \
+            options.sqc_deadlock_threshold
+
         self.ruby_system = ruby_system
         if options.recycle_latency:
             self.recycle_latency = options.recycle_latency
@@ -220,7 +234,7 @@ class TCC(RubyCache):
             self.size.value = long(128 * self.assoc)
         self.start_index_bit = math.log(options.cacheline_size, 2) + \
                                math.log(options.num_tccs, 2)
-        self.replacement_policy = PseudoLRUReplacementPolicy(assoc = self.assoc)
+        self.replacement_policy = TreePLRURP(num_leaves = self.assoc)
 
 class TCCCntrl(TCC_Controller, CntrlBase):
     def create(self, options, ruby_system, system):
@@ -246,7 +260,7 @@ class L3Cache(RubyCache):
         self.dataAccessLatency = options.l3_data_latency
         self.tagAccessLatency = options.l3_tag_latency
         self.resourceStalls = False
-        self.replacement_policy = PseudoLRUReplacementPolicy(assoc = self.assoc)
+        self.replacement_policy = TreePLRURP(num_leaves = self.assoc)
 
 class L3Cntrl(L3Cache_Controller, CntrlBase):
     def create(self, options, ruby_system, system):
@@ -325,7 +339,7 @@ class RegionDir(RubyCache):
         self.dataAccessLatency = 1
         self.resourceStalls = options.no_resource_stalls
         self.start_index_bit = 6 + int(math.log(options.blocks_per_region, 2))
-        self.replacement_policy = PseudoLRUReplacementPolicy(assoc = self.assoc)
+        self.replacement_policy = TreePLRURP(num_leaves = self.assoc)
 # Region directory controller : Contains region directory and associated state
 # machine for dealing with region coherence requests.
 class RegionCntrl(RegionDir_Controller, CntrlBase):
@@ -383,7 +397,7 @@ class RBCntrl(RegionBuffer_Controller, CntrlBase):
         if options.recycle_latency:
             self.recycle_latency = options.recycle_latency
         self.cacheMemory.replacement_policy = \
-            PseudoLRUReplacementPolicy(assoc = self.cacheMemory.assoc)
+            TreePLRURP(num_leaves = self.cacheMemory.assoc)
 
 def define_options(parser):
     parser.add_option("--num-subcaches", type="int", default=4)
@@ -404,6 +418,8 @@ def define_options(parser):
                       help="SQC cache size")
     parser.add_option("--sqc-assoc", type='int', default=8,
                       help="SQC cache assoc")
+    parser.add_option("--sqc-deadlock-threshold", type='int',
+                      help="Set the SQC deadlock threshold to some value")
 
     parser.add_option("--WB_L1", action="store_true",
         default=False, help="L2 Writeback Cache")
@@ -419,6 +435,10 @@ def define_options(parser):
                       help="tcc assoc")
     parser.add_option("--tcp-size", type='string', default='16kB',
                       help="tcp size")
+    parser.add_option("--tcp-deadlock-threshold", type='int',
+                      help="Set the TCP deadlock threshold to some value")
+    parser.add_option("--max-coalesces-per-cycle", type="int", default=1,
+                      help="Maximum insts that may coalesce in a cycle");
 
     parser.add_option("--dir-tag-latency", type="int", default=4)
     parser.add_option("--dir-tag-banks", type="int", default=4)
@@ -466,7 +486,7 @@ def create_system(options, full_system, system, dma_devices, bootmem,
     # For an odd number of CPUs, still create the right number of controllers
     crossbar_bw = 16 * options.num_compute_units #Assuming a 2GHz clock
     cpuCluster = Cluster(extBW = (crossbar_bw), intBW=crossbar_bw)
-    for i in xrange((options.num_cpus + 1) / 2):
+    for i in range((options.num_cpus + 1) // 2):
 
         cp_cntrl = CPCntrl()
         cp_cntrl.create(options, ruby_system, system)
@@ -532,7 +552,7 @@ def create_system(options, full_system, system, dma_devices, bootmem,
         cpuCluster.add(rb_cntrl)
 
     gpuCluster = Cluster(extBW = (crossbar_bw), intBW = crossbar_bw)
-    for i in xrange(options.num_compute_units):
+    for i in range(options.num_compute_units):
 
         tcp_cntrl = TCPCntrl(TCC_select_num_bits = TCC_bits,
                              issue_latency = 1,
@@ -568,7 +588,7 @@ def create_system(options, full_system, system, dma_devices, bootmem,
 
         gpuCluster.add(tcp_cntrl)
 
-    for i in xrange(options.num_sqc):
+    for i in range(options.num_sqc):
 
         sqc_cntrl = SQCCntrl(TCC_select_num_bits = TCC_bits)
         sqc_cntrl.create(options, ruby_system, system)
@@ -596,7 +616,7 @@ def create_system(options, full_system, system, dma_devices, bootmem,
 
     numa_bit = 6
 
-    for i in xrange(options.num_tccs):
+    for i in range(options.num_tccs):
 
         tcc_cntrl = TCCCntrl()
         tcc_cntrl.create(options, ruby_system, system)
@@ -710,6 +730,7 @@ def create_system(options, full_system, system, dma_devices, bootmem,
 
     dir_cntrl.triggerQueue = MessageBuffer(ordered = True)
     dir_cntrl.L3triggerQueue = MessageBuffer(ordered = True)
+    dir_cntrl.requestToMemory = MessageBuffer()
     dir_cntrl.responseFromMemory = MessageBuffer()
 
     exec("system.dir_cntrl%d = dir_cntrl" % i)

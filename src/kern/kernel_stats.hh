@@ -24,9 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Lisa Hsu
- *          Nathan Binkert
  */
 
 #ifndef __KERNEL_STATS_HH__
@@ -53,7 +50,7 @@ class Statistics : public Serializable
     virtual ~Statistics() {}
 
     const std::string name() const { return myname; }
-    void regStats(const std::string &name);
+    virtual void regStats(const std::string &name);
 
   public:
     void arm() { _arm++; }

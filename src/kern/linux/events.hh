@@ -36,24 +36,45 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
- *          Ali Saidi
  */
 
 #ifndef __KERN_LINUX_EVENTS_HH__
 #define __KERN_LINUX_EVENTS_HH__
 
+#include <functional>
+#include <string>
+
+#include "base/trace.hh"
+#include "debug/DebugPrintf.hh"
+#include "kern/linux/printk.hh"
 #include "kern/system_events.hh"
+#include "sim/guest_abi.hh"
 
-namespace Linux {
+class ThreadContext;
 
-class DebugPrintkEvent : public SkipFuncEvent
+namespace Linux
+{
+
+template <typename Base>
+class DebugPrintk : public Base
 {
   public:
-    DebugPrintkEvent(PCEventQueue *q, const std::string &desc, Addr addr)
-        : SkipFuncEvent(q, desc, addr) {}
-    virtual void process(ThreadContext *xc);
+    using Base::Base;
+    void
+    process(ThreadContext *tc) override
+    {
+        if (DTRACE(DebugPrintf)) {
+            std::string str;
+            std::function<int(ThreadContext *, Addr, PrintkVarArgs)> func =
+                [&str](ThreadContext *tc, Addr format_ptr,
+                    PrintkVarArgs args) -> int {
+                return printk(str, tc, format_ptr, args);
+            };
+            invokeSimcall<typename Base::ABI>(tc, func);
+            DPRINTFN("%s", str);
+        }
+        Base::process(tc);
+    }
 };
 
 /**
@@ -64,16 +85,17 @@ class DebugPrintkEvent : public SkipFuncEvent
  * limitations. Most importantly, the kernel's address mappings must
  * be available to the translating proxy.
  */
-class DmesgDumpEvent : public PCEvent
+class DmesgDump : public PCEvent
 {
   protected:
     std::string fname;
 
   public:
-    DmesgDumpEvent(PCEventQueue *q, const std::string &desc, Addr addr,
-                   const std::string &_fname)
-        : PCEvent(q, desc, addr), fname(_fname) {}
-    virtual void process(ThreadContext *xc);
+    DmesgDump(PCEventScope *s, const std::string &desc, Addr addr,
+              const std::string &_fname) :
+        PCEvent(s, desc, addr), fname(_fname)
+    {}
+    void process(ThreadContext *tc) override;
 };
 
 /**
@@ -84,45 +106,60 @@ class DmesgDumpEvent : public PCEvent
  * limitations. Most importantly, the kernel's address mappings must
  * be available to the translating proxy.
  */
-class KernelPanicEvent : public PCEvent
+class KernelPanic : public PCEvent
 {
   protected:
     std::string fname;
 
   public:
-    KernelPanicEvent(PCEventQueue *q, const std::string &desc, Addr addr,
-               const std::string &_fname)
-        : PCEvent(q, desc, addr), fname(_fname) {}
-    virtual void process(ThreadContext *xc);
+    KernelPanic(PCEventScope *s, const std::string &desc, Addr addr,
+                const std::string &_fname) :
+        PCEvent(s, desc, addr), fname(_fname)
+    {}
+    void process(ThreadContext *tc) override;
 };
 
-/** A class to skip udelay() and related calls in the kernel.
- * This class has two additional parameters that take the argument to udelay and
- * manipulated it to come up with ns and eventually ticks to quiesce for.
+void onUDelay(ThreadContext *tc, uint64_t div, uint64_t mul);
+
+/**
+ * A class to skip udelay() and related calls in the kernel.
+ * This class has two additional parameters that take the argument to udelay
+ * and manipulated it to come up with ns and eventually ticks to quiesce for.
  * See descriptions of argDivToNs and argMultToNs below.
  */
-class UDelayEvent : public SkipFuncEvent
+template <typename Base>
+class SkipUDelay : public Base
 {
   private:
-    /** value to divide arg by to create ns. This is present beacues the linux
+    /**
+     * Value to divide arg by to create ns. This is present beacues the linux
      * kernel code sometime precomputes the first multiply that is done in
      * udelay() if the parameter is a constant. We need to undo it so here is
-     * how. */
+     * how.
+     */
     uint64_t argDivToNs;
 
-    /** value to multiple arg by to create ns. Nominally, this is 1000 to
+    /**
+     * Value to multiple arg by to create ns. Nominally, this is 1000 to
      * convert us to ns, but since linux can do some preprocessing of constant
-     * values something else might be required. */
+     * values something else might be required.
+     */
     uint64_t argMultToNs;
 
   public:
-    UDelayEvent(PCEventQueue *q, const std::string &desc, Addr addr,
-            uint64_t mult, uint64_t div)
-        : SkipFuncEvent(q, desc, addr), argDivToNs(div), argMultToNs(mult) {}
-    virtual void process(ThreadContext *xc);
+    SkipUDelay(PCEventScope *s, const std::string &desc, Addr addr,
+            uint64_t mult, uint64_t div) :
+        Base(s, desc, addr), argDivToNs(div), argMultToNs(mult)
+    {}
+
+    void
+    process(ThreadContext *tc) override
+    {
+        onUDelay(tc, argDivToNs, argMultToNs);
+        Base::process(tc);
+    }
 };
 
+} // namespace Linux
 
-}
-
-#endif
+#endif // __KERN_LINUX_EVENTS_HH__

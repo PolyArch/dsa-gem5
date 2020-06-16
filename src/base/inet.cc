@@ -37,10 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
- *          Gabe Black
- *          Geoffrey Blake
  */
 
 #include "base/inet.hh"
@@ -51,6 +47,7 @@
 #include <string>
 
 #include "base/cprintf.hh"
+#include "base/logging.hh"
 #include "base/types.hh"
 
 using namespace std;
@@ -238,7 +235,7 @@ cksum(const TcpPtr &tcp)
     } else if (Ip6Ptr(tcp.packet())) {
         return __tu_cksum6(Ip6Ptr(tcp.packet()));
     } else {
-        assert(0);
+        panic("Unrecognized IP packet format");
     }
     // Should never reach here
     return 0;
@@ -252,7 +249,7 @@ cksum(const UdpPtr &udp)
     } else if (Ip6Ptr(udp.packet())) {
         return __tu_cksum6(Ip6Ptr(udp.packet()));
     } else {
-        assert(0);
+        panic("Unrecognized IP packet format");
     }
     return 0;
 }

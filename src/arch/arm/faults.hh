@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2012-2013, 2016-2018 ARM Limited
+ * Copyright (c) 2010, 2012-2013, 2016-2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -37,11 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
- *          Gabe Black
- *          Giacomo Gabrielli
- *          Thomas Grocutt
  */
 
 #ifndef __ARM_FAULTS_HH__
@@ -59,6 +54,8 @@
 namespace ArmISA
 {
 typedef Addr FaultOffset;
+
+class ArmStaticInst;
 
 class ArmFault : public FaultBase
 {
@@ -80,8 +77,9 @@ class ArmFault : public FaultBase
     bool faultUpdated;
 
     bool hypRouted; // True if the fault has been routed to Hypervisor
+    bool span; // True if the fault is setting the PSTATE.PAN bit
 
-    Addr getVector(ThreadContext *tc);
+    virtual Addr getVector(ThreadContext *tc);
     Addr getVector64(ThreadContext *tc);
 
   public:
@@ -133,6 +131,11 @@ class ArmFault : public FaultBase
         SAS,   // DataAbort: Syndrome Access Size
         SSE,   // DataAbort: Syndrome Sign Extend
         SRT,   // DataAbort: Syndrome Register Transfer
+        CM,    // DataAbort: Cache Maintenance/Address Translation Op
+        OFA,   // DataAbort: Override fault Address. This is needed when
+               // the abort is triggered by a CMO. The faulting address is
+               // then the address specified in the register argument of the
+               // instruction and not the cacheline address (See FAR doc)
 
         // AArch64 only
         SF,    // DataAbort: width of the accessed register is SixtyFour
@@ -198,7 +201,7 @@ class ArmFault : public FaultBase
     ArmFault(ExtMachInst _machInst = 0, uint32_t _iss = 0) :
         machInst(_machInst), issRaw(_iss), from64(false), to64(false),
         fromEL(EL0), toEL(EL0), fromMode(MODE_UNDEFINED),
-        faultUpdated(false), hypRouted(false) {}
+        faultUpdated(false), hypRouted(false), span(false) {}
 
     // Returns the actual syndrome register to use based on the target
     // exception level
@@ -212,6 +215,8 @@ class ArmFault : public FaultBase
     void invoke64(ThreadContext *tc, const StaticInstPtr &inst =
                   StaticInst::nullStaticInstPtr);
     void update(ThreadContext *tc);
+
+    ArmStaticInst *instrAnnotate(const StaticInstPtr &inst);
     virtual void annotate(AnnotationIDs id, uint64_t val) {}
     virtual FaultStat& countStat() = 0;
     virtual FaultOffset offset(ThreadContext *tc) = 0;
@@ -230,6 +235,8 @@ class ArmFault : public FaultBase
     virtual bool isStage2() const { return false; }
     virtual FSR getFsr(ThreadContext *tc) const { return 0; }
     virtual void setSyndrome(ThreadContext *tc, MiscRegIndex syndrome_reg);
+    virtual bool getFaultVAddr(Addr &va) const { return false; }
+
 };
 
 template<typename T>
@@ -269,6 +276,9 @@ class ArmFaultVals : public ArmFault
 
 class Reset : public ArmFaultVals<Reset>
 {
+  protected:
+    Addr getVector(ThreadContext *tc) override;
+
   public:
     void invoke(ThreadContext *tc, const StaticInstPtr &inst =
                 StaticInst::nullStaticInstPtr) override;
@@ -428,6 +438,8 @@ class AbortFault : public ArmFaultVals<T>
         stage2(_stage2), s1ptw(false), tranMethod(_tranMethod)
     {}
 
+    bool getFaultVAddr(Addr &va) const override;
+
     void invoke(ThreadContext *tc, const StaticInstPtr &inst =
                 StaticInst::nullStaticInstPtr) override;
 
@@ -470,6 +482,7 @@ class DataAbort : public AbortFault<DataAbort>
     uint8_t sas;
     uint8_t sse;
     uint8_t srt;
+    uint8_t cm;
 
     // AArch64 only
     bool sf;
@@ -479,7 +492,7 @@ class DataAbort : public AbortFault<DataAbort>
               bool _stage2 = false, ArmFault::TranMethod _tranMethod = ArmFault::UnknownTran) :
         AbortFault<DataAbort>(_addr, _write, _domain, _source, _stage2,
                               _tranMethod),
-        isv(false), sas (0), sse(0), srt(0), sf(false), ar(false)
+        isv(false), sas (0), sse(0), srt(0), cm(0), sf(false), ar(false)
     {}
 
     ExceptionClass ec(ThreadContext *tc) const override;
@@ -553,6 +566,7 @@ class SPAlignmentFault : public ArmFaultVals<SPAlignmentFault>
 {
   public:
     SPAlignmentFault();
+    bool routeToHyp(ThreadContext *tc) const override;
 };
 
 /// System error (AArch64 only)
@@ -609,6 +623,7 @@ template<> ArmFault::FaultVals ArmFaultVals<Interrupt>::vals;
 template<> ArmFault::FaultVals ArmFaultVals<VirtualInterrupt>::vals;
 template<> ArmFault::FaultVals ArmFaultVals<FastInterrupt>::vals;
 template<> ArmFault::FaultVals ArmFaultVals<VirtualFastInterrupt>::vals;
+template<> ArmFault::FaultVals ArmFaultVals<IllegalInstSetStateFault>::vals;
 template<> ArmFault::FaultVals ArmFaultVals<SupervisorTrap>::vals;
 template<> ArmFault::FaultVals ArmFaultVals<SecureMonitorTrap>::vals;
 template<> ArmFault::FaultVals ArmFaultVals<PCAlignmentFault>::vals;
@@ -616,6 +631,18 @@ template<> ArmFault::FaultVals ArmFaultVals<SPAlignmentFault>::vals;
 template<> ArmFault::FaultVals ArmFaultVals<SystemError>::vals;
 template<> ArmFault::FaultVals ArmFaultVals<SoftwareBreakpoint>::vals;
 template<> ArmFault::FaultVals ArmFaultVals<ArmSev>::vals;
+
+/**
+ * Returns true if the fault passed as a first argument was triggered
+ * by a memory access, false otherwise.
+ * If true it is storing the faulting address in the va argument
+ *
+ * @param fault generated fault
+ * @param va function will modify this passed-by-reference parameter
+ *           with the correct faulting virtual address
+ * @return true if va contains a valid value, false otherwise
+ */
+bool getFaultVAddr(Fault fault, Addr &va);
 
 
 } // namespace ArmISA

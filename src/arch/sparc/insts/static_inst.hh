@@ -25,9 +25,8 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
+
 #ifndef __ARCH_SPARC_INSTS_STATIC_INST_HH__
 #define __ARCH_SPARC_INSTS_STATIC_INST_HH__
 
@@ -91,7 +90,7 @@ class SparcStaticInst : public StaticInst
     using StaticInst::StaticInst;
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 
     static void printMnemonic(std::ostream &os, const char *mnemonic);
     static void printReg(std::ostream &os, RegId reg);

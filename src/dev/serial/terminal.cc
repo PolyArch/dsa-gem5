@@ -1,4 +1,16 @@
 /*
+ * Copyright (c) 2019 ARM Limited
+ * All rights reserved
+ *
+ * The license below extends only to copyright in the software and shall
+ * not be construed as granting a license to any other intellectual
+ * property including but not limited to intellectual property relating
+ * to a hardware implementation of the functionality of the software
+ * licensed hereunder.  You may use the software subject to the license
+ * terms below provided that you ensure that this notice is replicated
+ * unmodified and in its entirety in all distributions of the software,
+ * modified or unmodified, in source code or in binary form.
+ *
  * Copyright (c) 2001-2005 The Regents of The University of Michigan
  * All rights reserved.
  *
@@ -24,9 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
- *          Ali Saidi
  */
 
 /* @file
@@ -109,7 +118,7 @@ Terminal::DataEvent::process(int revent)
 Terminal::Terminal(const Params *p)
     : SerialDevice(p), listenEvent(NULL), dataEvent(NULL),
       number(p->number), data_fd(-1), txbuf(16384), rxbuf(16384),
-      outfile(p->output ? simout.findOrCreate(p->name) : NULL)
+      outfile(terminalDump(p))
 #if TRACING_ON == 1
       , linebuf(16384)
 #endif
@@ -133,6 +142,22 @@ Terminal::~Terminal()
         delete dataEvent;
 }
 
+OutputStream *
+Terminal::terminalDump(const TerminalParams* p)
+{
+    switch (p->outfile) {
+      case TerminalDump::none:
+        return nullptr;
+      case TerminalDump::stdoutput:
+        return simout.findOrCreate("stdout");
+      case TerminalDump::stderror:
+        return simout.findOrCreate("stderr");
+      case TerminalDump::file:
+        return simout.findOrCreate(p->name);
+      default:
+        panic("Invalid option\n");
+    }
+}
 
 ///////////////////////////////////////////////////////////////////////
 // socket creation and terminal attach

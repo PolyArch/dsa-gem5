@@ -35,12 +35,10 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Nathan Binkert
 
 from m5.params import *
-from BaseSimpleCPU import BaseSimpleCPU
-from SimPoint import SimPoint
+from m5.objects.BaseSimpleCPU import BaseSimpleCPU
+from m5.objects.SimPoint import SimPoint
 
 class AtomicSimpleCPU(BaseSimpleCPU):
     """Simple CPU model executing a configurable number of
@@ -61,7 +59,6 @@ class AtomicSimpleCPU(BaseSimpleCPU):
     width = Param.Int(1, "CPU width")
     simulate_data_stalls = Param.Bool(False, "Simulate dcache stall cycles")
     simulate_inst_stalls = Param.Bool(False, "Simulate icache stall cycles")
-    fastmem = Param.Bool(False, "Access memory directly")
 
     def addSimPointProbe(self, interval):
         simpoint = SimPoint()

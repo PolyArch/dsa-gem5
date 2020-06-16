@@ -36,9 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
- *          Andreas Hansson
  */
 
 #ifndef __MEM_TPORT_HH__
@@ -51,6 +48,8 @@
  */
 
 #include "mem/qport.hh"
+
+class SimObject;
 
 /**
  * The simple timing port uses a queued port to implement
@@ -99,7 +98,7 @@ class SimpleTimingPort : public QueuedSlavePort
      * @param name port name
      * @param owner structural owner
      */
-    SimpleTimingPort(const std::string& name, MemObject* owner);
+    SimpleTimingPort(const std::string& name, SimObject* owner);
 
     virtual ~SimpleTimingPort() { }
 

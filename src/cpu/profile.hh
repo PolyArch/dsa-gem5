@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
  */
 
 #ifndef __CPU_PROFILE_HH__
@@ -55,7 +53,7 @@ class ProfileNode
     ProfileNode();
 
     void dump(const std::string &symbol, uint64_t id,
-              const SymbolTable *symtab, std::ostream &os) const;
+              const Loader::SymbolTable *symtab, std::ostream &os) const;
     void clear();
 };
 
@@ -64,13 +62,13 @@ class FunctionProfile
 {
   private:
     Callback *reset;
-    const SymbolTable *symtab;
+    const Loader::SymbolTable *symtab;
     ProfileNode top;
     std::map<Addr, Counter> pc_count;
     TheISA::StackTrace trace;
 
   public:
-    FunctionProfile(const SymbolTable *symtab);
+    FunctionProfile(const Loader::SymbolTable *symtab);
     ~FunctionProfile();
 
     ProfileNode *consume(ThreadContext *tc, const StaticInstPtr &inst);

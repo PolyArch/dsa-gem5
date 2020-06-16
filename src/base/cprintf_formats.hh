@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
  */
 
 #ifndef __BASE_CPRINTF_FORMATS_HH__
@@ -312,6 +310,12 @@ format_integer(std::ostream &out, unsigned char data, Format &fmt)
 inline void
 format_integer(std::ostream &out, signed char data, Format &fmt)
 { _format_integer(out, (int)data, fmt); }
+inline void
+format_integer(std::ostream &out, const unsigned char *data, Format &fmt)
+{ _format_integer(out, (uintptr_t)data, fmt); }
+inline void
+format_integer(std::ostream &out, const signed char *data, Format &fmt)
+{ _format_integer(out, (uintptr_t)data, fmt); }
 
 //
 // floating point formats

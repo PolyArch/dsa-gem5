@@ -29,8 +29,6 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Anthony Gutierrez
  */
 
 #ifndef __ARCH_HSAIL_GPU_ISA_HH__
@@ -40,12 +38,11 @@
 
 #include "arch/hsail/gpu_types.hh"
 #include "base/logging.hh"
+#include "base/types.hh"
 #include "gpu-compute/misc.hh"
 
 namespace HsailISA
 {
-    typedef uint64_t MiscReg;
-
     class GPUISA
     {
       public:
@@ -54,12 +51,12 @@ namespace HsailISA
         }
 
         void
-        writeMiscReg(int opIdx, MiscReg operandVal)
+        writeMiscReg(int opIdx, RegVal operandVal)
         {
             fatal("HSAIL does not implement misc registers yet\n");
         }
 
-        MiscReg
+        RegVal
         readMiscReg(int opIdx) const
         {
             fatal("HSAIL does not implement misc registers yet\n");

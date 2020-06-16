@@ -36,9 +36,8 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Stephen Hines
  */
+
 #ifndef __ARCH_ARM_MEM_HH__
 #define __ARCH_ARM_MEM_HH__
 
@@ -46,23 +45,6 @@
 
 namespace ArmISA
 {
-
-class Swap : public PredOp
-{
-  protected:
-    IntRegIndex dest;
-    IntRegIndex op1;
-    IntRegIndex base;
-
-    Swap(const char *mnem, ExtMachInst _machInst, OpClass __opClass,
-         IntRegIndex _dest, IntRegIndex _op1, IntRegIndex _base)
-        : PredOp(mnem, _machInst, __opClass),
-          dest(_dest), op1(_op1), base(_base)
-    {}
-
-    std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
-};
 
 class MightBeMicro : public PredOp
 {
@@ -126,7 +108,7 @@ class RfeOp : public MightBeMicro
     }
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 // The address is a base register plus an immediate.
@@ -167,7 +149,7 @@ class SrsOp : public MightBeMicro
     }
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 class Memory : public MightBeMicro
@@ -390,7 +372,7 @@ class MemoryOffset : public Base
     {}
 
     std::string
-    generateDisassembly(Addr pc, const SymbolTable *symtab) const
+    generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
     {
         std::stringstream ss;
         this->printInst(ss, Memory::AddrMd_Offset);
@@ -440,7 +422,7 @@ class MemoryPreIndex : public Base
     {}
 
     std::string
-    generateDisassembly(Addr pc, const SymbolTable *symtab) const
+    generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
     {
         std::stringstream ss;
         this->printInst(ss, Memory::AddrMd_PreIndex);
@@ -490,7 +472,7 @@ class MemoryPostIndex : public Base
     {}
 
     std::string
-    generateDisassembly(Addr pc, const SymbolTable *symtab) const
+    generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
     {
         std::stringstream ss;
         this->printInst(ss, Memory::AddrMd_PostIndex);

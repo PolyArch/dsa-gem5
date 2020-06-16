@@ -29,10 +29,6 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Anthony Gutierrez,
- *          Brad Beckmann,
- *          Sooraj Puthoor
  */
 
 #include "gpu-compute/fetch_unit.hh"
@@ -146,7 +142,7 @@ FetchUnit::initiateFetch(Wavefront *wavefront)
 
     // set up virtual request
     RequestPtr req = std::make_shared<Request>(
-        0, vaddr, size, Request::INST_FETCH,
+        vaddr, size, Request::INST_FETCH,
         computeUnit->masterId(), 0, 0, nullptr);
 
     PacketPtr pkt = new Packet(req, MemCmd::ReadReq);

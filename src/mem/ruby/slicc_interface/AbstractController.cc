@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited
+ * Copyright (c) 2017,2019 ARM Limited
  * All rights reserved.
  *
  * The license below extends only to copyright in the software and shall
@@ -41,20 +41,21 @@
 #include "mem/ruby/slicc_interface/AbstractController.hh"
 
 #include "debug/RubyQueue.hh"
-#include "mem/protocol/MemoryMsg.hh"
 #include "mem/ruby/network/Network.hh"
+#include "mem/ruby/protocol/MemoryMsg.hh"
 #include "mem/ruby/system/GPUCoalescer.hh"
 #include "mem/ruby/system/RubySystem.hh"
 #include "mem/ruby/system/Sequencer.hh"
 #include "sim/system.hh"
 
 AbstractController::AbstractController(const Params *p)
-    : MemObject(p), Consumer(this), m_version(p->version),
+    : ClockedObject(p), Consumer(this), m_version(p->version),
       m_clusterID(p->cluster_id),
       m_masterId(p->system->getMasterId(this)), m_is_blocking(false),
       m_number_of_TBEs(p->number_of_TBEs),
       m_transitions_per_cycle(p->transitions_per_cycle),
       m_buffer_size(p->buffer_size), m_recycle_latency(p->recycle_latency),
+      m_mandatory_queue_latency(p->mandatory_queue_latency),
       memoryPort(csprintf("%s.memory", name()), this, ""),
       addrRanges(p->addr_ranges.begin(), p->addr_ranges.end())
 {
@@ -75,6 +76,10 @@ AbstractController::init()
         m_delayVCHistogram.push_back(new Stats::Histogram());
         m_delayVCHistogram[i]->init(10);
     }
+
+    if (getMemReqQueue()) {
+        getMemReqQueue()->setConsumer(this);
+    }
 }
 
 void
@@ -90,7 +95,7 @@ AbstractController::resetStats()
 void
 AbstractController::regStats()
 {
-    MemObject::regStats();
+    ClockedObject::regStats();
 
     m_fully_busy_cycles
         .name(name() + ".fully_busy_cycles")
@@ -201,6 +206,61 @@ AbstractController::wakeUpAllBuffers()
     }
 }
 
+bool
+AbstractController::serviceMemoryQueue()
+{
+    auto mem_queue = getMemReqQueue();
+    assert(mem_queue);
+    if (!mem_queue->isReady(clockEdge())) {
+        return false;
+    }
+
+    const MemoryMsg *mem_msg = (const MemoryMsg*)mem_queue->peek();
+    unsigned int req_size = RubySystem::getBlockSizeBytes();
+    if (mem_msg->m_Len > 0) {
+        req_size = mem_msg->m_Len;
+    }
+
+    RequestPtr req
+        = std::make_shared<Request>(mem_msg->m_addr, req_size, 0, m_masterId);
+    PacketPtr pkt;
+    if (mem_msg->getType() == MemoryRequestType_MEMORY_WB) {
+        pkt = Packet::createWrite(req);
+        pkt->allocate();
+        pkt->setData(mem_msg->m_DataBlk.getData(getOffset(mem_msg->m_addr),
+            req_size));
+    } else if (mem_msg->getType() == MemoryRequestType_MEMORY_READ) {
+        pkt = Packet::createRead(req);
+        uint8_t *newData = new uint8_t[req_size];
+        pkt->dataDynamic(newData);
+    } else {
+        panic("Unknown memory request type (%s) for addr %p",
+              MemoryRequestType_to_string(mem_msg->getType()),
+              mem_msg->m_addr);
+    }
+
+    SenderState *s = new SenderState(mem_msg->m_Sender);
+    pkt->pushSenderState(s);
+
+    if (RubySystem::getWarmupEnabled()) {
+        // Use functional rather than timing accesses during warmup
+        mem_queue->dequeue(clockEdge());
+        memoryPort.sendFunctional(pkt);
+        // Since the queue was popped the controller may be able
+        // to make more progress. Make sure it wakes up
+        scheduleEvent(Cycles(1));
+        recvTimingResp(pkt);
+    } else {
+        mem_queue->dequeue(clockEdge());
+        memoryPort.schedTimingReq(pkt, clockEdge());
+        // Since the queue was popped the controller may be able
+        // to make more progress. Make sure it wakes up
+        scheduleEvent(Cycles(1));
+    }
+
+    return true;
+}
+
 void
 AbstractController::blockOnQueue(Addr addr, MessageBuffer* port)
 {
@@ -229,81 +289,10 @@ AbstractController::isBlocked(Addr addr)
     return (m_block_map.count(addr) > 0);
 }
 
-BaseMasterPort &
-AbstractController::getMasterPort(const std::string &if_name,
-                                  PortID idx)
+Port &
+AbstractController::getPort(const std::string &if_name, PortID idx)
 {
     return memoryPort;
-}
-
-void
-AbstractController::queueMemoryRead(const MachineID &id, Addr addr,
-                                    Cycles latency)
-{
-    RequestPtr req = std::make_shared<Request>(
-        addr, RubySystem::getBlockSizeBytes(), 0, m_masterId);
-
-    PacketPtr pkt = Packet::createRead(req);
-    uint8_t *newData = new uint8_t[RubySystem::getBlockSizeBytes()];
-    pkt->dataDynamic(newData);
-
-    SenderState *s = new SenderState(id);
-    pkt->pushSenderState(s);
-
-    // Use functional rather than timing accesses during warmup
-    if (RubySystem::getWarmupEnabled()) {
-        memoryPort.sendFunctional(pkt);
-        recvTimingResp(pkt);
-        return;
-    }
-
-    memoryPort.schedTimingReq(pkt, clockEdge(latency));
-}
-
-void
-AbstractController::queueMemoryWrite(const MachineID &id, Addr addr,
-                                     Cycles latency, const DataBlock &block)
-{
-    RequestPtr req = std::make_shared<Request>(
-        addr, RubySystem::getBlockSizeBytes(), 0, m_masterId);
-
-    PacketPtr pkt = Packet::createWrite(req);
-    uint8_t *newData = new uint8_t[RubySystem::getBlockSizeBytes()];
-    pkt->dataDynamic(newData);
-    memcpy(newData, block.getData(0, RubySystem::getBlockSizeBytes()),
-           RubySystem::getBlockSizeBytes());
-
-    SenderState *s = new SenderState(id);
-    pkt->pushSenderState(s);
-
-    // Use functional rather than timing accesses during warmup
-    if (RubySystem::getWarmupEnabled()) {
-        memoryPort.sendFunctional(pkt);
-        recvTimingResp(pkt);
-        return;
-    }
-
-    // Create a block and copy data from the block.
-    memoryPort.schedTimingReq(pkt, clockEdge(latency));
-}
-
-void
-AbstractController::queueMemoryWritePartial(const MachineID &id, Addr addr,
-                                            Cycles latency,
-                                            const DataBlock &block, int size)
-{
-    RequestPtr req = std::make_shared<Request>(addr, size, 0, m_masterId);
-
-    PacketPtr pkt = Packet::createWrite(req);
-    uint8_t *newData = new uint8_t[size];
-    pkt->dataDynamic(newData);
-    memcpy(newData, block.getData(getOffset(addr), size), size);
-
-    SenderState *s = new SenderState(id);
-    pkt->pushSenderState(s);
-
-    // Create a block and copy data from the block.
-    memoryPort.schedTimingReq(pkt, clockEdge(latency));
 }
 
 void
@@ -330,7 +319,7 @@ AbstractController::functionalMemoryWrite(PacketPtr pkt)
 void
 AbstractController::recvTimingResp(PacketPtr pkt)
 {
-    assert(getMemoryQueue());
+    assert(getMemRespQueue());
     assert(pkt->isResponse());
 
     std::shared_ptr<MemoryMsg> msg = std::make_shared<MemoryMsg>(clockEdge());
@@ -355,7 +344,7 @@ AbstractController::recvTimingResp(PacketPtr pkt)
         panic("Incorrect packet type received from memory controller!");
     }
 
-    getMemoryQueue()->enqueue(msg, clockEdge(), cyclesToTicks(Cycles(1)));
+    getMemRespQueue()->enqueue(msg, clockEdge(), cyclesToTicks(Cycles(1)));
     delete pkt;
 }
 
@@ -385,7 +374,7 @@ AbstractController::MemoryPort::MemoryPort(const std::string &_name,
                                            const std::string &_label)
     : QueuedMasterPort(_name, _controller, reqQueue, snoopRespQueue),
       reqQueue(*_controller, *this, _label),
-      snoopRespQueue(*_controller, *this, _label),
+      snoopRespQueue(*_controller, *this, false, _label),
       controller(_controller)
 {
 }

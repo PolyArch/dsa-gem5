@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andrew Bardsley
  */
 
 #include "cpu/minor/fetch1.hh"
@@ -169,7 +167,7 @@ Fetch1::fetchLine(ThreadID tid)
         request_id, aligned_pc, thread.pc, line_offset, request_size);
 
     request->request->setContext(cpu.threads[tid]->getTC()->contextId());
-    request->request->setVirt(0 /* asid */,
+    request->request->setVirt(
         aligned_pc, request_size, Request::INST_FETCH, cpu.instMasterId(),
         /* I've no idea why we need the PC, but give it */
         thread.pc.instAddr());
@@ -196,15 +194,7 @@ Fetch1::fetchLine(ThreadID tid)
     /* Step the PC for the next line onto the line aligned next address.
      * Note that as instructions can span lines, this PC is only a
      * reliable 'new' PC if the next line has a new stream sequence number. */
-#if THE_ISA == ALPHA_ISA
-    /* Restore the low bits of the PC used as address space flags */
-    Addr pc_low_bits = thread.pc.instAddr() &
-        ((Addr) (1 << sizeof(TheISA::MachInst)) - 1);
-
-    thread.pc.set(aligned_pc + request_size + pc_low_bits);
-#else
     thread.pc.set(aligned_pc + request_size);
-#endif
 }
 
 std::ostream &

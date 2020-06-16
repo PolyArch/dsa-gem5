@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2013, 2016-2018 ARM Limited
+ * Copyright (c) 2012-2013, 2016-2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -33,10 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Thomas Grass
- *          Andreas Hansson
- *          Sascha Bischoff
  */
 #include "cpu/testers/traffic_gen/traffic_gen.hh"
 
@@ -223,12 +219,14 @@ TrafficGen::parseConfig()
                         unsigned int page_size;
                         unsigned int nbr_of_banks_DRAM;
                         unsigned int nbr_of_banks_util;
-                        unsigned int addr_mapping;
+                        unsigned _addr_mapping;
                         unsigned int nbr_of_ranks;
 
                         is >> stride_size >> page_size >> nbr_of_banks_DRAM >>
-                            nbr_of_banks_util >> addr_mapping >>
+                            nbr_of_banks_util >> _addr_mapping >>
                             nbr_of_ranks;
+                        Enums::AddrMap addr_mapping =
+                            static_cast<Enums::AddrMap>(_addr_mapping);
 
                         if (stride_size > page_size)
                             warn("DRAM generator stride size (%d) is greater "

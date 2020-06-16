@@ -1,4 +1,16 @@
 /*
+ * Copyright (c) 2019 ARM Limited
+ * All rights reserved.
+ *
+ * The license below extends only to copyright in the software and shall
+ * not be construed as granting a license to any other intellectual
+ * property including but not limited to intellectual property relating
+ * to a hardware implementation of the functionality of the software
+ * licensed hereunder.  You may use the software subject to the license
+ * terms below provided that you ensure that this notice is replicated
+ * unmodified and in its entirety in all distributions of the software,
+ * modified or unmodified, in source code or in binary form.
+ *
  * Copyright (c) 1999-2008 Mark D. Hill and David A. Wood
  * All rights reserved.
  *
@@ -43,10 +55,12 @@
 
 #include "base/trace.hh"
 #include "debug/RubyQueue.hh"
+#include "mem/packet.hh"
+#include "mem/port.hh"
 #include "mem/ruby/common/Address.hh"
 #include "mem/ruby/common/Consumer.hh"
+#include "mem/ruby/network/dummy_port.hh"
 #include "mem/ruby/slicc_interface/Message.hh"
-#include "mem/packet.hh"
 #include "params/MessageBuffer.hh"
 #include "sim/sim_object.hh"
 
@@ -127,16 +141,35 @@ class MessageBuffer : public SimObject
     void setIncomingLink(int link_id) { m_input_link_id = link_id; }
     void setVnet(int net) { m_vnet_id = net; }
 
-    void regStats();
+    Port &
+    getPort(const std::string &, PortID idx=InvalidPortID) override
+    {
+        return RubyDummyPort::instance();
+    }
+
+    void regStats() override;
 
     // Function for figuring out if any of the messages in the buffer need
     // to be updated with the data from the packet.
     // Return value indicates the number of messages that were updated.
-    // This required for debugging the code.
-    uint32_t functionalWrite(Packet *pkt);
+    uint32_t functionalWrite(Packet *pkt)
+    {
+        return functionalAccess(pkt, false);
+    }
+
+    // Function for figuring if message in the buffer has valid data for
+    // the packet.
+    // Returns true only if a message was found with valid data and the
+    // read was performed.
+    bool functionalRead(Packet *pkt)
+    {
+        return functionalAccess(pkt, true) == 1;
+    }
 
   private:
     void reanalyzeList(std::list<MsgPtr> &, Tick);
+
+    uint32_t functionalAccess(Packet *pkt, bool is_read);
 
   private:
     // Data Members (m_ prefix)
@@ -191,6 +224,7 @@ class MessageBuffer : public SimObject
     Tick m_last_arrival_time;
 
     unsigned int m_size_at_cycle_start;
+    unsigned int m_stalled_at_cycle_start;
     unsigned int m_msgs_this_cycle;
 
     Stats::Scalar m_not_avail_count;  // count the # of times I didn't have N

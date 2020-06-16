@@ -37,11 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
- *          Steve Reinhardt
- *          Andreas Hansson
- *          Erfan Azarkhish
  */
 
 /**
@@ -82,7 +77,7 @@ SerialLink::SerialLinkMasterPort::SerialLinkMasterPort(const std::string&
 }
 
 SerialLink::SerialLink(SerialLinkParams *p)
-    : MemObject(p),
+    : ClockedObject(p),
       slavePort(p->name + ".slave", *this, masterPort,
                 ticksToCycles(p->delay), p->resp_size, p->ranges),
       masterPort(p->name + ".master", *this, slavePort,
@@ -93,24 +88,16 @@ SerialLink::SerialLink(SerialLinkParams *p)
 {
 }
 
-BaseMasterPort&
-SerialLink::getMasterPort(const std::string &if_name, PortID idx)
+Port&
+SerialLink::getPort(const std::string &if_name, PortID idx)
 {
     if (if_name == "master")
         return masterPort;
-    else
-        // pass it along to our super class
-        return MemObject::getMasterPort(if_name, idx);
-}
-
-BaseSlavePort&
-SerialLink::getSlavePort(const std::string &if_name, PortID idx)
-{
-    if (if_name == "slave")
+    else if (if_name == "slave")
         return slavePort;
     else
         // pass it along to our super class
-        return MemObject::getSlavePort(if_name, idx);
+        return ClockedObject::getPort(if_name, idx);
 }
 
 void

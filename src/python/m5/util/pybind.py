@@ -1,4 +1,4 @@
-# Copyright (c) 2017 ARM Limited
+# Copyright (c) 2017, 2019 ARM Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -32,14 +32,15 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Andreas Sandberg
+
+from __future__ import print_function
+from __future__ import absolute_import
+from six import add_metaclass
 
 from abc import *
 
+@add_metaclass(ABCMeta)
 class PyBindExport(object):
-    __metaclass__ = ABCMeta
-
     @abstractmethod
     def export(self, code, cname):
         pass
@@ -55,10 +56,13 @@ class PyBindProperty(PyBindExport):
         code('.${export}("${{self.name}}", &${cname}::${{self.cxx_name}})')
 
 class PyBindMethod(PyBindExport):
-    def __init__(self, name, cxx_name=None, args=None):
+    def __init__(self, name, cxx_name=None, args=None,
+                 return_value_policy=None, static=False):
         self.name = name
         self.cxx_name = cxx_name if cxx_name else name
         self.args = args
+        self.return_value_policy = return_value_policy
+        self.method_def = 'def_static' if static else 'def'
 
     def _conv_arg(self, value):
         if isinstance(value, bool):
@@ -69,6 +73,10 @@ class PyBindMethod(PyBindExport):
             raise TypeError("Unsupported PyBind default value type")
 
     def export(self, code, cname):
+        arguments = [ '"${{self.name}}"', '&${cname}::${{self.cxx_name}}' ]
+        if self.return_value_policy:
+            arguments.append('pybind11::return_value_policy::'
+                             '${{self.return_value_policy}}')
         if self.args:
             def get_arg_decl(arg):
                 if isinstance(arg, tuple):
@@ -78,8 +86,5 @@ class PyBindMethod(PyBindExport):
                 else:
                     return 'py::arg("%s")' % arg
 
-            code('.def("${{self.name}}", &${cname}::${{self.name}}, ')
-            code('    ' + \
-                 ', '.join([ get_arg_decl(a) for a in self.args ]) + ')')
-        else:
-            code('.def("${{self.name}}", &${cname}::${{self.cxx_name}})')
+            arguments.extend(list([ get_arg_decl(a) for a in self.args ]))
+        code('.' + self.method_def + '(' + ', '.join(arguments) + ')')

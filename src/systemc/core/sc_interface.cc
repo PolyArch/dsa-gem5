@@ -23,37 +23,24 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
-#include "base/logging.hh"
+#include "systemc/ext/channel/messages.hh"
+#include "systemc/ext/core/sc_event.hh"
 #include "systemc/ext/core/sc_interface.hh"
+#include "systemc/ext/utils/sc_report_handler.hh"
 
 namespace sc_core
 {
 
-void
-sc_interface::register_port(sc_port_base &, const char *)
-{
-    warn("%s not implemented.\n", __PRETTY_FUNCTION__);
-}
+void sc_interface::register_port(sc_port_base &, const char *) {}
 
 const sc_event &
 sc_interface::default_event() const
 {
-    warn("%s not implemented.\n", __PRETTY_FUNCTION__);
-    return *(sc_event *)nullptr;
-}
-
-sc_interface::~sc_interface()
-{
-    warn("%s not implemented.\n", __PRETTY_FUNCTION__);
-}
-
-sc_interface::sc_interface()
-{
-    warn("%s not implemented.\n", __PRETTY_FUNCTION__);
+    SC_REPORT_WARNING(SC_ID_NO_DEFAULT_EVENT_, "");
+    static sc_gem5::InternalScEvent dummy;
+    return dummy;
 }
 
 } // namespace sc_core

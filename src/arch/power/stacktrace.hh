@@ -26,10 +26,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
- *          Stephen Hines
- *          Timothy M. Jones
  */
 
 #ifndef __ARCH_POWER_STACKTRACE_HH__
@@ -57,8 +53,6 @@ class ProcessInfo
 
 class StackTrace
 {
-  protected:
-    typedef TheISA::MachInst MachInst;
   private:
     ThreadContext *tc;
     std::vector<Addr> stack;

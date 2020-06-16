@@ -24,9 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
- *          Gabe Black
  */
 
 #ifndef __FAULTS_HH__
@@ -47,6 +44,8 @@ class FaultBase
     virtual FaultName name() const = 0;
     virtual void invoke(ThreadContext * tc, const StaticInstPtr &inst =
                         StaticInst::nullStaticInstPtr);
+
+    virtual ~FaultBase() {};
 };
 
 class UnimpFault : public FaultBase
@@ -97,6 +96,7 @@ class GenericPageTableFault : public FaultBase
     GenericPageTableFault(Addr va) : vaddr(va) {}
     void invoke(ThreadContext * tc, const StaticInstPtr &inst =
                 StaticInst::nullStaticInstPtr);
+    Addr getFaultVAddr() const { return vaddr; }
 };
 
 class GenericAlignmentFault : public FaultBase
@@ -108,6 +108,7 @@ class GenericAlignmentFault : public FaultBase
     GenericAlignmentFault(Addr va) : vaddr(va) {}
     void invoke(ThreadContext * tc, const StaticInstPtr &inst =
                 StaticInst::nullStaticInstPtr);
+    Addr getFaultVAddr() const { return vaddr; }
 };
 
 #endif // __FAULTS_HH__

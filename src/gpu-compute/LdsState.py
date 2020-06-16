@@ -28,16 +28,14 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Joe Gross
 
 from m5.defines import buildEnv
 from m5.params import *
 from m5.proxy import *
 
-from MemObject import MemObject
+from m5.objects.ClockedObject import ClockedObject
 
-class LdsState(MemObject):
+class LdsState(ClockedObject):
     type = 'LdsState'
     cxx_class = 'LdsState'
     cxx_header = 'gpu-compute/lds_state.hh'

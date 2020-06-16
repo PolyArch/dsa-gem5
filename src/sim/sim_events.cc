@@ -38,8 +38,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
  */
 
 #include "sim/sim_events.hh"
@@ -58,6 +56,13 @@ GlobalSimLoopExitEvent::GlobalSimLoopExitEvent(Tick when,
                                                const std::string &_cause,
                                                int c, Tick r)
     : GlobalEvent(when, Sim_Exit_Pri, IsExitEvent),
+      cause(_cause), code(c), repeat(r)
+{
+}
+
+GlobalSimLoopExitEvent::GlobalSimLoopExitEvent(const std::string &_cause,
+                                               int c, Tick r)
+    : GlobalEvent(curTick(), Minimum_Pri, IsExitEvent),
       cause(_cause), code(c), repeat(r)
 {
 }
@@ -88,6 +93,13 @@ exitSimLoop(const std::string &message, int exit_code, Tick when, Tick repeat,
             "currently unsupported.");
 
     new GlobalSimLoopExitEvent(when + simQuantum, message, exit_code, repeat);
+}
+
+void
+exitSimLoopNow(const std::string &message, int exit_code, Tick repeat,
+               bool serialize)
+{
+    new GlobalSimLoopExitEvent(message, exit_code, repeat);
 }
 
 LocalSimLoopExitEvent::LocalSimLoopExitEvent(const std::string &_cause, int c,

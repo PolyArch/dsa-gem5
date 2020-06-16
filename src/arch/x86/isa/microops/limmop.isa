@@ -32,8 +32,6 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Authors: Gabe Black
 
 //////////////////////////////////////////////////////////////////////////
 //
@@ -63,7 +61,7 @@ def template MicroLimmOpDeclare {{
         RegIndex foldOBit;
 
         std::string generateDisassembly(Addr pc,
-            const SymbolTable *symtab) const;
+            const Loader::SymbolTable *symtab) const;
 
       public:
         %(class_name)s(ExtMachInst _machInst,
@@ -76,8 +74,9 @@ def template MicroLimmOpDeclare {{
 }};
 
 def template MicroLimmOpDisassembly {{
-    std::string %(class_name)s::generateDisassembly(Addr pc,
-            const SymbolTable *symtab) const
+    std::string
+    %(class_name)s::generateDisassembly(
+            Addr pc, const Loader::SymbolTable *symtab) const
     {
         std::stringstream response;
 
@@ -103,6 +102,10 @@ def template MicroLimmOpConstructor {{
 }};
 
 let {{
+    import six
+    if six.PY3:
+        long = int
+
     class LimmOp(X86Microop):
         def __init__(self, dest, imm, dataSize="env.dataSize"):
             self.className = "Limm"

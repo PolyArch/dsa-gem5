@@ -36,10 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
- *          Steve Reinhardt
- *          Andreas Hansson
  */
 
 /**
@@ -54,8 +50,9 @@
 #include <deque>
 
 #include "base/types.hh"
-#include "mem/mem_object.hh"
+#include "mem/port.hh"
 #include "params/Bridge.hh"
+#include "sim/clocked_object.hh"
 
 /**
  * A bridge is used to interface two different crossbars (or in general a
@@ -70,7 +67,7 @@
  * the bridge will delay accepting the packet until space becomes
  * available.
  */
-class Bridge : public MemObject
+class Bridge : public ClockedObject
 {
   protected:
 
@@ -316,12 +313,10 @@ class Bridge : public MemObject
 
   public:
 
-    virtual BaseMasterPort& getMasterPort(const std::string& if_name,
-                                          PortID idx = InvalidPortID);
-    virtual BaseSlavePort& getSlavePort(const std::string& if_name,
-                                        PortID idx = InvalidPortID);
+    Port &getPort(const std::string &if_name,
+                  PortID idx=InvalidPortID) override;
 
-    virtual void init();
+    void init() override;
 
     typedef BridgeParams Params;
 

@@ -24,13 +24,12 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Alexandru Dutu
  */
 
 #include "arch/x86/pseudo_inst.hh"
 
-#include "arch/x86/system.hh"
+#include "arch/x86/fs_workload.hh"
+#include "arch/x86/isa_traits.hh"
 #include "cpu/thread_context.hh"
 #include "debug/PseudoInst.hh"
 #include "mem/se_translating_port_proxy.hh"
@@ -39,23 +38,6 @@
 using namespace X86ISA;
 
 namespace X86ISA {
-
-/*
- * This function is executed when the simulation is executing the syscall
- * handler in System Emulation mode.
- */
-void
-m5Syscall(ThreadContext *tc)
-{
-    DPRINTF(PseudoInst, "PseudoInst::m5Syscall()\n");
-
-    Fault fault;
-    tc->syscall(tc->readIntReg(INTREG_RAX), &fault);
-
-    MiscReg rflags = tc->readMiscReg(MISCREG_RFLAGS);
-    rflags &= ~(1 << 16);
-    tc->setMiscReg(MISCREG_RFLAGS, rflags);
-}
 
 /*
  * This function is executed when the simulation is executing the pagefault
@@ -67,14 +49,14 @@ m5PageFault(ThreadContext *tc)
     DPRINTF(PseudoInst, "PseudoInst::m5PageFault()\n");
 
     Process *p = tc->getProcessPtr();
-    if (!p->fixupStackFault(tc->readMiscReg(MISCREG_CR2))) {
-        SETranslatingPortProxy proxy = tc->getMemProxy();
+    if (!p->fixupFault(tc->readMiscReg(MISCREG_CR2))) {
+        PortProxy &proxy = tc->getVirtProxy();
         // at this point we should have 6 values on the interrupt stack
         int size = 6;
         uint64_t is[size];
         // reading the interrupt handler stack
-        proxy.readBlob(ISTVirtAddr + PageBytes - size*sizeof(uint64_t),
-                       (uint8_t *)&is, sizeof(is));
+        proxy.readBlob(ISTVirtAddr + PageBytes - size * sizeof(uint64_t),
+                       &is, sizeof(is));
         panic("Page fault at addr %#x\n\tInterrupt handler stack:\n"
                 "\tss: %#x\n"
                 "\trsp: %#x\n"

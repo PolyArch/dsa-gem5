@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Daniel Carvalho
  */
 
 #include "mem/cache/replacement_policies/second_chance_rp.hh"
@@ -62,7 +60,8 @@ SecondChanceRP::invalidate(
 }
 
 void
-SecondChanceRP::touch(const std::shared_ptr<ReplacementData>& replacement_data) const
+SecondChanceRP::touch(const std::shared_ptr<ReplacementData>&
+                                                    replacement_data) const
 {
     FIFORP::touch(replacement_data);
 
@@ -72,13 +71,14 @@ SecondChanceRP::touch(const std::shared_ptr<ReplacementData>& replacement_data) 
 }
 
 void
-SecondChanceRP::reset(const std::shared_ptr<ReplacementData>& replacement_data) const
+SecondChanceRP::reset(const std::shared_ptr<ReplacementData>&
+                                                    replacement_data) const
 {
     FIFORP::reset(replacement_data);
 
     // Entries are inserted with a second chance
     std::static_pointer_cast<SecondChanceReplData>(
-        replacement_data)->hasSecondChance = true;
+        replacement_data)->hasSecondChance = false;
 }
 
 ReplaceableEntry*

@@ -23,12 +23,11 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
-#include "base/logging.hh"
+#include "base/cprintf.hh"
 #include "systemc/ext/channel/sc_in_resolved.hh"
+#include "systemc/ext/channel/sc_signal_resolved.hh"
 
 namespace sc_core
 {
@@ -41,8 +40,15 @@ sc_in_resolved::sc_in_resolved(const char *name) :
 
 sc_in_resolved::~sc_in_resolved() {}
 
-void sc_in_resolved::end_of_elaboration() {}
-
-const char *sc_in_resolved::kind() const { return "sc_in_resolved"; }
+void
+sc_in_resolved::end_of_elaboration()
+{
+    sc_in<sc_dt::sc_logic>::end_of_elaboration();
+    if (!dynamic_cast<sc_signal_resolved *>(get_interface())) {
+        std::string msg = csprintf("port '%s' (%s)", name(), kind());
+        SC_REPORT_ERROR("(E117) resolved port not bound to resolved signal",
+                msg.c_str());
+    }
+}
 
 } // namespace sc_core

@@ -37,11 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
- *          Steve Reinhardt
- *          Gabe Black
- *          Geoffrey Blake
  */
 
 #ifndef __BASE_INET_HH__
@@ -352,7 +347,6 @@ struct IpOpt : public ip_opt
     uint16_t mtup() const { return ntohs(opt_data.mtu); }
     uint16_t mtur() const { return ntohs(opt_data.mtu); }
     void tr(ip_opt_data_tr &tr) const;
-    const uint32_t *addext() const { return &opt_data.addext[0]; }
     uint16_t rtralt() const { return ntohs(opt_data.rtralt); }
     void sdb(std::vector<uint32_t> &vec) const;
 };

@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2015 RISC-V Foundation
  * Copyright (c) 2017 The University of Virginia
+ * Copyright (c) 2020 Barkhausen Institut
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -25,8 +26,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Alec Roelke
  */
 
 #ifndef __ARCH_RISCV_STANDARD_INST_HH__
@@ -51,7 +50,7 @@ class RegOp : public RiscvStaticInst
     using RiscvStaticInst::RiscvStaticInst;
 
     std::string generateDisassembly(
-        Addr pc, const SymbolTable *symtab) const override;
+        Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 /**
@@ -79,11 +78,8 @@ class SystemOp : public RiscvStaticInst
   protected:
     using RiscvStaticInst::RiscvStaticInst;
 
-    std::string
-    generateDisassembly(Addr pc, const SymbolTable *symtab) const override
-    {
-        return mnemonic;
-    }
+    std::string generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 /**
@@ -102,7 +98,7 @@ class CSROp : public RiscvStaticInst
     {}
 
     std::string generateDisassembly(
-        Addr pc, const SymbolTable *symtab) const override;
+        Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 }

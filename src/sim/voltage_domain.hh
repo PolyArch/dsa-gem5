@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012 ARM Limited
+ * Copyright (c) 2012, 2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -33,9 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Vasileios Spiliopoulos
- *          Akash Bagdia
  */
 
 #ifndef __SIM_VOLTAGE_DOMAIN_HH__
@@ -126,8 +123,6 @@ class VoltageDomain : public SimObject
      */
     bool sanitiseVoltages();
 
-    void regStats() override;
-
     void serialize(CheckpointOut &cp) const override;
     void unserialize(CheckpointIn &cp) override;
 
@@ -143,10 +138,15 @@ class VoltageDomain : public SimObject
     const Voltages voltageOpPoints;
     PerfLevel _perfLevel;
 
-    /**
-     * Stat for reporting voltage of the domain
-     */
-    Stats::Value currentVoltage;
+    struct VoltageDomainStats : public Stats::Group
+    {
+        VoltageDomainStats(VoltageDomain &vd);
+
+        /**
+         * Stat for reporting voltage of the domain
+         */
+        Stats::Value voltage;
+    } stats;
 
     /**
      * List of associated SrcClockDomains that are connected to this voltage

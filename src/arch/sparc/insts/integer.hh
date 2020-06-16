@@ -24,10 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
- *          Gabe Black
- *          Steve Reinhardt
  */
 
 #ifndef __ARCH_SPARC_INSTS_INTEGER_HH__
@@ -52,10 +48,10 @@ class IntOp : public SparcStaticInst
     using SparcStaticInst::SparcStaticInst;
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 
     virtual bool printPseudoOps(std::ostream &os, Addr pc,
-                                const SymbolTable *symtab) const;
+                                const Loader::SymbolTable *symtab) const;
 };
 
 /**
@@ -73,10 +69,10 @@ class IntOpImm : public IntOp
     int64_t imm;
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 
     bool printPseudoOps(std::ostream &os, Addr pc,
-                        const SymbolTable *symtab) const override;
+                        const Loader::SymbolTable *symtab) const override;
 };
 
 /**
@@ -125,7 +121,7 @@ class SetHi : public IntOpImm
     {}
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 }

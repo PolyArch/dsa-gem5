@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __ARCH_MIPS_ISA_HH__
@@ -35,6 +33,7 @@
 #include <string>
 #include <vector>
 
+#include "arch/generic/isa.hh"
 #include "arch/mips/registers.hh"
 #include "arch/mips/types.hh"
 #include "cpu/reg_class.hh"
@@ -49,7 +48,7 @@ class ThreadContext;
 
 namespace MipsISA
 {
-    class ISA : public SimObject
+    class ISA : public BaseISA
     {
       public:
         // The MIPS name for this file is CP0 or Coprocessor 0
@@ -68,13 +67,17 @@ namespace MipsISA
             perVirtProcessor
         };
 
-        std::vector<std::vector<MiscReg> > miscRegFile;
-        std::vector<std::vector<MiscReg> > miscRegFile_WriteMask;
+        std::vector<std::vector<RegVal> > miscRegFile;
+        std::vector<std::vector<RegVal> > miscRegFile_WriteMask;
         std::vector<BankType> bankType;
 
       public:
+        void clear(ThreadContext *tc) { clear(); }
+
+      protected:
         void clear();
 
+      public:
         void configCP();
 
         unsigned getVPENum(ThreadID tid) const;
@@ -88,20 +91,18 @@ namespace MipsISA
         //@TODO: MIPS MT's register view automatically connects
         //       Status to TCStatus depending on current thread
         void updateCP0ReadView(int misc_reg, ThreadID tid) { }
-        MiscReg readMiscRegNoEffect(int misc_reg, ThreadID tid = 0) const;
+        RegVal readMiscRegNoEffect(int misc_reg, ThreadID tid = 0) const;
 
         //template <class TC>
-        MiscReg readMiscReg(int misc_reg,
-                            ThreadContext *tc, ThreadID tid = 0);
+        RegVal readMiscReg(int misc_reg, ThreadContext *tc, ThreadID tid = 0);
 
-        MiscReg filterCP0Write(int misc_reg, int reg_sel, const MiscReg &val);
-        void setRegMask(int misc_reg, const MiscReg &val, ThreadID tid = 0);
-        void setMiscRegNoEffect(int misc_reg, const MiscReg &val,
-                                ThreadID tid = 0);
+        RegVal filterCP0Write(int misc_reg, int reg_sel, RegVal val);
+        void setRegMask(int misc_reg, RegVal val, ThreadID tid = 0);
+        void setMiscRegNoEffect(int misc_reg, RegVal val, ThreadID tid=0);
 
         //template <class TC>
-        void setMiscReg(int misc_reg, const MiscReg &val,
-                        ThreadContext *tc, ThreadID tid = 0);
+        void setMiscReg(int misc_reg, RegVal val,
+                        ThreadContext *tc, ThreadID tid=0);
 
         //////////////////////////////////////////////////////////
         //
@@ -134,7 +135,7 @@ namespace MipsISA
         void startup(ThreadContext *tc) {}
 
         /// Explicitly import the otherwise hidden startup
-        using SimObject::startup;
+        using BaseISA::startup;
 
         const Params *params() const;
 
@@ -162,6 +163,12 @@ namespace MipsISA
 
         int
         flattenVecElemIndex(int reg) const
+        {
+            return reg;
+        }
+
+        int
+        flattenVecPredIndex(int reg) const
         {
             return reg;
         }

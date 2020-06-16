@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 ARM Limited
+ * Copyright (c) 2017,2019 ARM Limited
  * All rights reserved.
  *
  * The license below extends only to copyright in the software and shall
@@ -47,9 +47,7 @@
 
 #include "base/addr_range.hh"
 #include "base/callback.hh"
-#include "mem/mem_object.hh"
 #include "mem/packet.hh"
-#include "mem/protocol/AccessPermission.hh"
 #include "mem/qport.hh"
 #include "mem/ruby/common/Address.hh"
 #include "mem/ruby/common/Consumer.hh"
@@ -57,11 +55,14 @@
 #include "mem/ruby/common/Histogram.hh"
 #include "mem/ruby/common/MachineID.hh"
 #include "mem/ruby/network/MessageBuffer.hh"
+#include "mem/ruby/protocol/AccessPermission.hh"
 #include "mem/ruby/system/CacheRecorder.hh"
 #include "params/RubyController.hh"
+#include "sim/clocked_object.hh"
 
 class Network;
 class GPUCoalescer;
+class DMASequencer;
 
 // used to communicate that an in_port peeked the wrong message type
 class RejectException: public std::exception
@@ -70,7 +71,7 @@ class RejectException: public std::exception
     { return "Port rejected message based on type"; }
 };
 
-class AbstractController : public MemObject, public Consumer
+class AbstractController : public ClockedObject, public Consumer
 {
   public:
     typedef RubyControllerParams Params;
@@ -90,7 +91,8 @@ class AbstractController : public MemObject, public Consumer
     bool isBlocked(Addr);
 
     virtual MessageBuffer* getMandatoryQueue() const = 0;
-    virtual MessageBuffer* getMemoryQueue() const = 0;
+    virtual MessageBuffer* getMemReqQueue() const = 0;
+    virtual MessageBuffer* getMemRespQueue() const = 0;
     virtual AccessPermission getAccessPermission(const Addr &addr) = 0;
 
     virtual void print(std::ostream & out) const = 0;
@@ -100,10 +102,19 @@ class AbstractController : public MemObject, public Consumer
 
     virtual void recordCacheTrace(int cntrl, CacheRecorder* tr) = 0;
     virtual Sequencer* getCPUSequencer() const = 0;
+    virtual DMASequencer* getDMASequencer() const = 0;
     virtual GPUCoalescer* getGPUCoalescer() const = 0;
+
+    // This latency is used by the sequencer when enqueueing requests.
+    // Different latencies may be used depending on the request type.
+    // This is the hit latency unless the top-level cache controller
+    // introduces additional cycles in the response path.
+    virtual Cycles mandatoryQueueLatency(const RubyRequestType& param_type)
+    { return m_mandatory_queue_latency; }
 
     //! These functions are used by ruby system to read/write the data blocks
     //! that exist with in the controller.
+    virtual bool functionalReadBuffers(PacketPtr&) = 0;
     virtual void functionalRead(const Addr &addr, PacketPtr) = 0;
     void functionalMemoryRead(PacketPtr);
     //! The return value indicates the number of messages written with the
@@ -126,14 +137,9 @@ class AbstractController : public MemObject, public Consumer
     virtual void initNetQueues() = 0;
 
     /** A function used to return the port associated with this bus object. */
-    BaseMasterPort& getMasterPort(const std::string& if_name,
-                                  PortID idx = InvalidPortID);
+    Port &getPort(const std::string &if_name,
+                  PortID idx=InvalidPortID);
 
-    void queueMemoryRead(const MachineID &id, Addr addr, Cycles latency);
-    void queueMemoryWrite(const MachineID &id, Addr addr, Cycles latency,
-                          const DataBlock &block);
-    void queueMemoryWritePartial(const MachineID &id, Addr addr, Cycles latency,
-                                 const DataBlock &block, int size);
     void recvTimingResp(PacketPtr pkt);
     Tick recvAtomic(PacketPtr pkt);
 
@@ -171,6 +177,7 @@ class AbstractController : public MemObject, public Consumer
     void wakeUpBuffers(Addr addr);
     void wakeUpAllBuffers(Addr addr);
     void wakeUpAllBuffers();
+    bool serviceMemoryQueue();
 
   protected:
     const NodeID m_version;
@@ -195,6 +202,7 @@ class AbstractController : public MemObject, public Consumer
     const int m_transitions_per_cycle;
     const unsigned int m_buffer_size;
     Cycles m_recycle_latency;
+    const Cycles m_mandatory_queue_latency;
 
     //! Counter for the number of cycles when the transitions carried out
     //! were equal to the maximum allowed

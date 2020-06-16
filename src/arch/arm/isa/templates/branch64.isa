@@ -34,8 +34,6 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Authors: Gabe Black
 
 def template BranchImm64Declare {{
 class %(class_name)s : public %(base_class)s
@@ -92,6 +90,26 @@ def template BranchReg64Constructor {{
     %(class_name)s::%(class_name)s(ExtMachInst machInst,
                                           IntRegIndex _op1)
         : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s, _op1)
+    {
+        %(constructor)s;
+    }
+}};
+
+def template BranchRegReg64Declare {{
+class %(class_name)s : public %(base_class)s
+{
+    public:
+        // Constructor
+        %(class_name)s(ExtMachInst machInst, IntRegIndex _op1,
+                       IntRegIndex _op2);
+        Fault execute(ExecContext *, Trace::InstRecord *) const override;
+};
+}};
+
+def template BranchRegReg64Constructor {{
+    %(class_name)s::%(class_name)s(ExtMachInst machInst, IntRegIndex _op1,
+                                   IntRegIndex _op2)
+        : %(base_class)s("%(mnemonic)s", machInst, %(op_class)s, _op1, _op2)
     {
         %(constructor)s;
     }

@@ -37,9 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Kevin Lim
- *          Geoffrey Blake
  */
 
 #ifndef __CPU_CHECKER_CPU_IMPL_HH__
@@ -49,7 +46,6 @@
 #include <string>
 
 #include "arch/isa_traits.hh"
-#include "arch/vtophys.hh"
 #include "base/refcnt.hh"
 #include "config/the_isa.hh"
 #include "cpu/base_dyn_inst.hh"
@@ -124,7 +120,7 @@ Checker<Impl>::handlePendingInt()
 
 template <class Impl>
 void
-Checker<Impl>::verify(DynInstPtr &completed_inst)
+Checker<Impl>::verify(const DynInstPtr &completed_inst)
 {
     DynInstPtr inst;
 
@@ -207,9 +203,6 @@ Checker<Impl>::verify(DynInstPtr &completed_inst)
 
         // maintain $r0 semantics
         thread->setIntReg(ZeroReg, 0);
-#if THE_ISA == ALPHA_ISA
-        thread->setFloatReg(ZeroReg, 0.0);
-#endif
 
         // Check if any recent PC changes match up with anything we
         // expect to happen.  This is mostly to check if traps or
@@ -245,11 +238,10 @@ Checker<Impl>::verify(DynInstPtr &completed_inst)
             if (!curMacroStaticInst) {
                 // set up memory request for instruction fetch
                 auto mem_req = std::make_shared<Request>(
-                    unverifiedInst->threadNumber, fetch_PC,
-                    sizeof(MachInst), 0, masterId, fetch_PC,
+                    fetch_PC, sizeof(MachInst), 0, masterId, fetch_PC,
                     thread->contextId());
 
-                mem_req->setVirt(0, fetch_PC, sizeof(MachInst),
+                mem_req->setVirt(fetch_PC, sizeof(MachInst),
                                  Request::INST_FETCH, masterId,
                                  thread->instAddr());
 
@@ -285,7 +277,6 @@ Checker<Impl>::verify(DynInstPtr &completed_inst)
 
                     pkt->dataStatic(&machInst);
                     icachePort->sendFunctional(pkt);
-                    machInst = gtoh(machInst);
 
                     delete pkt;
                 }
@@ -412,7 +403,7 @@ Checker<Impl>::verify(DynInstPtr &completed_inst)
             int count = 0;
             do {
                 oldpc = thread->instAddr();
-                system->pcEventQueue.service(tc);
+                thread->pcEventQueue.service(oldpc, tc);
                 count++;
             } while (oldpc != thread->instAddr());
             if (count > 1) {
@@ -456,7 +447,7 @@ Checker<Impl>::takeOverFrom(BaseCPU *oldCPU)
 
 template <class Impl>
 void
-Checker<Impl>::validateInst(DynInstPtr &inst)
+Checker<Impl>::validateInst(const DynInstPtr &inst)
 {
     if (inst->instAddr() != thread->instAddr()) {
         warn("%lli: PCs do not match! Inst: %s, checker: %s",
@@ -477,7 +468,7 @@ Checker<Impl>::validateInst(DynInstPtr &inst)
 
 template <class Impl>
 void
-Checker<Impl>::validateExecution(DynInstPtr &inst)
+Checker<Impl>::validateExecution(const DynInstPtr &inst)
 {
     InstResult checker_val;
     InstResult inst_val;
@@ -595,8 +586,8 @@ Checker<Impl>::validateState()
 
 template <class Impl>
 void
-Checker<Impl>::copyResult(DynInstPtr &inst, const InstResult& mismatch_val,
-                          int start_idx)
+Checker<Impl>::copyResult(const DynInstPtr &inst,
+                          const InstResult& mismatch_val, int start_idx)
 {
     // We've already popped one dest off the queue,
     // so do the fix-up then start with the next dest reg;
@@ -609,7 +600,7 @@ Checker<Impl>::copyResult(DynInstPtr &inst, const InstResult& mismatch_val,
             break;
           case FloatRegClass:
             panic_if(!mismatch_val.isScalar(), "Unexpected type of result");
-            thread->setFloatRegBits(idx.index(), mismatch_val.asInteger());
+            thread->setFloatReg(idx.index(), mismatch_val.asInteger());
             break;
           case VecRegClass:
             panic_if(!mismatch_val.isVector(), "Unexpected type of result");
@@ -644,7 +635,7 @@ Checker<Impl>::copyResult(DynInstPtr &inst, const InstResult& mismatch_val,
             break;
           case FloatRegClass:
             panic_if(!res.isScalar(), "Unexpected type of result");
-            thread->setFloatRegBits(idx.index(), res.asInteger());
+            thread->setFloatReg(idx.index(), res.asInteger());
             break;
           case VecRegClass:
             panic_if(!res.isVector(), "Unexpected type of result");
@@ -672,7 +663,7 @@ Checker<Impl>::copyResult(DynInstPtr &inst, const InstResult& mismatch_val,
 
 template <class Impl>
 void
-Checker<Impl>::dumpAndExit(DynInstPtr &inst)
+Checker<Impl>::dumpAndExit(const DynInstPtr &inst)
 {
     cprintf("Error detected, instruction information:\n");
     cprintf("PC:%s, nextPC:%#x\n[sn:%lli]\n[tid:%i]\n"

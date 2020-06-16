@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 ARM Limited
+ * Copyright (c) 2016, 2020 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Rekai Gonzalez
  */
 
 /* Auxiliary structs for architecture traits. */
@@ -42,6 +40,8 @@
 #ifndef __ARCH_COMMON_TRAITS_HH__
 #define __ARCH_COMMON_TRAITS_HH__
 
+#include "arch/generic/isa.hh"
+#include "arch/types.hh"
 #include "enums/VecRegRenameMode.hh"
 
 /** Helper structure to get the vector register mode for a given ISA.
@@ -50,14 +50,19 @@
  * appropriate member of the ISA.
  */
 template <typename ISA>
-struct initRenameMode
+struct RenameMode
 {
-    static Enums::VecRegRenameMode mode(const ISA*) { return Enums::Full; }
+    static Enums::VecRegRenameMode init(const BaseISA*) { return Enums::Full; }
+
+    static Enums::VecRegRenameMode
+    mode(const TheISA::PCState&)
+    { return Enums::Full; }
+
     /**
      * Compare the initial rename mode of two instances of the ISA.
      * Result is true by definition, as the default mode is Full.
      * */
-    static bool equals(const ISA*, const ISA*) { return true; }
+    static bool equalsInit(const BaseISA*, const BaseISA*) { return true; }
 };
 
 #endif /* __ARCH_COMMON_TRAITS_HH__ */

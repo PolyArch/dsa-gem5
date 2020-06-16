@@ -25,10 +25,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
- *          Steve Reinhardt
- *          Korey Sewell
  */
 
 #ifndef __ARCH_MIPS_UTILITY_HH__
@@ -74,8 +70,8 @@ bool isSnan(void *val_ptr, int size);
 static inline bool
 inUserMode(ThreadContext *tc)
 {
-    MiscReg Stat = tc->readMiscReg(MISCREG_STATUS);
-    MiscReg Dbg = tc->readMiscReg(MISCREG_DEBUG);
+    RegVal Stat = tc->readMiscReg(MISCREG_STATUS);
+    RegVal Dbg = tc->readMiscReg(MISCREG_DEBUG);
 
     if ((Stat & 0x10000006) == 0 &&  // EXL, ERL or CU0 set, CP0 accessible
         (Dbg & 0x40000000) == 0 &&   // DM bit set, CP0 accessible
@@ -87,32 +83,24 @@ inUserMode(ThreadContext *tc)
     }
 }
 
-template <class CPU>
-void zeroRegisters(CPU *cpu);
-
 ////////////////////////////////////////////////////////////////////////
 //
 //  Translation stuff
 //
 inline Addr
 TruncPage(Addr addr)
-{ return addr & ~(PageBytes - 1); }
+{
+    return addr & ~(PageBytes - 1);
+}
 
 inline Addr
 RoundPage(Addr addr)
-{ return (addr + PageBytes - 1) & ~(PageBytes - 1); }
-
-////////////////////////////////////////////////////////////////////////
-//
-// CPU Utility
-//
-void startupCPU(ThreadContext *tc, int cpuId);
-void initCPU(ThreadContext *tc, int cpuId);
+{
+    return (addr + PageBytes - 1) & ~(PageBytes - 1);
+}
 
 void copyRegs(ThreadContext *src, ThreadContext *dest);
 void copyMiscRegs(ThreadContext *src, ThreadContext *dest);
-
-void skipFunction(ThreadContext *tc);
 
 inline void
 advancePC(PCState &pc, const StaticInstPtr &inst)

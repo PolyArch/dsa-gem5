@@ -23,8 +23,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Mohammad Alian
 
 # This is an example of an n port network switch to work in dist-gem5.
 # Users can extend this to have different different topologies
@@ -57,7 +55,7 @@ def build_switch(options):
                                       sync_repeat = options.dist_sync_repeat,
                                       is_switch = True,
                                       num_nodes = options.dist_size)
-                       for i in xrange(options.dist_size)]
+                       for i in range(options.dist_size)]
 
     for (i, link) in enumerate(switch.portlink):
         link.int0 = switch.interface[i]

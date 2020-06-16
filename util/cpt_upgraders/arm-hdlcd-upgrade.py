@@ -32,9 +32,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Andreas Sandberg
-#
 
 def upgrader(cpt):
     """HDLCD controller rewrite. Converted checkpoints cause the HDLCD
@@ -97,8 +94,8 @@ def upgrader(cpt):
             cpt.set(sec_dma, "buffer", "")
 
 
-    print "Warning: Assuming that the HDLCD pixel clock and global frequency " \
-        "are still using their default values."
+    print("Warning: Assuming that the HDLCD pixel clock and global frequency "
+        "are still using their default values.")
     sec_osc = "system.realview.realview_io.osc_pxl"
     global_tick = 1E12
     pxl_freq = 137E6

@@ -1,6 +1,7 @@
 /*
- * Copyright (c) 2008 Princeton University
+ * Copyright (c) 2020 Inria
  * Copyright (c) 2016 Georgia Institute of Technology
+ * Copyright (c) 2008 Princeton University
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -25,9 +26,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Niket Agarwal
- *          Tushar Krishna
  */
 
 
@@ -42,19 +40,21 @@
 #include "mem/ruby/network/garnet2.0/flitBuffer.hh"
 
 class Router;
-class OutputUnit;
 
 class CrossbarSwitch : public Consumer
 {
   public:
     CrossbarSwitch(Router *router);
-    ~CrossbarSwitch();
+    ~CrossbarSwitch() = default;
     void wakeup();
     void init();
     void print(std::ostream& out) const {};
 
-    inline void update_sw_winner(int inport, flit *t_flit)
-    { m_switch_buffer[inport]->insert(t_flit); }
+    inline void
+    update_sw_winner(int inport, flit *t_flit)
+    {
+        switchBuffers[inport].insert(t_flit);
+    }
 
     inline double get_crossbar_activity() { return m_crossbar_activity; }
 
@@ -62,12 +62,10 @@ class CrossbarSwitch : public Consumer
     void resetStats();
 
   private:
-    int m_num_vcs;
-    int m_num_inports;
-    double m_crossbar_activity;
     Router *m_router;
-    std::vector<flitBuffer *> m_switch_buffer;
-    std::vector<OutputUnit *> m_output_unit;
+    int m_num_vcs;
+    double m_crossbar_activity;
+    std::vector<flitBuffer> switchBuffers;
 };
 
 #endif // __MEM_RUBY_NETWORK_GARNET2_0_CROSSBARSWITCH_HH__

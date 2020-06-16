@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2014 ARM Limited
+ * Copyright (c) 2013-2014,2018-2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andrew Bardsley
  */
 
 #include "cpu/minor/execute.hh"
@@ -57,8 +55,8 @@
 #include "debug/PCEvent.hh"
 #include <bits/stdc++.h>
 
-#include "mem/protocol/SequencerMsg.hh"
-#include "mem/protocol/SpuRequestMsg.hh"
+#include "mem/ruby/protocol/SequencerMsg.hh"
+#include "mem/ruby/protocol/SpuRequestMsg.hh"
 #include "mem/ruby/slicc_interface/RubySlicc_Util.hh"
 #include "mem/ruby/network/Network.hh"
 #include "mem/ruby/system/RubySystem.hh"
@@ -400,25 +398,26 @@ Execute::handleMemResponse(MinorDynInstPtr inst,
 
     bool is_load = inst->staticInst->isLoad();
     bool is_store = inst->staticInst->isStore();
+    bool is_atomic = inst->staticInst->isAtomic();
     bool is_prefetch = inst->staticInst->isDataPrefetch();
 
     /* If true, the trace's predicate value will be taken from the exec
      *  context predicate, otherwise, it will be set to false */
     bool use_context_predicate = true;
 
-    if (response->fault != NoFault) {
+    if (inst->translationFault != NoFault) {
         /* Invoke memory faults. */
         DPRINTF(MinorMem, "Completing fault from DTLB access: %s\n",
-            response->fault->name());
+            inst->translationFault->name());
 
         if (inst->staticInst->isPrefetch()) {
             DPRINTF(MinorMem, "Not taking fault on prefetch: %s\n",
-                response->fault->name());
+                inst->translationFault->name());
 
             /* Don't assign to fault */
         } else {
             /* Take the fault raised during the TLB/memory access */
-            fault = response->fault;
+            fault = inst->translationFault;
 
             fault->invoke(thread, inst->staticInst);
         }
@@ -426,12 +425,14 @@ Execute::handleMemResponse(MinorDynInstPtr inst,
         DPRINTF(MinorMem, "Completing failed request inst: %s\n",
             *inst);
         use_context_predicate = false;
+        if (!context.readMemAccPredicate())
+            inst->staticInst->completeAcc(nullptr, &context, inst->traceData);
     } else if (packet->isError()) {
         DPRINTF(MinorMem, "Trying to commit error response: %s\n",
             *inst);
 
         fatal("Received error response packet for inst: %s\n", *inst);
-    } else if (is_store || is_load || is_prefetch) {
+    } else if (is_store || is_load || is_prefetch || is_atomic) {
         assert(packet);
 
         DPRINTF(MinorMem, "Memory response inst: %s addr: 0x%x size: %d\n",
@@ -536,6 +537,18 @@ Execute::executeMemRefInst(MinorDynInstPtr inst, BranchData &branch,
         Fault init_fault = inst->staticInst->initiateAcc(&context,
             inst->traceData);
 
+        if (inst->inLSQ) {
+            if (init_fault != NoFault) {
+                assert(inst->translationFault != NoFault);
+                // Translation faults are dealt with in handleMemResponse()
+                init_fault = NoFault;
+            } else {
+                // If we have a translation fault then it got suppressed  by
+                // initateAcc()
+                inst->translationFault = NoFault;
+            }
+        }
+
         if (init_fault != NoFault) {
             DPRINTF(MinorExecute, "Fault on memory inst: %s"
                 " initiateAcc: %s\n", *inst, init_fault->name());
@@ -543,18 +556,25 @@ Execute::executeMemRefInst(MinorDynInstPtr inst, BranchData &branch,
         } else {
             /* Only set this if the instruction passed its
              * predicate */
+            if (!context.readMemAccPredicate()) {
+                DPRINTF(MinorMem, "No memory access for inst: %s\n", *inst);
+                assert(context.readPredicate());
+            }
             passed_predicate = context.readPredicate();
 
             /* Set predicate in tracing */
             if (inst->traceData)
                 inst->traceData->setPredicate(passed_predicate);
 
-            /* If the instruction didn't pass its predicate (and so will not
-             *  progress from here)  Try to branch to correct and branch
-             *  mis-prediction. */
-            if (!passed_predicate) {
+            /* If the instruction didn't pass its predicate
+             * or it is a predicated vector instruction and the
+             * associated predicate register is all-false (and so will not
+             * progress from here)  Try to branch to correct and branch
+             * mis-prediction. */
+            if (!inst->inLSQ) {
                 /* Leave it up to commit to handle the fault */
                 lsq.pushFailedRequest(inst);
+                inst->inLSQ = true;
             }
         }
 
@@ -916,7 +936,7 @@ Execute::tryPCEvents(ThreadID thread_id)
     Addr oldPC;
     do {
         oldPC = thread->instAddr();
-        cpu.system->pcEventQueue.service(thread);
+        cpu.threads[thread_id]->pcEventQueue.service(oldPC, thread);
         num_pc_event_checks++;
     } while (oldPC != thread->instAddr());
 
@@ -945,8 +965,7 @@ Execute::doInstCommitAccounting(MinorDynInstPtr inst)
         cpu.system->totalNumInsts++;
 
         /* Act on events related to instruction counts */
-        cpu.comInstEventQueue[inst->id.threadId]->serviceEvents(thread->numInst);
-        cpu.system->instEventQueue.serviceEvents(cpu.system->totalNumInsts);
+        thread->comInstEventQueue.serviceEvents(thread->numInst);
     }
     thread->numOp++;
     thread->numOps++;
@@ -958,7 +977,7 @@ Execute::doInstCommitAccounting(MinorDynInstPtr inst)
     if (inst->traceData)
         inst->traceData->setCPSeq(thread->numOp);
 
-    cpu.probeInstCommit(inst->staticInst);
+    cpu.probeInstCommit(inst->staticInst, inst->pc.instAddr());
 }
 
 void Execute::timeout_check(bool should_commit, MinorDynInstPtr inst) {
@@ -1056,7 +1075,7 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
                  *  until it gets to the head of inFlightInsts */
                 inst->canEarlyIssue = false;
                 /* Not completed as we'll come here again to pick up
-                *  the fault when we get to the end of the FU */
+                 * the fault when we get to the end of the FU */
                 completed_inst = false;
             } else {
                 DPRINTF(MinorExecute, "Fault in execute: %s\n",

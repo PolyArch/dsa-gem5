@@ -35,24 +35,41 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Nathan Binkert
-#          Andreas Hansson
 
 from m5.params import *
 from m5.proxy import *
-from MemObject import MemObject
-from Prefetcher import BasePrefetcher
-from ReplacementPolicies import *
-from Tags import *
+from m5.SimObject import SimObject
 
+from m5.objects.ClockedObject import ClockedObject
+from m5.objects.Compressors import BaseCacheCompressor
+from m5.objects.Prefetcher import BasePrefetcher
+from m5.objects.ReplacementPolicies import *
+from m5.objects.Tags import *
 
 # Enum for cache clusivity, currently mostly inclusive or mostly
 # exclusive.
 class Clusivity(Enum): vals = ['mostly_incl', 'mostly_excl']
 
+class WriteAllocator(SimObject):
+    type = 'WriteAllocator'
+    cxx_header = "mem/cache/cache.hh"
 
-class BaseCache(MemObject):
+    # Control the limits for when the cache introduces extra delays to
+    # allow whole-line write coalescing, and eventually switches to a
+    # write-no-allocate policy.
+    coalesce_limit = Param.Unsigned(2, "Consecutive lines written before "
+                                    "delaying for coalescing")
+    no_allocate_limit = Param.Unsigned(12, "Consecutive lines written before"
+                                       " skipping allocation")
+
+    delay_threshold = Param.Unsigned(8, "Number of delay quanta imposed on an "
+                                     "MSHR with write requests to allow for "
+                                     "write coalescing")
+
+    block_size = Param.Int(Parent.cache_line_size, "block size in bytes")
+
+
+class BaseCache(ClockedObject):
     type = 'BaseCache'
     abstract = True
     cxx_header = "mem/cache/base.hh"
@@ -85,6 +102,8 @@ class BaseCache(MemObject):
     replacement_policy = Param.BaseReplacementPolicy(LRURP(),
         "Replacement policy")
 
+    compressor = Param.BaseCacheCompressor(NULL, "Cache compressor.")
+
     sequential_access = Param.Bool(False,
         "Whether to access tags and data sequentially")
 
@@ -116,6 +135,11 @@ class BaseCache(MemObject):
     clusivity = Param.Clusivity('mostly_incl',
                                 "Clusivity with upstream cache")
 
+    # The write allocator enables optimizations for streaming write
+    # accesses by first coalescing writes and then avoiding allocation
+    # in the current cache. Typically, this would be enabled in the
+    # data cache.
+    write_allocator = Param.WriteAllocator(NULL, "Write allocator")
 
 class Cache(BaseCache):
     type = 'Cache'

@@ -23,14 +23,12 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Nilay Vaish
 
 import m5, os, optparse, sys
 from m5.objects import *
 m5.util.addToPath('../configs/')
 from common.Benchmarks import SysConfig
-from common import FSConfig
+from common import FSConfig, SysPaths
 from ruby import Ruby
 from common import Options
 
@@ -51,9 +49,10 @@ options.l2_assoc=2
 options.num_cpus = 2
 
 #the system
-mdesc = SysConfig(disk = 'linux-x86.img')
+mdesc = SysConfig(disks = ['linux-x86.img'])
 system = FSConfig.makeLinuxX86System('timing', options.num_cpus,
                                      mdesc=mdesc, Ruby=True)
+system.kernel = SysPaths.binary('x86_64-vmlinux-2.6.22.9')
 # Dummy voltage domain for all our clock domains
 system.voltage_domain = VoltageDomain(voltage = options.sys_voltage)
 
@@ -63,7 +62,7 @@ system.clk_domain = SrcClockDomain(clock = '1GHz',
 system.cpu_clk_domain = SrcClockDomain(clock = '2GHz',
                                        voltage_domain = system.voltage_domain)
 system.cpu = [TimingSimpleCPU(cpu_id=i, clk_domain = system.cpu_clk_domain)
-              for i in xrange(options.num_cpus)]
+              for i in range(options.num_cpus)]
 
 Ruby.create_system(options, True, system, system.iobus, system._dma_ports)
 

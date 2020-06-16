@@ -36,8 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
  */
 
 #include "dev/arm/amba_device.hh"
@@ -83,6 +81,6 @@ AmbaDevice::readId(PacketPtr pkt, uint64_t amba_id, Addr pio_addr)
             (amba_id >> byte) & 0xFF,
             pkt->getAddr() - pio_addr, byte);
     assert(pkt->getSize() == 4);
-    pkt->set<uint32_t>((amba_id >> byte) & 0xFF);
+    pkt->setLE<uint32_t>((amba_id >> byte) & 0xFF);
     return true;
 }

@@ -36,8 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Kevin Lim
  */
 
 #ifndef __CPU_O3_DECODE_HH__
@@ -102,6 +100,10 @@ class DefaultDecode
     DefaultDecode(O3CPU *_cpu, DerivO3CPUParams *params);
 
     void startupStage();
+
+    /** Clear all thread-specific states */
+    void clearStates(ThreadID tid);
+
     void resetStage();
 
     /** Returns the name of decode. */
@@ -194,7 +196,7 @@ class DefaultDecode
     /** Squashes if there is a PC-relative branch that was predicted
      * incorrectly. Sends squash information back to fetch.
      */
-    void squash(DynInstPtr &inst, ThreadID tid);
+    void squash(const DynInstPtr &inst, ThreadID tid);
 
   public:
     /** Squashes due to commit signalling a squash. Changes status to

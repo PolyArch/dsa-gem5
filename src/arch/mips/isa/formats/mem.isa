@@ -25,9 +25,6 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Authors: Steve Reinhardt
-//          Korey Sewell
 
 ////////////////////////////////////////////////////////////////////
 //
@@ -47,7 +44,6 @@ output header {{
         /// Displacement for EA calculation (signed).
         int32_t disp;
 
-        /// Constructor
         Memory(const char *mnem, MachInst _machInst, OpClass __opClass)
             : MipsStaticInst(mnem, _machInst, __opClass),
               disp(sext<16>(OFFSET))
@@ -55,7 +51,7 @@ output header {{
         }
 
         std::string generateDisassembly(
-                Addr pc, const SymbolTable *symtab) const override;
+                Addr pc, const Loader::SymbolTable *symtab) const override;
     };
 
      /**
@@ -65,28 +61,26 @@ output header {{
     class MemoryNoDisp : public Memory
     {
       protected:
-        /// Constructor
-        MemoryNoDisp(const char *mnem, ExtMachInst _machInst, OpClass __opClass)
-            : Memory(mnem, _machInst, __opClass)
-        {
-        }
+        using Memory::Memory;
 
         std::string generateDisassembly(
-                Addr pc, const SymbolTable *symtab) const override;
+                Addr pc, const Loader::SymbolTable *symtab) const override;
     };
 }};
 
 
 output decoder {{
     std::string
-    Memory::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+    Memory::generateDisassembly(
+            Addr pc, const Loader::SymbolTable *symtab) const
     {
         return csprintf("%-10s %c%d, %d(r%d)", mnemonic,
                         flags[IsFloating] ? 'f' : 'r', RT, disp, RS);
     }
 
     std::string
-    MemoryNoDisp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+    MemoryNoDisp::generateDisassembly(
+            Addr pc, const Loader::SymbolTable *symtab) const
     {
         return csprintf("%-10s %c%d, r%d(r%d)", mnemonic,
                         flags[IsFloating] ? 'f' : 'r',
@@ -109,21 +103,19 @@ output exec {{
         switch (packet->getSize())
         {
           case 1:
-            return packet->get<uint8_t>();
+            return packet->getLE<uint8_t>();
 
           case 2:
-            return packet->get<uint16_t>();
+            return packet->getLE<uint16_t>();
 
           case 4:
-            return packet->get<uint32_t>();
+            return packet->getLE<uint32_t>();
 
           case 8:
-            return packet->get<uint64_t>();
+            return packet->getLE<uint64_t>();
 
           default:
-            std::cerr << "bad store data size = " << packet->getSize() << std::endl;
-
-            assert(0);
+            panic("bad store data size = %d", packet->getSize());
             return 0;
         }
     }
@@ -177,7 +169,7 @@ def template LoadExecute {{
         %(ea_code)s;
 
         if (fault == NoFault) {
-            fault = readMemAtomic(xc, traceData, EA, Mem, memAccessFlags);
+            fault = readMemAtomicLE(xc, traceData, EA, Mem, memAccessFlags);
             %(memacc_code)s;
         }
 
@@ -232,7 +224,7 @@ def template LoadCompleteAcc {{
         %(op_decl)s;
         %(op_rd)s;
 
-        getMem(pkt, Mem, traceData);
+        getMemLE(pkt, Mem, traceData);
 
         if (fault == NoFault) {
             %(memacc_code)s;
@@ -263,7 +255,7 @@ def template StoreExecute {{
         }
 
         if (fault == NoFault) {
-            fault = writeMemAtomic(xc, traceData, Mem, EA, memAccessFlags,
+            fault = writeMemAtomicLE(xc, traceData, Mem, EA, memAccessFlags,
                     NULL);
         }
 
@@ -299,7 +291,7 @@ def template StoreFPExecute {{
         }
 
         if (fault == NoFault) {
-            fault = writeMemAtomic(xc, traceData, Mem, EA, memAccessFlags,
+            fault = writeMemAtomicLE(xc, traceData, Mem, EA, memAccessFlags,
                     NULL);
         }
 
@@ -333,7 +325,7 @@ def template StoreCondExecute {{
         }
 
         if (fault == NoFault) {
-            fault = writeMemAtomic(xc, traceData, Mem, EA, memAccessFlags,
+            fault = writeMemAtomicLE(xc, traceData, Mem, EA, memAccessFlags,
                     &write_result);
         }
 
@@ -366,7 +358,7 @@ def template StoreInitiateAcc {{
         }
 
         if (fault == NoFault) {
-            fault = writeMemTiming(xc, traceData, Mem, EA, memAccessFlags,
+            fault = writeMemTimingLE(xc, traceData, Mem, EA, memAccessFlags,
                     NULL);
         }
 
@@ -525,7 +517,7 @@ def format StoreUnalignedMemory(memacc_code, ea_code = {{ EA = (Rs + disp) & ~3;
         uint32_t byte_offset = unaligned_addr & 3;
         if (GuestByteOrder == BigEndianByteOrder)
             byte_offset ^= 3;
-        fault = readMemAtomic(xc, traceData, EA, mem_word, memAccessFlags);
+        fault = readMemAtomicLE(xc, traceData, EA, mem_word, memAccessFlags);
     '''
     memacc_code = decl_code + memacc_code + '\nMem = mem_word;\n'
 

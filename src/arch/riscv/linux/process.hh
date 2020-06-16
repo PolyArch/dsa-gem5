@@ -25,10 +25,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
- *          Korey Sewell
- *          Alec Roelke
  */
 
 #ifndef __RISCV_LINUX_PROCESS_HH__
@@ -39,15 +35,14 @@
 #include "arch/riscv/linux/linux.hh"
 #include "arch/riscv/process.hh"
 #include "sim/eventq.hh"
+#include "sim/syscall_desc.hh"
 
 /// A process with emulated Riscv/Linux syscalls.
-class RiscvLinuxProcess : public RiscvProcess
+class RiscvLinuxProcess64 : public RiscvProcess64
 {
   public:
     /// Constructor.
-    RiscvLinuxProcess(ProcessParams * params, ObjectFile *objFile);
-
-    virtual SyscallDesc* getDesc(int callnum);
+    RiscvLinuxProcess64(ProcessParams * params, ::Loader::ObjectFile *objFile);
 
     /// The target system's hostname.
     static const char *hostname;
@@ -55,8 +50,28 @@ class RiscvLinuxProcess : public RiscvProcess
     /// ID of the thread group leader for the process
     uint64_t __tgid;
 
+    void syscall(ThreadContext *tc, Fault *fault) override;
+
+    /// Syscall descriptors, indexed by call number.
+    static SyscallDescTable<SyscallABI> syscallDescs;
+};
+
+class RiscvLinuxProcess32 : public RiscvProcess32
+{
+  public:
+    /// Constructor.
+    RiscvLinuxProcess32(ProcessParams * params, ::Loader::ObjectFile *objFile);
+
+    /// The target system's hostname.
+    static const char *hostname;
+
+    /// ID of the thread group leader for the process
+    uint64_t __tgid;
+
+    void syscall(ThreadContext *tc, Fault *fault) override;
+
     /// Array of syscall descriptors, indexed by call number.
-    static std::map<int, SyscallDesc> syscallDescs;
+    static SyscallDescTable<SyscallABI> syscallDescs;
 };
 
 #endif // __RISCV_LINUX_PROCESS_HH__

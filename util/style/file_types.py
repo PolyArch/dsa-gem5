@@ -23,8 +23,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Nathan Binkert
 
 import os
 
@@ -79,7 +77,7 @@ hash_bang = (
     )
 
 # the list of all languages that we detect
-all_languages = frozenset(lang_types.itervalues())
+all_languages = frozenset(lang_types.values())
 all_languages |= frozenset(lang for start,lang in lang_prefixes)
 all_languages |= frozenset(lang for start,lang in hash_bang)
 
@@ -106,7 +104,7 @@ def lang_type(filename, firstline=None, openok=True):
     # if a first line was not provided but the file is ok to open,
     # grab the first line of the file.
     if firstline is None and openok:
-        handle = file(filename, 'r')
+        handle = open(filename, 'r')
         firstline = handle.readline()
         handle.close()
 
@@ -175,7 +173,7 @@ def update_file(dst, src, language, mutator):
             mode = 'r+'
         else:
             mode = 'r'
-        src = file(src, mode)
+        src = open(src, mode)
 
     orig_lines = []
 
@@ -198,7 +196,7 @@ def update_file(dst, src, language, mutator):
     elif isinstance(dst, str):
         # if we're not updating in place and a destination file name
         # was provided, create a file object
-        dst = file(dst, 'w')
+        dst = open(dst, 'w')
 
     for line in new_lines:
         dst.write(line)

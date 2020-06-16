@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andreas Hansson
  */
 
 #include "mem/dramsim2.hh"
@@ -336,11 +334,11 @@ void DRAMSim2::writeComplete(unsigned id, uint64_t addr, uint64_t cycle)
         signalDrainDone();
 }
 
-BaseSlavePort&
-DRAMSim2::getSlavePort(const std::string &if_name, PortID idx)
+Port &
+DRAMSim2::getPort(const std::string &if_name, PortID idx)
 {
     if (if_name != "port") {
-        return MemObject::getSlavePort(if_name, idx);
+        return AbstractMemory::getPort(if_name, idx);
     } else {
         return port;
     }

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2015 ARM Limited
+ * Copyright (c) 2020 Barkhausen Institut
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -37,11 +38,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
- *          Chris Emmons
- *          Andreas Sandberg
- *          Sascha Bischoff
  */
 
 #include "base/output.hh"
@@ -147,6 +143,11 @@ OutputDirectory::checkForStdio(const string &name)
 void
 OutputDirectory::close(OutputStream *file)
 {
+    if (file == &stdout || file == &stderr) {
+        file->stream()->flush();
+        return;
+    }
+
     auto i = files.find(file->name());
     if (i == files.end())
         fatal("Attempted to close an unregistred file stream");

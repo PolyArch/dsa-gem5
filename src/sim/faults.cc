@@ -24,9 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
- *          Gabe Black
  */
 
 #include "sim/faults.hh"
@@ -69,7 +66,7 @@ void GenericPageTableFault::invoke(ThreadContext *tc, const StaticInstPtr &inst)
     bool handled = false;
     if (!FullSystem) {
         Process *p = tc->getProcessPtr();
-        handled = p->fixupStackFault(vaddr);
+        handled = p->fixupFault(vaddr);
     }
     if (!handled)
         panic("Page table fault when accessing virtual address %#x\n", vaddr);

@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Korey Sewell
  */
 
 #include "arch/riscv/linux/linux.hh"
@@ -33,5 +31,9 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 
-#define TARGET RiscvLinux
+#define TARGET RiscvLinux64
+#include "kern/linux/flag_tables.hh"
+
+#undef TARGET
+#define TARGET RiscvLinux32
 #include "kern/linux/flag_tables.hh"

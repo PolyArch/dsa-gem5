@@ -24,15 +24,13 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Brad Beckmann
 
 import math
 import m5
 from m5.objects import *
 from m5.defines import buildEnv
-from Ruby import create_topology, create_directories
-from Ruby import send_evicts
+from .Ruby import create_topology, create_directories
+from .Ruby import send_evicts
 
 #
 # Declare caches used by the protocol
@@ -67,7 +65,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
     l2_bits = int(math.log(options.num_l2caches, 2))
     block_size_bits = int(math.log(options.cacheline_size, 2))
 
-    for i in xrange(options.num_cpus):
+    for i in range(options.num_cpus):
         #
         # First create the Ruby objects associated with this cpu
         #
@@ -80,7 +78,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                             start_index_bit = block_size_bits,
                             is_icache = False)
 
-        prefetcher = RubyPrefetcher.Prefetcher()
+        prefetcher = RubyPrefetcher()
 
         # the ruby random tester reuses num_cpus to specify the
         # number of cpu ports connected to the tester object, which
@@ -135,7 +133,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
 
     l2_index_start = block_size_bits + l2_bits
 
-    for i in xrange(options.num_l2caches):
+    for i in range(options.num_l2caches):
         #
         # First create the Ruby objects associated with this cpu
         #
@@ -175,7 +173,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                                           clk_divider = 3)
 
     mem_dir_cntrl_nodes, rom_dir_cntrl_node = create_directories(
-        options, system.mem_ranges, bootmem, ruby_system, system)
+        options, bootmem, ruby_system, system)
     dir_cntrl_nodes = mem_dir_cntrl_nodes[:]
     if rom_dir_cntrl_node is not None:
         dir_cntrl_nodes.append(rom_dir_cntrl_node)
@@ -187,6 +185,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         dir_cntrl.responseToDir.slave = ruby_system.network.master
         dir_cntrl.responseFromDir = MessageBuffer()
         dir_cntrl.responseFromDir.master = ruby_system.network.slave
+        dir_cntrl.requestToMemory = MessageBuffer()
         dir_cntrl.responseFromMemory = MessageBuffer()
 
 

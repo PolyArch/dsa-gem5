@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Daniel Carvalho
  */
 
 #ifndef __MEM_CACHE_REPLACEMENT_POLICIES_BASE_HH__
@@ -33,30 +31,9 @@
 
 #include <memory>
 
+#include "mem/cache/replacement_policies/replaceable_entry.hh"
 #include "params/BaseReplacementPolicy.hh"
 #include "sim/sim_object.hh"
-
-/**
- * The replacement data needed by the replacement policy.
- * Each replacement policy should have its own replacement data.
- */
-struct ReplacementData {};
-
-/**
- * A replaceable entry is used by any table-like structure that needs to
- * implement replacement functionality. It provides the replacement data
- * pointer instantiated and needed by the replacement policy used.
- * @sa Replacement Policies
- */
-class ReplaceableEntry
-{
-  public:
-    /**
-     * Replacement data associated to this entry.
-     * It is instantiated by the replacement policy.
-     */
-    std::shared_ptr<ReplacementData> replacementData;
-};
 
 /**
  * Replacement candidates as chosen by the indexing policy.

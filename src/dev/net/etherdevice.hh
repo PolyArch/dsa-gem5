@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
  */
 
 /**
@@ -44,10 +42,6 @@
 
 class EtherInt;
 
-/**
- * The base EtherObject class, allows for an accesor function to a
- * simobj that returns the Port.
- */
 class EtherDevice : public PciDevice
 {
   public:
@@ -61,10 +55,6 @@ class EtherDevice : public PciDevice
     {
         return dynamic_cast<const Params *>(_params);
     }
-
-  public:
-    /** Additional function to return the Port of a memory object. */
-    virtual EtherInt *getEthPort(const std::string &if_name, int idx = -1) = 0;
 
   public:
     void regStats();

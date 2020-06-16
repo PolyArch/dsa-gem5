@@ -36,9 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
- *          Andreas Hansson
  */
 
 #ifndef __BASE_ADDR_RANGE_MAP_HH__
@@ -83,6 +80,11 @@ class AddrRangeMap
     {
         return find(r, [r](const AddrRange r1) { return r.isSubset(r1); });
     }
+    iterator
+    contains(const AddrRange &r)
+    {
+        return find(r, [r](const AddrRange r1) { return r.isSubset(r1); });
+    }
 
     /**
      * Find entry that contains the given address
@@ -96,6 +98,11 @@ class AddrRangeMap
      */
     const_iterator
     contains(Addr r) const
+    {
+        return contains(RangeSize(r, 1));
+    }
+    iterator
+    contains(Addr r)
     {
         return contains(RangeSize(r, 1));
     }
@@ -115,8 +122,13 @@ class AddrRangeMap
     {
         return find(r, [r](const AddrRange r1) { return r.intersects(r1); });
     }
+    iterator
+    intersects(const AddrRange &r)
+    {
+        return find(r, [r](const AddrRange r1) { return r.intersects(r1); });
+    }
 
-    const_iterator
+    iterator
     insert(const AddrRange &r, const V& d)
     {
         if (intersects(r) != end())
@@ -191,7 +203,7 @@ class AddrRangeMap
      * @param it Iterator to the entry in the address range map
      */
     void
-    addNewEntryToCache(const_iterator it) const
+    addNewEntryToCache(iterator it) const
     {
         if (max_cache_size != 0) {
             // If there's a cache, add this element to it.
@@ -221,8 +233,8 @@ class AddrRangeMap
      * @param f A condition on an address range
      * @return An iterator that contains the input address range
      */
-    const_iterator
-    find(const AddrRange &r, std::function<bool(const AddrRange)> cond) const
+    iterator
+    find(const AddrRange &r, std::function<bool(const AddrRange)> cond)
     {
         // Check the cache first
         for (auto c = cache.begin(); c != cache.end(); c++) {
@@ -235,7 +247,7 @@ class AddrRangeMap
             }
         }
 
-        const_iterator next = tree.upper_bound(r);
+        iterator next = tree.upper_bound(r);
         if (next != end() && cond(next->first)) {
             addNewEntryToCache(next);
             return next;
@@ -244,7 +256,7 @@ class AddrRangeMap
             return end();
         next--;
 
-        const_iterator i;
+        iterator i;
         do {
             i = next;
             if (cond(i->first)) {
@@ -258,6 +270,12 @@ class AddrRangeMap
         return end();
     }
 
+    const_iterator
+    find(const AddrRange &r, std::function<bool(const AddrRange)> cond) const
+    {
+        return const_cast<AddrRangeMap *>(this)->find(r, cond);
+    }
+
     RangeMap tree;
 
     /**
@@ -266,7 +284,7 @@ class AddrRangeMap
      * used to optimize lookups. The elements in the list should
      * always be valid iterators of the tree.
      */
-    mutable std::list<const_iterator> cache;
+    mutable std::list<iterator> cache;
 };
 
 #endif //__BASE_ADDR_RANGE_MAP_HH__

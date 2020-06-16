@@ -37,8 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Lena Olson
  */
 
 #include "mem/ruby/structures/DirectoryMemory.hh"
@@ -68,7 +66,7 @@ void
 DirectoryMemory::init()
 {
     m_num_entries = m_size_bytes / RubySystem::getBlockSizeBytes();
-    m_entries = new AbstractEntry*[m_num_entries];
+    m_entries = new AbstractCacheEntry*[m_num_entries];
     for (int i = 0; i < m_num_entries; i++)
         m_entries[i] = NULL;
 }
@@ -109,7 +107,7 @@ DirectoryMemory::mapAddressToLocalIdx(Addr address)
     return ret >> RubySystem::getBlockSizeBits();
 }
 
-AbstractEntry*
+AbstractCacheEntry*
 DirectoryMemory::lookup(Addr address)
 {
     assert(isPresent(address));
@@ -120,8 +118,8 @@ DirectoryMemory::lookup(Addr address)
     return m_entries[idx];
 }
 
-AbstractEntry*
-DirectoryMemory::allocate(Addr address, AbstractEntry *entry)
+AbstractCacheEntry*
+DirectoryMemory::allocate(Addr address, AbstractCacheEntry *entry)
 {
     assert(isPresent(address));
     uint64_t idx;

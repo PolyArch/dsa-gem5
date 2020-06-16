@@ -25,10 +25,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
- *          Steve Reinhardt
- *          Andreas Sandberg
  */
 
 #ifndef __BASE_CPRINTF_HH__
@@ -54,6 +50,7 @@ struct Print
     std::ios::fmtflags saved_flags;
     char saved_fill;
     int saved_precision;
+    int saved_width;
 
     Format fmt;
     void process();

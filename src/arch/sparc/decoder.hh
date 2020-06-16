@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __ARCH_SPARC_DECODER_HH__
@@ -46,7 +44,7 @@ class Decoder
     // The extended machine instruction being generated
     ExtMachInst emi;
     bool instDone;
-    MiscReg asi;
+    RegVal asi;
 
   public:
     Decoder(ISA* isa = nullptr) : instDone(false), asi(0)
@@ -65,16 +63,16 @@ class Decoder
     void
     moreBytes(const PCState &pc, Addr fetchPC, MachInst inst)
     {
-        emi = inst;
+        emi = betoh(inst);
         // The I bit, bit 13, is used to figure out where the ASI
         // should come from. Use that in the ExtMachInst. This is
         // slightly redundant, but it removes the need to put a condition
         // into all the execute functions
-        if (inst & (1 << 13)) {
+        if (emi & (1 << 13)) {
             emi |= (static_cast<ExtMachInst>(
                         asi << (sizeof(MachInst) * 8)));
         } else {
-            emi |= (static_cast<ExtMachInst>(bits(inst, 12, 5))
+            emi |= (static_cast<ExtMachInst>(bits(emi, 12, 5))
                     << (sizeof(MachInst) * 8));
         }
         instDone = true;
@@ -93,7 +91,7 @@ class Decoder
     }
 
     void
-    setContext(MiscReg _asi)
+    setContext(RegVal _asi)
     {
         asi = _asi;
     }

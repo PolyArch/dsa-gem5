@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
  */
 
 /* @file
@@ -83,14 +81,6 @@ void
 SimpleDisk::write(Addr addr, baddr_t block, int count)
 {
     panic("unimplemented!\n");
-
-#if 0
-    uint8_t *data = physmem->dma_addr(addr, count);
-    if (!data)
-        panic("dma out of range! write addr=%#x count=%d\n", addr, count);
-
-    image->write(data, block, count);
-#endif
 }
 
 SimpleDisk *

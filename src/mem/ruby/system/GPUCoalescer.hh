@@ -29,8 +29,6 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Sooraj Puthoor
  */
 
 #ifndef __MEM_RUBY_SYSTEM_GPU_COALESCER_HH__
@@ -40,15 +38,15 @@
 #include <unordered_map>
 
 #include "base/statistics.hh"
-#include "mem/protocol/HSAScope.hh"
-#include "mem/protocol/HSASegment.hh"
-#include "mem/protocol/PrefetchBit.hh"
-#include "mem/protocol/RubyAccessMode.hh"
-#include "mem/protocol/RubyRequestType.hh"
-#include "mem/protocol/SequencerRequestType.hh"
 #include "mem/request.hh"
 #include "mem/ruby/common/Address.hh"
 #include "mem/ruby/common/Consumer.hh"
+#include "mem/ruby/protocol/HSAScope.hh"
+#include "mem/ruby/protocol/HSASegment.hh"
+#include "mem/ruby/protocol/PrefetchBit.hh"
+#include "mem/ruby/protocol/RubyAccessMode.hh"
+#include "mem/ruby/protocol/RubyRequestType.hh"
+#include "mem/ruby/protocol/SequencerRequestType.hh"
 #include "mem/ruby/system/Sequencer.hh"
 
 class DataBlock;
@@ -104,9 +102,9 @@ class GPUCoalescer : public RubyPort
     void wakeup(); // Used only for deadlock detection
 
     void printProgress(std::ostream& out) const;
-    void resetStats();
+    void resetStats() override;
     void collateStats();
-    void regStats();
+    void regStats() override;
 
     void writeCallback(Addr address, DataBlock& data);
 
@@ -159,18 +157,18 @@ class GPUCoalescer : public RubyPort
     void recordCPWriteCallBack(MachineID myMachID, MachineID senderMachID);
 
     // Alternate implementations in VIPER Coalescer
-    virtual RequestStatus makeRequest(PacketPtr pkt);
+    virtual RequestStatus makeRequest(PacketPtr pkt) override;
 
-    int outstandingCount() const { return m_outstanding_count; }
+    int outstandingCount() const override { return m_outstanding_count; }
 
     bool
-    isDeadlockEventScheduled() const
+    isDeadlockEventScheduled() const override
     {
         return deadlockCheckEvent.scheduled();
     }
 
     void
-    descheduleDeadlockEvent()
+    descheduleDeadlockEvent() override
     {
         deschedule(deadlockCheckEvent);
     }
@@ -265,11 +263,6 @@ class GPUCoalescer : public RubyPort
 
     CacheMemory* m_dataCache_ptr;
     CacheMemory* m_instCache_ptr;
-
-    // The cache access latency for this GPU data cache. This is assessed at the
-    // beginning of each access. This should be very similar to the
-    // implementation in Sequencer() as this is very much like a Sequencer
-    Cycles m_data_cache_hit_latency;
 
     // We need to track both the primary and secondary request types.
     // The secondary request type comprises a subset of RubyRequestTypes that

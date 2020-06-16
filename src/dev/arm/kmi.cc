@@ -36,9 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
- *          William Wang
  */
 
 #include "dev/arm/kmi.hh"
@@ -98,7 +95,7 @@ Pl050::read(PacketPtr pkt)
       default:
         if (readId(pkt, ambaId, pioAddr)) {
             // Hack for variable size accesses
-            data = pkt->get<uint32_t>();
+            data = pkt->getLE<uint32_t>();
             break;
         }
 

@@ -1,6 +1,7 @@
 /*
- * Copyright (c) 2008 Princeton University
+ * Copyright (c) 2020 Inria
  * Copyright (c) 2016 Georgia Institute of Technology
+ * Copyright (c) 2008 Princeton University
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -25,9 +26,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Niket Agarwal
- *          Tushar Krishna
  */
 
 
@@ -42,8 +40,8 @@
 class VirtualChannel
 {
   public:
-    VirtualChannel(int id);
-    ~VirtualChannel();
+    VirtualChannel();
+    ~VirtualChannel() = default;
 
     bool need_stage(flit_stage stage, Cycles time);
     void set_idle(Cycles curTime);
@@ -57,15 +55,16 @@ class VirtualChannel
     inline void set_enqueue_time(Cycles time) { m_enqueue_time = time; }
     inline VC_state_type get_state()        { return m_vc_state.first; }
 
-    inline bool isReady(Cycles curTime)
+    inline bool
+    isReady(Cycles curTime)
     {
-        return m_input_buffer->isReady(curTime);
+        return inputBuffer.isReady(curTime);
     }
 
     inline void
     insertFlit(flit *t_flit)
     {
-        m_input_buffer->insert(t_flit);
+        inputBuffer.insert(t_flit);
     }
 
     inline void
@@ -78,20 +77,19 @@ class VirtualChannel
     inline flit*
     peekTopFlit()
     {
-        return m_input_buffer->peekTopFlit();
+        return inputBuffer.peekTopFlit();
     }
 
     inline flit*
     getTopFlit()
     {
-        return m_input_buffer->getTopFlit();
+        return inputBuffer.getTopFlit();
     }
 
     uint32_t functionalWrite(Packet *pkt);
 
   private:
-    int m_id;
-    flitBuffer *m_input_buffer;
+    flitBuffer inputBuffer;
     std::pair<VC_state_type, Cycles> m_vc_state;
     int m_output_port;
     Cycles m_enqueue_time;

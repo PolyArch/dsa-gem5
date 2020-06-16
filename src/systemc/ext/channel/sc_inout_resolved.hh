@@ -23,8 +23,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __SYSTEMC_EXT_CHANNEL_SC_INOUT_RESOLVED_HH__
@@ -33,7 +31,6 @@
 #include "sc_inout.hh"
 #include "sc_signal_in_if.hh"
 #include "sc_signal_inout_if.hh"
-#include "warn_unimpl.hh"
 
 namespace sc_dt
 {
@@ -62,7 +59,7 @@ class sc_inout_resolved : public sc_inout<sc_dt::sc_logic>
             const sc_port<sc_signal_inout_if<sc_dt::sc_logic>, 1> &);
     sc_inout_resolved &operator = (const sc_inout_resolved &);
 
-    virtual const char *kind() const;
+    virtual const char *kind() const { return "sc_inout_resolved"; }
 
   private:
     // Disabled

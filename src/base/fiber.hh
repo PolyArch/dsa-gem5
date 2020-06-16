@@ -23,8 +23,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __BASE_FIBER_HH__
@@ -43,6 +41,8 @@
 
 #include <cstddef>
 #include <cstdint>
+
+#include "config/have_valgrind.hh"
 
 /**
  * This class represents a fiber, which is a light weight sort of thread which
@@ -80,6 +80,10 @@ class Fiber
     ///
     bool finished() const { return _finished; };
 
+    /// Returns whether the "main" function of this fiber has started.
+    ///
+    bool started() const { return _started; };
+
     /// Get a pointer to the current running Fiber.
     ///
     static Fiber *currentFiber();
@@ -94,7 +98,7 @@ class Fiber
     /// mark itself as finished and switch to its link fiber.
     virtual void main() = 0;
 
-    void setStarted() { started = true; }
+    void setStarted() { _started = true; }
 
   private:
     static void entryTrampoline();
@@ -104,10 +108,15 @@ class Fiber
     Fiber *link;
 
     // The stack for this context, or a nullptr if allocated elsewhere.
-    uint8_t *stack;
+    void *stack;
     size_t stackSize;
+    void *guardPage;
+    size_t guardPageSize;
+#if HAVE_VALGRIND
+    unsigned valgrindStackId;
+#endif
 
-    bool started;
+    bool _started;
     bool _finished;
     void createContext();
 };

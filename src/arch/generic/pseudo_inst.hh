@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Alexandru Dutu
  */
 
 #ifndef __ARCH_GENERIC_PSEUDO_INST_HH__
@@ -34,13 +32,6 @@
 class ThreadContext;
 
 namespace GenericISA {
-
-/*
- * This function is executed when the simulation is executing the syscall
- * handler in System Emulation mode.
- */
-void
-m5Syscall(ThreadContext *tc);
 
 /*
  * This function is executed when the simulation is executing the pagefault

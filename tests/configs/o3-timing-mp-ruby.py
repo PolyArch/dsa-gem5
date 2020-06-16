@@ -23,14 +23,12 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Ron Dreslinski
 
 import m5
 from m5.objects import *
 
 nb_cores = 4
-cpus = [ DerivO3CPU(cpu_id=i) for i in xrange(nb_cores) ]
+cpus = [ DerivO3CPU(cpu_id=i) for i in range(nb_cores) ]
 
 import ruby_config
 ruby_memory = ruby_config.generate("TwoLevel_SplitL1UnifiedL2.rb", nb_cores)

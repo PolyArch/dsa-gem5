@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andreas Sandberg
  */
 
 /** @file
@@ -44,11 +42,17 @@
 #ifndef __DEV_ARM_BASE_GIC_H__
 #define __DEV_ARM_BASE_GIC_H__
 
+#include <unordered_map>
+
+#include "arch/arm/system.hh"
 #include "dev/io_device.hh"
 
 class Platform;
 class RealView;
 class ThreadContext;
+class ArmInterruptPin;
+class ArmSPI;
+class ArmPPI;
 
 struct ArmInterruptPinParams;
 struct ArmPPIParams;
@@ -59,9 +63,11 @@ class BaseGic :  public PioDevice
 {
   public:
     typedef BaseGicParams Params;
+    enum class GicVersion { GIC_V2, GIC_V3, GIC_V4 };
 
     BaseGic(const Params *p);
     virtual ~BaseGic();
+    void init() override;
 
     const Params * params() const;
 
@@ -94,6 +100,15 @@ class BaseGic :  public PioDevice
      */
     virtual void clearInt(uint32_t num) = 0;
 
+    ArmSystem *
+    getSystem() const
+    {
+        return (ArmSystem *) sys;
+    }
+
+    /** Check if version supported */
+    virtual bool supportsVersion(GicVersion version) = 0;
+
   protected:
     /** Platform this GIC belongs to. */
     Platform *platform;
@@ -111,12 +126,59 @@ class BaseGicRegisters
 };
 
 /**
- * Generic representation of an Arm interrupt pin.
+ * This SimObject is instantiated in the python world and
+ * serves as an ArmInterruptPin generator. In this way it
+ * is possible to instantiate a single generator per component
+ * during configuration, and to dynamically spawn ArmInterruptPins.
+ * See ArmPPIGen for more info on how this is used.
  */
-class ArmInterruptPin : public SimObject
+class ArmInterruptPinGen : public SimObject
 {
   public:
-    ArmInterruptPin(const ArmInterruptPinParams *p);
+    ArmInterruptPinGen(const ArmInterruptPinParams *p);
+
+    virtual ArmInterruptPin* get(ThreadContext *tc = nullptr) = 0;
+};
+
+/**
+ * Shared Peripheral Interrupt Generator
+ * It is capable of generating one interrupt only: it maintains a pointer
+ * to it and returns it every time it is asked for it (via the get metod)
+ */
+class ArmSPIGen : public ArmInterruptPinGen
+{
+  public:
+    ArmSPIGen(const ArmSPIParams *p);
+
+    ArmInterruptPin* get(ThreadContext *tc = nullptr) override;
+  protected:
+    ArmSPI* pin;
+};
+
+/**
+ * Private Peripheral Interrupt Generator
+ * Since PPIs are banked in the GIC, this class is capable of generating
+ * more than one interrupt (one per ContextID).
+ */
+class ArmPPIGen : public ArmInterruptPinGen
+{
+  public:
+    ArmPPIGen(const ArmPPIParams *p);
+
+    ArmInterruptPin* get(ThreadContext* tc = nullptr) override;
+  protected:
+    std::unordered_map<ContextID, ArmPPI*> pins;
+};
+
+/**
+ * Generic representation of an Arm interrupt pin.
+ */
+class ArmInterruptPin
+{
+    friend class ArmInterruptPinGen;
+  protected:
+    ArmInterruptPin(Platform *platform, ThreadContext *tc,
+                    uint32_t int_num);
 
   public: /* Public interface */
     /**
@@ -127,6 +189,9 @@ class ArmInterruptPin : public SimObject
      * such a context are expected to call this method.
      */
     void setThreadContext(ThreadContext *tc);
+
+    /** Get interrupt number */
+    uint32_t num() const { return intNum; }
 
     /** Signal an interrupt */
     virtual void raise() = 0;
@@ -150,27 +215,31 @@ class ArmInterruptPin : public SimObject
 
     /** Arm platform to use for interrupt generation */
     RealView *const platform;
+
     /** Interrupt number to generate */
     const uint32_t intNum;
 };
 
 class ArmSPI : public ArmInterruptPin
 {
-  public:
-    ArmSPI(const ArmSPIParams *p);
+    friend class ArmSPIGen;
+  private:
+    ArmSPI(Platform *platform, uint32_t int_num);
 
+  public:
     void raise() override;
     void clear() override;
 };
 
 class ArmPPI : public ArmInterruptPin
 {
-  public:
-    ArmPPI(const ArmPPIParams *p);
+    friend class ArmPPIGen;
+  private:
+    ArmPPI(Platform *platform, ThreadContext *tc, uint32_t int_num);
 
+  public:
     void raise() override;
     void clear() override;
 };
-
 
 #endif

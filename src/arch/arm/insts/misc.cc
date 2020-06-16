@@ -34,8 +34,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #include "arch/arm/insts/misc.hh"
@@ -43,7 +41,7 @@
 #include "cpu/reg_class.hh"
 
 std::string
-MrsOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+MrsOp::generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -126,7 +124,7 @@ MsrBase::printMsrBase(std::ostream &os) const
 }
 
 std::string
-MsrImmOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+MsrImmOp::generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMsrBase(ss);
@@ -135,7 +133,7 @@ MsrImmOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-MsrRegOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+MsrRegOp::generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMsrBase(ss);
@@ -145,7 +143,7 @@ MsrRegOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-MrrcOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+MrrcOp::generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -158,7 +156,7 @@ MrrcOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-McrrOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+McrrOp::generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -171,7 +169,7 @@ McrrOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-ImmOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+ImmOp::generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -180,7 +178,7 @@ ImmOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-RegImmOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+RegImmOp::generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -190,7 +188,7 @@ RegImmOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-RegRegOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+RegRegOp::generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -201,7 +199,17 @@ RegRegOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-RegRegRegImmOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+RegOp::generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
+{
+    std::stringstream ss;
+    printMnemonic(ss);
+    printIntReg(ss, dest);
+    return ss.str();
+}
+
+std::string
+RegRegRegImmOp::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -215,7 +223,8 @@ RegRegRegImmOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-RegRegRegRegOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+RegRegRegRegOp::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -230,7 +239,8 @@ RegRegRegRegOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-RegRegRegOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+RegRegRegOp::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -243,7 +253,8 @@ RegRegRegOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-RegRegImmOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+RegRegImmOp::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -255,7 +266,8 @@ RegRegImmOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-MiscRegRegImmOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+MiscRegRegImmOp::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -266,7 +278,8 @@ MiscRegRegImmOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-RegMiscRegImmOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+RegMiscRegImmOp::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -277,7 +290,8 @@ RegMiscRegImmOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-RegImmImmOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+RegImmImmOp::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -287,7 +301,8 @@ RegImmImmOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-RegRegImmImmOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+RegRegImmImmOp::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -299,7 +314,8 @@ RegRegImmImmOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-RegImmRegOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+RegImmRegOp::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -310,7 +326,8 @@ RegImmRegOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-RegImmRegShiftOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+RegImmRegShiftOp::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     printMnemonic(ss);
@@ -322,7 +339,64 @@ RegImmRegShiftOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-UnknownOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+UnknownOp::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
-    return csprintf("%-10s (inst %#08x)", "unknown", machInst & mask(32));
+    return csprintf("%-10s (inst %#08x)", "unknown", encoding());
+}
+
+McrMrcMiscInst::McrMrcMiscInst(const char *_mnemonic, ExtMachInst _machInst,
+                               uint64_t _iss, MiscRegIndex _miscReg)
+    : ArmStaticInst(_mnemonic, _machInst, No_OpClass)
+{
+    flags[IsNonSpeculative] = true;
+    iss = _iss;
+    miscReg = _miscReg;
+}
+
+Fault
+McrMrcMiscInst::execute(ExecContext *xc, Trace::InstRecord *traceData) const
+{
+    bool hypTrap = mcrMrc15TrapToHyp(miscReg, xc->tcBase(), iss);
+
+    if (hypTrap) {
+        return std::make_shared<HypervisorTrap>(machInst, iss,
+                                                EC_TRAPPED_CP15_MCR_MRC);
+    } else {
+        return NoFault;
+    }
+}
+
+std::string
+McrMrcMiscInst::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
+{
+    return csprintf("%-10s (pipe flush)", mnemonic);
+}
+
+McrMrcImplDefined::McrMrcImplDefined(const char *_mnemonic,
+                                     ExtMachInst _machInst, uint64_t _iss,
+                                     MiscRegIndex _miscReg)
+    : McrMrcMiscInst(_mnemonic, _machInst, _iss, _miscReg)
+{}
+
+Fault
+McrMrcImplDefined::execute(ExecContext *xc, Trace::InstRecord *traceData) const
+{
+    bool hypTrap = mcrMrc15TrapToHyp(miscReg, xc->tcBase(), iss);
+
+    if (hypTrap) {
+        return std::make_shared<HypervisorTrap>(machInst, iss,
+                                                EC_TRAPPED_CP15_MCR_MRC);
+    } else {
+        return std::make_shared<UndefinedInstruction>(machInst, false,
+                                                      mnemonic);
+    }
+}
+
+std::string
+McrMrcImplDefined::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
+{
+    return csprintf("%-10s (implementation defined)", mnemonic);
 }

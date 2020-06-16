@@ -24,10 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
- *          Lisa Hsu
- *          Ali Saidi
  */
 
 #ifndef __KERN_RISCV_IDLE_EVENT_HH__
@@ -38,8 +34,8 @@
 class IdleStartEvent : public PCEvent
 {
   public:
-    IdleStartEvent(PCEventQueue *q, const std::string &desc, Addr addr)
-        : PCEvent(q, desc, addr)
+    IdleStartEvent(PCEventScope *s, const std::string &desc, Addr addr)
+        : PCEvent(s, desc, addr)
     {}
     virtual void process(ThreadContext *tc);
 };

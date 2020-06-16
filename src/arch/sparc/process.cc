@@ -24,9 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
- *          Ali Saidi
  */
 
 #include "arch/sparc/process.hh"
@@ -51,11 +48,12 @@
 using namespace std;
 using namespace SparcISA;
 
-static const int FirstArgumentReg = 8;
+const std::vector<int> SparcProcess::SyscallABI::ArgumentRegs = {
+    INTREG_O0, INTREG_O1, INTREG_O2, INTREG_O3, INTREG_O4, INTREG_O5
+};
 
-
-SparcProcess::SparcProcess(ProcessParams *params, ObjectFile *objFile,
-                           Addr _StackBias)
+SparcProcess::SparcProcess(ProcessParams *params,
+                           ::Loader::ObjectFile *objFile, Addr _StackBias)
     : Process(params,
               new EmulationPageTable(params->name, params->pid, PageBytes),
               objFile),
@@ -126,22 +124,17 @@ SparcProcess::initState()
      */
 
     // No windows contain info from other programs
-    // tc->setMiscRegNoEffect(MISCREG_OTHERWIN, 0);
-    tc->setIntReg(NumIntArchRegs + 6, 0);
+    tc->setIntReg(INTREG_OTHERWIN, 0);
     // There are no windows to pop
-    // tc->setMiscRegNoEffect(MISCREG_CANRESTORE, 0);
-    tc->setIntReg(NumIntArchRegs + 4, 0);
+    tc->setIntReg(INTREG_CANRESTORE, 0);
     // All windows are available to save into
-    // tc->setMiscRegNoEffect(MISCREG_CANSAVE, NWindows - 2);
-    tc->setIntReg(NumIntArchRegs + 3, NWindows - 2);
+    tc->setIntReg(INTREG_CANSAVE, NWindows - 2);
     // All windows are "clean"
-    // tc->setMiscRegNoEffect(MISCREG_CLEANWIN, NWindows);
-    tc->setIntReg(NumIntArchRegs + 5, NWindows);
+    tc->setIntReg(INTREG_CLEANWIN, NWindows);
     // Start with register window 0
     tc->setMiscReg(MISCREG_CWP, 0);
     // Always use spill and fill traps 0
-    // tc->setMiscRegNoEffect(MISCREG_WSTATE, 0);
-    tc->setIntReg(NumIntArchRegs + 7, 0);
+    tc->setIntReg(INTREG_WSTATE, 0);
     // Set the trap level to 0
     tc->setMiscRegNoEffect(MISCREG_TL, 0);
     // Set the ASI register to something fixed
@@ -183,7 +176,7 @@ Sparc64Process::initState()
     pstate.ie = 1;
     tc->setMiscReg(MISCREG_PSTATE, pstate);
 
-    argsInit(sizeof(IntReg), PageBytes);
+    argsInit(sizeof(RegVal), PageBytes);
 }
 
 template<class IntType>
@@ -192,9 +185,7 @@ SparcProcess::argsInit(int pageSize)
 {
     int intSize = sizeof(IntType);
 
-    typedef AuxVector<IntType> auxv_t;
-
-    std::vector<auxv_t> auxv;
+    std::vector<AuxVector<IntType>> auxv;
 
     string filename;
     if (argv.size() < 1)
@@ -205,12 +196,6 @@ SparcProcess::argsInit(int pageSize)
     // Even for a 32 bit process, the ABI says we still need to
     // maintain double word alignment of the stack pointer.
     uint64_t align = 16;
-
-    // Patch the ld_bias for dynamic executables.
-    updateBias();
-
-    // load object file into target memory
-    objFile->loadSections(initVirtMem);
 
     enum hardwareCaps
     {
@@ -235,37 +220,39 @@ SparcProcess::argsInit(int pageSize)
 
     // Setup the auxilliary vectors. These will already have endian conversion.
     // Auxilliary vectors are loaded only for elf formatted executables.
-    ElfObject * elfObject = dynamic_cast<ElfObject *>(objFile);
+    auto *elfObject = dynamic_cast<::Loader::ElfObject *>(objFile);
     if (elfObject) {
         // Bits which describe the system hardware capabilities
-        auxv.push_back(auxv_t(M5_AT_HWCAP, hwcap));
+        auxv.emplace_back(M5_AT_HWCAP, hwcap);
         // The system page size
-        auxv.push_back(auxv_t(M5_AT_PAGESZ, SparcISA::PageBytes));
+        auxv.emplace_back(M5_AT_PAGESZ, SparcISA::PageBytes);
         // Defined to be 100 in the kernel source.
         // Frequency at which times() increments
-        auxv.push_back(auxv_t(M5_AT_CLKTCK, 100));
-        // For statically linked executables, this is the virtual address of the
-        // program header tables if they appear in the executable image
-        auxv.push_back(auxv_t(M5_AT_PHDR, elfObject->programHeaderTable()));
+        auxv.emplace_back(M5_AT_CLKTCK, 100);
+        // For statically linked executables, this is the virtual address of
+        // the program header tables if they appear in the executable image
+        auxv.emplace_back(M5_AT_PHDR, elfObject->programHeaderTable());
         // This is the size of a program header entry from the elf file.
-        auxv.push_back(auxv_t(M5_AT_PHENT, elfObject->programHeaderSize()));
+        auxv.emplace_back(M5_AT_PHENT, elfObject->programHeaderSize());
         // This is the number of program headers from the original elf file.
-        auxv.push_back(auxv_t(M5_AT_PHNUM, elfObject->programHeaderCount()));
+        auxv.emplace_back(M5_AT_PHNUM, elfObject->programHeaderCount());
         // This is the base address of the ELF interpreter; it should be
         // zero for static executables or contain the base address for
         // dynamic executables.
-        auxv.push_back(auxv_t(M5_AT_BASE, getBias()));
+        auxv.emplace_back(M5_AT_BASE, getBias());
         // This is hardwired to 0 in the elf loading code in the kernel
-        auxv.push_back(auxv_t(M5_AT_FLAGS, 0));
+        auxv.emplace_back(M5_AT_FLAGS, 0);
         // The entry point to the program
-        auxv.push_back(auxv_t(M5_AT_ENTRY, objFile->entryPoint()));
+        auxv.emplace_back(M5_AT_ENTRY, objFile->entryPoint());
         // Different user and group IDs
-        auxv.push_back(auxv_t(M5_AT_UID, uid()));
-        auxv.push_back(auxv_t(M5_AT_EUID, euid()));
-        auxv.push_back(auxv_t(M5_AT_GID, gid()));
-        auxv.push_back(auxv_t(M5_AT_EGID, egid()));
+        auxv.emplace_back(M5_AT_UID, uid());
+        auxv.emplace_back(M5_AT_EUID, euid());
+        auxv.emplace_back(M5_AT_GID, gid());
+        auxv.emplace_back(M5_AT_EGID, egid());
         // Whether to enable "secure mode" in the executable
-        auxv.push_back(auxv_t(M5_AT_SECURE, 0));
+        auxv.emplace_back(M5_AT_SECURE, 0);
+        // The address of 16 "random" bytes.
+        auxv.emplace_back(M5_AT_RANDOM, 0);
     }
 
     // Figure out how big the initial stack needs to be
@@ -276,6 +263,9 @@ SparcProcess::argsInit(int pageSize)
     // This is the name of the file which is present on the initial stack
     // It's purpose is to let the user space linker examine the original file.
     int file_name_size = filename.size() + 1;
+
+    const int numRandomBytes = 16;
+    int aux_data_size = numRandomBytes;
 
     int env_data_size = 0;
     for (int i = 0; i < envp.size(); ++i) {
@@ -318,6 +308,7 @@ SparcProcess::argsInit(int pageSize)
 
     int space_needed =
         info_block_size +
+        aux_data_size +
         aux_padding +
         frame_size;
 
@@ -326,16 +317,16 @@ SparcProcess::argsInit(int pageSize)
     memState->setStackSize(memState->getStackBase() - memState->getStackMin());
 
     // Allocate space for the stack
-    allocateMem(roundDown(memState->getStackMin(), pageSize),
-                roundUp(memState->getStackSize(), pageSize));
+    memState->mapRegion(roundDown(memState->getStackMin(), pageSize),
+                        roundUp(memState->getStackSize(), pageSize), "stack");
 
     // map out initial stack contents
     IntType sentry_base = memState->getStackBase() - sentry_size;
     IntType file_name_base = sentry_base - file_name_size;
     IntType env_data_base = file_name_base - env_data_size;
     IntType arg_data_base = env_data_base - arg_data_size;
-    IntType auxv_array_base = arg_data_base -
-        info_block_padding - aux_array_size - aux_padding;
+    IntType aux_data_base = arg_data_base - info_block_padding - aux_data_size;
+    IntType auxv_array_base = aux_data_base - aux_array_size - aux_padding;
     IntType envp_array_base = auxv_array_base - envp_array_size;
     IntType argv_array_base = envp_array_base - argv_array_size;
     IntType argc_base = argv_array_base - argc_size;
@@ -362,35 +353,39 @@ SparcProcess::argsInit(int pageSize)
 
     // figure out argc
     IntType argc = argv.size();
-    IntType guestArgc = SparcISA::htog(argc);
+    IntType guestArgc = htobe(argc);
 
     // Write out the sentry void *
     uint64_t sentry_NULL = 0;
-    initVirtMem.writeBlob(sentry_base,
-            (uint8_t*)&sentry_NULL, sentry_size);
+    initVirtMem->writeBlob(sentry_base, &sentry_NULL, sentry_size);
 
     // Write the file name
-    initVirtMem.writeString(file_name_base, filename.c_str());
+    initVirtMem->writeString(file_name_base, filename.c_str());
+
+    // Fix up the aux vectors which point to data.
+    for (auto &aux: auxv) {
+        if (aux.type == M5_AT_RANDOM)
+            aux.val = aux_data_base;
+    }
 
     // Copy the aux stuff
-    for (int x = 0; x < auxv.size(); x++) {
-        initVirtMem.writeBlob(auxv_array_base + x * 2 * intSize,
-                (uint8_t*)&(auxv[x].a_type), intSize);
-        initVirtMem.writeBlob(auxv_array_base + (x * 2 + 1) * intSize,
-                (uint8_t*)&(auxv[x].a_val), intSize);
+    Addr auxv_array_end = auxv_array_base;
+    for (const auto &aux: auxv) {
+        initVirtMem->write(auxv_array_end, aux, GuestByteOrder);
+        auxv_array_end += sizeof(aux);
     }
 
     // Write out the terminating zeroed auxilliary vector
-    const IntType zero = 0;
-    initVirtMem.writeBlob(auxv_array_base + intSize * 2 * auxv.size(),
-            (uint8_t*)&zero, intSize);
-    initVirtMem.writeBlob(auxv_array_base + intSize * (2 * auxv.size() + 1),
-            (uint8_t*)&zero, intSize);
+    const AuxVector<IntType> zero(0, 0);
+    initVirtMem->write(auxv_array_end, zero);
+    auxv_array_end += sizeof(zero);
 
-    copyStringArray(envp, envp_array_base, env_data_base, initVirtMem);
-    copyStringArray(argv, argv_array_base, arg_data_base, initVirtMem);
+    copyStringArray(envp, envp_array_base, env_data_base,
+                    BigEndianByteOrder, *initVirtMem);
+    copyStringArray(argv, argv_array_base, arg_data_base,
+                    BigEndianByteOrder, *initVirtMem);
 
-    initVirtMem.writeBlob(argc_base, (uint8_t*)&guestArgc, intSize);
+    initVirtMem->writeBlob(argc_base, &guestArgc, intSize);
 
     // Set up space for the trap handlers into the processes address space.
     // Since the stack grows down and there is reserved address space abov
@@ -421,10 +416,10 @@ Sparc64Process::argsInit(int intSize, int pageSize)
     SparcProcess::argsInit<uint64_t>(pageSize);
 
     // Stuff the trap handlers into the process address space
-    initVirtMem.writeBlob(fillStart,
-            (uint8_t*)fillHandler64, sizeof(MachInst) * numFillInsts);
-    initVirtMem.writeBlob(spillStart,
-            (uint8_t*)spillHandler64, sizeof(MachInst) *  numSpillInsts);
+    initVirtMem->writeBlob(fillStart,
+            fillHandler64, sizeof(MachInst) * numFillInsts);
+    initVirtMem->writeBlob(spillStart,
+            spillHandler64, sizeof(MachInst) *  numSpillInsts);
 }
 
 void
@@ -433,19 +428,19 @@ Sparc32Process::argsInit(int intSize, int pageSize)
     SparcProcess::argsInit<uint32_t>(pageSize);
 
     // Stuff the trap handlers into the process address space
-    initVirtMem.writeBlob(fillStart,
-            (uint8_t*)fillHandler32, sizeof(MachInst) * numFillInsts);
-    initVirtMem.writeBlob(spillStart,
-            (uint8_t*)spillHandler32, sizeof(MachInst) *  numSpillInsts);
+    initVirtMem->writeBlob(fillStart,
+            fillHandler32, sizeof(MachInst) * numFillInsts);
+    initVirtMem->writeBlob(spillStart,
+            spillHandler32, sizeof(MachInst) *  numSpillInsts);
 }
 
 void Sparc32Process::flushWindows(ThreadContext *tc)
 {
-    IntReg Cansave = tc->readIntReg(NumIntArchRegs + 3);
-    IntReg Canrestore = tc->readIntReg(NumIntArchRegs + 4);
-    IntReg Otherwin = tc->readIntReg(NumIntArchRegs + 6);
-    MiscReg CWP = tc->readMiscReg(MISCREG_CWP);
-    MiscReg origCWP = CWP;
+    RegVal Cansave = tc->readIntReg(INTREG_CANSAVE);
+    RegVal Canrestore = tc->readIntReg(INTREG_CANRESTORE);
+    RegVal Otherwin = tc->readIntReg(INTREG_OTHERWIN);
+    RegVal CWP = tc->readMiscReg(MISCREG_CWP);
+    RegVal origCWP = CWP;
     CWP = (CWP + Cansave + 2) % NWindows;
     while (NWindows - 2 - Cansave != 0) {
         if (Otherwin) {
@@ -453,11 +448,11 @@ void Sparc32Process::flushWindows(ThreadContext *tc)
         } else {
             tc->setMiscReg(MISCREG_CWP, CWP);
             // Do the stores
-            IntReg sp = tc->readIntReg(StackPointerReg);
+            RegVal sp = tc->readIntReg(StackPointerReg);
             for (int index = 16; index < 32; index++) {
                 uint32_t regVal = tc->readIntReg(index);
-                regVal = htog(regVal);
-                if (!tc->getMemProxy().tryWriteBlob(
+                regVal = htobe(regVal);
+                if (!tc->getVirtProxy().tryWriteBlob(
                         sp + (index - 16) * 4, (uint8_t *)&regVal, 4)) {
                     warn("Failed to save register to the stack when "
                             "flushing windows.\n");
@@ -468,19 +463,19 @@ void Sparc32Process::flushWindows(ThreadContext *tc)
             CWP = (CWP + 1) % NWindows;
         }
     }
-    tc->setIntReg(NumIntArchRegs + 3, Cansave);
-    tc->setIntReg(NumIntArchRegs + 4, Canrestore);
+    tc->setIntReg(INTREG_CANSAVE, Cansave);
+    tc->setIntReg(INTREG_CANRESTORE, Canrestore);
     tc->setMiscReg(MISCREG_CWP, origCWP);
 }
 
 void
 Sparc64Process::flushWindows(ThreadContext *tc)
 {
-    IntReg Cansave = tc->readIntReg(NumIntArchRegs + 3);
-    IntReg Canrestore = tc->readIntReg(NumIntArchRegs + 4);
-    IntReg Otherwin = tc->readIntReg(NumIntArchRegs + 6);
-    MiscReg CWP = tc->readMiscReg(MISCREG_CWP);
-    MiscReg origCWP = CWP;
+    RegVal Cansave = tc->readIntReg(INTREG_CANSAVE);
+    RegVal Canrestore = tc->readIntReg(INTREG_CANRESTORE);
+    RegVal Otherwin = tc->readIntReg(INTREG_OTHERWIN);
+    RegVal CWP = tc->readMiscReg(MISCREG_CWP);
+    RegVal origCWP = CWP;
     CWP = (CWP + Cansave + 2) % NWindows;
     while (NWindows - 2 - Cansave != 0) {
         if (Otherwin) {
@@ -488,11 +483,11 @@ Sparc64Process::flushWindows(ThreadContext *tc)
         } else {
             tc->setMiscReg(MISCREG_CWP, CWP);
             // Do the stores
-            IntReg sp = tc->readIntReg(StackPointerReg);
+            RegVal sp = tc->readIntReg(StackPointerReg);
             for (int index = 16; index < 32; index++) {
-                IntReg regVal = tc->readIntReg(index);
-                regVal = htog(regVal);
-                if (!tc->getMemProxy().tryWriteBlob(
+                RegVal regVal = tc->readIntReg(index);
+                regVal = htobe(regVal);
+                if (!tc->getVirtProxy().tryWriteBlob(
                         sp + 2047 + (index - 16) * 8, (uint8_t *)&regVal, 8)) {
                     warn("Failed to save register to the stack when "
                             "flushing windows.\n");
@@ -503,61 +498,7 @@ Sparc64Process::flushWindows(ThreadContext *tc)
             CWP = (CWP + 1) % NWindows;
         }
     }
-    tc->setIntReg(NumIntArchRegs + 3, Cansave);
-    tc->setIntReg(NumIntArchRegs + 4, Canrestore);
+    tc->setIntReg(INTREG_CANSAVE, Cansave);
+    tc->setIntReg(INTREG_CANRESTORE, Canrestore);
     tc->setMiscReg(MISCREG_CWP, origCWP);
-}
-
-IntReg
-Sparc32Process::getSyscallArg(ThreadContext *tc, int &i)
-{
-    assert(i < 6);
-    return bits(tc->readIntReg(FirstArgumentReg + i++), 31, 0);
-}
-
-void
-Sparc32Process::setSyscallArg(ThreadContext *tc, int i, IntReg val)
-{
-    assert(i < 6);
-    tc->setIntReg(FirstArgumentReg + i, bits(val, 31, 0));
-}
-
-IntReg
-Sparc64Process::getSyscallArg(ThreadContext *tc, int &i)
-{
-    assert(i < 6);
-    return tc->readIntReg(FirstArgumentReg + i++);
-}
-
-void
-Sparc64Process::setSyscallArg(ThreadContext *tc, int i, IntReg val)
-{
-    assert(i < 6);
-    tc->setIntReg(FirstArgumentReg + i, val);
-}
-
-void
-SparcProcess::setSyscallReturn(ThreadContext *tc, SyscallReturn sysret)
-{
-    // check for error condition.  SPARC syscall convention is to
-    // indicate success/failure in reg the carry bit of the ccr
-    // and put the return value itself in the standard return value reg ().
-    PSTATE pstate = tc->readMiscRegNoEffect(MISCREG_PSTATE);
-    if (sysret.successful()) {
-        // no error, clear XCC.C
-        tc->setIntReg(NumIntArchRegs + 2,
-                      tc->readIntReg(NumIntArchRegs + 2) & 0xEE);
-        IntReg val = sysret.returnValue();
-        if (pstate.am)
-            val = bits(val, 31, 0);
-        tc->setIntReg(ReturnValueReg, val);
-    } else {
-        // got an error, set XCC.C
-        tc->setIntReg(NumIntArchRegs + 2,
-                      tc->readIntReg(NumIntArchRegs + 2) | 0x11);
-        IntReg val = sysret.errnoValue();
-        if (pstate.am)
-            val = bits(val, 31, 0);
-        tc->setIntReg(ReturnValueReg, val);
-    }
 }

@@ -1,4 +1,15 @@
 /*
+ * Copyright (c) 2018 ARM Limited
+ *
+ * The license below extends only to copyright in the software and shall
+ * not be construed as granting a license to any other intellectual
+ * property including but not limited to intellectual property relating
+ * to a hardware implementation of the functionality of the software
+ * licensed hereunder.  You may use the software subject to the license
+ * terms below provided that you ensure that this notice is replicated
+ * unmodified and in its entirety in all distributions of the software,
+ * modified or unmodified, in source code or in binary form.
+ *
  * Copyright 2015 LabWare
  * Copyright 2014 Google, Inc.
  * Copyright (c) 2002-2005 The Regents of The University of Michigan
@@ -26,9 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
- *          Boris Shingarov
  */
 
 #ifndef __REMOTE_GDB_HH__
@@ -171,7 +179,7 @@ class BaseRemoteGDB
     uint8_t getbyte();
     void putbyte(uint8_t b);
 
-    int recv(char *data, int len);
+    void recv(std::vector<char> &bp);
     void send(const char *data);
 
     /*
@@ -276,12 +284,30 @@ class BaseRemoteGDB
     ThreadContext *context() { return tc; }
     System *system() { return sys; }
 
+    void encodeBinaryData(const std::string &unencoded,
+            std::string &encoded) const;
+
+    void encodeXferResponse(const std::string &unencoded,
+        std::string &encoded, size_t offset, size_t unencoded_length) const;
+
     // To be implemented by subclasses.
     virtual bool checkBpLen(size_t len);
 
     virtual BaseGdbRegCache *gdbRegs() = 0;
 
     virtual bool acc(Addr addr, size_t len) = 0;
+
+    virtual std::vector<std::string> availableFeatures() const;
+
+    /**
+     * Get an XML target description.
+     *
+     * @param[in] annex the XML filename
+     * @param[out] output set to the decoded XML
+     * @return true if the given annex was found
+     */
+    virtual bool getXferFeaturesRead(const std::string &annex,
+            std::string &output);
 };
 
 template <class T>

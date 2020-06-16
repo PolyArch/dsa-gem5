@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Timothy M. Jones
  */
 
 #include "arch/power/insts/branch.hh"
@@ -36,7 +34,8 @@
 using namespace PowerISA;
 
 const std::string &
-PCDependentDisassembly::disassemble(Addr pc, const SymbolTable *symtab) const
+PCDependentDisassembly::disassemble(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     if (!cachedDisassembly ||
         pc != cachedPC || symtab != cachedSymtab)
@@ -60,7 +59,8 @@ BranchPCRel::branchTarget(const PowerISA::PCState &pc) const
 }
 
 std::string
-BranchPCRel::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+BranchPCRel::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
 
@@ -84,7 +84,8 @@ BranchNonPCRel::branchTarget(const PowerISA::PCState &pc) const
 }
 
 std::string
-BranchNonPCRel::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+BranchNonPCRel::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
 
@@ -106,7 +107,8 @@ BranchPCRelCond::branchTarget(const PowerISA::PCState &pc) const
 }
 
 std::string
-BranchPCRelCond::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+BranchPCRelCond::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
 
@@ -132,8 +134,8 @@ BranchNonPCRelCond::branchTarget(const PowerISA::PCState &pc) const
 }
 
 std::string
-BranchNonPCRelCond::generateDisassembly(Addr pc,
-                                        const SymbolTable *symtab) const
+BranchNonPCRelCond::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
 
@@ -158,8 +160,8 @@ BranchRegCond::branchTarget(ThreadContext *tc) const
 }
 
 std::string
-BranchRegCond::generateDisassembly(Addr pc,
-                                   const SymbolTable *symtab) const
+BranchRegCond::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
 

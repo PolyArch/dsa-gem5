@@ -35,9 +35,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Erfan Azarkhish
-#          Abdul Mutaal Ahmad
 
 # A Simplified model of a complete HMC device. Based on:
 #  [1] http://www.hybridmemorycube.org/specification-download/
@@ -121,6 +118,9 @@
 #   mixed: This is a hybrid architecture. It has 4 crossbars inside the HMC.
 #   2 Crossbars are connected to only local vaults. From other 2 crossbar, a
 #   request can be forwarded to any other vault.
+
+from __future__ import print_function
+from __future__ import absolute_import
 
 import argparse
 
@@ -337,16 +337,16 @@ def config_hmc_host_ctrl(opt, system):
                      num_lanes=opt.num_lanes_per_link,
                      link_speed=opt.serial_link_speed,
                      delay=opt.total_ctrl_latency) for i in
-          xrange(opt.num_serial_links)]
+          range(opt.num_serial_links)]
     system.hmc_host.seriallink = sl
 
     # enable global monitor
     if opt.enable_global_monitor:
         system.hmc_host.lmonitor = [CommMonitor() for i in
-                                    xrange(opt.num_serial_links)]
+                                    range(opt.num_serial_links)]
 
     # set the clock frequency for serial link
-    for i in xrange(opt.num_serial_links):
+    for i in range(opt.num_serial_links):
         clk = opt.link_controller_frequency
         vd = VoltageDomain(voltage='1V')
         scd = SrcClockDomain(clock=clk, voltage_domain=vd)
@@ -357,7 +357,7 @@ def config_hmc_host_ctrl(opt, system):
     hh = system.hmc_host
     if opt.arch == "distributed":
         mb = system.membus
-        for i in xrange(opt.num_links_controllers):
+        for i in range(opt.num_links_controllers):
             if opt.enable_global_monitor:
                 mb.master = hh.lmonitor[i].slave
                 hh.lmonitor[i].master = hh.seriallink[i].slave
@@ -375,7 +375,7 @@ def config_hmc_host_ctrl(opt, system):
             mb.master = hh.seriallink[1].slave
 
     if opt.arch == "same":
-        for i in xrange(opt.num_links_controllers):
+        for i in range(opt.num_links_controllers):
             if opt.enable_global_monitor:
                 hh.lmonitor[i].master = hh.seriallink[i].slave
 
@@ -395,7 +395,7 @@ def config_hmc_dev(opt, system, hmc_host):
     system.mem_ranges = addr_ranges_vaults
 
     if opt.enable_link_monitor:
-        lm = [CommMonitor() for i in xrange(opt.num_links_controllers)]
+        lm = [CommMonitor() for i in range(opt.num_links_controllers)]
         system.hmc_dev.lmonitor = lm
 
     # 4 HMC Crossbars located in its logic-base (LoB)
@@ -403,17 +403,17 @@ def config_hmc_dev(opt, system, hmc_host):
                           frontend_latency=opt.xbar_frontend_latency,
                           forward_latency=opt.xbar_forward_latency,
                           response_latency=opt.xbar_response_latency) for i in
-          xrange(opt.number_mem_crossbar)]
+          range(opt.number_mem_crossbar)]
     system.hmc_dev.xbar = xb
 
-    for i in xrange(opt.number_mem_crossbar):
+    for i in range(opt.number_mem_crossbar):
         clk = opt.xbar_frequency
         vd = VoltageDomain(voltage='1V')
         scd = SrcClockDomain(clock=clk, voltage_domain=vd)
         system.hmc_dev.xbar[i].clk_domain = scd
 
     # Attach 4 serial link to 4 crossbar/s
-    for i in xrange(opt.num_serial_links):
+    for i in range(opt.num_serial_links):
         if opt.enable_link_monitor:
             system.hmc_host.seriallink[i].master = \
                 system.hmc_dev.lmonitor[i].slave
@@ -429,10 +429,10 @@ def config_hmc_dev(opt, system, hmc_host):
         # create a list of buffers
         system.hmc_dev.buffers = [Bridge(req_size=opt.xbar_buffer_size_req,
                                          resp_size=opt.xbar_buffer_size_resp)
-                                  for i in xrange(numx*(opt.mem_chunk-1))]
+                                  for i in range(numx*(opt.mem_chunk-1))]
 
         # Buffer iterator
-        it = iter(range(len(system.hmc_dev.buffers)))
+        it = iter(list(range(len(system.hmc_dev.buffers))))
 
         # necesarry to add system_port to one of the xbar
         system.system_port = system.hmc_dev.xbar[3].slave
@@ -443,7 +443,7 @@ def config_hmc_dev(opt, system, hmc_host):
                 # connect xbar to all other xbars except itself
                 if i != j:
                     # get the next index of buffer
-                    index = it.next()
+                    index = next(it)
 
                     # Change the default values for ranges of bridge
                     system.hmc_dev.buffers[index].ranges = system.mem_ranges[

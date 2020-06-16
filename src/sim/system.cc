@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2014,2017-2018 ARM Limited
+ * Copyright (c) 2011-2014,2017-2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -37,12 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Steve Reinhardt
- *          Lisa Hsu
- *          Nathan Binkert
- *          Ali Saidi
- *          Rick Strong
  */
 
 #include "sim/system.hh"
@@ -70,6 +64,7 @@
 #include "sim/byteswap.hh"
 #include "sim/debug.hh"
 #include "sim/full_system.hh"
+#include "sim/redirect_path.hh"
 
 /**
  * To avoid linking errors with LTO, only include the header if we
@@ -88,15 +83,12 @@ vector<System *> System::systemList;
 int System::numSystemsRunning = 0;
 
 System::System(Params *p)
-    : MemObject(p), _systemPort("system_port", this),
+    : SimObject(p), _systemPort("system_port", this),
       multiThread(p->multi_thread),
       pagePtr(0),
       init_param(p->init_param),
       physProxy(_systemPort, p->cache_line_size),
-      kernelSymtab(nullptr),
-      kernel(nullptr),
-      loadAddrMask(p->load_addr_mask),
-      loadAddrOffset(p->load_offset),
+      workload(p->workload),
 #if USE_KVM
       kvmVM(p->kvm_vm),
 #else
@@ -110,9 +102,15 @@ System::System(Params *p)
       numWorkIds(p->num_work_ids),
       thermalModel(p->thermal_model),
       _params(p),
+      _m5opRange(p->m5ops_base ?
+                 RangeSize(p->m5ops_base, 0x10000) :
+                 AddrRange(1, 0)), // Create an empty range if disabled
       totalNumInsts(0),
-      instEventQueue("system instruction-based event queue")
+      redirectPaths(p->redirect_paths)
 {
+    if (workload)
+        workload->system = this;
+
     // add self to global system list
     systemList.push_back(this);
 
@@ -121,12 +119,6 @@ System::System(Params *p)
         kvmVM->setSystem(this);
     }
 #endif
-
-    if (FullSystem) {
-        kernelSymtab = new SymbolTable;
-        if (!debugSymbolTable)
-            debugSymbolTable = new SymbolTable;
-    }
 
     // check if the cache line size is a value known to work
     if (!(_cacheLineSize == 16 || _cacheLineSize == 32 ||
@@ -141,57 +133,6 @@ System::System(Params *p)
     assert(tmp_id == Request::funcMasterId);
     tmp_id = getMasterId(this, "interrupt");
     assert(tmp_id == Request::intMasterId);
-
-    if (FullSystem) {
-        if (params()->kernel == "") {
-            inform("No kernel set for full system simulation. "
-                   "Assuming you know what you're doing\n");
-        } else {
-            // Get the kernel code
-            kernel = createObjectFile(params()->kernel);
-            inform("kernel located at: %s", params()->kernel);
-
-            if (kernel == NULL)
-                fatal("Could not load kernel file %s", params()->kernel);
-
-            // setup entry points
-            kernelStart = kernel->textBase();
-            kernelEnd = kernel->bssBase() + kernel->bssSize();
-            kernelEntry = kernel->entryPoint();
-
-            // If load_addr_mask is set to 0x0, then auto-calculate
-            // the smallest mask to cover all kernel addresses so gem5
-            // can relocate the kernel to a new offset.
-            if (loadAddrMask == 0) {
-                Addr shift_amt = findMsbSet(kernelEnd - kernelStart) + 1;
-                loadAddrMask = ((Addr)1 << shift_amt) - 1;
-            }
-
-            // load symbols
-            if (!kernel->loadGlobalSymbols(kernelSymtab))
-                fatal("could not load kernel symbols\n");
-
-            if (!kernel->loadLocalSymbols(kernelSymtab))
-                fatal("could not load kernel local symbols\n");
-
-            if (!kernel->loadGlobalSymbols(debugSymbolTable))
-                fatal("could not load kernel symbols\n");
-
-            if (!kernel->loadLocalSymbols(debugSymbolTable))
-                fatal("could not load kernel local symbols\n");
-
-            // Loading only needs to happen once and after memory system is
-            // connected so it will happen in initState()
-        }
-
-        for (const auto &obj_name : p->kernel_extras) {
-            inform("Loading additional kernel object: %s", obj_name);
-            ObjectFile *obj = createObjectFile(obj_name);
-            fatal_if(!obj, "Failed to additional kernel object '%s'.\n",
-                     obj_name);
-            kernelExtras.push_back(obj);
-        }
-    }
 
     // increment the number of running systems
     numSystemsRunning++;
@@ -209,9 +150,6 @@ System::System(Params *p)
 
 System::~System()
 {
-    delete kernelSymtab;
-    delete kernel;
-
     for (uint32_t j = 0; j < numWorkIds; j++)
         delete workItemStats[j];
 }
@@ -224,8 +162,33 @@ System::init()
         panic("System port on %s is not connected.\n", name());
 }
 
-BaseMasterPort&
-System::getMasterPort(const std::string &if_name, PortID idx)
+void
+System::startup()
+{
+    SimObject::startup();
+
+    // Now that we're about to start simulation, wait for GDB connections if
+    // requested.
+#if THE_ISA != NULL_ISA
+    for (auto *tc: threadContexts) {
+        auto *cpu = tc->getCpuPtr();
+        auto id = tc->contextId();
+        if (remoteGDB.size() <= id)
+            continue;
+        auto *rgdb = remoteGDB[id];
+
+        if (cpu->waitForRemoteGDB()) {
+            inform("%s: Waiting for a remote GDB connection on port %d.\n",
+                   cpu->name(), rgdb->port());
+
+            rgdb->connect();
+        }
+    }
+#endif
+}
+
+Port &
+System::getPort(const std::string &if_name, PortID idx)
 {
     // no need to distinguish at the moment (besides checking)
     return _systemPort;
@@ -263,6 +226,8 @@ System::registerThreadContext(ThreadContext *tc, ContextID assigned)
              "Cannot have two CPUs with the same id (%d)\n", id);
 
     threadContexts[id] = tc;
+    for (auto *e: liveEvents)
+        tc->schedule(e);
 
 #if THE_ISA != NULL_ISA
     int port = getRemoteGDBPort();
@@ -270,16 +235,8 @@ System::registerThreadContext(ThreadContext *tc, ContextID assigned)
         RemoteGDB *rgdb = new RemoteGDB(this, tc, port + id);
         rgdb->listen();
 
-        BaseCPU *cpu = tc->getCpuPtr();
-        if (cpu->waitForRemoteGDB()) {
-            inform("%s: Waiting for a remote GDB connection on port %d.\n",
-                   cpu->name(), rgdb->port());
-
-            rgdb->connect();
-        }
-        if (remoteGDB.size() <= id) {
+        if (remoteGDB.size() <= id)
             remoteGDB.resize(id + 1);
-        }
 
         remoteGDB[id] = rgdb;
     }
@@ -290,6 +247,36 @@ System::registerThreadContext(ThreadContext *tc, ContextID assigned)
     return id;
 }
 
+ThreadContext *
+System::findFreeContext()
+{
+    for (auto &it : threadContexts) {
+        if (ThreadContext::Halted == it->status())
+            return it;
+    }
+    return nullptr;
+}
+
+bool
+System::schedule(PCEvent *event)
+{
+    bool all = true;
+    liveEvents.push_back(event);
+    for (auto *tc: threadContexts)
+        all = tc->schedule(event) && all;
+    return all;
+}
+
+bool
+System::remove(PCEvent *event)
+{
+    bool all = true;
+    liveEvents.remove(event);
+    for (auto *tc: threadContexts)
+        all = tc->remove(event) && all;
+    return all;
+}
+
 int
 System::numRunningContexts()
 {
@@ -297,50 +284,10 @@ System::numRunningContexts()
         threadContexts.cbegin(),
         threadContexts.cend(),
         [] (ThreadContext* tc) {
-            return tc->status() != ThreadContext::Halted;
+            return ((tc->status() != ThreadContext::Halted) &&
+                    (tc->status() != ThreadContext::Halting));
         }
     );
-}
-
-void
-System::initState()
-{
-    if (FullSystem) {
-        for (int i = 0; i < threadContexts.size(); i++)
-            TheISA::startupCPU(threadContexts[i], i);
-        // Moved from the constructor to here since it relies on the
-        // address map being resolved in the interconnect
-        /**
-         * Load the kernel code into memory
-         */
-        if (params()->kernel != "")  {
-            if (params()->kernel_addr_check) {
-                // Validate kernel mapping before loading binary
-                if (!(isMemAddr((kernelStart & loadAddrMask) +
-                                loadAddrOffset) &&
-                      isMemAddr((kernelEnd & loadAddrMask) +
-                                loadAddrOffset))) {
-                    fatal("Kernel is mapped to invalid location (not memory). "
-                          "kernelStart 0x(%x) - kernelEnd 0x(%x) %#x:%#x\n",
-                          kernelStart,
-                          kernelEnd, (kernelStart & loadAddrMask) +
-                          loadAddrOffset,
-                          (kernelEnd & loadAddrMask) + loadAddrOffset);
-                }
-            }
-            // Load program sections into memory
-            kernel->loadSections(physProxy, loadAddrMask, loadAddrOffset);
-            for (const auto &extra_kernel : kernelExtras) {
-                extra_kernel->loadSections(physProxy, loadAddrMask,
-                                           loadAddrOffset);
-            }
-
-            DPRINTF(Loader, "Kernel start = %#x\n", kernelStart);
-            DPRINTF(Loader, "Kernel end   = %#x\n", kernelEnd);
-            DPRINTF(Loader, "Kernel entry = %#x\n", kernelEntry);
-            DPRINTF(Loader, "Kernel loaded...\n");
-        }
-    }
 }
 
 void
@@ -351,6 +298,10 @@ System::replaceThreadContext(ThreadContext *tc, ContextID context_id)
               context_id, threadContexts.size());
     }
 
+    for (auto *e: liveEvents) {
+        threadContexts[context_id]->remove(e);
+        tc->schedule(e);
+    }
     threadContexts[context_id] = tc;
     if (context_id < remoteGDB.size())
         remoteGDB[context_id]->replaceThreadContext(tc);
@@ -382,8 +333,7 @@ System::allocPhysPages(int npages)
 
     Addr next_return_addr = pagePtr << PageShift;
 
-    AddrRange m5opRange(0xffff0000, 0xffffffff);
-    if (m5opRange.contains(next_return_addr)) {
+    if (_m5opRange.contains(next_return_addr)) {
         warn("Reached m5ops MMIO region\n");
         return_addr = 0xffffffff;
         pagePtr = 0xffffffff >> PageShift;
@@ -421,10 +371,7 @@ System::drainResume()
 void
 System::serialize(CheckpointOut &cp) const
 {
-    if (FullSystem)
-        kernelSymtab->serialize("kernel_symtab", cp);
     SERIALIZE_SCALAR(pagePtr);
-    serializeSymtab(cp);
 
     // also serialize the memories in the system
     physmem.serializeSection(cp, "physmem");
@@ -434,10 +381,7 @@ System::serialize(CheckpointOut &cp) const
 void
 System::unserialize(CheckpointIn &cp)
 {
-    if (FullSystem)
-        kernelSymtab->unserialize("kernel_symtab", cp);
     UNSERIALIZE_SCALAR(pagePtr);
-    unserializeSymtab(cp);
 
     // also unserialize the memories in the system
     physmem.unserializeSection(cp, "physmem");
@@ -446,7 +390,7 @@ System::unserialize(CheckpointIn &cp)
 void
 System::regStats()
 {
-    MemObject::regStats();
+    SimObject::regStats();
 
     for (uint32_t j = 0; j < numWorkIds ; j++) {
         workItemStats[j] = new Stats::Histogram();
@@ -497,8 +441,55 @@ printSystems()
     System::printSystems();
 }
 
+std::string
+System::stripSystemName(const std::string& master_name) const
+{
+    if (startswith(master_name, name())) {
+        return master_name.substr(name().size());
+    } else {
+        return master_name;
+    }
+}
+
 MasterID
-System::getGlobalMasterId(std::string master_name)
+System::lookupMasterId(const SimObject* obj) const
+{
+    MasterID id = Request::invldMasterId;
+
+    // number of occurrences of the SimObject pointer
+    // in the master list.
+    auto obj_number = 0;
+
+    for (int i = 0; i < masters.size(); i++) {
+        if (masters[i].obj == obj) {
+            id = i;
+            obj_number++;
+        }
+    }
+
+    fatal_if(obj_number > 1,
+        "Cannot lookup MasterID by SimObject pointer: "
+        "More than one master is sharing the same SimObject\n");
+
+    return id;
+}
+
+MasterID
+System::lookupMasterId(const std::string& master_name) const
+{
+    std::string name = stripSystemName(master_name);
+
+    for (int i = 0; i < masters.size(); i++) {
+        if (masters[i].masterName == name) {
+            return i;
+        }
+    }
+
+    return Request::invldMasterId;
+}
+
+MasterID
+System::getGlobalMasterId(const std::string& master_name)
 {
     return _getMasterId(nullptr, master_name);
 }
@@ -511,14 +502,13 @@ System::getMasterId(const SimObject* master, std::string submaster)
 }
 
 MasterID
-System::_getMasterId(const SimObject* master, std::string master_name)
+System::_getMasterId(const SimObject* master, const std::string& master_name)
 {
-    if (startswith(master_name, name()))
-        master_name = master_name.erase(0, name().size() + 1);
+    std::string name = stripSystemName(master_name);
 
     // CPUs in switch_cpus ask for ids again after switching
     for (int i = 0; i < masters.size(); i++) {
-        if (masters[i].masterName == master_name) {
+        if (masters[i].masterName == name) {
             return i;
         }
     }
@@ -536,7 +526,7 @@ System::_getMasterId(const SimObject* master, std::string master_name)
     MasterID master_id = masters.size();
 
     // Append the new Master metadata to the group of system Masters.
-    masters.emplace_back(master, master_name, master_id);
+    masters.emplace_back(master, name, master_id);
 
     return masters.back().masterId;
 }

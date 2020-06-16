@@ -34,8 +34,8 @@
 #include <stack>
 
 #include "mem/packet.hh"
-#include "mem/protocol/MessageSizeType.hh"
 #include "mem/ruby/common/NetDest.hh"
+#include "mem/ruby/protocol/MessageSizeType.hh"
 
 class Message;
 typedef std::shared_ptr<Message> MsgPtr;
@@ -104,7 +104,7 @@ class Message
     void setVnet(int net) { vnet = net; }
 
   private:
-    const Tick m_time;
+    Tick m_time;
     Tick m_LastEnqueueTime; // my last enqueue time
     Tick m_DelayedTicks; // my delayed cycles
     uint64_t m_msg_counter; // FIXME, should this be a 64-bit value?

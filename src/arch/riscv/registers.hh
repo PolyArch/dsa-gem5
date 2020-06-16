@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2013 ARM Limited
  * Copyright (c) 2014-2015 Sven Karlsson
+ * Copyright (c) 2019 Yifei Liu
+ * Copyright (c) 2020 Barkhausen Institut
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -38,10 +40,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andreas Hansson
- *          Sven Karlsson
- *          Alec Roelke
  */
 
 #ifndef __ARCH_RISCV_REGISTERS_HH__
@@ -54,6 +52,7 @@
 #include <vector>
 
 #include "arch/generic/types.hh"
+#include "arch/generic/vec_pred_reg.hh"
 #include "arch/generic/vec_reg.hh"
 #include "arch/isa_traits.hh"
 #include "arch/riscv/generated/max_inst_regs.hh"
@@ -64,27 +63,33 @@ namespace RiscvISA {
 
 using RiscvISAInst::MaxInstSrcRegs;
 using RiscvISAInst::MaxInstDestRegs;
-const int MaxMiscDestRegs = 1;
+const int MaxMiscDestRegs = 2;
 
-typedef uint64_t IntReg;
-typedef uint64_t FloatRegBits;
-typedef double FloatReg;
-typedef uint8_t CCReg; // Not applicable to Riscv
-typedef uint64_t MiscReg;
+// Not applicable to RISC-V
+using VecElem = ::DummyVecElem;
+using VecReg = ::DummyVecReg;
+using ConstVecReg = ::DummyConstVecReg;
+using VecRegContainer = ::DummyVecRegContainer;
+constexpr unsigned NumVecElemPerVecReg = ::DummyNumVecElemPerVecReg;
+constexpr size_t VecRegSizeBytes = ::DummyVecRegSizeBytes;
 
-// dummy typedefs since we don't have vector regs
-const unsigned NumVecElemPerVecReg = 2;
-using VecElem = uint32_t;
-using VecReg = ::VecRegT<VecElem, NumVecElemPerVecReg, false>;
-using ConstVecReg = ::VecRegT<VecElem, NumVecElemPerVecReg, true>;
-using VecRegContainer = VecReg::Container;
+// Not applicable to RISC-V
+using VecPredReg = ::DummyVecPredReg;
+using ConstVecPredReg = ::DummyConstVecPredReg;
+using VecPredRegContainer = ::DummyVecPredRegContainer;
+constexpr size_t VecPredRegSizeBits = ::DummyVecPredRegSizeBits;
+constexpr bool VecPredRegHasPackedRepr = ::DummyVecPredRegHasPackedRepr;
 
 const int NumIntArchRegs = 32;
 const int NumMicroIntRegs = 1;
 const int NumIntRegs = NumIntArchRegs + NumMicroIntRegs;
 const int NumFloatRegs = 32;
-// This has to be one to prevent warnings that are treated as errors
-const unsigned NumVecRegs = 1;
+
+const unsigned NumVecRegs = 1;  // Not applicable to RISC-V
+                                // (1 to prevent warnings)
+const int NumVecPredRegs = 1;  // Not applicable to RISC-V
+                               // (1 to prevent warnings)
+
 const int NumCCRegs = 0;
 
 // Semantically meaningful register indices
@@ -305,6 +310,7 @@ enum CSRIndex {
     CSR_SIDELEG = 0x103,
     CSR_SIE = 0x104,
     CSR_STVEC = 0x105,
+    CSR_SCOUNTEREN = 0x106,
     CSR_SSCRATCH = 0x140,
     CSR_SEPC = 0x141,
     CSR_SCAUSE = 0x142,
@@ -322,6 +328,7 @@ enum CSRIndex {
     CSR_MIDELEG = 0x303,
     CSR_MIE = 0x304,
     CSR_MTVEC = 0x305,
+    CSR_MCOUNTEREN = 0x306,
     CSR_MSCRATCH = 0x340,
     CSR_MEPC = 0x341,
     CSR_MCAUSE = 0x342,
@@ -474,6 +481,7 @@ const std::map<int, CSRMetadata> CSRData = {
     {CSR_SIDELEG, {"sideleg", MISCREG_SIDELEG}},
     {CSR_SIE, {"sie", MISCREG_IE}},
     {CSR_STVEC, {"stvec", MISCREG_STVEC}},
+    {CSR_SCOUNTEREN, {"scounteren", MISCREG_SCOUNTEREN}},
     {CSR_SSCRATCH, {"sscratch", MISCREG_SSCRATCH}},
     {CSR_SEPC, {"sepc", MISCREG_SEPC}},
     {CSR_SCAUSE, {"scause", MISCREG_SCAUSE}},
@@ -491,6 +499,7 @@ const std::map<int, CSRMetadata> CSRData = {
     {CSR_MIDELEG, {"mideleg", MISCREG_MIDELEG}},
     {CSR_MIE, {"mie", MISCREG_IE}},
     {CSR_MTVEC, {"mtvec", MISCREG_MTVEC}},
+    {CSR_MCOUNTEREN, {"mcounteren", MISCREG_MCOUNTEREN}},
     {CSR_MSCRATCH, {"mscratch", MISCREG_MSCRATCH}},
     {CSR_MEPC, {"mepc", MISCREG_MEPC}},
     {CSR_MCAUSE, {"mcause", MISCREG_MCAUSE}},
@@ -633,76 +642,77 @@ BitUnion64(INTERRUPT)
     Bitfield<0> usi;
 EndBitUnion(INTERRUPT)
 
-const off_t MXL_OFFSET = (sizeof(MiscReg) * 8 - 2);
+const off_t MXL_OFFSET = (sizeof(uint64_t) * 8 - 2);
 const off_t SXL_OFFSET = 34;
 const off_t UXL_OFFSET = 32;
 const off_t FS_OFFSET = 13;
 const off_t FRM_OFFSET = 5;
 
-const MiscReg ISA_MXL_MASK = 3ULL << MXL_OFFSET;
-const MiscReg ISA_EXT_MASK = mask(26);
-const MiscReg MISA_MASK = ISA_MXL_MASK | ISA_EXT_MASK;
+const RegVal ISA_MXL_MASK = 3ULL << MXL_OFFSET;
+const RegVal ISA_EXT_MASK = mask(26);
+const RegVal ISA_EXT_C_MASK = 1UL << ('c' - 'a');
+const RegVal MISA_MASK = ISA_MXL_MASK | ISA_EXT_MASK;
 
-const MiscReg STATUS_SD_MASK = 1ULL << ((sizeof(MiscReg) * 8) - 1);
-const MiscReg STATUS_SXL_MASK = 3ULL << SXL_OFFSET;
-const MiscReg STATUS_UXL_MASK = 3ULL << UXL_OFFSET;
-const MiscReg STATUS_TSR_MASK = 1ULL << 22;
-const MiscReg STATUS_TW_MASK = 1ULL << 21;
-const MiscReg STATUS_TVM_MASK = 1ULL << 20;
-const MiscReg STATUS_MXR_MASK = 1ULL << 19;
-const MiscReg STATUS_SUM_MASK = 1ULL << 18;
-const MiscReg STATUS_MPRV_MASK = 1ULL << 17;
-const MiscReg STATUS_XS_MASK = 3ULL << 15;
-const MiscReg STATUS_FS_MASK = 3ULL << FS_OFFSET;
-const MiscReg STATUS_MPP_MASK = 3ULL << 11;
-const MiscReg STATUS_SPP_MASK = 1ULL << 8;
-const MiscReg STATUS_MPIE_MASK = 1ULL << 7;
-const MiscReg STATUS_SPIE_MASK = 1ULL << 5;
-const MiscReg STATUS_UPIE_MASK = 1ULL << 4;
-const MiscReg STATUS_MIE_MASK = 1ULL << 3;
-const MiscReg STATUS_SIE_MASK = 1ULL << 1;
-const MiscReg STATUS_UIE_MASK = 1ULL << 0;
-const MiscReg MSTATUS_MASK = STATUS_SD_MASK | STATUS_SXL_MASK |
-                             STATUS_UXL_MASK | STATUS_TSR_MASK |
-                             STATUS_TW_MASK | STATUS_TVM_MASK |
-                             STATUS_MXR_MASK | STATUS_SUM_MASK |
-                             STATUS_MPRV_MASK | STATUS_XS_MASK |
-                             STATUS_FS_MASK | STATUS_MPP_MASK |
-                             STATUS_SPP_MASK | STATUS_MPIE_MASK |
-                             STATUS_SPIE_MASK | STATUS_UPIE_MASK |
-                             STATUS_MIE_MASK | STATUS_SIE_MASK |
-                             STATUS_UIE_MASK;
-const MiscReg SSTATUS_MASK = STATUS_SD_MASK | STATUS_UXL_MASK |
-                             STATUS_MXR_MASK | STATUS_SUM_MASK |
-                             STATUS_XS_MASK | STATUS_FS_MASK |
-                             STATUS_SPP_MASK | STATUS_SPIE_MASK |
-                             STATUS_UPIE_MASK | STATUS_SIE_MASK |
-                             STATUS_UIE_MASK;
-const MiscReg USTATUS_MASK = STATUS_SD_MASK | STATUS_MXR_MASK |
-                             STATUS_SUM_MASK | STATUS_XS_MASK |
-                             STATUS_FS_MASK | STATUS_UPIE_MASK |
-                             STATUS_UIE_MASK;
+const RegVal STATUS_SD_MASK = 1ULL << ((sizeof(uint64_t) * 8) - 1);
+const RegVal STATUS_SXL_MASK = 3ULL << SXL_OFFSET;
+const RegVal STATUS_UXL_MASK = 3ULL << UXL_OFFSET;
+const RegVal STATUS_TSR_MASK = 1ULL << 22;
+const RegVal STATUS_TW_MASK = 1ULL << 21;
+const RegVal STATUS_TVM_MASK = 1ULL << 20;
+const RegVal STATUS_MXR_MASK = 1ULL << 19;
+const RegVal STATUS_SUM_MASK = 1ULL << 18;
+const RegVal STATUS_MPRV_MASK = 1ULL << 17;
+const RegVal STATUS_XS_MASK = 3ULL << 15;
+const RegVal STATUS_FS_MASK = 3ULL << FS_OFFSET;
+const RegVal STATUS_MPP_MASK = 3ULL << 11;
+const RegVal STATUS_SPP_MASK = 1ULL << 8;
+const RegVal STATUS_MPIE_MASK = 1ULL << 7;
+const RegVal STATUS_SPIE_MASK = 1ULL << 5;
+const RegVal STATUS_UPIE_MASK = 1ULL << 4;
+const RegVal STATUS_MIE_MASK = 1ULL << 3;
+const RegVal STATUS_SIE_MASK = 1ULL << 1;
+const RegVal STATUS_UIE_MASK = 1ULL << 0;
+const RegVal MSTATUS_MASK = STATUS_SD_MASK | STATUS_SXL_MASK |
+                            STATUS_UXL_MASK | STATUS_TSR_MASK |
+                            STATUS_TW_MASK | STATUS_TVM_MASK |
+                            STATUS_MXR_MASK | STATUS_SUM_MASK |
+                            STATUS_MPRV_MASK | STATUS_XS_MASK |
+                            STATUS_FS_MASK | STATUS_MPP_MASK |
+                            STATUS_SPP_MASK | STATUS_MPIE_MASK |
+                            STATUS_SPIE_MASK | STATUS_UPIE_MASK |
+                            STATUS_MIE_MASK | STATUS_SIE_MASK |
+                            STATUS_UIE_MASK;
+const RegVal SSTATUS_MASK = STATUS_SD_MASK | STATUS_UXL_MASK |
+                            STATUS_MXR_MASK | STATUS_SUM_MASK |
+                            STATUS_XS_MASK | STATUS_FS_MASK |
+                            STATUS_SPP_MASK | STATUS_SPIE_MASK |
+                            STATUS_UPIE_MASK | STATUS_SIE_MASK |
+                            STATUS_UIE_MASK;
+const RegVal USTATUS_MASK = STATUS_SD_MASK | STATUS_MXR_MASK |
+                            STATUS_SUM_MASK | STATUS_XS_MASK |
+                            STATUS_FS_MASK | STATUS_UPIE_MASK |
+                            STATUS_UIE_MASK;
 
-const MiscReg MEI_MASK = 1ULL << 11;
-const MiscReg SEI_MASK = 1ULL << 9;
-const MiscReg UEI_MASK = 1ULL << 8;
-const MiscReg MTI_MASK = 1ULL << 7;
-const MiscReg STI_MASK = 1ULL << 5;
-const MiscReg UTI_MASK = 1ULL << 4;
-const MiscReg MSI_MASK = 1ULL << 3;
-const MiscReg SSI_MASK = 1ULL << 1;
-const MiscReg USI_MASK = 1ULL << 0;
-const MiscReg MI_MASK = MEI_MASK | SEI_MASK | UEI_MASK |
-                        MTI_MASK | STI_MASK | UTI_MASK |
-                        MSI_MASK | SSI_MASK | USI_MASK;
-const MiscReg SI_MASK = SEI_MASK | UEI_MASK |
-                        STI_MASK | UTI_MASK |
-                        SSI_MASK | USI_MASK;
-const MiscReg UI_MASK = UEI_MASK | UTI_MASK | USI_MASK;
-const MiscReg FFLAGS_MASK = (1 << FRM_OFFSET) - 1;
-const MiscReg FRM_MASK = 0x7;
+const RegVal MEI_MASK = 1ULL << 11;
+const RegVal SEI_MASK = 1ULL << 9;
+const RegVal UEI_MASK = 1ULL << 8;
+const RegVal MTI_MASK = 1ULL << 7;
+const RegVal STI_MASK = 1ULL << 5;
+const RegVal UTI_MASK = 1ULL << 4;
+const RegVal MSI_MASK = 1ULL << 3;
+const RegVal SSI_MASK = 1ULL << 1;
+const RegVal USI_MASK = 1ULL << 0;
+const RegVal MI_MASK = MEI_MASK | SEI_MASK | UEI_MASK |
+                       MTI_MASK | STI_MASK | UTI_MASK |
+                       MSI_MASK | SSI_MASK | USI_MASK;
+const RegVal SI_MASK = SEI_MASK | UEI_MASK |
+                       STI_MASK | UTI_MASK |
+                       SSI_MASK | USI_MASK;
+const RegVal UI_MASK = UEI_MASK | UTI_MASK | USI_MASK;
+const RegVal FFLAGS_MASK = (1 << FRM_OFFSET) - 1;
+const RegVal FRM_MASK = 0x7;
 
-const std::map<int, MiscReg> CSRMasks = {
+const std::map<int, RegVal> CSRMasks = {
     {CSR_USTATUS, USTATUS_MASK},
     {CSR_UIE, UI_MASK},
     {CSR_UIP, UI_MASK},

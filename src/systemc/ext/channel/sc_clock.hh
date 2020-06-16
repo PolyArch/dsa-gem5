@@ -23,8 +23,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __SYSTEMC_EXT_CHANNEL_SC_CLOCK_HH__
@@ -32,6 +30,13 @@
 
 #include "../core/sc_time.hh"
 #include "sc_signal.hh"
+
+namespace sc_gem5
+{
+
+class ClockTick;
+
+} // namespace sc_gem5
 
 namespace sc_core
 {
@@ -58,6 +63,10 @@ class sc_clock : public sc_signal<bool>
              double duty_cycle, double start_time_v,
              sc_time_unit start_time_tu, bool posedge_first=true);
 
+    // Deprecated.
+    sc_clock(const char *name, double period, double duty_cycle=0.5,
+             double start_time=0.0, bool posedge_first=true);
+
     virtual ~sc_clock();
 
     virtual void write(const bool &);
@@ -67,18 +76,48 @@ class sc_clock : public sc_signal<bool>
     const sc_time &start_time() const;
     bool posedge_first() const;
 
-    virtual const char *kind() const;
+    // Nonstandard
+    static const sc_time &time_stamp();
+
+    virtual const char *kind() const { return "sc_clock"; }
 
   protected:
     virtual void before_end_of_elaboration();
 
   private:
+    friend class ::sc_gem5::ClockTick;
+
     // Disabled
     sc_clock(const sc_clock &) : sc_interface(), sc_signal<bool>() {}
     sc_clock &operator = (const sc_clock &) { return *this; }
+
+    sc_time _period;
+    double _dutyCycle;
+    sc_time _startTime;
+    bool _posedgeFirst;
+
+    ::sc_gem5::ClockTick *_gem5UpEdge;
+    ::sc_gem5::ClockTick *_gem5DownEdge;
+
+    void
+    tickUp()
+    {
+        m_new_val = true;
+        request_update();
+    }
+    void
+    tickDown()
+    {
+        m_new_val = false;
+        request_update();
+    }
 };
 
 typedef sc_in<bool> sc_in_clk;
+
+// Deprecated
+typedef sc_inout<bool> sc_inout_clk;
+typedef sc_out<bool> sc_out_clk;
 
 } // namespace sc_core
 

@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
  */
 
 #ifndef __DEV_NET_SINIC_HH__
@@ -230,7 +228,8 @@ class Device : public Base
   public:
     bool recvPacket(EthPacketPtr packet);
     void transferDone();
-    EtherInt *getEthPort(const std::string &if_name, int idx) override;
+    Port &getPort(const std::string &if_name,
+                  PortID idx=InvalidPortID) override;
 
 /**
  * DMA parameters

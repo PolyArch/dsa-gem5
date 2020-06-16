@@ -1,4 +1,4 @@
-# Copyright (c) 2013 ARM Limited
+# Copyright (c) 2013-2020 ARM Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -35,28 +35,49 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Lisa Hsu
+
+from __future__ import print_function
+from __future__ import absolute_import
 
 import m5
 from m5.defines import buildEnv
 from m5.objects import *
-from common.Benchmarks import *
 
-from common import CpuConfig
-from common import MemConfig
-from common import PlatformConfig
+from common.Benchmarks import *
+from common import ObjectList
+
+vio_9p_help = """\
+Enable the Virtio 9P device and set the path to share. The default 9p path is
+m5ou5/9p/share, and it can be changed by setting VirtIO9p.root with --param. A
+sample guest mount command is: "mount -t 9p -o
+trans=virtio,version=9p2000.L,aname=<host-full-path> gem5 /mnt/9p" where
+"<host-full-path>" is the full path being shared on the host, and "gem5" is a
+fixed mount tag. This option requires the diod 9P server to be installed in the
+host PATH or selected with with: VirtIO9PDiod.diod.
+"""
 
 def _listCpuTypes(option, opt, value, parser):
-    CpuConfig.print_cpu_list()
+    ObjectList.cpu_list.print()
+    sys.exit(0)
+
+def _listBPTypes(option, opt, value, parser):
+    ObjectList.bp_list.print()
+    sys.exit(0)
+
+def _listHWPTypes(option, opt, value, parser):
+    ObjectList.hwp_list.print()
+    sys.exit(0)
+
+def _listIndirectBPTypes(option, opt, value, parser):
+    ObjectList.indirect_bp_list.print()
     sys.exit(0)
 
 def _listMemTypes(option, opt, value, parser):
-    MemConfig.print_mem_list()
+    ObjectList.mem_list.print()
     sys.exit(0)
 
 def _listPlatformTypes(option, opt, value, parser):
-    PlatformConfig.print_platform_list()
+    ObjectList.platform_list.print()
     sys.exit(0)
 
 # Add the very basic options that work also in the case of the no ISA
@@ -78,7 +99,7 @@ def addNoISAOptions(parser):
                       action="callback", callback=_listMemTypes,
                       help="List available memory types")
     parser.add_option("--mem-type", type="choice", default="DDR3_1600_8x8",
-                      choices=MemConfig.mem_names(),
+                      choices=ObjectList.mem_list.get_names(),
                       help = "type of memory to use")
     parser.add_option("--mem-channels", type="int", default=1,
                       help = "number of memory channels")
@@ -87,6 +108,10 @@ def addNoISAOptions(parser):
     parser.add_option("--mem-size", action="store", type="string",
                       default="512MB",
                       help="Specify the physical memory size (single memory)")
+    parser.add_option("--enable-dram-powerdown", action="store_true",
+                       help="Enable low-power states in DRAMCtrl")
+    parser.add_option("--mem-channels-intlv", type="int", default=0,
+                      help="Memory channels interleave")
 
 
     parser.add_option("--memchecker", action="store_true")
@@ -125,6 +150,14 @@ def addNoISAOptions(parser):
     parser.add_option("--maxtime", type="float", default=None,
                       help="Run to the specified absolute simulated time in "
                       "seconds")
+    parser.add_option("-P", "--param", action="append", default=[],
+        help="Set a SimObject parameter relative to the root node. "
+             "An extended Python multi range slicing syntax can be used "
+             "for arrays. For example: "
+             "'system.cpu[0,1,3:8:2].max_insts_all_threads = 42' "
+             "sets max_insts_all_threads for cpus 0, 1, 3, 5 and 7 "
+             "Direct parameters of the root object are not accessible, "
+             "only parameters of its children.")
 
 # Add common options that assume a non-NULL ISA.
 def addCommonOptions(parser):
@@ -136,8 +169,46 @@ def addCommonOptions(parser):
                       action="callback", callback=_listCpuTypes,
                       help="List available CPU types")
     parser.add_option("--cpu-type", type="choice", default="AtomicSimpleCPU",
-                      choices=CpuConfig.cpu_names(),
+                      choices=ObjectList.cpu_list.get_names(),
                       help = "type of cpu to run with")
+    parser.add_option("--list-bp-types",
+                      action="callback", callback=_listBPTypes,
+                      help="List available branch predictor types")
+    parser.add_option("--list-indirect-bp-types",
+                      action="callback", callback=_listIndirectBPTypes,
+                      help="List available indirect branch predictor types")
+    parser.add_option("--bp-type", type="choice", default=None,
+                      choices=ObjectList.bp_list.get_names(),
+                      help = """
+                      type of branch predictor to run with
+                      (if not set, use the default branch predictor of
+                      the selected CPU)""")
+    parser.add_option("--indirect-bp-type", type="choice", default=None,
+                      choices=ObjectList.indirect_bp_list.get_names(),
+                      help = "type of indirect branch predictor to run with")
+    parser.add_option("--list-hwp-types",
+                      action="callback", callback=_listHWPTypes,
+                      help="List available hardware prefetcher types")
+    parser.add_option("--l1i-hwp-type", type="choice", default=None,
+                      choices=ObjectList.hwp_list.get_names(),
+                      help = """
+                      type of hardware prefetcher to use with the L1
+                      instruction cache.
+                      (if not set, use the default prefetcher of
+                      the selected cache)""")
+    parser.add_option("--l1d-hwp-type", type="choice", default=None,
+                      choices=ObjectList.hwp_list.get_names(),
+                      help = """
+                      type of hardware prefetcher to use with the L1
+                      data cache.
+                      (if not set, use the default prefetcher of
+                      the selected cache)""")
+    parser.add_option("--l2-hwp-type", type="choice", default=None,
+                      choices=ObjectList.hwp_list.get_names(),
+                      help = """
+                      type of hardware prefetcher to use with the L2 cache.
+                      (if not set, use the default prefetcher of
+                      the selected cache)""")
     parser.add_option("--checker", action="store_true");
     parser.add_option("--cpu-clock", action="store", type="string",
                       default='2GHz',
@@ -163,8 +234,6 @@ def addCommonOptions(parser):
 
     parser.add_option("-l", "--lpae", action="store_true")
     parser.add_option("-V", "--virtualisation", action="store_true")
-
-    parser.add_option("--fastmem", action="store_true")
 
     # dist-gem5 options
     parser.add_option("--dist", action="store_true",
@@ -253,7 +322,8 @@ def addCommonOptions(parser):
     parser.add_option("--work-cpus-checkpoint-count", action="store", type="int",
                       help="checkpoint and exit when active cpu count is reached")
     parser.add_option("--restore-with-cpu", action="store", type="choice",
-                      default="AtomicSimpleCPU", choices=CpuConfig.cpu_names(),
+                      default="AtomicSimpleCPU",
+                      choices=ObjectList.cpu_list.get_names(),
                       help = "cpu type for restoring from a checkpoint")
 
 
@@ -308,9 +378,40 @@ def addSEOptions(parser):
                       help="Redirect stdout to a file.")
     parser.add_option("--errout", default="",
                       help="Redirect stderr to a file.")
+    parser.add_option("--chroot", action="store", type="string", default=None,
+                      help="The chroot option allows a user to alter the "    \
+                           "search path for processes running in SE mode. "   \
+                           "Normally, the search path would begin at the "    \
+                           "root of the filesystem (i.e. /). With chroot, "   \
+                           "a user can force the process to begin looking at" \
+                           "some other location (i.e. /home/user/rand_dir)."  \
+                           "The intended use is to trick sophisticated "      \
+                           "software which queries the __HOST__ filesystem "  \
+                           "for information or functionality. Instead of "    \
+                           "finding files on the __HOST__ filesystem, the "   \
+                           "process will find the user's replacment files.")
+    parser.add_option("--interp-dir", action="store", type="string",
+                      default=None,
+                      help="The interp-dir option is used for "
+                           "setting the interpreter's path. This will "
+                           "allow to load the guest dynamic linker/loader "
+                           "itself from the elf binary. The option points to "
+                           "the parent folder of the guest /lib in the "
+                           "host fs")
+
+    parser.add_option("--redirects", action="append", type="string",
+                      default=[],
+                      help="A collection of one or more redirect paths "
+                           "to be used in syscall emulation."
+                           "Usage: gem5.opt [...] --redirects /dir1=/path/"
+                           "to/host/dir1 --redirects /dir2=/path/to/host/dir2")
+    parser.add_option("--wait-gdb", default=False,
+                      help="Wait for remote GDB to connect.")
+
+
 
 def addFSOptions(parser):
-    from FSConfig import os_types
+    from common.FSConfig import os_types
 
     # Simulation options
     parser.add_option("--timesync", action="store_true",
@@ -319,8 +420,9 @@ def addFSOptions(parser):
     # System options
     parser.add_option("--kernel", action="store", type="string")
     parser.add_option("--os-type", action="store", type="choice",
-            choices=os_types[buildEnv['TARGET_ISA']], default="linux",
-            help="Specifies type of OS to boot")
+                      choices=os_types[str(buildEnv['TARGET_ISA'])],
+                      default="linux",
+                      help="Specifies type of OS to boot")
     parser.add_option("--script", action="store", type="string")
     parser.add_option("--frame-capture", action="store_true",
             help="Stores changed frame buffers from the VNC server to compressed "\
@@ -333,8 +435,8 @@ def addFSOptions(parser):
                           action="callback", callback=_listPlatformTypes,
                       help="List available platform types")
         parser.add_option("--machine-type", action="store", type="choice",
-                choices=PlatformConfig.platform_names(),
-                default="VExpress_EMM")
+                choices=ObjectList.platform_list.get_names(),
+                default="VExpress_GEM5_V1")
         parser.add_option("--dtb-filename", action="store", type="string",
               help="Specifies device tree blob file to use with device-tree-"\
               "enabled kernels")
@@ -343,8 +445,9 @@ def addFSOptions(parser):
         parser.add_option("--enable-context-switch-stats-dump", \
                 action="store_true", help="Enable stats dump at context "\
                 "switches and dump tasks file (required for Streamline)")
-        parser.add_option("--generate-dtb", action="store_true", default=False,
-                    help="Automatically generate a dtb file")
+        parser.add_option("--vio-9p", action="store_true", help=vio_9p_help)
+        parser.add_option("--bootloader", action='append',
+                help="executable file that runs before the --kernel")
 
     # Benchmark options
     parser.add_option("--dual", action="store_true",
@@ -360,10 +463,10 @@ def addFSOptions(parser):
                       "ethernet traffic")
 
     # Disk Image Options
-    parser.add_option("--disk-image", action="store", type="string", default=None,
-                      help="Path to the disk image to use.")
-    parser.add_option("--root-device", action="store", type="string", default=None,
-                      help="OS device name for root partition")
+    parser.add_option("--disk-image", action="append", type="string",
+            default=[], help="Path to the disk images to use.")
+    parser.add_option("--root-device", action="store", type="string",
+            default=None, help="OS device name for root partition")
 
     # Command line options
     parser.add_option("--command-line", action="store", type="string",

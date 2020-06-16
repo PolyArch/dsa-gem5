@@ -35,9 +35,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
- *          Boris Shingarov
  */
 
 #include "arch/x86/remote_gdb.hh"
@@ -47,7 +44,6 @@
 
 #include <string>
 
-#include "arch/vtophys.hh"
 #include "arch/x86/pagetable_walker.hh"
 #include "arch/x86/process.hh"
 #include "arch/x86/regs/int.hh"

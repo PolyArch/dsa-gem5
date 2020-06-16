@@ -29,9 +29,6 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: John Kalamatianos,
- *          Joe Gross
  */
 
 #include "gpu-compute/lds_state.hh"
@@ -48,7 +45,7 @@
  * the default constructor that works with SWIG
  */
 LdsState::LdsState(const Params *params) :
-    MemObject(params),
+    ClockedObject(params),
     tickEvent(this),
     cuPort(name() + ".port", this),
     maximumSize(params->size),

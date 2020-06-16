@@ -24,15 +24,12 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Daniel Carvalho
  */
 
 /**
  * @file
  * Declaration of a Least Recently Used replacement policy.
- * The victim is chosen using the timestamp. The timestamp may be true or
- * pseudo, depending on the quantity of bits allocated for that.
+ * The victim is chosen using the last touch timestamp.
  */
 
 #ifndef __MEM_CACHE_REPLACEMENT_POLICIES_LRU_RP_HH__

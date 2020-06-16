@@ -23,8 +23,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __SYSTEMC_KERNEL_HH__
@@ -32,8 +30,9 @@
 
 #include "params/SystemC_Kernel.hh"
 #include "sim/sim_object.hh"
+#include "systemc/ext/core/sc_main.hh"
 
-namespace SystemC
+namespace sc_gem5
 {
 
 /*
@@ -48,8 +47,29 @@ class Kernel : public SimObject
   public:
     typedef SystemC_KernelParams Params;
     Kernel(Params *params);
+
+    void init() override;
+    void regStats() override;
+    void startup() override;
+
+    void t0Handler();
+
+    static sc_core::sc_status status();
+    static void status(sc_core::sc_status s);
+
+    static void stop();
+
+    static bool startOfSimulationComplete();
+    static bool endOfSimulationComplete();
+
+  private:
+    static void stopWork();
+
+    EventWrapper<Kernel, &Kernel::t0Handler> t0Event;
 };
 
-} // namespace SystemC
+extern Kernel *kernel;
+
+} // namespace sc_gem5
 
 #endif // __SYSTEMC_KERNEL_H__

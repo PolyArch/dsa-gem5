@@ -1,4 +1,16 @@
 /*
+ * Copyright (c) 2019-2020 ARM Limited
+ * All rights reserved
+ *
+ * The license below extends only to copyright in the software and shall
+ * not be construed as granting a license to any other intellectual
+ * property including but not limited to intellectual property relating
+ * to a hardware implementation of the functionality of the software
+ * licensed hereunder.  You may use the software subject to the license
+ * terms below provided that you ensure that this notice is replicated
+ * unmodified and in its entirety in all distributions of the software,
+ * modified or unmodified, in source code or in binary form.
+ *
  * Copyright (c) 1999-2008 Mark D. Hill and David A. Wood
  * All rights reserved.
  *
@@ -30,12 +42,13 @@
 #define __MEM_RUBY_SYSTEM_SEQUENCER_HH__
 
 #include <iostream>
+#include <list>
 #include <unordered_map>
 
-#include "mem/protocol/MachineType.hh"
-#include "mem/protocol/RubyRequestType.hh"
-#include "mem/protocol/SequencerRequestType.hh"
 #include "mem/ruby/common/Address.hh"
+#include "mem/ruby/protocol/MachineType.hh"
+#include "mem/ruby/protocol/RubyRequestType.hh"
+#include "mem/ruby/protocol/SequencerRequestType.hh"
 #include "mem/ruby/structures/CacheMemory.hh"
 #include "mem/ruby/system/RubyPort.hh"
 #include "params/RubySequencer.hh"
@@ -44,12 +57,22 @@ struct SequencerRequest
 {
     PacketPtr pkt;
     RubyRequestType m_type;
+    RubyRequestType m_second_type;
     Cycles issue_time;
-
     SequencerRequest(PacketPtr _pkt, RubyRequestType _m_type,
-                     Cycles _issue_time)
-        : pkt(_pkt), m_type(_m_type), issue_time(_issue_time)
+                     RubyRequestType _m_second_type, Cycles _issue_time)
+                : pkt(_pkt), m_type(_m_type), m_second_type(_m_second_type),
+                  issue_time(_issue_time)
     {}
+
+    bool functionalWrite(Packet *func_pkt) const
+    {
+        // Follow-up on RubyRequest::functionalWrite
+        // This makes sure the hitCallback won't overrite the value we
+        // expect to find
+        assert(func_pkt->isWrite());
+        return func_pkt->trySatisfyFunctional(pkt);
+    }
 };
 
 std::ostream& operator<<(std::ostream& out, const SequencerRequest& obj);
@@ -61,11 +84,18 @@ class Sequencer : public RubyPort
     Sequencer(const Params *);
     ~Sequencer();
 
+    /**
+     * Proxy function to writeCallback that first
+     * invalidates the line address in the local monitor.
+     */
+    void writeCallbackScFail(Addr address,
+                        DataBlock& data);
+
     // Public Methods
     void wakeup(); // Used only for deadlock detection
-    void resetStats();
+    void resetStats() override;
     void collateStats();
-    void regStats();
+    void regStats() override;
 
     void writeCallback(Addr address,
                        DataBlock& data,
@@ -83,14 +113,14 @@ class Sequencer : public RubyPort
                       const Cycles forwardRequestTime = Cycles(0),
                       const Cycles firstResponseTime = Cycles(0));
 
-    RequestStatus makeRequest(PacketPtr pkt);
+    RequestStatus makeRequest(PacketPtr pkt) override;
     bool empty() const;
-    int outstandingCount() const { return m_outstanding_count; }
+    int outstandingCount() const override { return m_outstanding_count; }
 
-    bool isDeadlockEventScheduled() const
+    bool isDeadlockEventScheduled() const override
     { return deadlockCheckEvent.scheduled(); }
 
-    void descheduleDeadlockEvent()
+    void descheduleDeadlockEvent() override
     { deschedule(deadlockCheckEvent); }
 
     void print(std::ostream& out) const;
@@ -98,8 +128,9 @@ class Sequencer : public RubyPort
 
     void markRemoved();
     void evictionCallback(Addr address);
-    void invalidateSC(Addr address);
     int coreId() const { return m_coreId; }
+
+    virtual int functionalWrite(Packet *func_pkt) override;
 
     void recordRequestType(SequencerRequestType requestType);
     Stats::Histogram& getOutstandReqHist() { return m_outstandReqHist; }
@@ -151,22 +182,21 @@ class Sequencer : public RubyPort
   private:
     void issueRequest(PacketPtr pkt, RubyRequestType type);
 
-    void hitCallback(SequencerRequest* request, DataBlock& data,
+    void hitCallback(SequencerRequest* srequest, DataBlock& data,
                      bool llscSuccess,
                      const MachineType mach, const bool externalHit,
                      const Cycles initialRequestTime,
                      const Cycles forwardRequestTime,
                      const Cycles firstResponseTime);
 
-    void recordMissLatency(const Cycles t, const RubyRequestType type,
+    void recordMissLatency(SequencerRequest* srequest, bool llscSuccess,
                            const MachineType respondingMach,
-                           bool isExternalHit, Cycles issuedTime,
-                           Cycles initialRequestTime,
-                           Cycles forwardRequestTime, Cycles firstResponseTime,
-                           Cycles completionTime);
+                           bool isExternalHit, Cycles initialRequestTime,
+                           Cycles forwardRequestTime,
+                           Cycles firstResponseTime);
 
-    RequestStatus insertRequest(PacketPtr pkt, RubyRequestType request_type);
-    bool handleLlsc(Addr address, SequencerRequest* request);
+    RequestStatus insertRequest(PacketPtr pkt, RubyRequestType primary_type,
+                                RubyRequestType secondary_type);
 
     // Private copy constructor and assignment operator
     Sequencer(const Sequencer& obj);
@@ -186,18 +216,12 @@ class Sequencer : public RubyPort
     Cycles m_data_cache_hit_latency;
     Cycles m_inst_cache_hit_latency;
 
-    typedef std::unordered_map<Addr, SequencerRequest*> RequestTable;
-    RequestTable m_writeRequestTable;
-    RequestTable m_readRequestTable;
+    // RequestTable contains both read and write requests, handles aliasing
+    std::unordered_map<Addr, std::list<SequencerRequest>> m_RequestTable;
+
     // Global outstanding request count, across all request tables
     int m_outstanding_count;
     bool m_deadlock_check_scheduled;
-
-    //! Counters for recording aliasing information.
-    Stats::Scalar m_store_waiting_on_load;
-    Stats::Scalar m_store_waiting_on_store;
-    Stats::Scalar m_load_waiting_on_store;
-    Stats::Scalar m_load_waiting_on_load;
 
     int m_coreId;
 
@@ -238,6 +262,39 @@ class Sequencer : public RubyPort
     std::vector<Stats::Counter> m_IncompleteTimes;
 
     EventFunctionWrapper deadlockCheckEvent;
+
+    // support for LL/SC
+
+    /**
+     * Places the cache line address into the global monitor
+     * tagged with this Sequencer object's version id.
+     */
+    void llscLoadLinked(const Addr);
+
+    /**
+     * Removes the cache line address from the global monitor.
+     * This is independent of this Sequencer object's version id.
+     */
+    void llscClearMonitor(const Addr);
+
+    /**
+     * Searches for cache line address in the global monitor
+     * tagged with this Sequencer object's version id.
+     * If a match is found, the entry is is erased from
+     * the global monitor.
+     *
+     * @return a boolean indicating if the line address was found.
+     */
+    bool llscStoreConditional(const Addr);
+
+  public:
+    /**
+     * Searches for cache line address in the global monitor
+     * tagged with this Sequencer object's version id.
+     *
+     * @return a boolean indicating if the line address was found.
+     */
+    bool llscCheckMonitor(const Addr);
 };
 
 inline std::ostream&

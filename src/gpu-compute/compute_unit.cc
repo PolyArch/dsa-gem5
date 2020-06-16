@@ -29,9 +29,6 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: John Kalamatianos,
- *          Anthony Gutierrez
  */
 
 #include "gpu-compute/compute_unit.hh"
@@ -58,7 +55,7 @@
 #include "mem/page_table.hh"
 #include "sim/process.hh"
 
-ComputeUnit::ComputeUnit(const Params *p) : MemObject(p), fetchStage(p),
+ComputeUnit::ComputeUnit(const Params *p) : ClockedObject(p), fetchStage(p),
     scoreboardCheckStage(p), scheduleStage(p), execStage(p),
     globalMemoryPipe(p), localMemoryPipe(p), rrNextMemID(0), rrNextALUWp(0),
     cu_id(p->cu_id), vrf(p->vector_register_file), numSIMDs(p->num_SIMDs),
@@ -785,7 +782,7 @@ ComputeUnit::sendRequest(GPUDynInstPtr gpuDynInst, int index, PacketPtr pkt)
             Addr paddr;
 
             if (!p->pTable->translate(vaddr, paddr)) {
-                if (!p->fixupStackFault(vaddr)) {
+                if (!p->fixupFault(vaddr)) {
                     panic("CU%d: WF[%d][%d]: Fault on addr %#x!\n",
                           cu_id, gpuDynInst->simdId, gpuDynInst->wfSlotId,
                           vaddr);
@@ -945,7 +942,7 @@ ComputeUnit::injectGlobalMemFence(GPUDynInstPtr gpuDynInst, bool kernelLaunch,
 
     if (!req) {
         req = std::make_shared<Request>(
-            0, 0, 0, 0, masterId(), 0, gpuDynInst->wfDynId);
+            0, 0, 0, masterId(), 0, gpuDynInst->wfDynId);
     }
     req->setPaddr(0);
     if (kernelLaunch) {
@@ -1177,7 +1174,7 @@ ComputeUnit::DTLBPort::recvTimingResp(PacketPtr pkt)
                 break;
 
             RequestPtr prefetch_req = std::make_shared<Request>(
-                0, vaddr + stride * pf * TheISA::PageBytes,
+                vaddr + stride * pf * TheISA::PageBytes,
                 sizeof(uint8_t), 0,
                 computeUnit->masterId(),
                 0, 0, nullptr);
@@ -1397,7 +1394,7 @@ ComputeUnit::ITLBPort::recvReqRetry()
 void
 ComputeUnit::regStats()
 {
-    MemObject::regStats();
+    ClockedObject::regStats();
 
     vALUInsts
         .name(name() + ".valu_insts")

@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Matt Horsnell
  */
 
 /**
@@ -66,8 +64,8 @@ class SimpleTrace : public ProbeListenerObject {
     const std::string name() const { return ProbeListenerObject::name() + ".trace"; }
 
   private:
-    void traceFetch(const O3CPUImpl::DynInstPtr &dynInst);
-    void traceCommit(const O3CPUImpl::DynInstPtr &dynInst);
+    void traceFetch(const O3CPUImpl::DynInstConstPtr& dynInst);
+    void traceCommit(const O3CPUImpl::DynInstConstPtr& dynInst);
 
 };
 #endif//__CPU_O3_PROBE_SIMPLE_TRACE_HH__

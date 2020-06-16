@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Peter Enns
  */
 
 #include "dev/i2c/bus.hh"
@@ -72,7 +70,7 @@ I2CBus::read(PacketPtr pkt)
 {
     assert(pkt->getAddr() == pioAddr + SB_CONTROLS);
 
-    pkt->set<uint8_t>((sda << 1) | scl);
+    pkt->setRaw<uint8_t>((sda << 1) | scl);
     pkt->makeAtomicResponse();
     return pioDelay;
 }
@@ -172,7 +170,7 @@ I2CBus::write(PacketPtr pkt)
 void
 I2CBus::updateSignals(PacketPtr pkt)
 {
-    uint8_t msg = pkt->get<uint8_t>();
+    uint8_t msg = pkt->getRaw<uint8_t>();
     Addr daddr = pkt->getAddr() - pioAddr;
 
     switch (daddr) {
@@ -192,7 +190,7 @@ I2CBus::updateSignals(PacketPtr pkt)
 bool
 I2CBus::isClockSet(PacketPtr pkt) const
 {
-    uint8_t msg = pkt->get<uint8_t>();
+    uint8_t msg = pkt->getRaw<uint8_t>();
     Addr daddr = pkt->getAddr() - pioAddr;
     return daddr == SB_CONTROLS && (msg & 1);
 }
@@ -200,7 +198,7 @@ I2CBus::isClockSet(PacketPtr pkt) const
 bool
 I2CBus::isStart(PacketPtr pkt) const
 {
-    uint8_t msg = pkt->get<uint8_t>();
+    uint8_t msg = pkt->getRaw<uint8_t>();
     Addr daddr = pkt->getAddr() - pioAddr;
     return scl && (msg & 2) && daddr == SB_CONTROLC;
 }
@@ -208,7 +206,7 @@ I2CBus::isStart(PacketPtr pkt) const
 bool
 I2CBus::isEnd(PacketPtr pkt) const
 {
-    uint8_t msg = pkt->get<uint8_t>();
+    uint8_t msg = pkt->getRaw<uint8_t>();
     Addr daddr = pkt->getAddr() - pioAddr;
     return scl && (msg & 2) && daddr == SB_CONTROLS;
 }

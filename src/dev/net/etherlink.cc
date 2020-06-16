@@ -36,9 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
- *          Ron Dreslinski
  */
 
 /* @file
@@ -67,7 +64,7 @@
 using namespace std;
 
 EtherLink::EtherLink(const Params *p)
-    : EtherObject(p)
+    : SimObject(p)
 {
     link[0] = new Link(name() + ".link0", this, 0, p->speed,
                        p->delay, p->delay_var, p->dump);
@@ -88,20 +85,14 @@ EtherLink::~EtherLink()
     delete interface[1];
 }
 
-EtherInt*
-EtherLink::getEthPort(const std::string &if_name, int idx)
+Port &
+EtherLink::getPort(const std::string &if_name, PortID idx)
 {
-    Interface *i;
     if (if_name == "int0")
-        i = interface[0];
+        return *interface[0];
     else if (if_name == "int1")
-        i = interface[1];
-    else
-        return NULL;
-    if (i->getPeer())
-        panic("interface already connected to\n");
-
-    return i;
+        return *interface[1];
+    return SimObject::getPort(if_name, idx);
 }
 
 
@@ -248,7 +239,7 @@ EtherLink::Link::unserialize(const string &base, CheckpointIn &cp)
         parent->schedule(doneEvent, event_time);
     }
 
-    size_t tx_queue_size;
+    size_t tx_queue_size = 0;
     if (optParamIn(cp, base + ".tx_queue_size", tx_queue_size)) {
         for (size_t idx = 0; idx < tx_queue_size; ++idx) {
             Tick tick;

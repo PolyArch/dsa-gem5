@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __SIM_SYSCALLRETURN_HH__
@@ -63,12 +61,20 @@ class SyscallReturn
     /// conversion, so a bare integer is used where a SyscallReturn
     /// value is expected, e.g., as the return value from a system
     /// call emulation function ('return 0;' or 'return -EFAULT;').
-    SyscallReturn(int64_t v)
-        : value(v), retryFlag(false)
+    SyscallReturn(int64_t v) : _value(v), _count(1) {}
+
+    /// A SyscallReturn constructed with no value means don't return anything.
+    SyscallReturn() : _count(0) {}
+
+    /// A SyscallReturn constructed with two values means put the second value
+    /// in additional return registers as defined by the ABI, if they exist.
+    SyscallReturn(int64_t v1, int64_t v2) :
+        _value(v1), _value2(v2), _count(2)
     {}
 
     /// Pseudo-constructor to create an instance with the retry flag set.
-    static SyscallReturn retry()
+    static SyscallReturn
+    retry()
     {
         SyscallReturn s(0);
         s.retryFlag = true;
@@ -78,39 +84,46 @@ class SyscallReturn
     ~SyscallReturn() {}
 
     /// Was the system call successful?
-    bool successful() const
+    bool
+    successful() const
     {
-        return (value >= 0 || value <= -4096);
+        return (_value >= 0 || _value <= -4096);
     }
 
     /// Does the syscall need to be retried?
     bool needsRetry() const { return retryFlag; }
 
+    /// Should returning this value be suppressed?
+    bool suppressed() const { return _count == 0; }
+
+    /// How many values did the syscall attempt to return?
+    int count() const { return _count; }
+
     /// The return value
-    int64_t returnValue() const
+    int64_t
+    returnValue() const
     {
         assert(successful());
-        return value;
+        return _value;
     }
 
     /// The errno value
-    int errnoValue() const
+    int
+    errnoValue() const
     {
         assert(!successful());
-        return -value;
+        return -_value;
     }
 
     /// The encoded value (as described above)
-    int64_t encodedValue() const
-    {
-        return value;
-    }
+    int64_t encodedValue() const { return _value; }
+    int64_t value2() const { return _value2; }
 
   private:
+    int64_t _value, _value2;
+    int _count;
 
-    int64_t value;
-
-    bool retryFlag;
+    bool retryFlag = false;
 };
 
 #endif

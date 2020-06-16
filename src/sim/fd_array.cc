@@ -29,8 +29,6 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Brandon Potter
  */
 
 #include "sim/fd_array.hh"
@@ -43,20 +41,21 @@
 #include <string>
 
 #include "base/logging.hh"
+#include "base/output.hh"
 #include "params/Process.hh"
 #include "sim/fd_entry.hh"
 
 FDArray::FDArray(std::string const& input, std::string const& output,
                  std::string const& errout)
-    : _input(input), _output(output), _errout(errout), _fdArray(),
-      imap {{"",       -1},
-            {"cin",    STDIN_FILENO},
-            {"stdin",  STDIN_FILENO}},
-      oemap{{"",       -1},
-            {"cout",   STDOUT_FILENO},
-            {"stdout", STDOUT_FILENO},
-            {"cerr",   STDERR_FILENO},
-            {"stderr", STDERR_FILENO}}
+    :  _fdArray(), _input(input), _output(output), _errout(errout),
+      _imap {{"",       -1},
+             {"cin",    STDIN_FILENO},
+             {"stdin",  STDIN_FILENO}},
+      _oemap{{"",       -1},
+             {"cout",   STDOUT_FILENO},
+             {"stdout", STDOUT_FILENO},
+             {"cerr",   STDERR_FILENO},
+             {"stderr", STDERR_FILENO}}
 {
     int sim_fd;
     std::map<std::string, int>::iterator it;
@@ -65,7 +64,7 @@ FDArray::FDArray(std::string const& input, std::string const& output,
      * Search through the input options and setup the default fd if match is
      * found; otherwise, open an input file and seek to location.
      */
-    if ((it = imap.find(input)) != imap.end())
+    if ((it = _imap.find(input)) != _imap.end())
         sim_fd = it->second;
     else
         sim_fd = openInputFile(input);
@@ -77,7 +76,7 @@ FDArray::FDArray(std::string const& input, std::string const& output,
      * Search through the output/error options and setup the default fd if
      * match is found; otherwise, open an output file and seek to location.
      */
-    if ((it = oemap.find(output)) != oemap.end())
+    if ((it = _oemap.find(output)) != _oemap.end())
         sim_fd = it->second;
     else
         sim_fd = openOutputFile(output);
@@ -88,7 +87,7 @@ FDArray::FDArray(std::string const& input, std::string const& output,
 
     if (output == errout)
         ; /* Reuse the same file descriptor if these match. */
-    else if ((it = oemap.find(errout)) != oemap.end())
+    else if ((it = _oemap.find(errout)) != _oemap.end())
         sim_fd = it->second;
     else
         sim_fd = openOutputFile(errout);
@@ -156,7 +155,7 @@ FDArray::restoreFileOffsets()
         stdin_ffd->setFileOffset(0);
     }
 
-    if ((it = imap.find(stdin_ffd->getFileName())) != imap.end()) {
+    if ((it = _imap.find(stdin_ffd->getFileName())) != _imap.end()) {
         stdin_ffd->setSimFD(it->second);
     } else {
         stdin_ffd->setSimFD(openInputFile(stdin_ffd->getFileName()));
@@ -180,7 +179,7 @@ FDArray::restoreFileOffsets()
         stdout_ffd->setFileOffset(0);
     }
 
-    if ((it = oemap.find(stdout_ffd->getFileName())) != oemap.end()) {
+    if ((it = _oemap.find(stdout_ffd->getFileName())) != _oemap.end()) {
         stdout_ffd->setSimFD(it->second);
     } else {
         stdout_ffd->setSimFD(openOutputFile(stdout_ffd->getFileName()));
@@ -207,7 +206,7 @@ FDArray::restoreFileOffsets()
     if (stdout_ffd->getFileName() == stderr_ffd->getFileName()) {
         /* Reuse the same sim_fd file descriptor if these match. */
         stderr_ffd->setSimFD(stdout_ffd->getSimFD());
-    } else if ((it = oemap.find(stderr_ffd->getFileName())) != oemap.end()) {
+    } else if ((it = _oemap.find(stderr_ffd->getFileName())) != _oemap.end()) {
         stderr_ffd->setSimFD(it->second);
     } else {
         stderr_ffd->setSimFD(openOutputFile(stderr_ffd->getFileName()));
@@ -311,7 +310,8 @@ FDArray::openInputFile(std::string const& filename) const
 int
 FDArray::openOutputFile(std::string const& filename) const
 {
-    return openFile(filename, O_WRONLY | O_CREAT | O_TRUNC, 0664);
+    return openFile(simout.resolve(filename),
+                    O_WRONLY | O_CREAT | O_TRUNC, 0664);
 }
 
 std::shared_ptr<FDEntry>

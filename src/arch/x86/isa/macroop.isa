@@ -34,8 +34,6 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Authors: Gabe Black
 
 //////////////////////////////////////////////////////////////////////////////
 //
@@ -44,30 +42,29 @@
 
 // Execute method for macroops.
 def template MacroExecPanic {{
-        Fault execute(ExecContext *, Trace::InstRecord *) const
-        {
-            panic("Tried to execute macroop directly!");
-            return NoFault;
-        }
+    Fault execute(ExecContext *, Trace::InstRecord *) const
+    {
+        panic("Tried to execute macroop directly!");
+        return NoFault;
+    }
 }};
 
 output header {{
+    // Base class for combinationally generated macroops
+    class Macroop : public X86ISA::MacroopBase
+    {
+      public:
+        Macroop(const char *mnem, ExtMachInst _machInst,
+                uint32_t _numMicroops, X86ISA::EmulEnv _env)
+                    : MacroopBase(mnem, _machInst, _numMicroops, _env)
+        {}
 
-        // Base class for combinationally generated macroops
-        class Macroop : public X86ISA::MacroopBase
+        Fault
+        execute(ExecContext *, Trace::InstRecord *) const
         {
-          public:
-            Macroop(const char *mnem, ExtMachInst _machInst,
-                    uint32_t _numMicroops, X86ISA::EmulEnv _env)
-                        : MacroopBase(mnem, _machInst, _numMicroops, _env)
-            {}
-
-            Fault
-            execute(ExecContext *, Trace::InstRecord *) const
-            {
-                panic("Tried to execute macroop directly!");
-            }
-        };
+            panic("Tried to execute macroop directly!");
+        }
+    };
 }};
 
 //////////////////////////////////////////////////////////////////////////////
@@ -78,29 +75,29 @@ output header {{
 
 // Basic instruction class declaration template.
 def template MacroDeclare {{
-        namespace X86Macroop
+    namespace X86Macroop
+    {
+        /**
+         * Static instruction class for "%(mnemonic)s".
+         */
+        class %(class_name)s : public %(base_class)s
         {
-            /**
-             * Static instruction class for "%(mnemonic)s".
-             */
-            class %(class_name)s : public %(base_class)s
-            {
-              private:
-                %(declareLabels)s
-              public:
-                // Constructor.
-                %(class_name)s(ExtMachInst machInst, X86ISA::EmulEnv _env);
+          private:
+            %(declareLabels)s
+          public:
+            // Constructor.
+            %(class_name)s(ExtMachInst machInst, X86ISA::EmulEnv _env);
 
-                std::string
-                generateDisassembly(Addr pc, const SymbolTable *symtab) const;
-            };
-        }
+            std::string generateDisassembly(
+                    Addr pc, const Loader::SymbolTable *symtab) const;
+        };
+    }
 }};
 
 def template MacroDisassembly {{
     std::string
-    X86Macroop::%(class_name)s::generateDisassembly(Addr pc,
-            const SymbolTable *symtab) const
+    X86Macroop::%(class_name)s::generateDisassembly(
+            Addr pc, const Loader::SymbolTable *symtab) const
     {
         std::stringstream out;
         out << mnemonic << "\t";
@@ -226,8 +223,10 @@ let {{
 
                     if self.function_call:
                         flags.append("IsCall")
+                        flags.append("IsUncondControl")
                     if self.function_return:
                         flags.append("IsReturn")
+                        flags.append("IsUncondControl")
                 else:
                     flags.append("IsDelayedCommit")
 
@@ -302,7 +301,7 @@ let {{
             elif self.size == 'z':
                 self.dataSize = "((OPSIZE == 8) ? 4 : OPSIZE)"
             elif self.size:
-                raise Exception, "Unrecognized size type %s!" % self.size
+                raise Exception("Unrecognized size type {}!".format(self.size))
             return '''EmulEnv(%(reg)s,
                               %(regm)s,
                               %(dataSize)s,
@@ -318,14 +317,15 @@ let {{
                 self.regm = reg
                 self.regmUsed = True
             else:
-                raise Exception, "EmulEnv is out of register specialization spots."
+                raise Exception("EmulEnv is out of register specialization " +
+                    "spots.")
         def setSize(self, size):
             if not self.size:
                 self.size = size
             else:
                 if self.size != size:
-                    raise Exception, "Conflicting register sizes %s and %s!" %\
-                        (self.size, size)
+                    raise Exception("Conflicting register sizes " +
+                        "{} and {}!".format(self.size, size))
 }};
 
 let {{
@@ -333,8 +333,8 @@ let {{
     noModRMString = "env.setSeg(machInst);\n"
     def genMacroop(Name, env):
         blocks = OutputBlocks()
-        if not macroopDict.has_key(Name):
-            raise Exception, "Unrecognized instruction: %s" % Name
+        if not Name in macroopDict:
+            raise Exception("Unrecognized instruction: {}".format(Name))
         macroop = macroopDict[Name]
         if not macroop.declared:
             if env.doModRM:

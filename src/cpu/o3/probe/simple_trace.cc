@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Matt Horsnell
  */
 
 #include "cpu/o3/probe/simple_trace.hh"
@@ -42,14 +40,14 @@
 #include "base/trace.hh"
 #include "debug/SimpleTrace.hh"
 
-void SimpleTrace::traceCommit(const O3CPUImpl::DynInstPtr &dynInst)
+void SimpleTrace::traceCommit(const O3CPUImpl::DynInstConstPtr& dynInst)
 {
     DPRINTFR(SimpleTrace, "[%s]: Commit 0x%08x %s.\n", name(),
              dynInst->instAddr(),
              dynInst->staticInst->disassemble(dynInst->instAddr()));
 }
 
-void SimpleTrace::traceFetch(const O3CPUImpl::DynInstPtr &dynInst)
+void SimpleTrace::traceFetch(const O3CPUImpl::DynInstConstPtr& dynInst)
 {
     DPRINTFR(SimpleTrace, "[%s]: Fetch 0x%08x %s.\n", name(),
              dynInst->instAddr(),
@@ -58,9 +56,12 @@ void SimpleTrace::traceFetch(const O3CPUImpl::DynInstPtr &dynInst)
 
 void SimpleTrace::regProbeListeners()
 {
-    typedef ProbeListenerArg<SimpleTrace, O3CPUImpl::DynInstPtr> DynInstListener;
-    listeners.push_back(new DynInstListener(this, "Commit", &SimpleTrace::traceCommit));
-    listeners.push_back(new DynInstListener(this, "Fetch", &SimpleTrace::traceFetch));
+    typedef ProbeListenerArg<SimpleTrace,
+            O3CPUImpl::DynInstConstPtr> DynInstListener;
+    listeners.push_back(new DynInstListener(this, "Commit",
+                &SimpleTrace::traceCommit));
+    listeners.push_back(new DynInstListener(this, "Fetch",
+                &SimpleTrace::traceFetch));
 }
 
 SimpleTrace*

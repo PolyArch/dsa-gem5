@@ -23,8 +23,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __SYSTEMC_EXT_CHANNEL_SC_IN_RESOLVED_HH__
@@ -51,7 +49,7 @@ class sc_in_resolved : public sc_in<sc_dt::sc_logic>
 
     virtual void end_of_elaboration();
 
-    virtual const char *kind() const;
+    virtual const char *kind() const { return "sc_in_resolved"; }
 
   private:
     // Disabled

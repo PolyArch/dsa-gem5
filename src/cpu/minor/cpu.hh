@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andrew Bardsley
  */
 
 /**
@@ -58,7 +56,7 @@
 
 #include "mem/packet.hh"
 #include "mem/ruby/slicc_interface/RubyRequest.hh"
-#include "mem/protocol/Types.hh"
+#include "mem/ruby/protocol/Types.hh"
 #include "mem/ruby/common/Consumer.hh"
 // FIXME: check if I need it or not!
 // class Message;
@@ -134,10 +132,10 @@ class MinorCPU : public BaseCPU, public Consumer
     Enums::ThreadPolicy threadPolicy;
   protected:
      /** Return a reference to the data port. */
-    MasterPort &getDataPort() override;
+    Port &getDataPort() override;
 
     /** Return a reference to the instruction port. */
-    MasterPort &getInstPort() override;
+    Port &getInstPort() override;
 
 	// FIXME: spu, have to be called using cpu reference, so should be protected?
 	Network *spu_net_ptr;
@@ -219,8 +217,6 @@ class MinorCPU : public BaseCPU, public Consumer
     void init() override;
     void startup() override;
     void wakeup(ThreadID tid) override;
-
-    Addr dbg_vtophys(Addr addr);
 
     /** Processor-specific statistics */
     Minor::MinorStats stats;

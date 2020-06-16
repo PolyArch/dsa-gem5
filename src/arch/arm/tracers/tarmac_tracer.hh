@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Giacomo Travaglini
  */
 
 /**
@@ -63,7 +61,7 @@ class TarmacContext
   public:
     TarmacContext(ThreadContext* _thread,
                   const StaticInstPtr _staticInst,
-                  TheISA::PCState _pc)
+                  ArmISA::PCState _pc)
       : thread(_thread), staticInst(_staticInst), pc(_pc)
     {}
 
@@ -72,7 +70,7 @@ class TarmacContext
   public:
     ThreadContext* thread;
     const StaticInstPtr staticInst;
-    TheISA::PCState pc;
+    ArmISA::PCState pc;
 };
 
 /**
@@ -99,7 +97,7 @@ class TarmacTracer : public InstTracer
      */
     InstRecord* getInstRecord(Tick when, ThreadContext *tc,
                               const StaticInstPtr staticInst,
-                              TheISA::PCState pc,
+                              ArmISA::PCState pc,
                               const StaticInstPtr macroStaticInst = NULL);
 
   protected:

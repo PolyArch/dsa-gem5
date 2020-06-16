@@ -36,9 +36,8 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Stephen Hines
  */
+
 #ifndef __ARCH_ARM_MACROMEM_HH__
 #define __ARCH_ARM_MACROMEM_HH__
 
@@ -119,8 +118,7 @@ class MicroNeonMemOp : public MicroOp
     MicroNeonMemOp(const char *mnem, ExtMachInst machInst, OpClass __opClass,
                    RegIndex _dest, RegIndex _ura, uint32_t _imm)
             : MicroOp(mnem, machInst, __opClass),
-              dest(_dest), ura(_ura), imm(_imm),
-              memAccessFlags(TLB::MustBeOne)
+              dest(_dest), ura(_ura), imm(_imm), memAccessFlags()
     {
     }
 };
@@ -264,7 +262,7 @@ class MicroSetPCCPSR : public MicroOp
     }
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 /**
@@ -283,7 +281,7 @@ class MicroIntMov : public MicroOp
     }
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 /**
@@ -303,7 +301,7 @@ class MicroIntImmOp : public MicroOp
     }
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 class MicroIntImmXOp : public MicroOpX
@@ -320,7 +318,7 @@ class MicroIntImmXOp : public MicroOpX
     }
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 /**
@@ -339,7 +337,7 @@ class MicroIntOp : public MicroOp
     }
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 class MicroIntRegXOp : public MicroOp
@@ -359,7 +357,7 @@ class MicroIntRegXOp : public MicroOp
     }
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 /**
@@ -394,12 +392,12 @@ class MicroMemOp : public MicroIntImmOp
     MicroMemOp(const char *mnem, ExtMachInst machInst, OpClass __opClass,
                RegIndex _ura, RegIndex _urb, bool _up, uint8_t _imm)
             : MicroIntImmOp(mnem, machInst, __opClass, _ura, _urb, _imm),
-              up(_up), memAccessFlags(TLB::MustBeOne | TLB::AlignWord)
+              up(_up), memAccessFlags(TLB::AlignWord)
     {
     }
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 class MicroMemPairOp : public MicroOp
@@ -415,12 +413,12 @@ class MicroMemPairOp : public MicroOp
             bool _up, uint8_t _imm)
         : MicroOp(mnem, machInst, __opClass),
         dest(_dreg1), dest2(_dreg2), urb(_base), up(_up), imm(_imm),
-        memAccessFlags(TLB::MustBeOne | TLB::AlignWord)
+        memAccessFlags(TLB::AlignWord)
     {
     }
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 /**

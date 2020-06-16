@@ -25,9 +25,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
- *          Alec Roelke
  */
 
 #include "arch/riscv/decoder.hh"
@@ -52,6 +49,7 @@ void Decoder::reset()
 void
 Decoder::moreBytes(const PCState &pc, Addr fetchPC, MachInst inst)
 {
+    inst = letoh(inst);
     DPRINTF(Decode, "Requesting bytes 0x%08x from address %#x\n", inst,
             fetchPC);
 

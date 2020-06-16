@@ -25,10 +25,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
- *          Gabe Black
- *          Steve Reinhardt
  */
 
 #ifndef __ARCH_SPARC_INSTS_PRIV_HH__
@@ -47,7 +43,7 @@ class Priv : public SparcStaticInst
   protected:
     using SparcStaticInst::SparcStaticInst;
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 class PrivReg : public Priv
@@ -68,7 +64,7 @@ class RdPriv : public PrivReg
   protected:
     using PrivReg::PrivReg;
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 // This class is for instructions that explicitly write control
@@ -78,7 +74,7 @@ class WrPriv : public PrivReg
   protected:
     using PrivReg::PrivReg;
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 /**
@@ -107,7 +103,7 @@ class WrPrivImm : public PrivImm
     {}
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 
     char const *regName;
 };

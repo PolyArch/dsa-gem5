@@ -1,4 +1,4 @@
-# Copyright (c) 2010 ARM Limited
+# Copyright (c) 2010, 2017-2018 ARM Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -35,8 +35,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Kevin Lim
 
 from m5.SimObject import SimObject
 from m5.params import *
@@ -47,9 +45,15 @@ class OpClass(Enum):
             'FloatMisc', 'FloatSqrt',
             'SimdAdd', 'SimdAddAcc', 'SimdAlu', 'SimdCmp', 'SimdCvt',
             'SimdMisc', 'SimdMult', 'SimdMultAcc', 'SimdShift', 'SimdShiftAcc',
-            'SimdSqrt', 'SimdFloatAdd', 'SimdFloatAlu', 'SimdFloatCmp',
-            'SimdFloatCvt', 'SimdFloatDiv', 'SimdFloatMisc', 'SimdFloatMult',
-            'SimdFloatMultAcc', 'SimdFloatSqrt',
+            'SimdDiv', 'SimdSqrt', 'SimdFloatAdd', 'SimdFloatAlu',
+            'SimdFloatCmp', 'SimdFloatCvt', 'SimdFloatDiv', 'SimdFloatMisc',
+            'SimdFloatMult', 'SimdFloatMultAcc', 'SimdFloatSqrt',
+            'SimdReduceAdd', 'SimdReduceAlu', 'SimdReduceCmp',
+            'SimdFloatReduceAdd', 'SimdFloatReduceCmp',
+            'SimdAes', 'SimdAesMix', 'SimdSha1Hash', 'SimdSha1Hash2',
+            'SimdSha256Hash', 'SimdSha256Hash2', 'SimdShaSigma2',
+            'SimdShaSigma3',
+            'SimdPredAlu',
             'MemRead', 'MemWrite', 'FloatMemRead', 'FloatMemWrite',
             'IprAccess', 'InstPrefetch']
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 #
 # Copyright (c) 2016 ARM Limited
 # All rights reserved
@@ -34,14 +34,13 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Andreas Sandberg
 
 from __future__ import print_function
 
 from abc import ABCMeta, abstractmethod
 import inspect
 import pickle
+from six import add_metaclass
 import string
 import sys
 
@@ -143,8 +142,8 @@ class TestResult(object):
     def __nonzero__(self):
         return all([ r for r in self.results ])
 
+@add_metaclass(ABCMeta)
 class ResultFormatter(object):
-    __metaclass__ = ABCMeta
 
     def __init__(self, fout=sys.stdout, verbose=False):
         self.verbose = verbose

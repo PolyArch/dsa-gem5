@@ -35,9 +35,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Jason Lowe-Power
-#          Andreas Hansson
 
 import m5
 from m5.objects import *
@@ -54,18 +51,11 @@ root = None
 def run_test(root):
         # Called from tests/run.py
 
-        # Set the working directory in case we are executing from
-        # outside gem5's source tree
-        import os
-        os.chdir(os.path.join(os.path.dirname(__file__), "../"))
-
-        # The path to this script is the only parameter. Delete it so
-        # we can execute the script that we want to execute.
         import sys
-        del sys.argv[1:]
-
-        # Add a specific max tick
-        sys.argv.append('-m %d' % maxtick)
+        argv = [
+                sys.argv[0],
+                '-m %d' % maxtick,
+        ]
 
         # Execute the script we are wrapping
-        execfile(srcpath('configs/example/memcheck.py'), globals())
+        run_config('configs/example/memcheck.py', argv=argv)

@@ -23,8 +23,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __SYSTEMC_EXT_CHANNEL_SC_OUT_HH__
@@ -32,7 +30,6 @@
 
 #include "../core/sc_port.hh"
 #include "sc_inout.hh"
-#include "warn_unimpl.hh"
 
 namespace sc_core
 {
@@ -45,35 +42,51 @@ class sc_out : public sc_inout<T>
     explicit sc_out(const char *name) : sc_inout<T>(name) {}
     virtual ~sc_out() {}
 
+    // Deprecated binding constructors.
+    explicit sc_out(const sc_signal_inout_if<T> &interface) :
+        sc_inout<T>(interface)
+    {}
+    sc_out(const char *name, const sc_signal_inout_if<T> &interface) :
+        sc_inout<T>(name, interface)
+    {}
+    explicit sc_out(sc_port_b<sc_signal_inout_if<T> > &parent) :
+        sc_inout<T>(parent)
+    {}
+    sc_out(const char *name, sc_port_b<sc_signal_inout_if<T> > &parent) :
+        sc_inout<T>(name, parent)
+    {}
+    explicit sc_out(sc_out<T> &parent) : sc_inout<T>(parent) {}
+    sc_out(const char *name, sc_out<T> &parent) : sc_inout<T>(name, parent) {}
+
     sc_out<T> &
-    operator = (const T &)
+    operator = (const T &t)
     {
-        sc_channel_warn_unimpl(__PRETTY_FUNCTION__);
-        return *(sc_out<T> *)nullptr;
+        sc_inout<T>::operator = (t);
+        return *this;
     }
     sc_out<T> &
-    operator = (const sc_signal_in_if<T> &)
+    operator = (const sc_signal_in_if<T> &c)
     {
-        sc_channel_warn_unimpl(__PRETTY_FUNCTION__);
-        return *(sc_out<T> *)nullptr;
+        sc_inout<T>::operator = (c);
+        return *this;
     }
     sc_out<T> &
-    operator = (const sc_port<sc_signal_in_if<T>, 1> &)
+    operator = (const sc_port<sc_signal_in_if<T>, 1> &c)
     {
-        sc_channel_warn_unimpl(__PRETTY_FUNCTION__);
-        return *(sc_out<T> *)nullptr;
+        sc_inout<T>::operator = (c);
+        return *this;
     }
     sc_out<T> &
-    operator = (const sc_port<sc_signal_inout_if<T>, 1> &)
+    operator = (const sc_port<sc_signal_inout_if<T>, 1> &c)
     {
-        sc_channel_warn_unimpl(__PRETTY_FUNCTION__);
-        return *(sc_out<T> *)nullptr;
+        sc_inout<T>::operator = (c);
+        return *this;
     }
     sc_out<T> &
-    operator = (const sc_out<T> &)
+    operator = (const sc_out<T> &c)
     {
-        sc_channel_warn_unimpl(__PRETTY_FUNCTION__);
-        return *(sc_out<T> *)nullptr;
+        sc_inout<T>::operator = (c);
+        return *this;
     }
 
     virtual const char *kind() const { return "sc_out"; }

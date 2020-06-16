@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Korey Sewell
  */
 
 #ifndef __ARCH_MIPS_LINUX_LINUX_HH__
@@ -36,6 +34,8 @@
 class MipsLinux : public Linux
 {
   public:
+
+    static const ByteOrder byteOrder = LittleEndianByteOrder;
 
     static const int TGT_SIGHUP         = 0x000001;
     static const int TGT_SIGINT         = 0x000002;

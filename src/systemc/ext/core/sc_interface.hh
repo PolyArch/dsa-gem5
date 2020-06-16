@@ -23,8 +23,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __SYSTEMC_EXT_CORE_SC_INTERFACE_HH__
@@ -41,10 +39,10 @@ class sc_interface
   public:
     virtual void register_port(sc_port_base &, const char *);
     virtual const sc_event &default_event() const;
-    virtual ~sc_interface();
+    virtual ~sc_interface() {};
 
   protected:
-    sc_interface();
+    sc_interface() {};
 
   private:
     // Disabled

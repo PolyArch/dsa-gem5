@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010 ARM Limited
+ * Copyright (c) 2010,2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
  */
 
 #include "dev/arm/a9scu.hh"
@@ -59,7 +57,7 @@ A9SCU::read(PacketPtr pkt)
 
     switch(daddr) {
       case Control:
-        pkt->set(1); // SCU already enabled
+        pkt->setLE(1); // SCU already enabled
         break;
       case Config:
         /* Without making a completely new SCU, we can use the core count field
@@ -73,9 +71,9 @@ A9SCU::read(PacketPtr pkt)
                 fatal("Too many CPUs (%d) for A9SCU!\n", sys->numContexts());
         }
         int smp_bits, core_cnt;
-        smp_bits = power(2,sys->numContexts()) - 1;
+        smp_bits = (1 << sys->numContexts()) - 1;
         core_cnt = sys->numContexts() - 1;
-        pkt->set(smp_bits << 4 | core_cnt);
+        pkt->setLE(smp_bits << 4 | core_cnt);
         break;
       default:
         // Only configuration register is implemented

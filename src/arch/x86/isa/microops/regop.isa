@@ -32,8 +32,6 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Authors: Gabe Black
 
 //////////////////////////////////////////////////////////////////////////
 //
@@ -51,7 +49,7 @@ def template MicroRegOpExecute {{
             %(op_decl)s;
             %(op_rd)s;
 
-            IntReg result M5_VAR_USED;
+            RegVal result M5_VAR_USED;
 
             if(%(cond_check)s)
             {
@@ -81,7 +79,7 @@ def template MicroRegOpImmExecute {{
             %(op_decl)s;
             %(op_rd)s;
 
-            IntReg result M5_VAR_USED;
+            RegVal result M5_VAR_USED;
 
             if(%(cond_check)s)
             {
@@ -375,8 +373,8 @@ let {{
             return cls
 
 
+    @six.add_metaclass(RegOpMeta)
     class RegOp(X86Microop):
-        __metaclass__ = RegOpMeta
         # This class itself doesn't act as a microop
         abstract = True
 
@@ -398,7 +396,7 @@ let {{
                 self.ext = 0
             else:
                 if not isinstance(flags, (list, tuple)):
-                    raise Exception, "flags must be a list or tuple of flags"
+                    raise Exception("flags must be a list or tuple of flags")
                 self.ext = " | ".join(flags)
                 self.className += "Flags"
 
@@ -1220,8 +1218,8 @@ let {{
 
     class Wrflags(WrRegOp):
         code = '''
-            MiscReg newFlags = psrc1 ^ op2;
-            MiscReg userFlagMask = 0xDD5;
+            RegVal newFlags = psrc1 ^ op2;
+            RegVal userFlagMask = 0xDD5;
 
             // Get only the user flags
             ccFlagBits = newFlags & ccFlagMask;
@@ -1268,8 +1266,8 @@ let {{
 
     class Rflag(RegOp):
         code = '''
-            MiscReg flagMask = 0x3F7FDD5;
-            MiscReg flags = (nccFlagBits | ccFlagBits | cfofBits | dfBit |
+            RegVal flagMask = 0x3F7FDD5;
+            RegVal flags = (nccFlagBits | ccFlagBits | cfofBits | dfBit |
                              ecfBit | ezfBit) & flagMask;
 
             int flag = bits(flags, imm8);
@@ -1278,8 +1276,8 @@ let {{
             '''
 
         big_code = '''
-            MiscReg flagMask = 0x3F7FDD5;
-            MiscReg flags = (nccFlagBits | ccFlagBits | cfofBits | dfBit |
+            RegVal flagMask = 0x3F7FDD5;
+            RegVal flags = (nccFlagBits | ccFlagBits | cfofBits | dfBit |
                              ecfBit | ezfBit) & flagMask;
 
             int flag = bits(flags, imm8);
@@ -1294,7 +1292,7 @@ let {{
 
     class Sext(RegOp):
         code = '''
-            IntReg val = psrc1;
+            RegVal val = psrc1;
             // Mask the bit position so that it wraps.
             int bitPos = op2 & (dataSize * 8 - 1);
             int sign_bit = bits(val, bitPos, bitPos);
@@ -1304,7 +1302,7 @@ let {{
             '''
 
         big_code = '''
-            IntReg val = psrc1;
+            RegVal val = psrc1;
             // Mask the bit position so that it wraps.
             int bitPos = op2 & (dataSize * 8 - 1);
             int sign_bit = bits(val, bitPos, bitPos);
@@ -1390,10 +1388,7 @@ let {{
             if (dest == 1 || (dest > 4 && dest < 8) || (dest > 8)) {
                 fault = std::make_shared<InvalidOpcode>();
             } else {
-                // There are *s in the line below so it doesn't confuse the
-                // parser. They may be unnecessary.
-                //Mis*cReg old*Val = pick(Cont*rolDest, 0, dat*aSize);
-                MiscReg newVal = psrc1;
+                RegVal newVal = psrc1;
 
                 // Check for any modifications that would cause a fault.
                 switch(dest) {

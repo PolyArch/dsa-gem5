@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
  */
 
 #ifndef __ARCH_SPARC_SOLARIS_SOLARIS_HH__
@@ -36,6 +34,8 @@
 class SparcSolaris : public Solaris
 {
   public:
+
+    static const ByteOrder byteOrder = BigEndianByteOrder;
 
     static SyscallFlagTransTable openFlagTable[];
 
@@ -63,7 +63,6 @@ class SparcSolaris : public Solaris
 
     static const unsigned TGT_MAP_SHARED        = 0x00001;
     static const unsigned TGT_MAP_PRIVATE       = 0x00002;
-    static const unsigned TGT_MAP_32BIT         = 0x00040;
     static const unsigned TGT_MAP_ANON          = 0x00020;
     static const unsigned TGT_MAP_DENYWRITE     = 0x00800;
     static const unsigned TGT_MAP_EXECUTABLE    = 0x01000;

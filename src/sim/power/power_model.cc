@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: David Guillen Fandos
  */
 
 #include "sim/power/power_model.hh"
@@ -104,7 +102,7 @@ PowerModel::getDynamicPower() const
         // This power model only collects static data
         return 0;
     }
-    std::vector<double> w = clocked_object->pwrStateWeights();
+    std::vector<double> w = clocked_object->powerState->getWeights();
 
     // Same number of states (excluding UNDEFINED)
     assert(w.size() - 1 == states_pm.size());
@@ -126,7 +124,7 @@ PowerModel::getStaticPower() const
 {
     assert(clocked_object);
 
-    std::vector<double> w = clocked_object->pwrStateWeights();
+    std::vector<double> w = clocked_object->powerState->getWeights();
 
     if (power_model_type == Enums::PMType::Dynamic) {
         // This power model only collects dynamic data

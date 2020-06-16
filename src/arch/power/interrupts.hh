@@ -24,23 +24,21 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __ARCH_POWER_INTERRUPT_HH__
 #define __ARCH_POWER_INTERRUPT_HH__
 
+#include "arch/generic/interrupts.hh"
 #include "base/logging.hh"
 #include "params/PowerInterrupts.hh"
-#include "sim/sim_object.hh"
 
 class BaseCPU;
 class ThreadContext;
 
 namespace PowerISA {
 
-class Interrupts : public SimObject
+class Interrupts : public BaseInterrupts
 {
   private:
     BaseCPU * cpu;
@@ -54,7 +52,7 @@ class Interrupts : public SimObject
         return dynamic_cast<const Params *>(_params);
     }
 
-    Interrupts(Params * p) : SimObject(p), cpu(NULL)
+    Interrupts(Params * p) : BaseInterrupts(p), cpu(NULL)
     {}
 
     void

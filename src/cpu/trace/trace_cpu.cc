@@ -33,10 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Radhika Jagtap
- *          Andreas Hansson
- *          Thomas Grass
  */
 
 #include "cpu/trace/trace_cpu.hh"
@@ -106,17 +102,8 @@ void
 TraceCPU::takeOverFrom(BaseCPU *oldCPU)
 {
     // Unbind the ports of the old CPU and bind the ports of the TraceCPU.
-    assert(!getInstPort().isConnected());
-    assert(oldCPU->getInstPort().isConnected());
-    BaseSlavePort &inst_peer_port = oldCPU->getInstPort().getSlavePort();
-    oldCPU->getInstPort().unbind();
-    getInstPort().bind(inst_peer_port);
-
-    assert(!getDataPort().isConnected());
-    assert(oldCPU->getDataPort().isConnected());
-    BaseSlavePort &data_peer_port = oldCPU->getDataPort().getSlavePort();
-    oldCPU->getDataPort().unbind();
-    getDataPort().bind(data_peer_port);
+    getInstPort().takeOverFrom(&oldCPU->getInstPort());
+    getDataPort().takeOverFrom(&oldCPU->getDataPort());
 }
 
 void
@@ -663,16 +650,15 @@ TraceCPU::ElasticDataGen::executeMemReq(GraphNode* node_ptr)
 
     // Create a request and the packet containing request
     auto req = std::make_shared<Request>(
-        node_ptr->physAddr, node_ptr->size,
-        node_ptr->flags, masterID, node_ptr->seqNum,
-        ContextID(0));
+        node_ptr->physAddr, node_ptr->size, node_ptr->flags, masterID);
+    req->setReqInstSeqNum(node_ptr->seqNum);
 
     req->setPC(node_ptr->pc);
-    // If virtual address is valid, set the asid and virtual address fields
+    // If virtual address is valid, set the virtual address field
     // of the request.
     if (node_ptr->virtAddr != 0) {
-        req->setVirt(node_ptr->asid, node_ptr->virtAddr, node_ptr->size,
-                        node_ptr->flags, masterID, node_ptr->pc);
+        req->setVirt(node_ptr->virtAddr, node_ptr->size,
+                     node_ptr->flags, masterID, node_ptr->pc);
         req->setPaddr(node_ptr->physAddr);
         req->setReqInstSeqNum(node_ptr->seqNum);
     }
@@ -1339,11 +1325,6 @@ TraceCPU::ElasticDataGen::InputStream::read(GraphNode* element)
             element->virtAddr = pkt_msg.v_addr();
         else
             element->virtAddr = 0;
-
-        if (pkt_msg.has_asid())
-            element->asid = pkt_msg.asid();
-        else
-            element->asid = 0;
 
         if (pkt_msg.has_size())
             element->size = pkt_msg.size();

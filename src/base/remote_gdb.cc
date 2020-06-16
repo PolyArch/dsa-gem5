@@ -1,4 +1,15 @@
 /*
+ * Copyright (c) 2018 ARM Limited
+ *
+ * The license below extends only to copyright in the software and shall
+ * not be construed as granting a license to any other intellectual
+ * property including but not limited to intellectual property relating
+ * to a hardware implementation of the functionality of the software
+ * licensed hereunder.  You may use the software subject to the license
+ * terms below provided that you ensure that this notice is replicated
+ * unmodified and in its entirety in all distributions of the software,
+ * modified or unmodified, in source code or in binary form.
+ *
  * Copyright 2015 LabWare
  * Copyright 2014 Google, Inc.
  * Copyright (c) 2002-2005 The Regents of The University of Michigan
@@ -26,9 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
- *          Boris Shingarov
  */
 
 /*
@@ -127,9 +135,9 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
+#include <sstream>
 #include <string>
 
-#include "arch/vtophys.hh"
 #include "base/intmath.hh"
 #include "base/socket.hh"
 #include "base/trace.hh"
@@ -138,9 +146,8 @@
 #include "cpu/static_inst.hh"
 #include "cpu/thread_context.hh"
 #include "debug/GDBAll.hh"
-#include "mem/fs_translating_port_proxy.hh"
 #include "mem/port.hh"
-#include "mem/se_translating_port_proxy.hh"
+#include "mem/port_proxy.hh"
 #include "sim/full_system.hh"
 #include "sim/system.hh"
 
@@ -151,8 +158,6 @@ static const char GDBStart = '$';
 static const char GDBEnd = '#';
 static const char GDBGoodP = '+';
 static const char GDBBadP = '-';
-
-static const int GDBPacketBufLen = 1024;
 
 vector<BaseRemoteGDB *> debuggers;
 
@@ -165,8 +170,8 @@ class HardBreakpoint : public PCEvent
     int refcount;
 
   public:
-    HardBreakpoint(BaseRemoteGDB *_gdb, PCEventQueue *q, Addr pc)
-        : PCEvent(q, "HardBreakpoint Event", pc),
+    HardBreakpoint(BaseRemoteGDB *_gdb, PCEventScope *s, Addr pc)
+        : PCEvent(s, "HardBreakpoint Event", pc),
           gdb(_gdb), refcount(0)
     {
         DPRINTF(GDBMisc, "creating hardware breakpoint at %#x\n", evpc);
@@ -307,12 +312,6 @@ break_type(char c)
 
 std::map<Addr, HardBreakpoint *> hardBreakMap;
 
-EventQueue *
-getComInstEventQueue(ThreadContext *tc)
-{
-    return tc->getCpuPtr()->comInstEventQueue[tc->threadId()];
-}
-
 }
 
 BaseRemoteGDB::BaseRemoteGDB(System *_system, ThreadContext *c, int _port) :
@@ -441,20 +440,19 @@ BaseRemoteGDB::trap(int type)
     regCachePtr = gdbRegs();
     regCachePtr->getRegs(tc);
 
-    char data[GDBPacketBufLen + 1];
     GdbCommand::Context cmdCtx;
     cmdCtx.type = type;
-    cmdCtx.data = &data[1];
+    std::vector<char> data;
 
     for (;;) {
         try {
-            size_t datalen = recv(data, sizeof(data));
-            if (datalen < 1)
+            recv(data);
+            if (data.size() == 1)
                 throw BadClient();
-
-            data[datalen] = 0; // Sentinel
             cmdCtx.cmd_byte = data[0];
-            cmdCtx.len = datalen - 1;
+            cmdCtx.data = data.data() + 1;
+            // One for sentinel, one for cmd_byte.
+            cmdCtx.len = data.size() - 2;
 
             auto cmdIt = command_map.find(cmdCtx.cmd_byte);
             if (cmdIt == command_map.end()) {
@@ -521,41 +519,31 @@ BaseRemoteGDB::putbyte(uint8_t b)
 }
 
 // Receive a packet from gdb
-int
-BaseRemoteGDB::recv(char *bp, int maxlen)
+void
+BaseRemoteGDB::recv(std::vector<char>& bp)
 {
-    char *p;
     uint8_t c;
     int csum;
-    int len;
+    bp.resize(0);
 
     do {
-        p = bp;
-        csum = len = 0;
+        csum = 0;
         // Find the beginning of a packet
         while ((c = getbyte()) != GDBStart);
 
         // Read until you find the end of the data in the packet, and keep
         // track of the check sum.
-        while (len < maxlen) {
+        while (true) {
             c = getbyte();
             if (c == GDBEnd)
                 break;
             c &= 0x7f;
             csum += c;
-            *p++ = c;
-            len++;
+            bp.push_back(c);
         }
 
-        // Mask the check sum, and terminate the command string.
+        // Mask the check sum.
         csum &= 0xff;
-        *p = '\0';
-
-        // If the command was too long, report an error.
-        if (len >= maxlen) {
-            putbyte(GDBBadP);
-            continue;
-        }
 
         // Bring in the checksum. If the check sum matches, csum will be 0.
         csum -= digit2i(getbyte()) * 16;
@@ -566,21 +554,20 @@ BaseRemoteGDB::recv(char *bp, int maxlen)
             // Report that the packet was received correctly
             putbyte(GDBGoodP);
             // Sequence present?
-            if (bp[2] == ':') {
+            if (bp.size() > 2 && bp[2] == ':') {
                 putbyte(bp[0]);
                 putbyte(bp[1]);
-                len -= 3;
-                memcpy(bp, bp+3, len);
+                auto begin = std::begin(bp);
+                bp.erase(begin, std::next(begin, 3));
             }
             break;
         }
         // Otherwise, report that there was a mistake.
         putbyte(GDBBadP);
     } while (1);
-
-    DPRINTF(GDBRecv, "recv:  %s\n", bp);
-
-    return len;
+    // Sentinel.
+    bp.push_back('\0');
+    DPRINTF(GDBRecv, "recv:  %s\n", bp.data());
 }
 
 // Send a packet to gdb
@@ -616,23 +603,10 @@ BaseRemoteGDB::send(const char *bp)
 bool
 BaseRemoteGDB::read(Addr vaddr, size_t size, char *data)
 {
-    static Addr lastaddr = 0;
-    static size_t lastsize = 0;
-
-    if (vaddr < 10) {
-      DPRINTF(GDBRead, "read:  reading memory location zero!\n");
-      vaddr = lastaddr + lastsize;
-    }
-
     DPRINTF(GDBRead, "read:  addr=%#x, size=%d", vaddr, size);
 
-    if (FullSystem) {
-        FSTranslatingPortProxy &proxy = tc->getVirtProxy();
-        proxy.readBlob(vaddr, (uint8_t*)data, size);
-    } else {
-        SETranslatingPortProxy &proxy = tc->getMemProxy();
-        proxy.readBlob(vaddr, (uint8_t*)data, size);
-    }
+    PortProxy &proxy = tc->getVirtProxy();
+    proxy.readBlob(vaddr, data, size);
 
 #if TRACING_ON
     if (DTRACE(GDBRead)) {
@@ -652,14 +626,6 @@ BaseRemoteGDB::read(Addr vaddr, size_t size, char *data)
 bool
 BaseRemoteGDB::write(Addr vaddr, size_t size, const char *data)
 {
-    static Addr lastaddr = 0;
-    static size_t lastsize = 0;
-
-    if (vaddr < 10) {
-      DPRINTF(GDBWrite, "write: writing memory location zero!\n");
-      vaddr = lastaddr + lastsize;
-    }
-
     if (DTRACE(GDBWrite)) {
         DPRINTFN("write: addr=%#x, size=%d", vaddr, size);
         if (DTRACE(GDBExtra)) {
@@ -669,13 +635,8 @@ BaseRemoteGDB::write(Addr vaddr, size_t size, const char *data)
         } else
             DPRINTFNR("\n");
     }
-    if (FullSystem) {
-        FSTranslatingPortProxy &proxy = tc->getVirtProxy();
-        proxy.writeBlob(vaddr, (uint8_t*)data, size);
-    } else {
-        SETranslatingPortProxy &proxy = tc->getMemProxy();
-        proxy.writeBlob(vaddr, (uint8_t*)data, size);
-    }
+    PortProxy &proxy = tc->getVirtProxy();
+    proxy.writeBlob(vaddr, data, size);
 
     return true;
 }
@@ -729,7 +690,7 @@ BaseRemoteGDB::insertHardBreak(Addr addr, size_t len)
 
     HardBreakpoint *&bkpt = hardBreakMap[addr];
     if (bkpt == 0)
-        bkpt = new HardBreakpoint(this, &sys->pcEventQueue, addr);
+        bkpt = new HardBreakpoint(this, sys, addr);
 
     bkpt->refcount++;
 }
@@ -771,17 +732,16 @@ BaseRemoteGDB::setTempBreakpoint(Addr bkpt)
 void
 BaseRemoteGDB::scheduleInstCommitEvent(Event *ev, int delta)
 {
-    EventQueue *eq = getComInstEventQueue(tc);
     // Here "ticks" aren't simulator ticks which measure time, they're
     // instructions committed by the CPU.
-    eq->schedule(ev, eq->getCurTick() + delta);
+    tc->scheduleInstCountEvent(ev, tc->getCurrentInstCount() + delta);
 }
 
 void
 BaseRemoteGDB::descheduleInstCommitEvent(Event *ev)
 {
     if (ev->scheduled())
-        getComInstEventQueue(tc)->deschedule(ev);
+        tc->descheduleInstCountEvent(ev);
 }
 
 std::map<char, BaseRemoteGDB::GdbCommand> BaseRemoteGDB::command_map = {
@@ -980,10 +940,84 @@ BaseRemoteGDB::cmd_mem_w(GdbCommand::Context &ctx)
 bool
 BaseRemoteGDB::cmd_query_var(GdbCommand::Context &ctx)
 {
-    if (string(ctx.data, ctx.len - 1) != "C")
+    string s(ctx.data, ctx.len - 1);
+    string xfer_read_prefix = "Xfer:features:read:";
+    if (s.rfind("Supported:", 0) == 0) {
+        std::ostringstream oss;
+        // This reply field mandatory. We can receive arbitrarily
+        // long packets, so we could choose it to be arbitrarily large.
+        // This is just an arbitrary filler value that seems to work.
+        oss << "PacketSize=1024";
+        for (const auto& feature : availableFeatures())
+            oss << ';' << feature;
+        send(oss.str().c_str());
+    } else if (s.rfind(xfer_read_prefix, 0) == 0) {
+        size_t offset, length;
+        auto value_string = s.substr(xfer_read_prefix.length());
+        auto colon_pos = value_string.find(':');
+        auto comma_pos = value_string.find(',');
+        if (colon_pos == std::string::npos || comma_pos == std::string::npos)
+            throw CmdError("E00");
+        std::string annex;
+        if (!getXferFeaturesRead(value_string.substr(0, colon_pos), annex))
+            throw CmdError("E00");
+        try {
+            offset = std::stoull(
+                value_string.substr(colon_pos + 1, comma_pos), NULL, 16);
+            length = std::stoull(
+                value_string.substr(comma_pos + 1), NULL, 16);
+        } catch (std::invalid_argument& e) {
+            throw CmdError("E00");
+        } catch (std::out_of_range& e) {
+            throw CmdError("E00");
+        }
+        std::string encoded;
+        encodeXferResponse(annex, encoded, offset, length);
+        send(encoded.c_str());
+    } else if (s == "C") {
+        send("QC0");
+    } else {
         throw Unsupported();
-    send("QC0");
+    }
     return true;
+}
+
+std::vector<std::string>
+BaseRemoteGDB::availableFeatures() const
+{
+    return {};
+};
+
+bool
+BaseRemoteGDB::getXferFeaturesRead(
+    const std::string &annex, std::string &output)
+{
+    return false;
+}
+
+void
+BaseRemoteGDB::encodeBinaryData(
+    const std::string &unencoded, std::string &encoded) const
+{
+    for (const char& c : unencoded) {
+        if (c == '$' || c == '#' || c == '}' || c == '*') {
+            encoded += '}';
+            encoded += c ^ 0x20;
+        } else {
+            encoded += c;
+        }
+    }
+}
+
+void
+BaseRemoteGDB::encodeXferResponse(const std::string &unencoded,
+    std::string &encoded, size_t offset, size_t unencoded_length) const
+{
+    if (offset + unencoded_length < unencoded.length())
+        encoded += 'm';
+    else
+        encoded += 'l';
+    encodeBinaryData(unencoded.substr(offset, unencoded_length), encoded);
 }
 
 bool

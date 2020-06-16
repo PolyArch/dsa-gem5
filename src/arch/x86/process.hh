@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __ARCH_X86_PROCESS_HH__
@@ -60,21 +58,10 @@ namespace X86ISA
     class X86Process : public Process
     {
       protected:
-        /**
-         * Declaration of architectural page table for x86.
-         *
-         * These page tables are stored in system memory and respect x86
-         * specification.
-         */
-
         Addr _gdtStart;
         Addr _gdtSize;
 
-        SyscallDesc *syscallDescs;
-        const int numSyscallDescs;
-
-        X86Process(ProcessParams * params, ObjectFile *objFile,
-                   SyscallDesc *_syscallDescs, int _numSyscallDescs);
+        X86Process(ProcessParams *params, ::Loader::ObjectFile *objFile);
 
         template<class IntType>
         void argsInit(int pageSize,
@@ -87,12 +74,8 @@ namespace X86ISA
         Addr gdtSize()
         { return _gdtSize; }
 
-        SyscallDesc* getDesc(int callnum) override;
-
-        void setSyscallReturn(ThreadContext *tc,
-                              SyscallReturn return_value) override;
         void clone(ThreadContext *old_tc, ThreadContext *new_tc,
-                   Process *process, TheISA::IntReg flags) override;
+                   Process *process, RegVal flags) override;
 
         X86Process &
         operator=(const X86Process &in)
@@ -102,7 +85,6 @@ namespace X86ISA
 
             _gdtStart = in._gdtStart;
             _gdtSize = in._gdtSize;
-            syscallDescs = in.syscallDescs;
 
             return *this;
         }
@@ -111,9 +93,6 @@ namespace X86ISA
     class X86_64Process : public X86Process
     {
       protected:
-        X86_64Process(ProcessParams *params, ObjectFile *objFile,
-                      SyscallDesc *_syscallDescs, int _numSyscallDescs);
-
         class VSyscallPage
         {
           public:
@@ -139,24 +118,18 @@ namespace X86ISA
         VSyscallPage vsyscallPage;
 
       public:
+        X86_64Process(ProcessParams *params, ::Loader::ObjectFile *objFile);
+
         void argsInit(int pageSize);
         void initState() override;
 
-        X86ISA::IntReg getSyscallArg(ThreadContext *tc, int &i) override;
-        /// Explicitly import the otherwise hidden getSyscallArg
-        using Process::getSyscallArg;
-        void setSyscallArg(ThreadContext *tc, int i,
-                           X86ISA::IntReg val) override;
         void clone(ThreadContext *old_tc, ThreadContext *new_tc,
-                   Process *process, TheISA::IntReg flags) override;
+                   Process *process, RegVal flags) override;
     };
 
     class I386Process : public X86Process
     {
       protected:
-        I386Process(ProcessParams *params, ObjectFile *objFile,
-                    SyscallDesc *_syscallDescs, int _numSyscallDescs);
-
         class VSyscallPage
         {
           public:
@@ -182,19 +155,13 @@ namespace X86ISA
         VSyscallPage vsyscallPage;
 
       public:
+        I386Process(ProcessParams *params, ::Loader::ObjectFile *objFile);
+
         void argsInit(int pageSize);
         void initState() override;
 
-        void syscall(int64_t callnum, ThreadContext *tc,
-                     Fault *fault) override;
-        X86ISA::IntReg getSyscallArg(ThreadContext *tc,
-                                     int &i) override;
-        X86ISA::IntReg getSyscallArg(ThreadContext *tc, int &i,
-                                     int width) override;
-        void setSyscallArg(ThreadContext *tc, int i,
-                           X86ISA::IntReg val) override;
         void clone(ThreadContext *old_tc, ThreadContext *new_tc,
-                   Process *process, TheISA::IntReg flags) override;
+                   Process *process, RegVal flags) override;
     };
 
 }

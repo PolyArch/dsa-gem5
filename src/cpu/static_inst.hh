@@ -1,4 +1,16 @@
 /*
+ * Copyright (c) 2017 ARM Limited
+ * All rights reserved
+ *
+ * The license below extends only to copyright in the software and shall
+ * not be construed as granting a license to any other intellectual
+ * property including but not limited to intellectual property relating
+ * to a hardware implementation of the functionality of the software
+ * licensed hereunder.  You may use the software subject to the license
+ * terms below provided that you ensure that this notice is replicated
+ * unmodified and in its entirety in all distributions of the software,
+ * modified or unmodified, in source code or in binary form.
+ *
  * Copyright (c) 2003-2005 The Regents of The University of Michigan
  * Copyright (c) 2013 Advanced Micro Devices, Inc.
  * All rights reserved.
@@ -25,8 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Steve Reinhardt
  */
 
 #ifndef __CPU_STATIC_INST_HH__
@@ -54,11 +64,15 @@ class Packet;
 
 class ExecContext;
 
+namespace Loader
+{
 class SymbolTable;
+} // namespace Loader
 
-namespace Trace {
-    class InstRecord;
-}
+namespace Trace
+{
+class InstRecord;
+} // namespace Trace
 
 /**
  * Base, ISA-independent static instruction class.
@@ -105,16 +119,17 @@ class StaticInst : public RefCounted, public StaticInstFlags
     /** @{ */
     int8_t _numVecDestRegs;
     int8_t _numVecElemDestRegs;
+    int8_t _numVecPredDestRegs;
     /** @} */
 
   public:
 
     /// @name Register information.
-    /// The sum of numFPDestRegs(), numIntDestRegs(), numVecDestRegs() and
-    /// numVecelemDestRegs() equals numDestRegs().  The former two functions
-    /// are used to track physical register usage for machines with separate
-    /// int & FP reg files, the next two is for machines with vector register
-    /// file.
+    /// The sum of numFPDestRegs(), numIntDestRegs(), numVecDestRegs(),
+    /// numVecElemDestRegs() and numVecPredDestRegs() equals numDestRegs().
+    /// The former two functions are used to track physical register usage for
+    /// machines with separate int & FP reg files, the next three are for
+    /// machines with vector and predicate register files.
     //@{
     /// Number of source registers.
     int8_t numSrcRegs()  const { return _numSrcRegs; }
@@ -128,6 +143,8 @@ class StaticInst : public RefCounted, public StaticInstFlags
     int8_t numVecDestRegs() const { return _numVecDestRegs; }
     /// Number of vector element destination regs.
     int8_t numVecElemDestRegs() const { return _numVecElemDestRegs; }
+    /// Number of predicate destination regs.
+    int8_t numVecPredDestRegs() const { return _numVecPredDestRegs; }
     /// Number of coprocesor destination regs.
     int8_t numCCDestRegs() const { return _numCCDestRegs; }
     //@}
@@ -252,7 +269,7 @@ class StaticInst : public RefCounted, public StaticInstFlags
      * Internal function to generate disassembly string.
      */
     virtual std::string
-    generateDisassembly(Addr pc, const SymbolTable *symtab) const = 0;
+    generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const = 0;
 
     /// Constructor.
     /// It's important to initialize everything here to a sane
@@ -262,8 +279,8 @@ class StaticInst : public RefCounted, public StaticInstFlags
     StaticInst(const char *_mnemonic, ExtMachInst _machInst, OpClass __opClass)
         : _opClass(__opClass), _numSrcRegs(0), _numDestRegs(0),
           _numFPDestRegs(0), _numIntDestRegs(0), _numCCDestRegs(0),
-          _numVecDestRegs(0), _numVecElemDestRegs(0), machInst(_machInst),
-          mnemonic(_mnemonic), cachedDisassembly(0)
+          _numVecDestRegs(0), _numVecElemDestRegs(0), _numVecPredDestRegs(0),
+          machInst(_machInst), mnemonic(_mnemonic), cachedDisassembly(0)
     { }
 
   public:
@@ -323,7 +340,7 @@ class StaticInst : public RefCounted, public StaticInstFlags
      * should not be cached, this function should be overridden directly.
      */
     virtual const std::string &disassemble(Addr pc,
-        const SymbolTable *symtab = 0) const;
+        const Loader::SymbolTable *symtab=nullptr) const;
 
     /**
      * Print a separator separated list of this instruction's set flag

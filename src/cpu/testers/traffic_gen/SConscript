@@ -34,8 +34,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Andreas Hansson
 
 Import('*')
 
@@ -48,6 +46,7 @@ Source('exit_gen.cc')
 Source('idle_gen.cc')
 Source('linear_gen.cc')
 Source('random_gen.cc')
+Source('stream_gen.cc')
 
 DebugFlag('TrafficGen')
 SimObject('BaseTrafficGen.py')

@@ -1,4 +1,4 @@
-# Copyright (c) 2012 ARM Limited
+# Copyright (c) 2012, 2019 ARM Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -32,13 +32,13 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Andreas Sandberg
 
 from m5.objects import *
 from arm_generic import *
 
-root = LinuxArmFSSystem(mem_mode='timing',
+root = LinuxArmFSSystem(aarch64_kernel=False,
+                        machine_type='VExpress_GEM5_V1',
+                        mem_mode='timing',
                         mem_class=DDR3_1600_8x8,
                         cpu_class=MinorCPU,
                         num_cpus=2).create_root()

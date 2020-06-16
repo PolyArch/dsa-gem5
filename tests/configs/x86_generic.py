@@ -32,8 +32,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Andreas Sandberg
 
 from abc import ABCMeta, abstractmethod
 import m5
@@ -41,7 +39,7 @@ from m5.objects import *
 from m5.proxy import *
 m5.util.addToPath('../configs/')
 from common.Benchmarks import SysConfig
-from common import FSConfig
+from common import FSConfig, SysPaths
 from common.Caches import *
 from base_config import *
 
@@ -56,10 +54,11 @@ class LinuxX86SystemBuilder(object):
         pass
 
     def create_system(self):
-        mdesc = SysConfig(disk = 'linux-x86.img')
+        mdesc = SysConfig(disks = ['linux-x86.img'])
         system = FSConfig.makeLinuxX86System(self.mem_mode,
                                              numCPUs=self.num_cpus,
                                              mdesc=mdesc)
+        system.kernel = SysPaths.binary('x86_64-vmlinux-2.6.22.9')
 
         self.init_system(system)
         return system

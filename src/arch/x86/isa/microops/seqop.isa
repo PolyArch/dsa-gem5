@@ -32,8 +32,6 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Authors: Gabe Black
 
 output header {{
     class SeqOpBase : public X86ISA::X86MicroopBase
@@ -52,7 +50,7 @@ output header {{
                 uint16_t _target, uint8_t _cc);
 
         std::string generateDisassembly(Addr pc,
-                const SymbolTable *symtab) const;
+                const Loader::SymbolTable *symtab) const;
     };
 }};
 
@@ -106,8 +104,9 @@ def template SeqOpConstructor {{
 }};
 
 output decoder {{
-    std::string SeqOpBase::generateDisassembly(Addr pc,
-            const SymbolTable *symtab) const
+    std::string
+    SeqOpBase::generateDisassembly(
+            Addr pc, const Loader::SymbolTable *symtab) const
     {
         std::stringstream response;
 
@@ -124,7 +123,7 @@ let {{
             self.target = target
             if flags:
                 if not isinstance(flags, (list, tuple)):
-                    raise Exception, "flags must be a list or tuple of flags"
+                    raise Exception("flags must be a list or tuple of flags")
                 self.cond = " | ".join(flags)
                 self.className += "Flags"
             else:
@@ -156,7 +155,7 @@ let {{
         def __init__(self, flags=None):
             if flags:
                 if not isinstance(flags, (list, tuple)):
-                    raise Exception, "flags must be a list or tuple of flags"
+                    raise Exception("flags must be a list or tuple of flags")
                 self.cond = " | ".join(flags)
                 self.className += "Flags"
             else:

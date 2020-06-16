@@ -29,8 +29,6 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Sooraj Puthoor
  */
 
 #include "base/logging.hh"
@@ -142,8 +140,6 @@ GPUCoalescer::GPUCoalescer(const Params *p)
     assert(m_deadlock_threshold > 0);
     assert(m_instCache_ptr);
     assert(m_dataCache_ptr);
-
-    m_data_cache_hit_latency = p->dcache_hit_latency;
 
     m_runningGarnetStandalone = p->garnet_standalone;
     assumingRfOCoherence = p->assume_rfo;
@@ -640,10 +636,8 @@ GPUCoalescer::hitCallback(GPUCoalescerRequest* srequest,
                 (type == RubyRequestType_RMW_Read) ||
                 (type == RubyRequestType_Locked_RMW_Read) ||
                 (type == RubyRequestType_Load_Linked)) {
-                memcpy(pkt->getPtr<uint8_t>(),
-                       data.getData(getOffset(request_address),
-                                    pkt->getSize()),
-                       pkt->getSize());
+                pkt->setData(
+                    data.getData(getOffset(request_address), pkt->getSize()));
             } else {
                 data.setData(pkt->getPtr<uint8_t>(),
                              getOffset(request_address), pkt->getSize());
@@ -952,12 +946,12 @@ GPUCoalescer::issueRequest(PacketPtr pkt, RubyRequestType secondary_type)
     fatal_if(secondary_type == RubyRequestType_IFETCH,
              "there should not be any I-Fetch requests in the GPU Coalescer");
 
-    // Send the message to the cache controller
-    fatal_if(m_data_cache_hit_latency == 0,
-             "should not have a latency of zero");
+    Tick latency = cyclesToTicks(
+                        m_controller->mandatoryQueueLatency(secondary_type));
+    assert(latency > 0);
 
     assert(m_mandatory_q_ptr);
-    m_mandatory_q_ptr->enqueue(msg, clockEdge(), m_data_cache_hit_latency);
+    m_mandatory_q_ptr->enqueue(msg, clockEdge(), latency);
 }
 
 template <class KEY, class VALUE>
@@ -988,9 +982,6 @@ GPUCoalescer::print(ostream& out) const
 void
 GPUCoalescer::checkCoherence(Addr addr)
 {
-#ifdef CHECK_COHERENCE
-    m_ruby_system->checkGlobalCoherenceInvariant(addr);
-#endif
 }
 
 void
@@ -1097,10 +1088,8 @@ GPUCoalescer::atomicCallback(Addr address,
         if (pkt->getPtr<uint8_t>() &&
             srequest->m_type != RubyRequestType_ATOMIC_NO_RETURN) {
             /* atomics are done in memory, and return the data *before* the atomic op... */
-            memcpy(pkt->getPtr<uint8_t>(),
-                   data.getData(getOffset(request_address),
-                                pkt->getSize()),
-                   pkt->getSize());
+            pkt->setData(
+                data.getData(getOffset(request_address), pkt->getSize()));
         } else {
             DPRINTF(MemoryAccess,
                     "WARNING.  Data not transfered from Ruby to M5 for type " \

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2012-2013, 2015,2017-2018 ARM Limited
+ * Copyright (c) 2010, 2012-2013, 2015,2017-2020 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -36,173 +36,72 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
  */
 
 #include "arch/arm/system.hh"
 
 #include <iostream>
 
+#include "arch/arm/fs_workload.hh"
 #include "arch/arm/semihosting.hh"
 #include "base/loader/object_file.hh"
 #include "base/loader/symtab.hh"
 #include "cpu/thread_context.hh"
-#include "mem/fs_translating_port_proxy.hh"
+#include "dev/arm/fvp_base_pwr_ctrl.hh"
+#include "dev/arm/gic_v2.hh"
 #include "mem/physical.hh"
-#include "sim/full_system.hh"
 
 using namespace std;
 using namespace Linux;
 
 ArmSystem::ArmSystem(Params *p)
     : System(p),
-      bootLoaders(), bootldr(nullptr),
       _haveSecurity(p->have_security),
       _haveLPAE(p->have_lpae),
       _haveVirtualization(p->have_virtualization),
+      _haveCrypto(p->have_crypto),
       _genericTimer(nullptr),
+      _gic(nullptr),
+      _pwrCtrl(nullptr),
       _highestELIs64(p->highest_el_is_64),
-      _resetAddr64(p->auto_reset_addr_64 ?
-                   (kernelEntry & loadAddrMask) + loadAddrOffset :
-                   p->reset_addr_64),
       _physAddrRange64(p->phys_addr_range_64),
       _haveLargeAsid64(p->have_large_asid_64),
-      _m5opRange(p->m5ops_base ?
-                 RangeSize(p->m5ops_base, 0x10000) :
-                 AddrRange(1, 0)), // Create an empty range if disabled
+      _haveSVE(p->have_sve),
+      _sveVL(p->sve_vl),
+      _haveLSE(p->have_lse),
+      _havePAN(p->have_pan),
       semihosting(p->semihosting),
       multiProc(p->multi_proc)
 {
-    // Check if the physical address range is valid
+    if (p->auto_reset_addr) {
+        _resetAddr = workload->getEntry();
+    } else {
+        _resetAddr = p->reset_addr;
+        warn_if(workload->getEntry() != _resetAddr,
+                "Workload entry point %#x and reset address %#x are different",
+                workload->getEntry(), _resetAddr);
+    }
+
+    bool wl_is_64 = (workload->getArch() == Loader::Arm64);
+    if (wl_is_64 != _highestELIs64) {
+        warn("Highest ARM exception-level set to AArch%d but the workload "
+              "is for AArch%d. Assuming you wanted these to match.",
+              _highestELIs64 ? 64 : 32, wl_is_64 ? 64 : 32);
+        _highestELIs64 = wl_is_64;
+    }
+
     if (_highestELIs64 && (
             _physAddrRange64 < 32 ||
             _physAddrRange64 > 48 ||
             (_physAddrRange64 % 4 != 0 && _physAddrRange64 != 42))) {
         fatal("Invalid physical address range (%d)\n", _physAddrRange64);
     }
-
-    bootLoaders.reserve(p->boot_loader.size());
-    for (const auto &bl : p->boot_loader) {
-        std::unique_ptr<ObjectFile> obj;
-        obj.reset(createObjectFile(bl));
-
-        fatal_if(!obj, "Could not read bootloader: %s\n", bl);
-        bootLoaders.emplace_back(std::move(obj));
-    }
-
-    if (kernel) {
-        bootldr = getBootLoader(kernel);
-    } else if (!bootLoaders.empty()) {
-        // No kernel specified, default to the first boot loader
-        bootldr = bootLoaders[0].get();
-    }
-
-    if (!bootLoaders.empty() && !bootldr)
-        fatal("Can't find a matching boot loader / kernel combination!");
-
-    if (bootldr) {
-        bootldr->loadGlobalSymbols(debugSymbolTable);
-        if ((bootldr->getArch() == ObjectFile::Arm64) && !_highestELIs64) {
-            warn("Highest ARM exception-level set to AArch32 but bootloader "
-                  "is for AArch64. Assuming you wanted these to match.\n");
-            _highestELIs64 = true;
-        } else if ((bootldr->getArch() == ObjectFile::Arm) && _highestELIs64) {
-            warn("Highest ARM exception-level set to AArch64 but bootloader "
-                  "is for AArch32. Assuming you wanted these to match.\n");
-            _highestELIs64 = false;
-        }
-    }
-
-    debugPrintkEvent = addKernelFuncEvent<DebugPrintkEvent>("dprintk");
-}
-
-void
-ArmSystem::initState()
-{
-    // Moved from the constructor to here since it relies on the
-    // address map being resolved in the interconnect
-
-    // Call the initialisation of the super class
-    System::initState();
-
-    const Params* p = params();
-
-    if (bootldr) {
-        bootldr->loadSections(physProxy);
-
-        uint8_t jump_to_bl_32[] =
-        {
-            0x07, 0xf0, 0xa0, 0xe1  // branch to r7 in aarch32
-        };
-
-        uint8_t jump_to_bl_64[] =
-        {
-            0xe0, 0x00, 0x1f, 0xd6  // instruction "br x7" in aarch64
-        };
-
-        // write the jump to branch table into address 0
-        if (!_highestELIs64)
-            physProxy.writeBlob(0x0, jump_to_bl_32, sizeof(jump_to_bl_32));
-        else
-            physProxy.writeBlob(0x0, jump_to_bl_64, sizeof(jump_to_bl_64));
-
-        inform("Using bootloader at address %#x\n", bootldr->entryPoint());
-
-        // Put the address of the boot loader into r7 so we know
-        // where to branch to after the reset fault
-        // All other values needed by the boot loader to know what to do
-        if (!p->gic_cpu_addr || !p->flags_addr)
-            fatal("gic_cpu_addr && flags_addr must be set with bootloader\n");
-
-        for (int i = 0; i < threadContexts.size(); i++) {
-            if (!_highestELIs64)
-                threadContexts[i]->setIntReg(3, (kernelEntry & loadAddrMask) +
-                        loadAddrOffset);
-            threadContexts[i]->setIntReg(4, params()->gic_cpu_addr);
-            threadContexts[i]->setIntReg(5, params()->flags_addr);
-            threadContexts[i]->setIntReg(7, bootldr->entryPoint());
-        }
-        inform("Using kernel entry physical address at %#x\n",
-               (kernelEntry & loadAddrMask) + loadAddrOffset);
-    } else {
-        // Set the initial PC to be at start of the kernel code
-        if (!_highestELIs64)
-            threadContexts[0]->pcState((kernelEntry & loadAddrMask) +
-                    loadAddrOffset);
-    }
-}
-
-ArmSystem*
-ArmSystem::getArmSystem(ThreadContext *tc)
-{
-    ArmSystem *a_sys = dynamic_cast<ArmSystem *>(tc->getSystemPtr());
-    assert(a_sys);
-    return a_sys;
 }
 
 bool
 ArmSystem::haveSecurity(ThreadContext *tc)
 {
     return FullSystem? getArmSystem(tc)->haveSecurity() : false;
-}
-
-
-ArmSystem::~ArmSystem()
-{
-    if (debugPrintkEvent)
-        delete debugPrintkEvent;
-}
-
-ObjectFile *
-ArmSystem::getBootLoader(ObjectFile *const obj)
-{
-    for (auto &bl : bootLoaders) {
-        if (bl->getArch() == obj->getArch())
-            return bl.get();
-    }
-
-    return nullptr;
 }
 
 bool
@@ -247,9 +146,9 @@ ArmSystem::haveEL(ThreadContext *tc, ExceptionLevel el)
 }
 
 Addr
-ArmSystem::resetAddr64(ThreadContext *tc)
+ArmSystem::resetAddr(ThreadContext *tc)
 {
-    return getArmSystem(tc)->resetAddr64();
+    return getArmSystem(tc)->resetAddr();
 }
 
 uint8_t
@@ -276,41 +175,59 @@ ArmSystem::haveSemihosting(ThreadContext *tc)
     return FullSystem && getArmSystem(tc)->haveSemihosting();
 }
 
-uint64_t
-ArmSystem::callSemihosting64(ThreadContext *tc,
-                             uint32_t op, uint64_t param)
+bool
+ArmSystem::callSemihosting64(ThreadContext *tc, bool gem5_ops)
 {
-    ArmSystem *sys = getArmSystem(tc);
-    return sys->semihosting->call64(tc, op, param);
+    return getArmSystem(tc)->semihosting->call64(tc, gem5_ops);
 }
 
-uint32_t
-ArmSystem::callSemihosting32(ThreadContext *tc,
-                             uint32_t op, uint32_t param)
+bool
+ArmSystem::callSemihosting32(ThreadContext *tc, bool gem5_ops)
 {
-    ArmSystem *sys = getArmSystem(tc);
-    return sys->semihosting->call32(tc, op, param);
+    return getArmSystem(tc)->semihosting->call32(tc, gem5_ops);
+}
+
+bool
+ArmSystem::callSemihosting(ThreadContext *tc, bool gem5_ops)
+{
+    if (ArmISA::inAArch64(tc))
+        return callSemihosting64(tc, gem5_ops);
+    else
+        return callSemihosting32(tc, gem5_ops);
+}
+
+void
+ArmSystem::callSetStandByWfi(ThreadContext *tc)
+{
+    if (FVPBasePwrCtrl *pwr_ctrl = getArmSystem(tc)->getPowerController())
+        pwr_ctrl->setStandByWfi(tc);
+}
+
+void
+ArmSystem::callClearStandByWfi(ThreadContext *tc)
+{
+    if (FVPBasePwrCtrl *pwr_ctrl = getArmSystem(tc)->getPowerController())
+        pwr_ctrl->clearStandByWfi(tc);
+}
+
+bool
+ArmSystem::callSetWakeRequest(ThreadContext *tc)
+{
+    if (FVPBasePwrCtrl *pwr_ctrl = getArmSystem(tc)->getPowerController())
+        return pwr_ctrl->setWakeRequest(tc);
+    else
+        return true;
+}
+
+void
+ArmSystem::callClearWakeRequest(ThreadContext *tc)
+{
+    if (FVPBasePwrCtrl *pwr_ctrl = getArmSystem(tc)->getPowerController())
+        pwr_ctrl->clearWakeRequest(tc);
 }
 
 ArmSystem *
 ArmSystemParams::create()
 {
     return new ArmSystem(this);
-}
-
-void
-GenericArmSystem::initState()
-{
-    // Moved from the constructor to here since it relies on the
-    // address map being resolved in the interconnect
-
-    // Call the initialisation of the super class
-    ArmSystem::initState();
-}
-
-GenericArmSystem *
-GenericArmSystemParams::create()
-{
-
-    return new GenericArmSystem(this);
 }

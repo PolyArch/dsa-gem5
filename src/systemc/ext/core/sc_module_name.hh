@@ -23,12 +23,17 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __SYSTEMC_EXT_CORE_SC_MODULE_NAME_HH__
 #define __SYSTEMC_EXT_CORE_SC_MODULE_NAME_HH__
+
+namespace sc_gem5
+{
+
+class Module;
+
+} // namespace sc_gem5
 
 namespace sc_core
 {
@@ -44,6 +49,7 @@ class sc_module_name
 
   private:
     const char *_name;
+    sc_gem5::Module *_gem5_module;
     bool _on_the_stack;
 
     // Disabled

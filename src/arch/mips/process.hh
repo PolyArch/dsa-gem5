@@ -24,9 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
- *          Ali Saidi
  */
 
 #ifndef __MIPS_PROCESS_HH__
@@ -37,13 +34,17 @@
 
 #include "mem/page_table.hh"
 #include "sim/process.hh"
+#include "sim/syscall_abi.hh"
 
+namespace Loader
+{
 class ObjectFile;
+} // namespace Loader
 
 class MipsProcess : public Process
 {
   protected:
-    MipsProcess(ProcessParams * params, ObjectFile *objFile);
+    MipsProcess(ProcessParams * params, ::Loader::ObjectFile *objFile);
 
     void initState();
 
@@ -51,11 +52,38 @@ class MipsProcess : public Process
     void argsInit(int pageSize);
 
   public:
-    MipsISA::IntReg getSyscallArg(ThreadContext *tc, int &i);
-    /// Explicitly import the otherwise hidden getSyscallArg
-    using Process::getSyscallArg;
-    void setSyscallArg(ThreadContext *tc, int i, MipsISA::IntReg val);
-    void setSyscallReturn(ThreadContext *tc, SyscallReturn return_value);
+    struct SyscallABI : public GenericSyscallABI64
+    {
+        static const std::vector<int> ArgumentRegs;
+    };
 };
+
+namespace GuestABI
+{
+
+template <>
+struct Result<MipsProcess::SyscallABI, SyscallReturn>
+{
+    static void
+    store(ThreadContext *tc, const SyscallReturn &ret)
+    {
+        if (ret.suppressed() || ret.needsRetry())
+            return;
+
+        if (ret.successful()) {
+            // no error
+            tc->setIntReg(MipsISA::SyscallSuccessReg, 0);
+            tc->setIntReg(MipsISA::ReturnValueReg, ret.returnValue());
+        } else {
+            // got an error, return details
+            tc->setIntReg(MipsISA::SyscallSuccessReg, (uint32_t)(-1));
+            tc->setIntReg(MipsISA::ReturnValueReg, ret.errnoValue());
+        }
+        if (ret.count() > 1)
+            tc->setIntReg(MipsISA::SyscallPseudoReturnReg, ret.value2());
+    }
+};
+
+} // namespace GuestABI
 
 #endif // __MIPS_PROCESS_HH__

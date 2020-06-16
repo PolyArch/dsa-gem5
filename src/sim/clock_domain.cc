@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2014 ARM Limited
+ * Copyright (c) 2013-2014, 2019 ARM Limited
  * Copyright (c) 2013 Cornell University
  * All rights reserved
  *
@@ -34,12 +34,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Vasileios Spiliopoulos
- *          Akash Bagdia
- *          Andreas Hansson
- *          Christopher Torng
- *          Stephan Diestelhorst
  */
 
 #include "sim/clock_domain.hh"
@@ -55,20 +49,21 @@
 #include "sim/clocked_object.hh"
 #include "sim/voltage_domain.hh"
 
-void
-ClockDomain::regStats()
+ClockDomain::ClockDomainStats::ClockDomainStats(ClockDomain &cd)
+    : Stats::Group(&cd),
+    ADD_STAT(clock, "Clock period in ticks")
 {
-    SimObject::regStats();
-
-    using namespace Stats;
-
     // Expose the current clock period as a stat for observability in
     // the dumps
-    currentClock
-        .scalar(_clockPeriod)
-        .name(params()->name + ".clock")
-        .desc("Clock period in ticks")
-        ;
+    clock.scalar(cd._clockPeriod);
+}
+
+ClockDomain::ClockDomain(const Params *p, VoltageDomain *voltage_domain)
+    : SimObject(p),
+      _clockPeriod(0),
+      _voltageDomain(voltage_domain),
+      stats(*this)
+{
 }
 
 double

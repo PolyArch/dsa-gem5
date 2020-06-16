@@ -33,10 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Thomas Grass
- *          Andreas Hansson
- *          Marco Elver
  */
 
 #ifndef __MEM_MEM_CHECKER_MONITOR_HH__
@@ -44,14 +40,14 @@
 
 #include "base/statistics.hh"
 #include "mem/mem_checker.hh"
-#include "mem/mem_object.hh"
 #include "params/MemCheckerMonitor.hh"
+#include "sim/sim_object.hh"
 #include "sim/system.hh"
 
 /**
  * Implements a MemChecker monitor, to be inserted between two ports.
  */
-class MemCheckerMonitor : public MemObject
+class MemCheckerMonitor : public SimObject
 {
   public:
 
@@ -70,13 +66,10 @@ class MemCheckerMonitor : public MemObject
     /** Destructor */
     ~MemCheckerMonitor();
 
-    virtual BaseMasterPort& getMasterPort(const std::string& if_name,
-                                          PortID idx = InvalidPortID);
+    Port &getPort(const std::string &if_name,
+                  PortID idx=InvalidPortID) override;
 
-    virtual BaseSlavePort& getSlavePort(const std::string& if_name,
-                                        PortID idx = InvalidPortID);
-
-    virtual void init();
+    void init() override;
 
   private:
 

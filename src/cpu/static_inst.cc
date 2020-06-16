@@ -24,9 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Steve Reinhardt
- *          Nathan Binkert
  */
 
 #include "cpu/static_inst.hh"
@@ -58,7 +55,8 @@ class NopStaticInst : public StaticInst
     }
 
     std::string
-    generateDisassembly(Addr pc, const SymbolTable *symtab) const override
+    generateDisassembly(Addr pc,
+            const Loader::SymbolTable *symtab) const override
     {
         return mnemonic;
     }
@@ -120,7 +118,7 @@ StaticInst::branchTarget(ThreadContext *tc) const
 }
 
 const string &
-StaticInst::disassemble(Addr pc, const SymbolTable *symtab) const
+StaticInst::disassemble(Addr pc, const Loader::SymbolTable *symtab) const
 {
     if (!cachedDisassembly)
         cachedDisassembly = new string(generateDisassembly(pc, symtab));

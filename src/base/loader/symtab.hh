@@ -24,9 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
- *          Steve Reinhardt
  */
 
 #ifndef __SYMTAB_HH__
@@ -38,6 +35,9 @@
 
 #include "base/types.hh"
 #include "sim/serialize.hh"
+
+namespace Loader
+{
 
 class SymbolTable
 {
@@ -174,5 +174,7 @@ class SymbolTable
 /// and per Process object for non-full-system, but so far one big
 /// global one has worked well enough.
 extern SymbolTable *debugSymbolTable;
+
+} // namespace Loader
 
 #endif // __SYMTAB_HH__

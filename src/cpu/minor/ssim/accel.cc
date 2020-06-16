@@ -59,6 +59,7 @@ void accel_t::req_config(addr_t addr, int size, uint64_t context) {
 
   _lsq->pushRequest(cur_minst(), true /*isLoad*/, NULL /*data*/,
                     size * 8 /*cache line*/, addr, 0 /*flags*/, 0 /*res*/,
+                    nullptr /*atom op*/, std::vector<bool>() /*byte enable*/,
                     sdInfo);
 }
 
@@ -2249,7 +2250,6 @@ void apply_map(uint8_t *raw_data, const vector<int> &imap,
 }
 
 void dma_controller_t::port_resp(unsigned cur_port) {
-
   if (Minor::LSQ::LSQRequestPtr response =
           _accel->_lsq->findResponse(cur_port)) {
   
@@ -2559,22 +2559,26 @@ void dma_controller_t::make_read_request() {
 
   auto to_sort = _read_streams;
 
-  auto to_key = [this](base_stream_t *s) {
-    int ready = 0, on_the_fly;
-    for (auto &port : s->in_ports())
-      ready += _accel->port_interf().in_port(port).mem_size();
-    on_the_fly = s->on_the_fly;
-    return std::pair<int, int>(ready, on_the_fly);
-  };
+  //auto to_key = [this](base_stream_t *s) {
+  //  int ready = 0, on_the_fly;
+  //  for (auto &port : s->in_ports())
+  //    ready += _accel->port_interf().in_port(port).mem_size();
+  //  on_the_fly = s->on_the_fly;
+  //  return std::pair<int, int>(ready, on_the_fly);
+  //};
 
-  std::sort(to_sort.begin(), to_sort.end(), [to_key](base_stream_t *a, base_stream_t *b) {
-    return to_key(a) < to_key(b);
-  });
+  //std::sort(to_sort.begin(), to_sort.end(), [to_key](base_stream_t *a, base_stream_t *b) {
+  //  return to_key(a) < to_key(b);
+  //});
+
+  _which_rd += 1;
 
   for (unsigned i = 0, n = to_sort.size(); i < n; ++i) {
-    _which_rd = i;
+    _which_rd = (_which_rd + i) % to_sort.size();
 
     base_stream_t *s = _read_streams[_which_rd];
+
+    DEBUG(MEM_REQ) << "Serving " << _which_rd;
 
     if (auto *sp = dynamic_cast<affine_read_stream_t *>(s)) {
 
@@ -2733,7 +2737,9 @@ int dma_controller_t::req_read(affine_read_stream_t &stream) {
   // make request
   _accel->_lsq->pushRequest(_accel->cur_minst(), true /*isLoad*/, NULL /*data*/,
                             MEM_WIDTH /*cache line*/, base_addr, 0 /*flags*/,
-                            0 /*res*/, sdInfo);
+                            0 /*res*/, nullptr /*atomic op*/,
+                            std::vector<bool>() /*byte enable*/,
+                            sdInfo);
 
   if (SS_DEBUG::MEM_REQ) {
     _accel->timestamp();
@@ -3459,7 +3465,8 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
   // make request
   _accel->_lsq->pushRequest(stream.minst(), true /*isLoad*/, NULL /*data*/,
                             MEM_WIDTH /*cache line*/, base_addr, 0 /*flags*/,
-                            0 /*res*/, sdInfo);
+                            0 /*res*/, nullptr /*atomic op*/,
+                            std::vector<bool>() /*byte enable*/, sdInfo);
 
   if (_accel->_ssim->in_roi()) {
     add_bw(stream.src(), stream.dest(), 1, imap.size());
@@ -3585,7 +3592,8 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t &stream) {
   // make store request
   _accel->_lsq->pushRequest(stream.minst(), false /*isLoad*/, data8,
                             bytes_written, init_addr, 0 /*flags*/, 0 /*res*/,
-                            sdInfo);
+                            nullptr /*atomic op*/,
+                            std::vector<bool>() /*byte enable*/, sdInfo);
 
   if(SS_DEBUG::MEM_WR) {
     cout << "bytes written: " << bytes_written << "addr: " << std::hex <<
@@ -3668,7 +3676,8 @@ void dma_controller_t::req_write(affine_write_stream_t &stream,
   // make store request
   _accel->_lsq->pushRequest(stream.minst(), false /*isLoad*/, data8,
                             bytes_written, init_addr, 0 /*flags*/, 0 /*res*/,
-                            sdInfo);
+                            nullptr/*atomic op*/,
+                            std::vector<bool>(), sdInfo);
 
   if (SS_DEBUG::MEM_REQ) {
     _accel->timestamp();

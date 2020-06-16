@@ -1,4 +1,16 @@
 /*
+ * Copyright (c) 2019 ARM Limited
+ * All rights reserved.
+ *
+ * The license below extends only to copyright in the software and shall
+ * not be construed as granting a license to any other intellectual
+ * property including but not limited to intellectual property relating
+ * to a hardware implementation of the functionality of the software
+ * licensed hereunder.  You may use the software subject to the license
+ * terms below provided that you ensure that this notice is replicated
+ * unmodified and in its entirety in all distributions of the software,
+ * modified or unmodified, in source code or in binary form.
+ *
  * Copyright (c) 1999-2008 Mark D. Hill and David A. Wood
  * All rights reserved.
  *
@@ -36,7 +48,7 @@
 #include "base/stl_helpers.hh"
 #include "debug/RubyQueue.hh"
 #include "mem/ruby/system/RubySystem.hh"
-#include "mem/protocol/SpuRequestMsg.hh"
+#include "mem/ruby/protocol/SpuRequestMsg.hh"
 
 using namespace std;
 using m5::stl_helpers::operator<<;
@@ -52,6 +64,7 @@ MessageBuffer::MessageBuffer(const Params *p)
     m_consumer = NULL;
     m_size_last_time_size_checked = 0;
     m_size_at_cycle_start = 0;
+    m_stalled_at_cycle_start = 0;
     m_msgs_this_cycle = 0;
     m_priority_rank = 0;
 
@@ -89,10 +102,12 @@ MessageBuffer::areNSlotsAvailable(unsigned int n, Tick current_time)
     // until schd cycle, but enqueue operations effect the visible
     // size immediately
     unsigned int current_size = 0;
+    unsigned int current_stall_size = 0;
 
     if (m_time_last_time_pop < current_time) {
-        // no pops this cycle - heap size is correct
+        // no pops this cycle - heap and stall queue size is correct
         current_size = m_prio_heap.size();
+        current_stall_size = m_stall_map_size;
     } else {
         if (m_time_last_time_enqueue < current_time) {
             // no enqueues this cycle - m_size_at_cycle_start is correct
@@ -102,15 +117,19 @@ MessageBuffer::areNSlotsAvailable(unsigned int n, Tick current_time)
             // enqueued msgs to m_size_at_cycle_start
             current_size = m_size_at_cycle_start + m_msgs_this_cycle;
         }
+
+        // Stall queue size at start is considered
+        current_stall_size = m_stalled_at_cycle_start;
     }
 
     // now compare the new size with our max size
-    if (current_size + m_stall_map_size + n <= m_max_size) {
+    if (current_size + current_stall_size + n <= m_max_size) {
         return true;
     } else {
         DPRINTF(RubyQueue, "n: %d, current_size: %d, heap size: %d, "
                 "m_max_size: %d\n",
-                n, current_size, m_prio_heap.size(), m_max_size);
+                n, current_size + current_stall_size,
+                m_prio_heap.size(), m_max_size);
         m_not_avail_count++;
         return false;
     }
@@ -174,8 +193,9 @@ MessageBuffer::enqueue(MsgPtr message, Tick current_time, Tick delta)
     assert(delta > 0);
     Tick arrival_time = 0;
 
-    if (!RubySystem::getRandomization() || !m_randomization) {
-	// printf("randomization should be set to false by default?\n");
+    // random delays are inserted if either RubySystem level randomization flag
+    // is turned on, or the buffer level randomization is set
+    if (!RubySystem::getRandomization() && !m_randomization) {
         // No randomization
         arrival_time = current_time + delta;
     } else {
@@ -258,6 +278,7 @@ MessageBuffer::dequeue(Tick current_time, bool decrement_messages)
     // adjusted until schd cycle
     if (m_time_last_time_pop < current_time) {
         m_size_at_cycle_start = m_prio_heap.size();
+        m_stalled_at_cycle_start = m_stall_map_size;
         m_time_last_time_pop = current_time;
     }
 
@@ -298,6 +319,7 @@ MessageBuffer::clear()
     m_time_last_time_enqueue = 0;
     m_time_last_time_pop = 0;
     m_size_at_cycle_start = 0;
+    m_stalled_at_cycle_start = 0;
     m_msgs_this_cycle = 0;
 }
 
@@ -321,16 +343,18 @@ void
 MessageBuffer::reanalyzeList(list<MsgPtr> &lt, Tick schdTick)
 {
     while (!lt.empty()) {
-        m_msg_counter++;
         MsgPtr m = lt.front();
-        m->setLastEnqueueTime(schdTick);
-        m->setMsgCounter(m_msg_counter);
+        assert(m->getLastEnqueueTime() <= schdTick);
 
         m_prio_heap.push_back(m);
         push_heap(m_prio_heap.begin(), m_prio_heap.end(),
                   greater<MsgPtr>());
 
         m_consumer->scheduleEventAbsolute(schdTick);
+
+        DPRINTF(RubyQueue, "Requeue arrival_time: %lld, Message: %s\n",
+            schdTick, *(m.get()));
+
         lt.pop_front();
     }
 }
@@ -454,17 +478,21 @@ MessageBuffer::regStats()
 }
 
 uint32_t
-MessageBuffer::functionalWrite(Packet *pkt)
+MessageBuffer::functionalAccess(Packet *pkt, bool is_read)
 {
-    uint32_t num_functional_writes = 0;
+    DPRINTF(RubyQueue, "functional %s for %#x\n",
+            is_read ? "read" : "write", pkt->getAddr());
+
+    uint32_t num_functional_accesses = 0;
 
     // Check the priority heap and write any messages that may
     // correspond to the address in the packet.
     for (unsigned int i = 0; i < m_prio_heap.size(); ++i) {
         Message *msg = m_prio_heap[i].get();
-        if (msg->functionalWrite(pkt)) {
-            num_functional_writes++;
-        }
+        if (is_read && msg->functionalRead(pkt))
+            return 1;
+        else if (!is_read && msg->functionalWrite(pkt))
+            num_functional_accesses++;
     }
 
     // Check the stall queue and write any messages that may
@@ -477,13 +505,14 @@ MessageBuffer::functionalWrite(Packet *pkt)
             it != (map_iter->second).end(); ++it) {
 
             Message *msg = (*it).get();
-            if (msg->functionalWrite(pkt)) {
-                num_functional_writes++;
-            }
+            if (is_read && msg->functionalRead(pkt))
+                return 1;
+            else if (!is_read && msg->functionalWrite(pkt))
+                num_functional_accesses++;
         }
     }
 
-    return num_functional_writes;
+    return num_functional_accesses;
 }
 
 MessageBuffer *

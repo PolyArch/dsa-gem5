@@ -23,8 +23,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __SYSTEMC_EXT_UTIL_SC_EXCEPTION_HH__
@@ -36,6 +34,14 @@ namespace sc_core
 {
 
 typedef std::exception sc_exception;
+
+// Nonstandard
+class sc_user
+{
+  public:
+    sc_user() {}
+    sc_user(const sc_user &) {}
+};
 
 } // namespace sc_core
 
