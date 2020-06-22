@@ -171,7 +171,7 @@ public:
 
   }
 
-  uint64_t roi_cycles() {return _roi_cycles;}
+  uint64_t roi_cycles() {return _roi_cycles / 500;}
   uint64_t control_core_insts() {return _control_core_insts;}
   /*uint64_t control_core_bubble_insts() {return _control_core_bubble_insts;}*/
   uint64_t control_core_discarded_insts() {return _control_core_discarded_insts;}
