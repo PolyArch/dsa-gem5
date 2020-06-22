@@ -68,6 +68,7 @@ if 'MinorCPU' in env['CPU_MODELS']:
     env.Append(LIBS=['dsa'])
     env.Append(LIBS=['json'])
     env.Append(LIBPATH=[Dir(os.environ['RISCV']+'/lib/')])
+    env.Append(LIBPATH=[Dir(os.environ['SS_TOOLS']+'/lib/')])
 
     env.Append(CPPPATH=Dir('ssim'))
 

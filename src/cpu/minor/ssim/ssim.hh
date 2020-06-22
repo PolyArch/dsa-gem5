@@ -220,7 +220,6 @@ private:
   uint64_t _fill_mode=0; //fill mode (default 0, no fill)
 
   Minor::LSQ* _lsq;
-  // Minor::Execute* _execute; (not sure if we need it)
 
   std::vector<accel_t*> accel_arr;
 

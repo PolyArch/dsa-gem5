@@ -495,7 +495,9 @@ void port_interf_t::initialize(SSModel *ssconfig) {
 }
 
 // ---------------------------- ACCEL ------------------------------------------
-uint64_t accel_t::now() { return _lsq->get_cpu().curCycle(); }
+uint64_t accel_t::now() {
+  return curTick();
+}
 
 accel_t::accel_t(Minor::LSQ *lsq, int i, ssim_t *ssim)
     : NUM_ACCEL(ssim->NUM_ACCEL), _ssim(ssim), _lsq(lsq), _accel_index(i), _accel_mask(1 << i),
@@ -2577,8 +2579,6 @@ void dma_controller_t::make_read_request() {
     _which_rd = (_which_rd + i) % to_sort.size();
 
     base_stream_t *s = _read_streams[_which_rd];
-
-    DEBUG(MEM_REQ) << "Serving " << _which_rd;
 
     if (auto *sp = dynamic_cast<affine_read_stream_t *>(s)) {
 

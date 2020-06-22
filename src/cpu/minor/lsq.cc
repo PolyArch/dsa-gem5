@@ -1642,8 +1642,6 @@ LSQ::findResponse(int streamId) {
         if(complete || (to_str_buf && can_store)) {
             ret = request;
         }
-    } else if (streamId < 23 || streamId > 31) {
-        DEBUG(MEM_REQ) << "no request for " << streamId;
     }
 
     if (ret) {
@@ -1780,7 +1778,7 @@ LSQ::pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
 {
     assert(inst->translationFault == NoFault || inst->inLSQ);
 
-    if (inst->inLSQ) {
+    if (!sdInfo && inst->inLSQ) {
         return inst->translationFault;
     }
 
@@ -1798,11 +1796,6 @@ LSQ::pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
     }
 
     LSQRequestPtr request;
-
-    // if it comes from the accel
-    // if(sdInfo!=NULL) {
-    //   request->setFlags(Request::UNCACHEABLE);
-    // }
 
     /* Copy given data into the request.  The request will pass this to the
      *  packet and then it will own the data */

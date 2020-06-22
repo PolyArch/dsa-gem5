@@ -156,62 +156,62 @@ class MinorCPU : public BaseCPU, public Consumer
   public:
 
     bool check_network_idle();
-	void wakeup();
-	void print(std::ostream& out) const;
+	  void wakeup();
+	  void print(std::ostream& out) const;
 
-	void initNetworkPtr(Network* net_ptr) {
-	  spu_net_ptr = net_ptr;
-	  m_machineID.type = MachineType_Accel;
-	  m_machineID.num = intToID(cpuId());
-	}
+	  void initNetworkPtr(Network* net_ptr) {
+	    spu_net_ptr = net_ptr;
+	    m_machineID.type = MachineType_Accel;
+	    m_machineID.num = intToID(cpuId());
+	  }
 
-	MachineID get_m_version(){
-	  return m_machineID;
-	}
+	  MachineID get_m_version(){
+	    return m_machineID;
+	  }
 
-	// return machine id corresponding to the given node id
-	MachineID get_m_version(int node_id){
-	  MachineID n_machineID;
-	  n_machineID.type = MachineType_Accel;
-	  n_machineID.num = intToID(node_id);
-	  return n_machineID;
-	}
+	  // return machine id corresponding to the given node id
+	  MachineID get_m_version(int node_id){
+	    MachineID n_machineID;
+	    n_machineID.type = MachineType_Accel;
+	    n_machineID.num = intToID(node_id);
+	    return n_machineID;
+	  }
 
-	void initNetQueues() {
-	  // FIXME: CHEck this virtual network num allocation, I have used dummy
-	  MachineType machine_type = string_to_MachineType("Accel");
+	  void initNetQueues() {
+	    // FIXME: CHEck this virtual network num allocation, I have used dummy
+	    MachineType machine_type = string_to_MachineType("Accel");
       int base M5_VAR_USED = MachineType_base_number(machine_type);
 
-	  // spu_net_ptr->setToNetQueue(base+core_id, true, 1, "response", requestFromSpu);
-	  // spu_net_ptr->setFromNetQueue(base+core_id, true, 0, "request", responseToSpu);
+	    // spu_net_ptr->setToNetQueue(base+core_id, true, 1, "response", requestFromSpu);
+	    // spu_net_ptr->setFromNetQueue(base+core_id, true, 0, "request", responseToSpu);
 
-	  // spu_net_ptr->setToNetQueue(base+core_id, true, 4, "response", requestFromSpu);
-	  // spu_net_ptr->setToNetQueue(base+core_id, true, 3, "forward", dummy1);
-	  // spu_net_ptr->setToNetQueue(base+core_id, true, 1, "response", dummy2);
-	  // spu_net_ptr->setFromNetQueue(base+core_id, true, 2, "request", responseToSpu);
-	  // spu_net_ptr->setFromNetQueue(base+core_id, true, 0, "request", dummy3);
-
-
-      // Or should this 0 be core_id?
-	  spu_net_ptr->setToNetQueue(base+cpuId(), true, 0, "response", requestFromSpu);
-	  // spu_net_ptr->setToNetQueue(base+cpuId(), true, 3, "forward", dummy1);
-	  // spu_net_ptr->setToNetQueue(base+cpuId(), true, 1, "response", dummy2);
-	  spu_net_ptr->setFromNetQueue(base+cpuId(), true, 0, "request", responseToSpu);
-	  // spu_net_ptr->setFromNetQueue(base+cpuId(), true, 2, "request", dummy3);
+	    // spu_net_ptr->setToNetQueue(base+core_id, true, 4, "response", requestFromSpu);
+	    // spu_net_ptr->setToNetQueue(base+core_id, true, 3, "forward", dummy1);
+	    // spu_net_ptr->setToNetQueue(base+core_id, true, 1, "response", dummy2);
+	    // spu_net_ptr->setFromNetQueue(base+core_id, true, 2, "request", responseToSpu);
+	    // spu_net_ptr->setFromNetQueue(base+core_id, true, 0, "request", dummy3);
 
 
-	  // spu_net_ptr->setToNetQueue(base+cpuId(), true, 4, "response", requestFromSpu);
-	  // spu_net_ptr->setToNetQueue(base+cpuId(), true, 3, "forward", dummy1);
-	  // spu_net_ptr->setToNetQueue(base+cpuId(), true, 1, "response", dummy2);
-	  // spu_net_ptr->setFromNetQueue(base+cpuId(), true, 0, "request", responseToSpu);
-	  // spu_net_ptr->setFromNetQueue(base+cpuId(), true, 2, "request", dummy3);
+        // Or should this 0 be core_id?
+	    spu_net_ptr->setToNetQueue(base+cpuId(), true, 0, "response", requestFromSpu);
+	    // spu_net_ptr->setToNetQueue(base+cpuId(), true, 3, "forward", dummy1);
+	    // spu_net_ptr->setToNetQueue(base+cpuId(), true, 1, "response", dummy2);
+	    spu_net_ptr->setFromNetQueue(base+cpuId(), true, 0, "request", responseToSpu);
+	    // spu_net_ptr->setFromNetQueue(base+cpuId(), true, 2, "request", dummy3);
 
-	}
 
-	// FIXME
-	void pushReqFromSpu(MsgPtr msg) {
-	  requestFromSpu->enqueue(msg, clockEdge(), cyclesToTicks(Cycles(1)));
-	}
+	    // spu_net_ptr->setToNetQueue(base+cpuId(), true, 4, "response", requestFromSpu);
+	    // spu_net_ptr->setToNetQueue(base+cpuId(), true, 3, "forward", dummy1);
+	    // spu_net_ptr->setToNetQueue(base+cpuId(), true, 1, "response", dummy2);
+	    // spu_net_ptr->setFromNetQueue(base+cpuId(), true, 0, "request", responseToSpu);
+	    // spu_net_ptr->setFromNetQueue(base+cpuId(), true, 2, "request", dummy3);
+
+	  }
+
+	  // FIXME
+	  void pushReqFromSpu(MsgPtr msg) {
+	    requestFromSpu->enqueue(msg, clockEdge(), cyclesToTicks(Cycles(1)));
+	  }
 
     /** Starting, waking and initialisation */
     void init() override;
