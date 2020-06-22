@@ -1,4 +1,5 @@
 /*
+ * Copyright (c) 2018 Inria
  * Copyright (c) 2012-2013, 2015 ARM Limited
  * All rights reserved
  *
@@ -36,8 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ron Dreslinski
  */
 
 /**
@@ -50,76 +49,114 @@
 
 #include <string>
 #include <unordered_map>
+#include <vector>
 
+#include "base/sat_counter.hh"
 #include "base/types.hh"
+#include "mem/cache/prefetch/associative_set.hh"
 #include "mem/cache/prefetch/queued.hh"
+#include "mem/cache/replacement_policies/replaceable_entry.hh"
+#include "mem/cache/tags/indexing_policies/set_associative.hh"
 #include "mem/packet.hh"
+#include "params/StridePrefetcherHashedSetAssociative.hh"
 
+class BaseIndexingPolicy;
+class BaseReplacementPolicy;
 struct StridePrefetcherParams;
 
-class StridePrefetcher : public QueuedPrefetcher
+namespace Prefetcher {
+
+/**
+ * Override the default set associative to apply a specific hash function
+ * when extracting a set.
+ */
+class StridePrefetcherHashedSetAssociative : public SetAssociative
 {
   protected:
-    const int maxConf;
-    const int threshConf;
-    const int minConf;
-    const int startConf;
+    uint32_t extractSet(const Addr addr) const override;
+    Addr extractTag(const Addr addr) const override;
 
-    const int pcTableAssoc;
-    const int pcTableSets;
+  public:
+    StridePrefetcherHashedSetAssociative(
+        const StridePrefetcherHashedSetAssociativeParams *p)
+      : SetAssociative(p)
+    {
+    }
+    ~StridePrefetcherHashedSetAssociative() = default;
+};
+
+class Stride : public Queued
+{
+  protected:
+    /** Initial confidence counter value for the pc tables. */
+    const SatCounter initConfidence;
+
+    /** Confidence threshold for prefetch generation. */
+    const double threshConf;
 
     const bool useMasterId;
 
     const int degree;
 
-    struct StrideEntry
+    /**
+     * Information used to create a new PC table. All of them behave equally.
+     */
+    const struct PCTableInfo
     {
-        StrideEntry() : instAddr(0), lastAddr(0), isSecure(false), stride(0),
-                        confidence(0)
-        { }
+        const int assoc;
+        const int numEntries;
 
-        Addr instAddr;
-        Addr lastAddr;
-        bool isSecure;
-        int stride;
-        int confidence;
-    };
+        BaseIndexingPolicy* const indexingPolicy;
+        BaseReplacementPolicy* const replacementPolicy;
 
-    class PCTable
-    {
-      public:
-        PCTable(int assoc, int sets, const std::string name) :
-            pcTableAssoc(assoc), pcTableSets(sets), _name(name) {}
-        StrideEntry** operator[] (int context) {
-            auto it = entries.find(context);
-            if (it != entries.end())
-                return it->second;
-
-            return allocateNewContext(context);
+        PCTableInfo(int assoc, int num_entries,
+            BaseIndexingPolicy* indexing_policy,
+            BaseReplacementPolicy* replacement_policy)
+          : assoc(assoc), numEntries(num_entries),
+            indexingPolicy(indexing_policy),
+            replacementPolicy(replacement_policy)
+        {
         }
+    } pcTableInfo;
 
-        ~PCTable();
-      private:
-        const std::string name() {return _name; }
-        const int pcTableAssoc;
-        const int pcTableSets;
-        const std::string _name;
-        std::unordered_map<int, StrideEntry**> entries;
+    /** Tagged by hashed PCs. */
+    struct StrideEntry : public TaggedEntry
+    {
+        StrideEntry(const SatCounter& init_confidence);
 
-        StrideEntry** allocateNewContext(int context);
+        void invalidate() override;
+
+        Addr lastAddr;
+        int stride;
+        SatCounter confidence;
     };
-    PCTable pcTable;
+    typedef AssociativeSet<StrideEntry> PCTable;
+    std::unordered_map<int, PCTable> pcTables;
 
-    bool pcTableHit(Addr pc, bool is_secure, int master_id, StrideEntry* &entry);
-    StrideEntry* pcTableVictim(Addr pc, int master_id);
+    /**
+     * Try to find a table of entries for the given context. If none is
+     * found, a new table is created.
+     *
+     * @param context The context to be searched for.
+     * @return The table corresponding to the given context.
+     */
+    PCTable* findTable(int context);
 
-    Addr pcHash(Addr pc) const;
+    /**
+     * Create a PC table for the given context.
+     *
+     * @param context The context of the new PC table.
+     * @return The new PC table
+     */
+    PCTable* allocateNewContext(int context);
+
   public:
+    Stride(const StridePrefetcherParams *p);
 
-    StridePrefetcher(const StridePrefetcherParams *p);
-
-    void calculatePrefetch(const PacketPtr &pkt,
-                           std::vector<AddrPriority> &addresses);
+    void calculatePrefetch(const PrefetchInfo &pfi,
+                           std::vector<AddrPriority> &addresses) override;
 };
+
+} // namespace Prefetcher
 
 #endif // __MEM_CACHE_PREFETCH_STRIDE_HH__

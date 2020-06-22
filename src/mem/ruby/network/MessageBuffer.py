@@ -23,8 +23,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Joel Hestness
 
 from m5.params import *
 from m5.proxy import *
@@ -37,7 +35,10 @@ class MessageBuffer(SimObject):
     ordered = Param.Bool(False, "Whether the buffer is ordered")
     buffer_size = Param.Unsigned(0, "Maximum number of entries to buffer \
                                      (0 allows infinite entries)")
-    randomization = Param.Bool(False, "")
+    randomization = Param.Bool(False, "Insert random delays on message \
+                                       enqueue times (enforced to have \
+                                       random delays if RubySystem \
+                                       randomization flag is True)")
 
     master = MasterPort("Master port to MessageBuffer receiver")
     slave = SlavePort("Slave port from MessageBuffer sender")

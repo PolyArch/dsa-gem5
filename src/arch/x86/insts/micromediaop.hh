@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __ARCH_X86_INSTS_MICROMEDIAOP_HH__
@@ -72,7 +70,7 @@ namespace X86ISA
         int
         numItems(int size) const
         {
-            return scalarOp() ? 1 : (sizeof(FloatRegBits) / size);
+            return scalarOp() ? 1 : (sizeof(uint64_t) / size);
         }
 
         bool
@@ -106,7 +104,7 @@ namespace X86ISA
         {}
 
         std::string generateDisassembly(Addr pc,
-            const SymbolTable *symtab) const;
+            const Loader::SymbolTable *symtab) const;
     };
 
     class MediaOpImm : public MediaOpBase
@@ -127,7 +125,7 @@ namespace X86ISA
         {}
 
         std::string generateDisassembly(Addr pc,
-            const SymbolTable *symtab) const;
+            const Loader::SymbolTable *symtab) const;
     };
 }
 

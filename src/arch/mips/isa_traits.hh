@@ -25,10 +25,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
- *          Korey Sewell
- *          Jaidev Patwardhan
  */
 
 #ifndef __ARCH_MIPS_ISA_TRAITS_HH__
@@ -38,12 +34,10 @@
 #include "base/types.hh"
 #include "cpu/static_inst_fwd.hh"
 
-namespace LittleEndianGuest {}
-
 namespace MipsISA
 {
 
-using namespace LittleEndianGuest;
+const ByteOrder GuestByteOrder = LittleEndianByteOrder;
 
 StaticInstPtr decodeInst(ExtMachInst);
 

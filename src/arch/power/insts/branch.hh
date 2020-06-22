@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Timothy M. Jones
  */
 
 #ifndef __ARCH_POWER_INSTS_BRANCH_HH__
@@ -51,7 +49,7 @@ class PCDependentDisassembly : public PowerStaticInst
     /// Cached program counter from last disassembly
     mutable Addr cachedPC;
     /// Cached symbol table pointer from last disassembly
-    mutable const SymbolTable *cachedSymtab;
+    mutable const Loader::SymbolTable *cachedSymtab;
 
     /// Constructor
     PCDependentDisassembly(const char *mnem, ExtMachInst _machInst,
@@ -62,7 +60,7 @@ class PCDependentDisassembly : public PowerStaticInst
     }
 
     const std::string &
-    disassemble(Addr pc, const SymbolTable *symtab) const;
+    disassemble(Addr pc, const Loader::SymbolTable *symtab) const;
 };
 
 /**
@@ -92,7 +90,7 @@ class BranchPCRel : public PCDependentDisassembly
     using StaticInst::branchTarget;
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 /**
@@ -122,7 +120,7 @@ class BranchNonPCRel : public PCDependentDisassembly
     using StaticInst::branchTarget;
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 /**
@@ -201,7 +199,7 @@ class BranchPCRelCond : public BranchCond
     using StaticInst::branchTarget;
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 /**
@@ -231,7 +229,7 @@ class BranchNonPCRelCond : public BranchCond
     using StaticInst::branchTarget;
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 /**
@@ -253,7 +251,7 @@ class BranchRegCond : public BranchCond
     using StaticInst::branchTarget;
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 } // namespace PowerISA

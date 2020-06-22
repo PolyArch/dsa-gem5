@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andreas Sandberg
  */
 
 #include "cpu/kvm/base.hh"
@@ -48,7 +46,6 @@
 #include <csignal>
 #include <ostream>
 
-#include "arch/mmapped_ipr.hh"
 #include "arch/utility.hh"
 #include "debug/Checkpoint.hh"
 #include "debug/Drain.hh"
@@ -114,10 +111,6 @@ BaseKvmCPU::init()
         fatal("KVM: Multithreading not supported");
 
     tc->initMemProxies(tc);
-
-    // initialize CPU, including PC
-    if (FullSystem && !switchedOut())
-        TheISA::initCPU(tc, tc->contextId());
 }
 
 void
@@ -630,9 +623,9 @@ BaseKvmCPU::tick()
 
       case RunningServiceCompletion:
       case Running: {
+          auto &queue = thread->comInstEventQueue;
           const uint64_t nextInstEvent(
-              !comInstEventQueue[0]->empty() ?
-              comInstEventQueue[0]->nextTick() : UINT64_MAX);
+                  queue.empty() ? MaxTick : queue.nextTick());
           // Enter into KVM and complete pending IO instructions if we
           // have an instruction event pending.
           const Tick ticksToExecute(
@@ -688,8 +681,7 @@ BaseKvmCPU::tick()
           // Service any pending instruction events. The vCPU should
           // have exited in time for the event using the instruction
           // counter configured by setupInstStop().
-          comInstEventQueue[0]->serviceEvents(ctrInsts);
-          system->instEventQueue.serviceEvents(system->totalNumInsts);
+          queue.serviceEvents(ctrInsts);
 
           if (tryDrain())
               _status = Idle;
@@ -1135,13 +1127,11 @@ BaseKvmCPU::doMMIOAccess(Addr paddr, void *data, int size, bool write)
     PacketPtr pkt = new Packet(mmio_req, cmd);
     pkt->dataStatic(data);
 
-    if (mmio_req->isMmappedIpr()) {
+    if (mmio_req->isLocalAccess()) {
         // We currently assume that there is no need to migrate to a
-        // different event queue when doing IPRs. Currently, IPRs are
-        // only used for m5ops, so it should be a valid assumption.
-        const Cycles ipr_delay(write ?
-                             TheISA::handleIprWrite(tc, pkt) :
-                             TheISA::handleIprRead(tc, pkt));
+        // different event queue when doing local accesses. Currently, they
+        // are only used for m5ops, so it should be a valid assumption.
+        const Cycles ipr_delay = mmio_req->localAccessor(tc, pkt);
         threadContextDirty = true;
         delete pkt;
         return clockPeriod() * ipr_delay;
@@ -1349,11 +1339,10 @@ BaseKvmCPU::ioctlRun()
 void
 BaseKvmCPU::setupInstStop()
 {
-    if (comInstEventQueue[0]->empty()) {
+    if (thread->comInstEventQueue.empty()) {
         setupInstCounter(0);
     } else {
-        const uint64_t next(comInstEventQueue[0]->nextTick());
-
+        Tick next = thread->comInstEventQueue.nextTick();
         assert(next > ctrInsts);
         setupInstCounter(next - ctrInsts);
     }

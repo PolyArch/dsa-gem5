@@ -29,10 +29,6 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Brad Beckmann,
- *          Marc Orr,
- *          Anthony Gutierrez
  */
 
 
@@ -139,7 +135,7 @@ GpuDispatcher::read(PacketPtr pkt)
         assert(pkt->getSize() == 8);
 
         uint64_t retval = dispatchActive;
-        pkt->set(retval);
+        pkt->setLE(retval);
     } else {
         offset -= 8;
         assert(offset + pkt->getSize() < sizeof(HsaQueueEntry));
@@ -166,16 +162,16 @@ GpuDispatcher::write(PacketPtr pkt)
 
     switch (pkt->getSize()) {
       case 1:
-        data_val = pkt->get<uint8_t>();
+        data_val = pkt->getLE<uint8_t>();
         break;
       case 2:
-        data_val = pkt->get<uint16_t>();
+        data_val = pkt->getLE<uint16_t>();
         break;
       case 4:
-        data_val = pkt->get<uint32_t>();
+        data_val = pkt->getLE<uint32_t>();
         break;
       case 8:
-        data_val = pkt->get<uint64_t>();
+        data_val = pkt->getLE<uint64_t>();
         break;
       default:
         DPRINTF(GPUDisp, "bad size %d\n", pkt->getSize());
@@ -251,14 +247,14 @@ GpuDispatcher::write(PacketPtr pkt)
 }
 
 
-BaseMasterPort&
-GpuDispatcher::getMasterPort(const std::string &if_name, PortID idx)
+Port &
+GpuDispatcher::getPort(const std::string &if_name, PortID idx)
 {
     if (if_name == "translation_port") {
         return *tlbPort;
     }
 
-    return DmaDevice::getMasterPort(if_name, idx);
+    return DmaDevice::getPort(if_name, idx);
 }
 
 void

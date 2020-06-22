@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
  */
 
 #include <iostream>
@@ -45,17 +43,19 @@ main(int argc, char *argv[])
     if (argc != 2 && argc != 3)
         panic("usage: %s <filename> <symbol>\n", argv[0]);
 
-    ObjectFile *obj = createObjectFile(argv[1]);
+    auto *obj = Loader::createObjectFile(argv[1]);
     if (!obj)
         panic("file not found\n");
 
-    SymbolTable symtab;
+    Loader::SymbolTable symtab;
     obj->loadGlobalSymbols(&symtab);
     obj->loadLocalSymbols(&symtab);
 
     if (argc == 2) {
-        SymbolTable::ATable::const_iterator i = symtab.getAddrTable().begin();
-        SymbolTable::ATable::const_iterator end = symtab.getAddrTable().end();
+        Loader::SymbolTable::ATable::const_iterator i =
+            symtab.getAddrTable().begin();
+        Loader::SymbolTable::ATable::const_iterator end =
+            symtab.getAddrTable().end();
         while (i != end) {
             cprintf("%#x %s\n", i->first, i->second);
             ++i;

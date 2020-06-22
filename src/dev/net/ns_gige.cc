@@ -24,9 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
- *          Lisa Hsu
  */
 
 /** @file
@@ -43,7 +40,6 @@
 #include "base/debug.hh"
 #include "base/inet.hh"
 #include "base/types.hh"
-#include "config/the_isa.hh"
 #include "debug/EthernetAll.hh"
 #include "dev/net/etherlink.hh"
 #include "mem/packet.hh"
@@ -90,7 +86,6 @@ const char *NsDmaState[] =
 };
 
 using namespace Net;
-using namespace TheISA;
 
 ///////////////////////////////////////////////////////////////////////
 //
@@ -173,15 +168,12 @@ NSGigE::writeConfig(PacketPtr pkt)
     return configDelay;
 }
 
-EtherInt*
-NSGigE::getEthPort(const std::string &if_name, int idx)
+Port &
+NSGigE::getPort(const std::string &if_name, PortID idx)
 {
-    if (if_name == "interface") {
-       if (interface->getPeer())
-           panic("interface already connected to\n");
-       return interface;
-    }
-    return NULL;
+    if (if_name == "interface")
+       return *interface;
+    return EtherDevBase::getPort(if_name, idx);
 }
 
 /**
@@ -209,7 +201,7 @@ NSGigE::read(PacketPtr pkt)
         // don't implement all the MIB's.  hopefully the kernel
         // doesn't actually DEPEND upon their values
         // MIB are just hardware stats keepers
-        pkt->set<uint32_t>(0);
+        pkt->setLE<uint32_t>(0);
         pkt->makeAtomicResponse();
         return pioDelay;
     } else if (daddr > 0x3FC)
@@ -427,7 +419,7 @@ NSGigE::write(PacketPtr pkt)
         panic("Something is messed up!\n");
 
     if (pkt->getSize() == sizeof(uint32_t)) {
-        uint32_t reg = pkt->get<uint32_t>();
+        uint32_t reg = pkt->getLE<uint32_t>();
         uint16_t rfaddr;
 
         DPRINTF(EthernetPIO, "write data=%d data=%#x\n", reg, reg);
@@ -488,41 +480,6 @@ NSGigE::write(PacketPtr pkt)
                                        CFGR_PCI64_DET);
             }
 
-// all these #if 0's are because i don't THINK the kernel needs to
-// have these implemented. if there is a problem relating to one of
-// these, you may need to add functionality in.
-
-// grouped together and #if 0'ed to avoid empty if body and make clang happy
-#if 0
-            if (reg & CFGR_TBI_EN) ;
-            if (reg & CFGR_MODE_1000) ;
-
-            if (reg & CFGR_PINT_DUPSTS ||
-                reg & CFGR_PINT_LNKSTS ||
-                reg & CFGR_PINT_SPDSTS)
-                ;
-
-            if (reg & CFGR_TMRTEST) ;
-            if (reg & CFGR_MRM_DIS) ;
-            if (reg & CFGR_MWI_DIS) ;
-
-            if (reg & CFGR_DATA64_EN) ;
-            if (reg & CFGR_M64ADDR) ;
-            if (reg & CFGR_PHY_RST) ;
-            if (reg & CFGR_PHY_DIS) ;
-
-            if (reg & CFGR_REQALG) ;
-            if (reg & CFGR_SB) ;
-            if (reg & CFGR_POW) ;
-            if (reg & CFGR_EXD) ;
-            if (reg & CFGR_PESEL) ;
-            if (reg & CFGR_BROM_DIS) ;
-            if (reg & CFGR_EXT_125) ;
-            if (reg & CFGR_BEM) ;
-
-            if (reg & CFGR_T64ADDR) ;
-            // panic("CFGR_T64ADDR is read only register!\n");
-#endif
             if (reg & CFGR_AUTO_1000)
                 panic("CFGR_AUTO_1000 not implemented!\n");
 
@@ -556,13 +513,6 @@ NSGigE::write(PacketPtr pkt)
             eepromClk = reg & MEAR_EECLK;
 
             // since phy is completely faked, MEAR_MD* don't matter
-
-// grouped together and #if 0'ed to avoid empty if body and make clang happy
-#if 0
-            if (reg & MEAR_MDIO) ;
-            if (reg & MEAR_MDDIR) ;
-            if (reg & MEAR_MDC) ;
-#endif
             break;
 
           case PTSCR:
@@ -606,26 +556,6 @@ NSGigE::write(PacketPtr pkt)
 
           case TX_CFG:
             regs.txcfg = reg;
-#if 0
-            if (reg & TX_CFG_CSI) ;
-            if (reg & TX_CFG_HBI) ;
-            if (reg & TX_CFG_MLB) ;
-            if (reg & TX_CFG_ATP) ;
-            if (reg & TX_CFG_ECRETRY) {
-                /*
-                 * this could easily be implemented, but considering
-                 * the network is just a fake pipe, wouldn't make
-                 * sense to do this
-                 */
-            }
-
-            if (reg & TX_CFG_BRST_DIS) ;
-#endif
-
-#if 0
-            /* we handle our own DMA, ignore the kernel's exhortations */
-            if (reg & TX_CFG_MXDMA) ;
-#endif
 
             // also, we currently don't care about fill/drain
             // thresholds though this may change in the future with
@@ -654,22 +584,6 @@ NSGigE::write(PacketPtr pkt)
 
           case RX_CFG:
             regs.rxcfg = reg;
-#if 0
-            if (reg & RX_CFG_AEP) ;
-            if (reg & RX_CFG_ARP) ;
-            if (reg & RX_CFG_STRIPCRC) ;
-            if (reg & RX_CFG_RX_RD) ;
-            if (reg & RX_CFG_ALP) ;
-            if (reg & RX_CFG_AIRL) ;
-
-            /* we handle our own DMA, ignore what kernel says about it */
-            if (reg & RX_CFG_MXDMA) ;
-
-            //also, we currently don't care about fill/drain thresholds
-            //though this may change in the future with more realistic
-            //networks or a driver which changes it according to feedback
-            if (reg & (RX_CFG_DRTH | RX_CFG_DRTH0)) ;
-#endif
             break;
 
           case PQCR:
@@ -698,10 +612,6 @@ NSGigE::write(PacketPtr pkt)
             acceptArp = (reg & RFCR_AARP) ? true : false;
             multicastHashEnable = (reg & RFCR_MHEN) ? true : false;
 
-#if 0
-            if (reg & RFCR_APAT)
-                panic("RFCR_APAT not implemented!\n");
-#endif
             if (reg & RFCR_UHEN)
                 panic("Unicast hash filtering not used by drivers!\n");
 
@@ -783,10 +693,6 @@ NSGigE::write(PacketPtr pkt)
                 regs.tbisr |= (TBISR_MR_AN_COMPLETE | TBISR_MR_LINK_STATUS);
             }
 
-#if 0
-            if (reg & TBICR_MR_RESTART_AN) ;
-#endif
-
             break;
 
           case TBISR:
@@ -798,11 +704,6 @@ NSGigE::write(PacketPtr pkt)
             regs.tanar |= reg & ~(TANAR_RF1 | TANAR_RF2 | TANAR_UNUSED);
 
             // Pause capability unimplemented
-#if 0
-            if (reg & TANAR_PS2) ;
-            if (reg & TANAR_PS1) ;
-#endif
-
             break;
 
           case TANLPAR:
@@ -1311,26 +1212,6 @@ NSGigE::rxKick()
             cmdsts |= CMDSTS_OK;
             cmdsts &= 0xffff0000;
             cmdsts += rxPacket->length;   //i.e. set CMDSTS_SIZE
-
-#if 0
-            /*
-             * all the driver uses these are for its own stats keeping
-             * which we don't care about, aren't necessary for
-             * functionality and doing this would just slow us down.
-             * if they end up using this in a later version for
-             * functional purposes, just undef
-             */
-            if (rxFilterEnable) {
-                cmdsts &= ~CMDSTS_DEST_MASK;
-                const EthAddr &dst = rxFifoFront()->dst();
-                if (dst->unicast())
-                    cmdsts |= CMDSTS_DEST_SELF;
-                if (dst->multicast())
-                    cmdsts |= CMDSTS_DEST_MULTI;
-                if (dst->broadcast())
-                    cmdsts |= CMDSTS_DEST_MASK;
-            }
-#endif
 
             IpPtr ip(rxPacket);
             if (extstsEnable && ip) {

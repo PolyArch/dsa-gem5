@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Alexandru Dutu
  */
 
 /**
@@ -40,8 +38,7 @@
 
 #include "base/types.hh"
 #include "mem/page_table.hh"
-
-class System;
+#include "sim/system.hh"
 
 /**
  * This class implements an in-memory multi-level page table that can be
@@ -202,8 +199,11 @@ public:
     ~MultiLevelPageTable() {}
 
     void
-    initState(ThreadContext* tc) override
+    initState() override
     {
+        if (shared)
+            return;
+
         _basePtr = prepTopTable<EntryTypes...>(system, pageSize);
     }
 

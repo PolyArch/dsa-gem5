@@ -36,8 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __ARCH_GENERIC_TLB_HH__
@@ -48,16 +46,14 @@
 #include "sim/sim_object.hh"
 
 class ThreadContext;
-class BaseMasterPort;
 
 class BaseTLB : public SimObject
 {
   protected:
-    BaseTLB(const Params *p)
-        : SimObject(p)
-    {}
+    BaseTLB(const Params *p) : SimObject(p) {}
 
   public:
+
     enum Mode { Read, Write, Execute };
 
     class Translation
@@ -130,37 +126,17 @@ class BaseTLB : public SimObject
     virtual void takeOverFrom(BaseTLB *otlb) = 0;
 
     /**
-     * Get the table walker master port if present. This is used for
+     * Get the table walker port if present. This is used for
      * migrating port connections during a CPU takeOverFrom()
      * call. For architectures that do not have a table walker, NULL
      * is returned, hence the use of a pointer rather than a
      * reference.
      *
-     * @return A pointer to the walker master port or NULL if not present
+     * @return A pointer to the walker port or NULL if not present
      */
-    virtual BaseMasterPort* getMasterPort() { return NULL; }
+    virtual Port* getTableWalkerPort() { return NULL; }
 
     void memInvalidate() { flushAll(); }
-};
-
-class GenericTLB : public BaseTLB
-{
-  protected:
-    GenericTLB(const Params *p)
-        : BaseTLB(p)
-    {}
-
-  public:
-    void demapPage(Addr vaddr, uint64_t asn) override;
-
-    Fault translateAtomic(
-        const RequestPtr &req, ThreadContext *tc, Mode mode) override;
-    void translateTiming(
-        const RequestPtr &req, ThreadContext *tc,
-        Translation *translation, Mode mode) override;
-
-    Fault finalizePhysical(
-        const RequestPtr &req, ThreadContext *tc, Mode mode) const override;
 };
 
 #endif // __ARCH_GENERIC_TLB_HH__

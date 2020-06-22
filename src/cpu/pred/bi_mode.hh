@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Anthony Gutierrez
  */
 
 /* @file
@@ -35,8 +33,8 @@
 #ifndef __CPU_PRED_BI_MODE_PRED_HH__
 #define __CPU_PRED_BI_MODE_PRED_HH__
 
+#include "base/sat_counter.hh"
 #include "cpu/pred/bpred_unit.hh"
-#include "cpu/pred/sat_counter.hh"
 #include "params/BiModeBP.hh"
 
 /**
@@ -62,8 +60,7 @@ class BiModeBP : public BPredUnit
     bool lookup(ThreadID tid, Addr branch_addr, void * &bp_history);
     void btbUpdate(ThreadID tid, Addr branch_addr, void * &bp_history);
     void update(ThreadID tid, Addr branch_addr, bool taken, void *bp_history,
-                bool squashed);
-    unsigned getGHR(ThreadID tid, void *bp_history) const;
+                bool squashed, const StaticInstPtr & inst, Addr corrTarget);
 
   private:
     void updateGlobalHistReg(ThreadID tid, bool taken);
@@ -88,13 +85,6 @@ class BiModeBP : public BPredUnit
         bool finalPred;
     };
 
-    // choice predictors
-    std::vector<SatCounter> choiceCounters;
-    // taken direction predictors
-    std::vector<SatCounter> takenCounters;
-    // not-taken direction predictors
-    std::vector<SatCounter> notTakenCounters;
-
     std::vector<unsigned> globalHistoryReg;
     unsigned globalHistoryBits;
     unsigned historyRegisterMask;
@@ -105,6 +95,13 @@ class BiModeBP : public BPredUnit
     unsigned globalPredictorSize;
     unsigned globalCtrBits;
     unsigned globalHistoryMask;
+
+    // choice predictors
+    std::vector<SatCounter> choiceCounters;
+    // taken direction predictors
+    std::vector<SatCounter> takenCounters;
+    // not-taken direction predictors
+    std::vector<SatCounter> notTakenCounters;
 
     unsigned choiceThreshold;
     unsigned takenThreshold;

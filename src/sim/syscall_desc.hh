@@ -37,26 +37,25 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Steve Reinhardt
- *          Kevin Lim
- *          Brandon Potter
  */
 
 #ifndef __SIM_SYSCALL_DESC_HH__
 #define __SIM_SYSCALL_DESC_HH__
 
+#include <functional>
+#include <map>
 #include <string>
 
+#include "base/logging.hh"
 #include "base/types.hh"
+#include "cpu/thread_context.hh"
+#include "sim/guest_abi.hh"
+#include "sim/process.hh"
+#include "sim/syscall_return.hh"
 
-class Process;
 class SyscallDesc;
-class SyscallReturn;
-class ThreadContext;
 
-SyscallReturn unimplementedFunc(SyscallDesc *desc, int num,
-    Process *p, ThreadContext *tc);
+SyscallReturn unimplementedFunc(SyscallDesc *desc, ThreadContext *tc);
 
 /**
  * This class provides the wrapper interface for the system call
@@ -66,72 +65,144 @@ SyscallReturn unimplementedFunc(SyscallDesc *desc, int num,
  */
 class SyscallDesc {
   public:
-    /** Typedef the function pointer here to clean up code below */
-    typedef SyscallReturn (*SyscallExecutor)(SyscallDesc*, int num,
-                                             Process*, ThreadContext*);
-
-    SyscallDesc(const char *name,
-                SyscallExecutor sys_exec=unimplementedFunc, int flags=0)
-        : _name(name), executor(sys_exec), _flags(flags), _warned(false)
-    {
-    }
-
-    /** Provide a mechanism to specify behavior for abnormal system calls */
-    enum Flags {
-        /**
-         * Do not set return registers according to executor return value.
-         * Used for system calls with non-standard return conventions that
-         * explicitly set the thread context regs (e.g., sigreturn, clone)
-         */
-        SuppressReturnValue = 1,
-        /** Warn only once for unimplemented system calls */
-        WarnOnce = 2
-        /* X2 = 4, // Remove these comments when the next field is added; */
-        /* X3 = 8, // point is to make it obvious that this defines vector */
-    };
-
     /**
      * Interface for invoking the system call funcion pointer. Note that
      * this acts as a gateway for all system calls and serves a good point
      * to add filters for behaviors or apply checks for all system calls.
-     * @param callnum Number associated with call (by operating system)
-     * @param proc Handle for the owning Process to pass information
      * @param tc Handle for owning ThreadContext to pass information
      */
-    void doSyscall(int callnum, Process *proc, ThreadContext *tc,
-                   Fault *fault);
+    void doSyscall(ThreadContext *tc, Fault *fault);
+
+    std::string name() const { return _name; }
+    int num() const { return _num; }
 
     /**
-     * Return false if WarnOnce is set and a warning has already been issued.
-     * Otherwise, return true. Updates state as a side effect to help
-     * keep track of issued warnings.
+     * For use within the system call executor if new threads are created and
+     * need something returned into them.
      */
-    bool needWarning();
+    virtual void returnInto(ThreadContext *tc, const SyscallReturn &ret) = 0;
 
-    bool warnOnce() const { return (_flags & WarnOnce); }
+  protected:
+    using Executor =
+        std::function<SyscallReturn(SyscallDesc *, ThreadContext *)>;
+    using Dumper = std::function<std::string(std::string, ThreadContext *)>;
 
-    std::string name() { return _name; }
-
-    int getFlags() const { return _flags; }
-
-    void setFlags(int flags) { _flags = flags; }
+    SyscallDesc(int num, const char *name, Executor exec, Dumper dump) :
+        _name(name), _num(num), executor(exec), dumper(dump)
+    {}
 
   private:
     /** System call name (e.g., open, mmap, clone, socket, etc.) */
     std::string _name;
+    int _num;
 
     /** Mechanism for ISAs to connect to the emul function definitions */
-    SyscallExecutor executor;
+    Executor executor;
+    Dumper dumper;
+};
 
-    /**
-     * Holds values set with the preceding enum; note that this has been
-     * used primarily for features that are mutually exclusive, but there's
-     * no reason that this needs to be true going forward.
-     */
-    int _flags;
+/*
+ * This SyscallDesc subclass template adapts a given syscall implementation so
+ * that some arguments can come from the simulator (desc, num and tc) while the
+ * rest can come from the guest using the GuestABI mechanism.
+ */
+template <typename ABI>
+class SyscallDescABI : public SyscallDesc
+{
+  private:
+    // Aliases to make the code below a little more concise.
+    template <typename ...Args>
+    using ABIExecutor =
+        std::function<SyscallReturn(SyscallDesc *, ThreadContext *, Args...)>;
 
-    /** Set if WarnOnce is specified in flags AFTER first call */
-    bool _warned;
+    template <typename ...Args>
+    using ABIExecutorPtr =
+        SyscallReturn (*)(SyscallDesc *, ThreadContext *, Args...);
+
+
+    // Wrap an executor with guest arguments with a normal executor that gets
+    // those additional arguments from the guest context.
+    template <typename ...Args>
+    static inline Executor
+    buildExecutor(ABIExecutor<Args...> target)
+    {
+        return [target](SyscallDesc *desc,
+                        ThreadContext *tc) -> SyscallReturn {
+            // Create a partial function which will stick desc to the front of
+            // the parameter list.
+            auto partial = [target,desc](
+                    ThreadContext *tc, Args... args) -> SyscallReturn {
+                return target(desc, tc, args...);
+            };
+
+            // Use invokeSimcall to gather the other arguments based on the
+            // given ABI and pass them to the syscall implementation.
+            return invokeSimcall<ABI, SyscallReturn, Args...>(tc,
+                    std::function<SyscallReturn(ThreadContext *, Args...)>(
+                        partial));
+        };
+    }
+
+    template <typename ...Args>
+    static inline Dumper
+    buildDumper()
+    {
+        return [](std::string name, ThreadContext *tc) -> std::string {
+            return dumpSimcall<ABI, SyscallReturn, Args...>(name, tc);
+        };
+    }
+
+  public:
+    // Constructors which plumb in buildExecutor.
+    template <typename ...Args>
+    SyscallDescABI(int num, const char *name, ABIExecutor<Args...> target) :
+        SyscallDesc(num, name, buildExecutor<Args...>(target),
+                               buildDumper<Args...>())
+    {}
+
+    template <typename ...Args>
+    SyscallDescABI(int num, const char *name, ABIExecutorPtr<Args...> target) :
+        SyscallDescABI(num, name, ABIExecutor<Args...>(target))
+    {}
+
+    SyscallDescABI(int num, const char *name) :
+        SyscallDescABI(num, name, ABIExecutor<>(unimplementedFunc))
+    {}
+
+    void
+    returnInto(ThreadContext *tc, const SyscallReturn &ret) override
+    {
+        GuestABI::Result<ABI, SyscallReturn>::store(tc, ret);
+    }
+};
+
+template <typename ABI>
+class SyscallDescTable
+{
+  private:
+    std::map<int, SyscallDescABI<ABI>> _descs;
+
+  public:
+    SyscallDescTable(std::initializer_list<SyscallDescABI<ABI>> descs)
+    {
+        for (auto &desc: descs) {
+            auto res = _descs.insert({desc.num(), desc});
+            panic_if(!res.second, "Failed to insert desc %s", desc.name());
+        }
+    }
+
+    SyscallDesc
+    *get(int num, bool fatal_if_missing=true)
+    {
+        auto it = _descs.find(num);
+        if (it == _descs.end()) {
+            if (fatal_if_missing)
+                fatal("Syscall %d out of range", num);
+            else
+                return nullptr;
+        }
+        return &it->second;
+    }
 };
 
 #endif // __SIM_SYSCALL_DESC_HH__

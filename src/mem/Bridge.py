@@ -35,14 +35,11 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Ali Saidi
-#          Andreas Hansson
 
 from m5.params import *
-from MemObject import MemObject
+from m5.objects.ClockedObject import ClockedObject
 
-class Bridge(MemObject):
+class Bridge(ClockedObject):
     type = 'Bridge'
     cxx_header = "mem/bridge.hh"
     slave = SlavePort('Slave port')

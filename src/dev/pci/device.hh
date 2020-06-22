@@ -36,10 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
- *          Andrew Schultz
- *          Nathan Binkert
  */
 
 /* @file
@@ -114,6 +110,15 @@ class PciDevice : public DmaDevice
 
     /** Whether the BARs are really hardwired legacy IO locations. */
     bool legacyIO[6];
+
+    /**
+     * Does the given BAR represent 32 lower bits of a 64-bit address?
+     */
+    bool
+    isLargeBAR(int bar) const
+    {
+        return bits(config.baseAddr[bar], 2, 1) == 0x2;
+    }
 
     /**
      * Does the given address lie within the space mapped by the given

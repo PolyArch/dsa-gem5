@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
  */
 
 #include "base/loader/symtab.hh"
@@ -41,6 +39,9 @@
 #include "sim/serialize.hh"
 
 using namespace std;
+
+namespace Loader
+{
 
 SymbolTable *debugSymbolTable = NULL;
 
@@ -138,3 +139,5 @@ SymbolTable::unserialize(const string &base, CheckpointIn &cp)
         insert(addr, symbol);
     }
 }
+
+} // namespace Loader

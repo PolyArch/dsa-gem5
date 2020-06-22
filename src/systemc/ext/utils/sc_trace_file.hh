@@ -23,8 +23,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __SYSTEMC_EXT_UTIL_SC_TRACE_FILE_HH__
@@ -33,7 +31,6 @@
 #include <exception>
 
 #include "../core/sc_time.hh"
-#include "warn_unimpl.hh"
 
 namespace sc_dt
 {
@@ -58,9 +55,17 @@ namespace sc_core
 template <class T>
 class sc_signal_in_if;
 
+class sc_event;
+class sc_time;
+
 class sc_trace_file
 {
+  protected:
+    sc_trace_file();
+
   public:
+    virtual ~sc_trace_file();
+
     virtual void set_time_unit(double, sc_time_unit) = 0;
 };
 
@@ -107,36 +112,72 @@ void sc_trace(sc_trace_file *, const sc_dt::sc_fxnum_fast &,
 void sc_trace(sc_trace_file *, const sc_dt::sc_fxnum_fast *,
               const std::string &);
 
+
+// Nonstandard
+// sc_trace overloads for sc_event and sc_time.
+void sc_trace(sc_trace_file *, const sc_event &, const std::string &);
+void sc_trace(sc_trace_file *, const sc_event *, const std::string &);
+void sc_trace(sc_trace_file *, const sc_time &, const std::string &);
+void sc_trace(sc_trace_file *, const sc_time *, const std::string &);
+
+
+// Nonstandard - unsigned versions necessary to avoid ambiguous overload
+// resolution.
+void sc_trace(sc_trace_file *, const unsigned char &,
+              const std::string &, int width=(8 * sizeof(unsigned char)));
+void sc_trace(sc_trace_file *, const unsigned char *,
+              const std::string &, int width=(8 * sizeof(unsigned char)));
+void sc_trace(sc_trace_file *, const unsigned short &,
+              const std::string &, int width=(8 * sizeof(unsigned short)));
+void sc_trace(sc_trace_file *, const unsigned short *,
+              const std::string &, int width=(8 * sizeof(unsigned short)));
+void sc_trace(sc_trace_file *, const unsigned int &,
+              const std::string &, int width=(8 * sizeof(unsigned int)));
+void sc_trace(sc_trace_file *, const unsigned int *,
+              const std::string &, int width=(8 * sizeof(unsigned int)));
+void sc_trace(sc_trace_file *, const unsigned long &,
+              const std::string &, int width=(8 * sizeof(unsigned long)));
+void sc_trace(sc_trace_file *, const unsigned long *,
+              const std::string &, int width=(8 * sizeof(unsigned long)));
+
 void sc_trace(sc_trace_file *, const char &,
               const std::string &, int width=(8 * sizeof(char)));
 void sc_trace(sc_trace_file *, const char *,
               const std::string &, int width=(8 * sizeof(char)));
 void sc_trace(sc_trace_file *, const short &,
-              const std::string &, int width=(8 * sizeof(char)));
+              const std::string &, int width=(8 * sizeof(short)));
 void sc_trace(sc_trace_file *, const short *,
-              const std::string &, int width=(8 * sizeof(char)));
+              const std::string &, int width=(8 * sizeof(short)));
 void sc_trace(sc_trace_file *, const int &,
-              const std::string &, int width=(8 * sizeof(char)));
+              const std::string &, int width=(8 * sizeof(int)));
 void sc_trace(sc_trace_file *, const int *,
-              const std::string &, int width=(8 * sizeof(char)));
+              const std::string &, int width=(8 * sizeof(int)));
 void sc_trace(sc_trace_file *, const long &,
-              const std::string &, int width=(8 * sizeof(char)));
+              const std::string &, int width=(8 * sizeof(long)));
 void sc_trace(sc_trace_file *, const long *,
-              const std::string &, int width=(8 * sizeof(char)));
+              const std::string &, int width=(8 * sizeof(long)));
 void sc_trace(sc_trace_file *, const sc_dt::int64 &,
-              const std::string &, int width=(8 * sizeof(char)));
+              const std::string &, int width=(8 * sizeof(sc_dt::int64)));
 void sc_trace(sc_trace_file *, const sc_dt::int64 *,
-              const std::string &, int width=(8 * sizeof(char)));
+              const std::string &, int width=(8 * sizeof(sc_dt::int64)));
 void sc_trace(sc_trace_file *, const sc_dt::uint64 &,
-              const std::string &, int width=(8 * sizeof(char)));
+              const std::string &, int width=(8 * sizeof(sc_dt::uint64)));
 void sc_trace(sc_trace_file *, const sc_dt::uint64 *,
-              const std::string &, int width=(8 * sizeof(char)));
+              const std::string &, int width=(8 * sizeof(sc_dt::uint64)));
+
+// Nonstandard function for enums
+void sc_trace(sc_trace_file *, const unsigned int &,
+              const std::string &, const char **enum_literals);
+
+// Deprecated
+void sc_trace_delta_cycles(sc_trace_file *, bool on=true);
 
 template <class T>
 void
-sc_trace(sc_trace_file *, const sc_signal_in_if<T> &, const std::string &)
+sc_trace(sc_trace_file *tf, const sc_signal_in_if<T> &iface,
+        const std::string &name)
 {
-    sc_utils_warn_unimpl(__PRETTY_FUNCTION__);
+    sc_trace(tf, iface.read(), name);
 }
 
 void sc_trace(sc_trace_file *, const sc_signal_in_if<char> &,

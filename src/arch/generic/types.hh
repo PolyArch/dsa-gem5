@@ -24,14 +24,13 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __ARCH_GENERIC_TYPES_HH__
 #define __ARCH_GENERIC_TYPES_HH__
 
 #include <iostream>
+#include <limits>
 
 #include "base/trace.hh"
 #include "base/types.hh"
@@ -42,6 +41,9 @@ typedef uint16_t RegIndex;
 
 /** Logical vector register elem index type. */
 using ElemIndex = uint16_t;
+
+/** ElemIndex value that indicates that the register is not a vector. */
+#define ILLEGAL_ELEM_INDEX std::numeric_limits<ElemIndex>::max()
 
 namespace GenericISA
 {
@@ -218,7 +220,7 @@ class UPCState : public SimplePCState<MachInst>
         nupc(1);
     }
 
-    UPCState() : _upc(0), _nupc(0) {}
+    UPCState() : _upc(0), _nupc(1) {}
     UPCState(Addr val) : _upc(0), _nupc(0) { set(val); }
 
     bool

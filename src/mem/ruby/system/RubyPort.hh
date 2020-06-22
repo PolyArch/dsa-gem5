@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2013 ARM Limited
+ * Copyright (c) 2012-2013,2019 ARM Limited
  * All rights reserved.
  *
  * The license below extends only to copyright in the software and shall
@@ -45,17 +45,17 @@
 #include <cassert>
 #include <string>
 
-#include "mem/protocol/RequestStatus.hh"
 #include "mem/ruby/common/MachineID.hh"
 #include "mem/ruby/network/MessageBuffer.hh"
+#include "mem/ruby/protocol/RequestStatus.hh"
 #include "mem/ruby/system/RubySystem.hh"
-#include "mem/mem_object.hh"
 #include "mem/tport.hh"
 #include "params/RubyPort.hh"
+#include "sim/clocked_object.hh"
 
 class AbstractController;
 
-class RubyPort : public MemObject
+class RubyPort : public ClockedObject
 {
   public:
     class MemMasterPort : public QueuedMasterPort
@@ -148,10 +148,8 @@ class RubyPort : public MemObject
 
     void init() override;
 
-    BaseMasterPort &getMasterPort(const std::string &if_name,
-                                  PortID idx = InvalidPortID) override;
-    BaseSlavePort &getSlavePort(const std::string &if_name,
-                                PortID idx = InvalidPortID) override;
+    Port &getPort(const std::string &if_name,
+                  PortID idx=InvalidPortID) override;
 
     virtual RequestStatus makeRequest(PacketPtr pkt) = 0;
     virtual int outstandingCount() const = 0;
@@ -167,6 +165,8 @@ class RubyPort : public MemObject
     DrainState drain() override;
 
     bool isCPUSequencer() { return m_isCPUSequencer; }
+
+    virtual int functionalWrite(Packet *func_pkt);
 
   protected:
     void trySendRetries();

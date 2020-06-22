@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #include "dev/x86/i8237.hh"
@@ -100,7 +98,7 @@ X86ISA::I8237::write(PacketPtr pkt)
         panic("Write to i8237 request register unimplemented.\n");
       case 0xa:
         {
-            uint8_t command = pkt->get<uint8_t>();
+            uint8_t command = pkt->getLE<uint8_t>();
             uint8_t select = bits(command, 1, 0);
             uint8_t bitVal = bits(command, 2);
             if (!bitVal)

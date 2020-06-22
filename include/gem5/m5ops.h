@@ -24,9 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
- *          Ali Saidi
  */
 
 #ifndef __GEM5_M5OP_H__
@@ -37,8 +34,6 @@ extern "C" {
 #endif
 
 #include <stdint.h>
-
-#include <gem5/asm/generic/m5op_flags.h>
 
 void m5_arm(uint64_t address);
 void m5_quiesce(void);
@@ -61,28 +56,14 @@ uint64_t m5_write_file(void *buffer, uint64_t len, uint64_t offset,
 void m5_debug_break(void);
 void m5_switch_cpu(void);
 void m5_dist_toggle_sync(void);
-void m5_add_symbol(uint64_t addr, char *symbol);
+void m5_add_symbol(uint64_t addr, const char *symbol);
 void m5_load_symbol();
 void m5_panic(void);
 void m5_work_begin(uint64_t workid, uint64_t threadid);
 void m5_work_end(uint64_t workid, uint64_t threadid);
 
-// These operations are for critical path annotation
-void m5a_bsm(char *sm, const void *id, int flags);
-void m5a_esm(char *sm);
-void m5a_begin(int flags, char *st);
-void m5a_end(void);
-void m5a_q(const void *id, char *q, int count);
-void m5a_dq(const void *id, char *q, int count);
-void m5a_wf(const void *id, char *q, char *sm, int count);
-void m5a_we(const void *id, char *q, char *sm, int count);
-void m5a_ws(const void *id, char *q, char *sm);
-void m5a_sq(const void *id, char *q, int count, int flags);
-void m5a_aq(const void *id, char *q, int count);
-void m5a_pq(const void *id, char *q, int count);
-void m5a_l(char *lsm, const void *id, char *sm);
-void m5a_identify(uint64_t id);
-uint64_t m5a_getid(void);
+void m5_se_syscall();
+void m5_se_page_fault();
 
 #ifdef __cplusplus
 }

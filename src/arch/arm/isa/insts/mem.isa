@@ -34,8 +34,6 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Authors: Gabe Black
 
 let {{
 
@@ -59,7 +57,7 @@ let {{
             # This shouldn't be part of the eaCode, but until the exec templates
             # are converted over it's the easiest place to put it.
             eaCode += '\n    unsigned memAccessFlags = '
-            eaCode += (string.join(memFlags, '|') + ';')
+            eaCode += ('|'.join(memFlags) + ';')
 
             codeBlobs["ea_code"] = eaCode
 
@@ -106,10 +104,13 @@ let {{
             if rasPop:
                 is_ras_pop = "1"
             codeBlobsCopy['is_ras_pop'] = is_ras_pop
+            if 'memacc_epilog_code' in codeBlobsCopy:
+                del codeBlobsCopy['memacc_epilog_code']
 
             iop = InstObjParams(name, Name, base,
                                 codeBlobsCopy, instFlagsCopy)
-
+            if 'memacc_epilog_code' in codeBlobs:
+                iop.snippets['memacc_code'] += codeBlobs['memacc_epilog_code']
             header_output = self.declareTemplate.subst(iop)
             decoder_output = self.constructTemplate.subst(iop)
             exec_output = self.fullExecTemplate.subst(iop) + \
@@ -213,7 +214,7 @@ let {{
             else:
                 memSuffix = '_ub'
         else:
-            raise Exception, "Unrecognized size for access %d" % size
+            raise Exception("Unrecognized size for access {}".format(size))
 
         return memSuffix
 
@@ -225,7 +226,7 @@ let {{
         elif not post and not writeback:
             base = "MemoryOffset<%s>" % base
         else:
-            raise Exception, "Illegal combination of post and writeback"
+            raise Exception("Illegal combination of post and writeback")
         return base
 }};
 

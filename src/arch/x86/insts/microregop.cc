@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #include "arch/x86/insts/microregop.hh"
@@ -78,8 +76,9 @@ namespace X86ISA
         return flags;
     }
 
-    std::string RegOp::generateDisassembly(Addr pc,
-            const SymbolTable *symtab) const
+    std::string
+    RegOp::generateDisassembly(
+            Addr pc, const Loader::SymbolTable *symtab) const
     {
         std::stringstream response;
 
@@ -92,8 +91,9 @@ namespace X86ISA
         return response.str();
     }
 
-    std::string RegOpImm::generateDisassembly(Addr pc,
-            const SymbolTable *symtab) const
+    std::string
+    RegOpImm::generateDisassembly(
+            Addr pc, const Loader::SymbolTable *symtab) const
     {
         std::stringstream response;
 

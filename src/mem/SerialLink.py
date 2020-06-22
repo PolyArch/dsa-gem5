@@ -36,18 +36,14 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Ali Saidi
-#          Andreas Hansson
-#          Erfan Azarkhish
 
 from m5.params import *
-from MemObject import MemObject
+from m5.objects.ClockedObject import ClockedObject
 
 # SerialLink is a simple variation of the Bridge class, with the ability to
 # account for the latency of packet serialization.
 
-class SerialLink(MemObject):
+class SerialLink(ClockedObject):
     type = 'SerialLink'
     cxx_header = "mem/serial_link.hh"
     slave = SlavePort('Slave port')

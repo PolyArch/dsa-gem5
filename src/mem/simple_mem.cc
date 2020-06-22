@@ -36,10 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ron Dreslinski
- *          Ali Saidi
- *          Andreas Hansson
  */
 
 #include "mem/simple_mem.hh"
@@ -78,6 +74,16 @@ SimpleMemory::recvAtomic(PacketPtr pkt)
 
     access(pkt);
     return getLatency();
+}
+
+Tick
+SimpleMemory::recvAtomicBackdoor(PacketPtr pkt, MemBackdoorPtr &_backdoor)
+{
+    Tick latency = recvAtomic(pkt);
+
+    if (backdoor.ptr())
+        _backdoor = &backdoor;
+    return latency;
 }
 
 void
@@ -164,7 +170,7 @@ SimpleMemory::recvTimingReq(PacketPtr pkt)
         auto i = packetQueue.end();
         --i;
         while (i != packetQueue.begin() && when_to_send < i->tick &&
-               i->pkt->getAddr() != pkt->getAddr())
+               !i->pkt->matchAddr(pkt))
             --i;
 
         // emplace inserts the element before the position pointed to by
@@ -231,11 +237,11 @@ SimpleMemory::recvRespRetry()
     dequeue();
 }
 
-BaseSlavePort &
-SimpleMemory::getSlavePort(const std::string &if_name, PortID idx)
+Port &
+SimpleMemory::getPort(const std::string &if_name, PortID idx)
 {
     if (if_name != "port") {
-        return MemObject::getSlavePort(if_name, idx);
+        return AbstractMemory::getPort(if_name, idx);
     } else {
         return port;
     }
@@ -269,6 +275,13 @@ Tick
 SimpleMemory::MemoryPort::recvAtomic(PacketPtr pkt)
 {
     return memory.recvAtomic(pkt);
+}
+
+Tick
+SimpleMemory::MemoryPort::recvAtomicBackdoor(
+        PacketPtr pkt, MemBackdoorPtr &_backdoor)
+{
+    return memory.recvAtomicBackdoor(pkt, _backdoor);
 }
 
 void

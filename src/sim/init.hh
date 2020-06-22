@@ -36,8 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
  */
 
 #ifndef __SIM_INIT_HH__
@@ -90,7 +88,11 @@ class EmbeddedPyBind
     EmbeddedPyBind(const char *_name,
                    void (*init_func)(pybind11::module &));
 
+#if PY_MAJOR_VERSION >= 3
+    static PyObject *initAll();
+#else
     static void initAll();
+#endif
 
   private:
     void (*initFunc)(pybind11::module &);
@@ -105,8 +107,8 @@ class EmbeddedPyBind
     static std::map<std::string, EmbeddedPyBind *> &getMap();
 };
 
-int initM5Python();
+void registerNativeModules();
+
 int m5Main(int argc, char **argv);
-PyMODINIT_FUNC initm5(void);
 
 #endif // __SIM_INIT_HH__

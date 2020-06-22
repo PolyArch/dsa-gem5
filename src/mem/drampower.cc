@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Omar Naji
  */
 
 #include "mem/drampower.hh"
@@ -152,10 +150,10 @@ DRAMPower::hasTwoVDD(const DRAMCtrlParams* p)
 uint8_t
 DRAMPower::getDataRate(const DRAMCtrlParams* p)
 {
-    uint32_t burst_cycles = divCeil(p->tBURST, p->tCK);
+    uint32_t burst_cycles = divCeil(p->tBURST_MAX, p->tCK);
     uint8_t data_rate = p->burst_length / burst_cycles;
     // 4 for GDDR5
-    if (data_rate != 1 && data_rate != 2 && data_rate != 4)
-        fatal("Got unexpected data rate %d, should be 1 or 2 or 4\n");
+    if (data_rate != 1 && data_rate != 2 && data_rate != 4 && data_rate != 8)
+        fatal("Got unexpected data rate %d, should be 1 or 2 or 4 or 8\n");
     return data_rate;
 }

@@ -10,18 +10,18 @@
 #include "ssim.hh"
 #include "../cpu.hh"
 
-extern "C" void libsbsim_is_present() {}
-
 using namespace std;
 
 // Vector-Stream Commands (all of these are context-dependent)
 
-ssim_t::ssim_t(Minor::LSQ* lsq) : NUM_ACCEL(getenv("LANES") ? std::stoi(getenv("LANES")) : 8), _lsq(lsq) {
+ssim_t::ssim_t(Minor::LSQ* lsq) :
+  NUM_ACCEL(getenv("LANES") ? std::stoi(getenv("LANES")) : 8), _lsq(lsq) {
+
   const char *req_core_id_str = std::getenv("DBG_CORE_ID");
   if (req_core_id_str != nullptr) {
     _req_core_id = atoi(req_core_id_str);
   }
-  // cout << "DEBUG PRED FOR CORE " << gee_core_id() << ": " << debug_pred() << endl;
+
   SS_DEBUG::check_env(debug_pred());
 
   accel_arr.resize(NUM_ACCEL_TOTAL);
@@ -32,7 +32,6 @@ ssim_t::ssim_t(Minor::LSQ* lsq) : NUM_ACCEL(getenv("LANES") ? std::stoi(getenv("
   //TODO: inform accel_arr
 
   // set indirect ports to be 1-byte by default
-  // for(int i=22; i<32; ++i) {
   for(int i=START_IND_PORTS; i<STOP_IND_PORTS; ++i) {
     port_data_t& cur_out_port = accel_arr[0]->_port_interf.out_port(i);
     cur_out_port.set_port_width(8);
@@ -42,6 +41,7 @@ ssim_t::ssim_t(Minor::LSQ* lsq) : NUM_ACCEL(getenv("LANES") ? std::stoi(getenv("
   }
 
 }
+
 void ssim_t::req_config(addr_t addr, int size) {
   if(addr==0 && size==0) {
     if(SS_DEBUG::COMMAND_I) {
@@ -49,11 +49,6 @@ void ssim_t::req_config(addr_t addr, int size) {
     }
     //This is the reset_data case!
     accel_arr[0]->request_reset_data();
-    /*for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
-      if(_context_bitmask & b) {
-        accel_arr[i]->request_reset_data();
-      }
-    }*/
     return;
   }
 
@@ -137,23 +132,10 @@ bool ssim_t::is_in_config() {
 }
 
 void ssim_t::cycle_shared_busses() {
-  //bring data int o
-  //     auto& read_buf = accel_arr[i]->_buf_shs_read;
-  //int max_reqs=2;
-  //int reqs_made=0;
-
-  //for(int i = 0; (i < NUM_ACCEL) && (reqs_made < max_reqs); ++i) {
-  //  rolling_inc(_which_shr,NUM_ACCEL,0);
-  //  auto& read_buf = accel_arr[i]->_scr_r_c._buf_shs_read;
-  //  bool didit = shared_acc()->_scr_w_c.accept_buffer(read_buf);
-  //  if(didit) {
-  //    reqs_made+=1;
-  //  }
-  //}
 }
 
 void ssim_t::step() {
-  if(!_in_use) {
+  if (!_in_use) {
     return;
   }
   cycle_shared_busses();
@@ -805,7 +787,7 @@ void ssim_t::write_constant(int num_strides, int in_port,
 }
 
 uint64_t ssim_t::now() {
-  return _lsq->get_cpu().curCycle();
+  return curTick();
 }
 
 void ssim_t::update_stat_cycle() {
@@ -837,8 +819,8 @@ void ssim_t::roi_entry(bool enter) {
       cout << "Entering ROI ------------\n";
     }
 
-    if(_orig_stat_start_cycle==0) {
-      _orig_stat_start_cycle=now();
+    if(_orig_stat_start_cycle == 0) {
+      _orig_stat_start_cycle = now();
     }
     setup_stat_cycle();
     clock_gettime(CLOCK_REALTIME,&_start_ts);

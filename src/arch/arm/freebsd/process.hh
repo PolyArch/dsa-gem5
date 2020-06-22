@@ -39,48 +39,72 @@
 
 class ArmFreebsdProcessBits
 {
-  protected:
-    SyscallDesc* getFreebsdDesc(int callnum);
-
-    struct SyscallTable
-    {
-        int base;
-        SyscallDesc *descs;
-        int size;
-
-        SyscallDesc *getDesc(int offset) const;
-    };
-
-    std::vector<SyscallTable> syscallTables;
+  public:
+    struct SyscallABI {};
 };
+
+namespace GuestABI
+{
+
+template <typename ABI>
+struct Result<ABI, SyscallReturn,
+    typename std::enable_if<std::is_base_of<
+        ArmFreebsdProcessBits::SyscallABI, ABI>::value>::type>
+{
+    static void
+    store(ThreadContext *tc, const SyscallReturn &ret)
+    {
+        if (ret.suppressed() || ret.needsRetry())
+            return;
+
+        RegVal val;
+        if (ret.successful()) {
+            tc->setCCReg(ArmISA::CCREG_C, 0);
+            val = ret.returnValue();
+        } else {
+            tc->setCCReg(ArmISA::CCREG_C, 1);
+            val = ret.encodedValue();
+        }
+        tc->setIntReg(ArmISA::ReturnValueReg, val);
+        if (ret.count() > 1)
+            tc->setIntReg(ArmISA::SyscallPseudoReturnReg, ret.value2());
+    }
+};
+
+} // namespace GuestABI
 
 /// A process with emulated Arm/Freebsd syscalls.
 class ArmFreebsdProcess32 : public ArmProcess32, public ArmFreebsdProcessBits
 {
   public:
-    ArmFreebsdProcess32(ProcessParams * params, ObjectFile *objFile,
-                        ObjectFile::Arch _arch);
+    ArmFreebsdProcess32(ProcessParams * params, ::Loader::ObjectFile *objFile,
+                        ::Loader::Arch _arch);
 
-    void initState();
+    void initState() override;
 
-    /// Explicitly import the otherwise hidden getSyscallArg
-    using ArmProcess::getSyscallArg;
+    void syscall(ThreadContext *tc, Fault *fault) override;
 
     /// A page to hold "kernel" provided functions. The name might be wrong.
     static const Addr commPage;
 
-    SyscallDesc* getDesc(int callnum);
+    struct SyscallABI : public ArmProcess32::SyscallABI,
+                        public ArmFreebsdProcessBits::SyscallABI
+    {};
 };
 
 /// A process with emulated Arm/Freebsd syscalls.
 class ArmFreebsdProcess64 : public ArmProcess64, public ArmFreebsdProcessBits
 {
   public:
-    ArmFreebsdProcess64(ProcessParams * params, ObjectFile *objFile,
-                        ObjectFile::Arch _arch);
+    ArmFreebsdProcess64(ProcessParams * params, ::Loader::ObjectFile *objFile,
+                        ::Loader::Arch _arch);
 
-    void initState();
-    SyscallDesc* getDesc(int callnum);
+    void initState() override;
+    void syscall(ThreadContext *tc, Fault *fault) override;
+
+    struct SyscallABI : public ArmProcess64::SyscallABI,
+                        public ArmFreebsdProcessBits::SyscallABI
+    {};
 };
 
 #endif // __ARCH_ARM_FREEBSD_PROCESS_HH__

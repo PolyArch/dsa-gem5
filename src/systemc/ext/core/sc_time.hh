@@ -23,8 +23,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __SYSTEMC_EXT_CORE_SC_TIME_HH__
@@ -55,6 +53,13 @@ class sc_time
     sc_time(double, sc_time_unit);
     sc_time(const sc_time &);
 
+    // Nonstandard
+    sc_time(double, const char *);
+
+    // Deprecated
+    sc_time(double, bool);
+    sc_time(sc_dt::uint64, bool);
+
     sc_time &operator = (const sc_time &);
 
     sc_dt::uint64 value() const;
@@ -75,6 +80,14 @@ class sc_time
     sc_time &operator /= (double);
 
     void print(std::ostream & =std::cout) const;
+
+    // Deprecated
+    static sc_time from_value(sc_dt::uint64);
+    static sc_time from_seconds(double);
+    static sc_time from_string(const char *str);
+
+  private:
+    uint64_t val;
 };
 
 const sc_time operator + (const sc_time &, const sc_time &);
@@ -92,6 +105,35 @@ extern const sc_time SC_ZERO_TIME;
 void sc_set_time_resolution(double, sc_time_unit);
 sc_time sc_get_time_resolution();
 const sc_time &sc_max_time();
+
+// Deprecated
+void sc_set_default_time_unit(double, sc_time_unit);
+sc_time sc_get_default_time_unit();
+
+// Nonstandard
+class sc_time_tuple
+{
+  public:
+    sc_time_tuple() : _value(), _unit(SC_SEC), _set(false) {}
+    sc_time_tuple(const sc_time &);
+
+    bool has_value() const;
+    sc_dt::uint64 value() const;
+    // Normalized unit.
+    sc_time_unit unit() const { return _unit; }
+    // Normalized unit symbol.
+    const char *unit_symbol() const;
+
+    operator sc_time() const { return sc_time(to_double(), _unit); }
+
+    double to_double() const; // Relative to the normalized unit.
+    std::string to_string() const;
+
+  private:
+    sc_dt::uint64 _value;
+    sc_time_unit _unit;
+    bool _set;
+};
 
 } // namespace sc_core
 

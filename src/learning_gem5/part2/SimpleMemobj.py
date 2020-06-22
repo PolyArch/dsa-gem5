@@ -24,13 +24,11 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Jason Lowe-Power
 
 from m5.params import *
-from MemObject import MemObject
+from m5.SimObject import SimObject
 
-class SimpleMemobj(MemObject):
+class SimpleMemobj(SimObject):
     type = 'SimpleMemobj'
     cxx_header = "learning_gem5/part2/simple_memobj.hh"
 

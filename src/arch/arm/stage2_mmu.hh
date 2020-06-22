@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Thomas Grocutt
  */
 
 #ifndef __ARCH_ARM_STAGE2_MMU_HH__
@@ -93,7 +91,7 @@ class Stage2MMU : public SimObject
         void setVirt(Addr vaddr, int size, Request::Flags flags, int masterId)
         {
             numBytes = size;
-            req->setVirt(0, vaddr, size, flags, masterId, 0);
+            req->setVirt(vaddr, size, flags, masterId, 0);
         }
 
         void translateTiming(ThreadContext *tc)
@@ -110,7 +108,7 @@ class Stage2MMU : public SimObject
      * is used by the two table walkers, and is exposed externally and
      * connected through the stage-one table walker.
      */
-    DmaPort& getPort() { return port; }
+    DmaPort& getDMAPort() { return port; }
 
     Fault readDataUntimed(ThreadContext *tc, Addr oVAddr, Addr descAddr,
         uint8_t *data, int numBytes, Request::Flags flags, bool isFunctional);

@@ -23,12 +23,10 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Nathan Binkert
 
 from __future__ import print_function
 
-from UserDict import DictMixin
+from collections import Mapping
 
 import _m5.debug
 from _m5.debug import SimpleFlag, CompoundFlag
@@ -56,7 +54,7 @@ def help():
             printList([ c.name() for c in children ], indent=8)
     print()
 
-class AllFlags(DictMixin):
+class AllFlags(Mapping):
     def __init__(self):
         self._version = -1
         self._dict = {}
@@ -79,6 +77,14 @@ class AllFlags(DictMixin):
         self._update()
         return self._dict[item]
 
+    def __iter__(self):
+        self._update()
+        return iter(self._dict)
+
+    def __len__(self):
+        self._update()
+        return len(self._dict)
+
     def keys(self):
         self._update()
         return self._dict.keys()
@@ -90,17 +96,5 @@ class AllFlags(DictMixin):
     def items(self):
         self._update()
         return self._dict.items()
-
-    def iterkeys(self):
-        self._update()
-        return self._dict.iterkeys()
-
-    def itervalues(self):
-        self._update()
-        return self._dict.itervalues()
-
-    def iteritems(self):
-        self._update()
-        return self._dict.iteritems()
 
 flags = AllFlags()

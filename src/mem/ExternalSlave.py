@@ -32,13 +32,11 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Andrew Bardsley
 
 from m5.params import *
-from MemObject import MemObject
+from m5.SimObject import SimObject
 
-class ExternalSlave(MemObject):
+class ExternalSlave(SimObject):
     type = 'ExternalSlave'
     cxx_header = "mem/external_slave.hh"
 

@@ -38,9 +38,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
- *          Andreas Sandberg
  */
 
 #include "pybind11/pybind11.h"
@@ -135,10 +132,18 @@ pybind_init_event(py::module &m_native)
                std::unique_ptr<GlobalSimLoopExitEvent, py::nodelete>>(
                m, "GlobalSimLoopExitEvent")
         .def("getCause", &GlobalSimLoopExitEvent::getCause)
+#if PY_MAJOR_VERSION >= 3
+        .def("getCode", &GlobalSimLoopExitEvent::getCode)
+#else
+        // Workaround for an issue where PyBind11 converts the exit
+        // code to a long. This is normally fine, but sys.exit treats
+        // any non-int type as an error and exits with status 1 if it
+        // is passed a long.
         .def("getCode", [](GlobalSimLoopExitEvent *e) {
                 return py::reinterpret_steal<py::object>(
                     PyInt_FromLong(e->getCode()));
             })
+#endif
         ;
 
     // Event base class. These should never be returned directly to

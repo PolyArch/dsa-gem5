@@ -37,10 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Erik Hallnor
- *          Dave Greene
- *          Andreas Hansson
  */
 
 /**
@@ -112,6 +108,9 @@ WriteQueueEntry::allocate(Addr blk_addr, unsigned blk_size, PacketPtr target,
              "a cacheable eviction or a writeclean");
 
     targets.add(target, when_ready, _order);
+
+    // All targets must refer to the same block
+    assert(target->matchBlockAddr(targets.front().pkt, blkSize));
 }
 
 void
@@ -139,6 +138,27 @@ bool
 WriteQueueEntry::sendPacket(BaseCache &cache)
 {
     return cache.sendWriteQueuePacket(this);
+}
+
+bool
+WriteQueueEntry::matchBlockAddr(const Addr addr, const bool is_secure) const
+{
+    assert(hasTargets());
+    return (blkAddr == addr) && (isSecure == is_secure);
+}
+
+bool
+WriteQueueEntry::matchBlockAddr(const PacketPtr pkt) const
+{
+    assert(hasTargets());
+    return pkt->matchBlockAddr(blkAddr, isSecure, blkSize);
+}
+
+bool
+WriteQueueEntry::conflictAddr(const QueueEntry* entry) const
+{
+    assert(hasTargets());
+    return entry->matchBlockAddr(blkAddr, isSecure);
 }
 
 void

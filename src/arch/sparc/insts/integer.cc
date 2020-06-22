@@ -24,10 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
- *          Gabe Black
- *          Steve Reinhardt
  */
 
 #include "arch/sparc/insts/integer.hh"
@@ -42,7 +38,7 @@ namespace SparcISA
 
 bool
 IntOp::printPseudoOps(std::ostream &os, Addr pc,
-                      const SymbolTable *symbab) const
+                      const Loader::SymbolTable *symbab) const
 {
     if (!std::strcmp(mnemonic, "or") && _srcRegIdx[0].index() == 0) {
         printMnemonic(os, "mov");
@@ -56,7 +52,7 @@ IntOp::printPseudoOps(std::ostream &os, Addr pc,
 
 bool
 IntOpImm::printPseudoOps(std::ostream &os, Addr pc,
-                         const SymbolTable *symbab) const
+                         const Loader::SymbolTable *symbab) const
 {
     if (!std::strcmp(mnemonic, "or")) {
         if (_numSrcRegs > 0 && _srcRegIdx[0].index() == 0) {
@@ -80,7 +76,7 @@ IntOpImm::printPseudoOps(std::ostream &os, Addr pc,
 }
 
 std::string
-IntOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+IntOp::generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream response;
 
@@ -95,7 +91,7 @@ IntOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-IntOpImm::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+IntOpImm::generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream response;
 
@@ -113,7 +109,7 @@ IntOpImm::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 std::string
-SetHi::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+SetHi::generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream response;
 

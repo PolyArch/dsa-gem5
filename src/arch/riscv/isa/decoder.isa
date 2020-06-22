@@ -2,6 +2,7 @@
 
 // Copyright (c) 2015 RISC-V Foundation
 // Copyright (c) 2017 The University of Virginia
+// Copyright (c) 2020 Barkhausen Institut
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -26,8 +27,6 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Authors: Alec Roelke
 
 ////////////////////////////////////////////////////////////////////
 //
@@ -36,7 +35,7 @@
 
 decode QUADRANT default Unknown::unknown() {
     0x0: decode COPCODE {
-        0x0: CIOp::c_addi4spn({{
+        0x0: CIAddi4spnOp::c_addi4spn({{
             imm = CIMM8<1:1> << 2 |
                   CIMM8<0:0> << 3 |
                   CIMM8<7:6> << 4 |
@@ -51,6 +50,11 @@ decode QUADRANT default Unknown::unknown() {
             0x1: c_fld({{
                 offset = CIMM3 << 3 | CIMM2 << 6;
             }}, {{
+                STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                if (status.fs == FPUStatus::OFF)
+                    fault = make_shared<IllegalInstFault>("FPU is off",
+                                                          machInst);
+
                 Fp2_bits = Mem;
             }}, {{
                 EA = Rp1 + offset;
@@ -76,6 +80,11 @@ decode QUADRANT default Unknown::unknown() {
             0x5: c_fsd({{
                 offset = CIMM3 << 3 | CIMM2 << 6;
             }}, {{
+                STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                if (status.fs == FPUStatus::OFF)
+                    fault = make_shared<IllegalInstFault>("FPU is off",
+                                                          machInst);
+
                 Mem = Fp2_bits;
             }}, {{
                 EA = Rp1 + offset;
@@ -198,7 +207,7 @@ decode QUADRANT default Unknown::unknown() {
                     Rp1 = Rp1 & imm;
                 }}, uint64_t);
             }
-            format ROp {
+            format CompressedROp {
                 0x3: decode CFUNCT1 {
                     0x0: decode CFUNCT2LOW {
                         0x0: c_sub({{
@@ -225,18 +234,9 @@ decode QUADRANT default Unknown::unknown() {
                 }
             }
         }
-        0x5: JOp::c_j({{
-            int64_t offset = CJUMPIMM<3:1> << 1 |
-                             CJUMPIMM<9:9> << 4 |
-                             CJUMPIMM<0:0> << 5 |
-                             CJUMPIMM<5:5> << 6 |
-                             CJUMPIMM<4:4> << 7 |
-                             CJUMPIMM<8:7> << 8 |
-                             CJUMPIMM<6:6> << 10;
-            if (CJUMPIMM<10:10> > 0)
-                offset |= ~((int64_t)0x7FF);
-            NPC = PC + offset;
-        }}, IsIndirectControl, IsUncondControl, IsCall);
+        0x5: CJOp::c_j({{
+            NPC = PC + imm;
+        }}, IsDirectControl, IsUncondControl);
         format CBOp {
             0x6: c_beqz({{
                 if (Rp1 == 0)
@@ -338,7 +338,7 @@ decode QUADRANT default Unknown::unknown() {
                         ra = NPC;
                         NPC = Rc1;
                     }}, IsIndirectControl, IsUncondControl, IsCall);
-                    default: ROp::c_add({{
+                    default: CompressedROp::c_add({{
                         Rc1_sd = Rc1_sd + Rc2_sd;
                     }});
                 }
@@ -401,18 +401,28 @@ decode QUADRANT default Unknown::unknown() {
         0x01: decode FUNCT3 {
             format Load {
                 0x2: flw({{
+                    STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                    if (status.fs == FPUStatus::OFF)
+                        fault = make_shared<IllegalInstFault>("FPU is off",
+                                                              machInst);
+
                     Fd_bits = (uint64_t)Mem_uw;
                 }}, inst_flags=FloatMemReadOp);
                 0x3: fld({{
+                    STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                    if (status.fs == FPUStatus::OFF)
+                        fault = make_shared<IllegalInstFault>("FPU is off",
+                                                              machInst);
+
                     Fd_bits = Mem;
                 }}, inst_flags=FloatMemReadOp);
             }
         }
 
         0x03: decode FUNCT3 {
-            format IOp {
+            format FenceOp {
                 0x0: fence({{
-                }}, uint64_t, IsNonSpeculative, IsMemBarrier, No_OpClass);
+                }}, uint64_t, IsMemBarrier, No_OpClass);
                 0x1: fence_i({{
                 }}, uint64_t, IsNonSpeculative, IsSerializeAfter, No_OpClass);
             }
@@ -434,8 +444,8 @@ decode QUADRANT default Unknown::unknown() {
                   }
                 }});
                 0x1: slli({{
-                    Rd = Rs1 << SHAMT6;
-                }});
+                    Rd = Rs1 << imm;
+                }}, imm_type = uint64_t, imm_code = {{ imm = SHAMT6; }});
                 0x2: slti({{
                     Rd = (Rs1_sd < imm) ? 1 : 0;
                 }});
@@ -447,11 +457,11 @@ decode QUADRANT default Unknown::unknown() {
                 }}, uint64_t);
                 0x5: decode SRTYPE {
                     0x0: srli({{
-                        Rd = Rs1 >> SHAMT6;
-                    }});
+                        Rd = Rs1 >> imm;
+                    }}, imm_type = uint64_t, imm_code = {{ imm = SHAMT6; }});
                     0x1: srai({{
-                        Rd_sd = Rs1_sd >> SHAMT6;
-                    }});
+                        Rd_sd = Rs1_sd >> imm;
+                    }}, imm_type = uint64_t, imm_code = {{ imm = SHAMT6; }});
                 }
                 0x6: ori({{
                     Rd = Rs1 | imm;
@@ -463,7 +473,7 @@ decode QUADRANT default Unknown::unknown() {
         }
 
         0x05: UOp::auipc({{
-            Rd = PC + imm;
+            Rd = PC + (sext<20>(imm) << 12);
         }});
 
         0x06: decode FUNCT3 {
@@ -472,15 +482,15 @@ decode QUADRANT default Unknown::unknown() {
                     Rd_sd = Rs1_sw + imm;
                 }}, int32_t);
                 0x1: slliw({{
-                    Rd_sd = Rs1_sw << SHAMT5;
-                }});
+                    Rd_sd = Rs1_sw << imm;
+                }}, imm_type = uint64_t, imm_code = {{ imm = SHAMT5; }});
                 0x5: decode SRTYPE {
                     0x0: srliw({{
-                        Rd_sd = (int32_t)(Rs1_uw >> SHAMT5);
-                    }});
+                        Rd_sd = (int32_t)(Rs1_uw >> imm);
+                    }}, imm_type = uint64_t, imm_code = {{ imm = SHAMT5; }});
                     0x1: sraiw({{
-                        Rd_sd = Rs1_sw >> SHAMT5;
-                    }});
+                        Rd_sd = Rs1_sw >> imm;
+                    }}, imm_type = uint64_t, imm_code = {{ imm = SHAMT5; }});
                 }
             }
         }
@@ -504,9 +514,19 @@ decode QUADRANT default Unknown::unknown() {
         0x09: decode FUNCT3 {
             format Store {
                 0x2: fsw({{
+                    STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                    if (status.fs == FPUStatus::OFF)
+                        fault = make_shared<IllegalInstFault>("FPU is off",
+                                                              machInst);
+
                     Mem_uw = (uint32_t)Fs2_bits;
                 }}, inst_flags=FloatMemWriteOp);
                 0x3: fsd({{
+                    STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                    if (status.fs == FPUStatus::OFF)
+                        fault = make_shared<IllegalInstFault>("FPU is off",
+                                                              machInst);
+
                     Mem_ud = Fs2_bits;
                 }}, inst_flags=FloatMemWriteOp);
             }
@@ -522,44 +542,69 @@ decode QUADRANT default Unknown::unknown() {
                 }}, {{
                     Rd = result;
                 }}, inst_flags=IsStoreConditional, mem_flags=LLSC);
-                format AtomicMemOp {
-                    0x0: amoadd_w({{Rt_sd = Mem_sw;}}, {{
-                        Mem_sw = Rs2_sw + Rt_sd;
-                        Rd_sd = Rt_sd;
-                    }}, {{EA = Rs1;}});
-                    0x1: amoswap_w({{Rt_sd = Mem_sw;}}, {{
-                        Mem_sw = Rs2_uw;
-                        Rd_sd = Rt_sd;
-                    }}, {{EA = Rs1;}});
-                    0x4: amoxor_w({{Rt_sd = Mem_sw;}}, {{
-                        Mem_sw = Rs2_uw^Rt_sd;
-                        Rd_sd = Rt_sd;
-                    }}, {{EA = Rs1;}});
-                    0x8: amoor_w({{Rt_sd = Mem_sw;}}, {{
-                        Mem_sw = Rs2_uw | Rt_sd;
-                        Rd_sd = Rt_sd;
-                    }}, {{EA = Rs1;}});
-                    0xc: amoand_w({{Rt_sd = Mem_sw;}}, {{
-                        Mem_sw = Rs2_uw&Rt_sd;
-                        Rd_sd = Rt_sd;
-                    }}, {{EA = Rs1;}});
-                    0x10: amomin_w({{Rt_sd = Mem_sw;}}, {{
-                        Mem_sw = min<int32_t>(Rs2_sw, Rt_sd);
-                        Rd_sd = Rt_sd;
-                    }}, {{EA = Rs1;}});
-                    0x14: amomax_w({{Rt_sd = Mem_sw;}}, {{
-                        Mem_sw = max<int32_t>(Rs2_sw, Rt_sd);
-                        Rd_sd = Rt_sd;
-                    }}, {{EA = Rs1;}});
-                    0x18: amominu_w({{Rt_sd = Mem_sw;}}, {{
-                        Mem_sw = min<uint32_t>(Rs2_uw, Rt_sd);
-                        Rd_sd = Rt_sd;
-                    }}, {{EA = Rs1;}});
-                    0x1c: amomaxu_w({{Rt_sd = Mem_sw;}}, {{
-                        Mem_sw = max<uint32_t>(Rs2_uw, Rt_sd);
-                        Rd_sd = Rt_sd;
-                    }}, {{EA = Rs1;}});
-                }
+                0x0: AtomicMemOp::amoadd_w({{
+                    Rd_sd = Mem_sw;
+                }}, {{
+                    TypedAtomicOpFunctor<int32_t> *amo_op =
+                          new AtomicGenericOp<int32_t>(Rs2_sw,
+                                  [](int32_t* b, int32_t a){ *b += a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x1: AtomicMemOp::amoswap_w({{
+                    Rd_sd = Mem_sw;
+                }}, {{
+                    TypedAtomicOpFunctor<uint32_t> *amo_op =
+                          new AtomicGenericOp<uint32_t>(Rs2_uw,
+                                  [](uint32_t* b, uint32_t a){ *b = a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x4: AtomicMemOp::amoxor_w({{
+                    Rd_sd = Mem_sw;
+                }}, {{
+                    TypedAtomicOpFunctor<uint32_t> *amo_op =
+                          new AtomicGenericOp<uint32_t>(Rs2_uw,
+                                  [](uint32_t* b, uint32_t a){ *b ^= a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x8: AtomicMemOp::amoor_w({{
+                    Rd_sd = Mem_sw;
+                }}, {{
+                    TypedAtomicOpFunctor<uint32_t> *amo_op =
+                          new AtomicGenericOp<uint32_t>(Rs2_uw,
+                                  [](uint32_t* b, uint32_t a){ *b |= a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0xc: AtomicMemOp::amoand_w({{
+                    Rd_sd = Mem_sw;
+                }}, {{
+                    TypedAtomicOpFunctor<uint32_t> *amo_op =
+                          new AtomicGenericOp<uint32_t>(Rs2_uw,
+                                  [](uint32_t* b, uint32_t a){ *b &= a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x10: AtomicMemOp::amomin_w({{
+                    Rd_sd = Mem_sw;
+                }}, {{
+                    TypedAtomicOpFunctor<int32_t> *amo_op =
+                      new AtomicGenericOp<int32_t>(Rs2_sw,
+                        [](int32_t* b, int32_t a){ if (a < *b) *b = a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x14: AtomicMemOp::amomax_w({{
+                    Rd_sd = Mem_sw;
+                }}, {{
+                    TypedAtomicOpFunctor<int32_t> *amo_op =
+                      new AtomicGenericOp<int32_t>(Rs2_sw,
+                        [](int32_t* b, int32_t a){ if (a > *b) *b = a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x18: AtomicMemOp::amominu_w({{
+                    Rd_sd = Mem_sw;
+                }}, {{
+                    TypedAtomicOpFunctor<uint32_t> *amo_op =
+                      new AtomicGenericOp<uint32_t>(Rs2_uw,
+                        [](uint32_t* b, uint32_t a){ if (a < *b) *b = a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x1c: AtomicMemOp::amomaxu_w({{
+                    Rd_sd = Mem_sw;
+                }}, {{
+                    TypedAtomicOpFunctor<uint32_t> *amo_op =
+                      new AtomicGenericOp<uint32_t>(Rs2_uw,
+                        [](uint32_t* b, uint32_t a){ if (a > *b) *b = a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
             }
             0x3: decode AMOFUNCT {
                 0x2: LoadReserved::lr_d({{
@@ -570,44 +615,69 @@ decode QUADRANT default Unknown::unknown() {
                 }}, {{
                     Rd = result;
                 }}, mem_flags=LLSC, inst_flags=IsStoreConditional);
-                format AtomicMemOp {
-                    0x0: amoadd_d({{Rt_sd = Mem_sd;}}, {{
-                        Mem_sd = Rs2_sd + Rt_sd;
-                        Rd_sd = Rt_sd;
-                    }}, {{EA = Rs1;}});
-                    0x1: amoswap_d({{Rt = Mem;}}, {{
-                        Mem = Rs2;
-                        Rd = Rt;
-                    }}, {{EA = Rs1;}});
-                    0x4: amoxor_d({{Rt = Mem;}}, {{
-                        Mem = Rs2^Rt;
-                        Rd = Rt;
-                    }}, {{EA = Rs1;}});
-                    0x8: amoor_d({{Rt = Mem;}}, {{
-                        Mem = Rs2 | Rt;
-                        Rd = Rt;
-                    }}, {{EA = Rs1;}});
-                    0xc: amoand_d({{Rt = Mem;}}, {{
-                        Mem = Rs2&Rt;
-                        Rd = Rt;
-                    }}, {{EA = Rs1;}});
-                    0x10: amomin_d({{Rt_sd = Mem_sd;}}, {{
-                        Mem_sd = min(Rs2_sd, Rt_sd);
-                        Rd_sd = Rt_sd;
-                    }}, {{EA = Rs1;}});
-                    0x14: amomax_d({{Rt_sd = Mem_sd;}}, {{
-                        Mem_sd = max(Rs2_sd, Rt_sd);
-                        Rd_sd = Rt_sd;
-                    }}, {{EA = Rs1;}});
-                    0x18: amominu_d({{Rt = Mem;}}, {{
-                        Mem = min(Rs2, Rt);
-                        Rd = Rt;
-                    }}, {{EA = Rs1;}});
-                    0x1c: amomaxu_d({{Rt = Mem;}}, {{
-                        Mem = max(Rs2, Rt);
-                        Rd = Rt;
-                    }}, {{EA = Rs1;}});
-                }
+                0x0: AtomicMemOp::amoadd_d({{
+                    Rd_sd = Mem_sd;
+                }}, {{
+                    TypedAtomicOpFunctor<int64_t> *amo_op =
+                          new AtomicGenericOp<int64_t>(Rs2_sd,
+                                  [](int64_t* b, int64_t a){ *b += a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x1: AtomicMemOp::amoswap_d({{
+                    Rd_sd = Mem_sd;
+                }}, {{
+                    TypedAtomicOpFunctor<uint64_t> *amo_op =
+                          new AtomicGenericOp<uint64_t>(Rs2_ud,
+                                  [](uint64_t* b, uint64_t a){ *b = a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x4: AtomicMemOp::amoxor_d({{
+                    Rd_sd = Mem_sd;
+                }}, {{
+                    TypedAtomicOpFunctor<uint64_t> *amo_op =
+                          new AtomicGenericOp<uint64_t>(Rs2_ud,
+                                 [](uint64_t* b, uint64_t a){ *b ^= a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x8: AtomicMemOp::amoor_d({{
+                    Rd_sd = Mem_sd;
+                }}, {{
+                    TypedAtomicOpFunctor<uint64_t> *amo_op =
+                          new AtomicGenericOp<uint64_t>(Rs2_ud,
+                                 [](uint64_t* b, uint64_t a){ *b |= a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0xc: AtomicMemOp::amoand_d({{
+                    Rd_sd = Mem_sd;
+                }}, {{
+                    TypedAtomicOpFunctor<uint64_t> *amo_op =
+                          new AtomicGenericOp<uint64_t>(Rs2_ud,
+                                 [](uint64_t* b, uint64_t a){ *b &= a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x10: AtomicMemOp::amomin_d({{
+                    Rd_sd = Mem_sd;
+                }}, {{
+                    TypedAtomicOpFunctor<int64_t> *amo_op =
+                      new AtomicGenericOp<int64_t>(Rs2_sd,
+                        [](int64_t* b, int64_t a){ if (a < *b) *b = a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x14: AtomicMemOp::amomax_d({{
+                    Rd_sd = Mem_sd;
+                }}, {{
+                    TypedAtomicOpFunctor<int64_t> *amo_op =
+                      new AtomicGenericOp<int64_t>(Rs2_sd,
+                        [](int64_t* b, int64_t a){ if (a > *b) *b = a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x18: AtomicMemOp::amominu_d({{
+                    Rd_sd = Mem_sd;
+                }}, {{
+                    TypedAtomicOpFunctor<uint64_t> *amo_op =
+                      new AtomicGenericOp<uint64_t>(Rs2_ud,
+                        [](uint64_t* b, uint64_t a){ if (a < *b) *b = a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
+                0x1c: AtomicMemOp::amomaxu_d({{
+                    Rd_sd = Mem_sd;
+                }}, {{
+                    TypedAtomicOpFunctor<uint64_t> *amo_op =
+                      new AtomicGenericOp<uint64_t>(Rs2_ud,
+                        [](uint64_t* b, uint64_t a){ if (a > *b) *b = a; });
+                }}, mem_flags=ATOMIC_RETURN_OP);
             }
         }
         0x0c: decode FUNCT3 {
@@ -756,7 +826,7 @@ decode QUADRANT default Unknown::unknown() {
         }
 
         0x0d: UOp::lui({{
-            Rd = (uint64_t)imm;
+            Rd = (uint64_t)(sext<20>(imm) << 12);
         }});
 
         0x0e: decode FUNCT3 {
@@ -791,7 +861,7 @@ decode QUADRANT default Unknown::unknown() {
                     }});
                     0x1: divuw({{
                         if (Rs2_uw == 0) {
-                            Rd_sd = numeric_limits<IntReg>::max();
+                            Rd_sd = numeric_limits<uint64_t>::max();
                         } else {
                             Rd_sd = (int32_t)(Rs1_uw/Rs2_uw);
                         }
@@ -820,137 +890,135 @@ decode QUADRANT default Unknown::unknown() {
             }
         }
 
+        0x2: decode FUNCT3 {
+            0x0: IOp::ss_cfg({{
+                xc->setSSReg(Rs1,SS_MEM_ADDR);
+                xc->setSSReg(imm,SS_CFG_SIZE);
+                xc->callSSFunc(SS_CFG);
+            }}, uint64_t, {{ imm = sext<12>(IMM12); }}, IsSSConfig, IsNonSpeculative, No_OpClass);
+            0x1: SSOp::ss_cfg_port({{
+                xc->setSSReg(Rs1,SS_REPEAT);
+                xc->setSSReg(imm,SS_REPEAT_STRETCH);
+            }}, IsSSParam, IsNonSpeculative, No_OpClass);
+            0x2: SSOp::ss_cfg_ctx({{
+                if(imm == 0) {
+                  xc->setSSReg(Rs1,SS_CONTEXT);
+                } else {
+                  xc->setSSReg(imm,SS_CONTEXT);
+                }
+                xc->setSSReg(Rs2,SS_OFFSET);
+                xc->callSSFunc(SS_CTX);
+            }}, IsSSParam, IsNonSpeculative, No_OpClass);
+            0x3: SSOp::ss_fill_mode({{
+                xc->setSSReg(imm,SS_CONSTANT);
+                xc->callSSFunc(SS_FILL_MODE);
+            }}, IsSSParam, IsNonSpeculative, No_OpClass);
+        }
+        0xa: decode FUNCT3 {
+            0x0: SSOp::ss_add_port({{
+                xc->setSSReg(imm,SS_IN_PORT);
+                xc->callSSFunc(SS_ADD_PRT);
+            }}, IsNonSpeculative, No_OpClass);
+            0x1: SSOp::ss_scr_rd({{
+                xc->pushStreamDimension(Rs1, Rs2, imm >> 2);
+                if (~imm & 1) {
+                  if (imm >> 1 & 1) {
+                    // Invoke a Buffet stream!
+                    xc->setSSReg((imm >> 7) & 63, SS_OUT_PORT);
+                    xc->callSSFunc(SS_BUFFET);
+                  } else {
+                    xc->callSSFunc(SS_SCR_PRT);
+                  }
+                }
+            }}, IsSSStream, IsNonSpeculative, No_OpClass);
+            0x2: SSOp::ss_dma_rd({{
+                xc->pushStreamDimension(Rs1, Rs2, imm >> 1);
+                if (~imm & 1)
+                  xc->callSSFunc(SS_MEM_PRT);
+            }}, IsSSStream, IsNonSpeculative, No_OpClass);
+            0x4: SSOp::ss_const({{
+                xc->setSSReg(imm & 0x3f, SS_IN_PORT);
+                xc->setSSReg(imm >> 6, SS_FLAGS);
+                xc->setSSReg((imm >> 8) & 1, SS_IND_TYPE);
+                xc->setSSReg(imm >> 9, SS_DTYPE);
+                if(imm & (1<<7)) {
+                  xc->setSSReg(Rs1,SS_CONSTANT2);
+                  xc->setSSReg(Rs2,SS_NUM_ELEM2);
+                } else {
+                  xc->setSSReg(Rs1,SS_CONSTANT);
+                  xc->setSSReg(Rs2,SS_NUM_ELEM);
+                  xc->callSSFunc(SS_CNS_PRT);
+                }
+            }}, IsSSStream, IsNonSpeculative, No_OpClass);
+            0x5: IOp::ss_recv({{
+                xc->setSSReg(0x3f & imm, SS_OUT_PORT);
+                Rd = xc->receiveSS();
+            }}, uint64_t, {{ imm = sext<12>(IMM12); }}, IsSSRecv, IsNonSpeculative, No_OpClass);
+            0x6: SSOp::ss_atom_op({{
+                xc->setSSReg(Rs1 & 0xffffff,SS_OFFSET);
+                xc->setSSReg(Rs2,SS_NUM_ELEM);
+                xc->setSSReg((Rs1 >> 24) & 0x1f, SS_OUT_PORT);
+                xc->setSSReg((imm >> 2) & 0x1f, SS_VAL_PORT);
+                xc->setSSReg((imm & 0x3),SS_OPCODE);
+                xc->callSSFunc(SS_ATOMIC_SCR_OP);
+            }}, IsSSStream, IsNonSpeculative, No_OpClass);
+            0x7: SSOp::ss_cfg_mmap({{
+                xc->setSSReg(Rs1,SS_CFG_SIZE);
+                xc->setSSReg(Rs2, SS_CONTEXT);
+                xc->setSSReg(imm,SS_GARB_ELEM);
+            }}, IsSSParam, IsNonSpeculative, No_OpClass);
+        }
+        0x16: decode FUNCT3 {
+            0x1: SSOp::ss_wr_scr({{
+                xc->pushStreamDimension(Rs1, Rs2, (imm >> 2) & 63);
+                if (~imm & 1) {
+                  if (imm >> 1 & 1) {
+                    // Do nothing! This is to get prepared for Buffet!
+                  } else {
+                    xc->callSSFunc(SS_PRT_SCR);
+                  }
+                }
+            }}, IsSSStream, No_OpClass);
+			0x2: SSOp::rem_port({{
+                xc->setSSReg(Rs1, SS_NUM_ELEM);
+                xc->setSSReg(Rs2, SS_SCRATCH_ADDR);
+                xc->setSSReg((imm >> 7) & 0x1f, SS_OUT_PORT);
+                xc->setSSReg((imm >> 6) & 0x1, SS_ADDR_TYPE);
+                xc->setSSReg((imm >> 1) & 0x1f, SS_IN_PORT);
+        	    xc->setSSReg(imm & 0x1, SS_FLAGS);
+                xc->callSSFunc(SS_REM_PORT);
+            }}, IsSSStream, No_OpClass);
+            0x3: SSOp::ss_garb({{
+                 xc->setSSReg(Rs1,SS_GARB_ELEM);
+            }}, IsSSStream, No_OpClass);
+            0x4: SSOp::ss_wr_dma({{
+                xc->pushStreamDimension(Rs1, Rs2, imm >> 1);
+                if (~imm & 1)
+                  xc->callSSFunc(SS_PRT_MEM);
+            }}, IsSSStream, IsNonSpeculative, No_OpClass);
+            0x5: SSOp::ss_wr_rd({{
+                xc->setSSReg(Rs1,SS_NUM_ELEM);
+                xc->setSSReg(Rs2,SS_FLAGS);
+                xc->setSSReg((imm >> 0) & 31, SS_OUT_PORT);
+                xc->setSSReg((imm >> 6) & 31, SS_IN_PORT);
+                xc->callSSFunc(SS_PRT_PRT);
+            }}, IsSSStream, IsNonSpeculative, No_OpClass);
+            0x6: IOp::ss_const_scr({{
+                xc->setSSReg(Rs1,SS_SCRATCH_ADDR);
+                xc->setSSReg(Rs2,SS_CONSTANT);
+                xc->setSSReg(imm,SS_DTYPE);
+                xc->callSSFunc(SS_CONST_SCR);
+            }}, uint64_t, {{ imm = sext<12>(IMM12); }}, IsSSStream, IsNonSpeculative, No_OpClass);
+            0x7: SSOp::ss_cfg_atom_op({{
+                xc->setSSReg(Rs1, SS_OFFSET_LIST); 
+                xc->setSSReg(Rs2 & 0xffff, SS_STRETCH); 
+                xc->setSSReg(Rs2 >> 16, SS_IS_SCRATCH); 
+                xc->setSSReg(imm>>4, SS_IND_TYPE); 
+                xc->setSSReg((imm>>2)&0x3, SS_DTYPE); 
+                xc->setSSReg(imm&0x3, SS_ADDR_TYPE); 
+            }}, No_OpClass);
+        }
         format SSOp {
-            0x2: decode FUNCT3 {
-                0x0: IOp::ss_cfg({{
-                    xc->setSSReg(Rs1,SS_MEM_ADDR);
-                    xc->setSSReg(imm,SS_CFG_SIZE);
-                    xc->callSSFunc(SS_CFG);
-                }}, uint64_t, IsSSConfig, IsNonSpeculative, No_OpClass);
-                0x1: ss_cfg_port({{
-                    xc->setSSReg(Rs1,SS_REPEAT);
-                    xc->setSSReg(imm,SS_REPEAT_STRETCH);
-                }}, IsSSParam, IsNonSpeculative, No_OpClass);
-                0x2: ss_cfg_ctx({{
-                    if(imm == 0) {
-                      xc->setSSReg(Rs1,SS_CONTEXT);
-                    } else {
-                      xc->setSSReg(imm,SS_CONTEXT);
-                    }
-                    xc->setSSReg(Rs2,SS_OFFSET);
-                    xc->callSSFunc(SS_CTX);
-                }}, IsSSParam, IsNonSpeculative, No_OpClass);
-                0x3: ss_fill_mode({{
-                    xc->setSSReg(imm,SS_CONSTANT);
-                    xc->callSSFunc(SS_FILL_MODE);
-                }}, IsSSParam, IsNonSpeculative, No_OpClass);
-            }
-            0xa: decode FUNCT3 {
-                0x0: ss_add_port({{
-                    xc->setSSReg(imm,SS_IN_PORT);
-                    xc->callSSFunc(SS_ADD_PRT);
-                }}, IsNonSpeculative, No_OpClass);
-                0x1: ss_scr_rd({{
-                    xc->pushStreamDimension(Rs1, Rs2, imm >> 2);
-                    if (~imm & 1) {
-                      if (imm >> 1 & 1) {
-                        // Invoke a Buffet stream!
-                        xc->setSSReg((imm >> 7) & 63, SS_OUT_PORT);
-                        xc->callSSFunc(SS_BUFFET);
-                      } else {
-                        xc->callSSFunc(SS_SCR_PRT);
-                      }
-                    }
-                }}, IsSSStream, IsNonSpeculative, No_OpClass);
-                0x2: ss_dma_rd({{
-                    xc->pushStreamDimension(Rs1, Rs2, imm >> 1);
-                    if (~imm & 1)
-                      xc->callSSFunc(SS_MEM_PRT);
-                }}, IsSSStream, IsNonSpeculative, No_OpClass);
-                0x4: ss_const({{
-                    xc->setSSReg(imm & 0x3f, SS_IN_PORT);
-                    xc->setSSReg(imm >> 6, SS_FLAGS);
-                    xc->setSSReg((imm >> 8) & 1, SS_IND_TYPE);
-                    xc->setSSReg(imm >> 9, SS_DTYPE);
-                    if(imm & (1<<7)) {
-                      xc->setSSReg(Rs1,SS_CONSTANT2);
-                      xc->setSSReg(Rs2,SS_NUM_ELEM2);
-                    } else {
-                      xc->setSSReg(Rs1,SS_CONSTANT);
-                      xc->setSSReg(Rs2,SS_NUM_ELEM);
-                      xc->callSSFunc(SS_CNS_PRT);
-                    }
-                }}, IsSSStream, IsNonSpeculative, No_OpClass);
-                0x5: IOp::ss_recv({{
-                    xc->setSSReg(0x3f & imm, SS_OUT_PORT);
-                    Rd = xc->receiveSS();
-                }}, uint64_t, IsSSRecv, IsNonSpeculative, No_OpClass);
-                0x6: ss_atom_op({{
-                    xc->setSSReg(Rs1 & 0xffffff,SS_OFFSET);
-                    xc->setSSReg(Rs2,SS_NUM_ELEM);
-                    xc->setSSReg((Rs1 >> 24) & 0x1f, SS_OUT_PORT);
-                    xc->setSSReg((imm >> 2) & 0x1f, SS_VAL_PORT);
-                    xc->setSSReg((imm & 0x3),SS_OPCODE);
-                    xc->callSSFunc(SS_ATOMIC_SCR_OP);
-                }}, IsSSStream, IsNonSpeculative, No_OpClass);
-                0x7: ss_cfg_mmap({{
-                    xc->setSSReg(Rs1,SS_CFG_SIZE);
-                    xc->setSSReg(Rs2, SS_CONTEXT);
-                    xc->setSSReg(imm,SS_GARB_ELEM);
-                }}, IsSSParam, IsNonSpeculative, No_OpClass);
-
-            }
-            0x16: decode FUNCT3 {
-                0x1: ss_wr_scr({{
-                    xc->pushStreamDimension(Rs1, Rs2, (imm >> 2) & 63);
-                    if (~imm & 1) {
-                      if (imm >> 1 & 1) {
-                        // Do nothing! This is to get prepared for Buffet!
-                      } else {
-                        xc->callSSFunc(SS_PRT_SCR);
-                      }
-                    }
-                }}, IsSSStream, No_OpClass);
-				0x2: ss_rem_port({{
-					xc->setSSReg(Rs1,SS_NUM_ELEM);
-                    xc->setSSReg(Rs2,SS_SCRATCH_ADDR);
-                    xc->setSSReg((imm >> 7) & 0x1f, SS_OUT_PORT);
-                    xc->setSSReg((imm >> 6) & 0x1, SS_ADDR_TYPE);
-                    xc->setSSReg((imm >> 1) & 0x1f, SS_IN_PORT);
-					xc->setSSReg(imm & 0x1, SS_FLAGS);
-                    xc->callSSFunc(SS_REM_PORT);
-                }}, IsSSStream, No_OpClass);
-                0x3: ss_garb({{
-                     xc->setSSReg(Rs1,SS_GARB_ELEM);
-                }}, IsSSStream, No_OpClass);
-                0x4: ss_wr_dma({{
-                    xc->pushStreamDimension(Rs1, Rs2, imm >> 1);
-                    if (~imm & 1)
-                      xc->callSSFunc(SS_PRT_MEM);
-                }}, IsSSStream, IsNonSpeculative, No_OpClass);
-                0x5: ss_wr_rd({{
-                    xc->setSSReg(Rs1,SS_NUM_ELEM);
-                    xc->setSSReg(Rs2,SS_FLAGS);
-                    xc->setSSReg((imm >> 0) & 31, SS_OUT_PORT);
-                    xc->setSSReg((imm >> 6) & 31, SS_IN_PORT);
-                    xc->callSSFunc(SS_PRT_PRT);
-                }}, IsSSStream, IsNonSpeculative, No_OpClass);
-                0x6: IOp::ss_const_scr({{
-                    xc->setSSReg(Rs1,SS_SCRATCH_ADDR);
-                    xc->setSSReg(Rs2,SS_CONSTANT);
-                    xc->setSSReg(imm,SS_DTYPE);
-                    xc->callSSFunc(SS_CONST_SCR);
-                }}, uint64_t, IsSSStream, IsNonSpeculative, No_OpClass);
-                0x7: ss_cfg_atom_op({{
-                    xc->setSSReg(Rs1, SS_OFFSET_LIST); 
-                    xc->setSSReg(Rs2 & 0xffff, SS_STRETCH); 
-                    xc->setSSReg(Rs2 >> 16, SS_IS_SCRATCH); 
-                    xc->setSSReg(imm>>4, SS_IND_TYPE); 
-                    xc->setSSReg((imm>>2)&0x3, SS_DTYPE); 
-                    xc->setSSReg(imm&0x3, SS_ADDR_TYPE); 
-                }}, No_OpClass);
-
-            }
             0x1e: decode FUNCT3 {
                 0x0: ss_stride({{
                     xc->setSSReg(Rs1,SS_STRIDE);
@@ -1573,10 +1641,12 @@ decode QUADRANT default Unknown::unknown() {
                         if (std::isnan(fs1)) {
                             Rd_sd = numeric_limits<int32_t>::max();
                             FFLAGS |= FloatInvalid;
-                        } else if (fs1 >= numeric_limits<int32_t>::max()) {
+                        } else if (fs1 >=
+                                float(numeric_limits<int32_t>::max())) {
                             Rd_sd = numeric_limits<int32_t>::max();
                             FFLAGS |= FloatInvalid;
-                        } else if (fs1 <= numeric_limits<int32_t>::min()) {
+                        } else if (fs1 <=
+                                float(numeric_limits<int32_t>::min())) {
                             Rd_sd = numeric_limits<int32_t>::min();
                             FFLAGS |= FloatInvalid;
                         } else {
@@ -1593,7 +1663,8 @@ decode QUADRANT default Unknown::unknown() {
                         } else if (fs1 < 0.0) {
                             Rd = 0;
                             FFLAGS |= FloatInvalid;
-                        } else if (fs1 > numeric_limits<uint32_t>::max()) {
+                        } else if (fs1 >
+                                float(numeric_limits<uint32_t>::max())) {
                             Rd = numeric_limits<uint64_t>::max();
                             FFLAGS |= FloatInvalid;
                         } else {
@@ -1607,10 +1678,12 @@ decode QUADRANT default Unknown::unknown() {
                         if (std::isnan(fs1)) {
                             Rd_sd = numeric_limits<int64_t>::max();
                             FFLAGS |= FloatInvalid;
-                        } else if (fs1 > numeric_limits<int64_t>::max()) {
+                        } else if (fs1 >
+                                float(numeric_limits<int64_t>::max())) {
                             Rd_sd = numeric_limits<int64_t>::max();
                             FFLAGS |= FloatInvalid;
-                        } else if (fs1 < numeric_limits<int64_t>::min()) {
+                        } else if (fs1 <
+                                float(numeric_limits<int64_t>::min())) {
                             Rd_sd = numeric_limits<int64_t>::min();
                             FFLAGS |= FloatInvalid;
                         } else {
@@ -1627,7 +1700,8 @@ decode QUADRANT default Unknown::unknown() {
                         } else if (fs1 < 0.0) {
                             Rd = 0;
                             FFLAGS |= FloatInvalid;
-                        } else if (fs1 > numeric_limits<uint64_t>::max()) {
+                        } else if (fs1 >
+                                float(numeric_limits<uint64_t>::max())) {
                             Rd = numeric_limits<uint64_t>::max();
                             FFLAGS |= FloatInvalid;
                         } else {
@@ -1640,10 +1714,12 @@ decode QUADRANT default Unknown::unknown() {
                         if (std::isnan(Fs1)) {
                             Rd_sd = numeric_limits<int32_t>::max();
                             FFLAGS |= FloatInvalid;
-                        } else if (Fs1 > numeric_limits<int32_t>::max()) {
+                        } else if (Fs1 >
+                                float(numeric_limits<int32_t>::max())) {
                             Rd_sd = numeric_limits<int32_t>::max();
                             FFLAGS |= FloatInvalid;
-                        } else if (Fs1 < numeric_limits<int32_t>::min()) {
+                        } else if (Fs1 <
+                                float(numeric_limits<int32_t>::min())) {
                             Rd_sd = numeric_limits<int32_t>::min();
                             FFLAGS |= FloatInvalid;
                         } else {
@@ -1657,7 +1733,8 @@ decode QUADRANT default Unknown::unknown() {
                         } else if (Fs1 < 0) {
                             Rd = 0;
                             FFLAGS |= FloatInvalid;
-                        } else if (Fs1 > numeric_limits<uint32_t>::max()) {
+                        } else if (Fs1 >
+                                float(numeric_limits<uint32_t>::max())) {
                             Rd = numeric_limits<uint64_t>::max();
                             FFLAGS |= FloatInvalid;
                         } else {
@@ -1668,10 +1745,12 @@ decode QUADRANT default Unknown::unknown() {
                         if (std::isnan(Fs1)) {
                             Rd_sd = numeric_limits<int64_t>::max();
                             FFLAGS |= FloatInvalid;
-                        } else if (Fs1 > numeric_limits<int64_t>::max()) {
+                        } else if (Fs1 >
+                                float(numeric_limits<int64_t>::max())) {
                             Rd_sd = numeric_limits<int64_t>::max();
                             FFLAGS |= FloatInvalid;
-                        } else if (Fs1 < numeric_limits<int64_t>::min()) {
+                        } else if (Fs1 <
+                                float(numeric_limits<int64_t>::min())) {
                             Rd_sd = numeric_limits<int64_t>::min();
                             FFLAGS |= FloatInvalid;
                         } else {
@@ -1685,7 +1764,8 @@ decode QUADRANT default Unknown::unknown() {
                         } else if (Fs1 < 0) {
                             Rd = 0;
                             FFLAGS |= FloatInvalid;
-                        } else if (Fs1 > numeric_limits<uint64_t>::max()) {
+                        } else if (Fs1 >
+                                float(numeric_limits<uint64_t>::max())) {
                             Rd = numeric_limits<uint64_t>::max();
                             FFLAGS |= FloatInvalid;
                         } else {
@@ -1894,38 +1974,70 @@ decode QUADRANT default Unknown::unknown() {
 
         0x1c: decode FUNCT3 {
             format SystemOp {
-                0x0: decode FUNCT12 {
-                    0x0: ecall({{
-                        fault = make_shared<SyscallFault>(
+                0x0: decode FUNCT7 {
+                    0x0: decode RS2 {
+                        0x0: ecall({{
+                            fault = make_shared<SyscallFault>(
                                 (PrivilegeMode)xc->readMiscReg(MISCREG_PRV));
-                    }}, IsSerializeAfter, IsNonSpeculative, IsSyscall,
-                        No_OpClass);
-                    0x1: ebreak({{
-                        fault = make_shared<BreakpointFault>(xc->pcState());
-                    }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
-                    0x2: uret({{
-                        STATUS status = xc->readMiscReg(MISCREG_STATUS);
-                        status.uie = status.upie;
-                        status.upie = 1;
-                        xc->setMiscReg(MISCREG_STATUS, status);
-                        NPC = xc->readMiscReg(MISCREG_UEPC);
-                    }}, IsReturn);
-                    0x102: sret({{
-                        if (xc->readMiscReg(MISCREG_PRV) == PRV_U) {
-                            fault = make_shared<IllegalInstFault>(
-                                        "sret in user mode", machInst);
-                            NPC = NPC;
-                        } else {
+                        }}, IsSerializeAfter, IsNonSpeculative, IsSyscall,
+                            No_OpClass);
+                        0x1: ebreak({{
+                            fault = make_shared<BreakpointFault>(
+                                xc->pcState());
+                        }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
+                        0x2: uret({{
                             STATUS status = xc->readMiscReg(MISCREG_STATUS);
-                            xc->setMiscReg(MISCREG_PRV, status.spp);
-                            status.sie = status.spie;
-                            status.spie = 1;
-                            status.spp = PRV_U;
+                            status.uie = status.upie;
+                            status.upie = 1;
                             xc->setMiscReg(MISCREG_STATUS, status);
-                            NPC = xc->readMiscReg(MISCREG_SEPC);
+                            NPC = xc->readMiscReg(MISCREG_UEPC);
+                        }}, IsSerializeAfter, IsNonSpeculative, IsReturn);
+                    }
+                    0x8: decode RS2 {
+                        0x2: sret({{
+                            STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                            auto pm = (PrivilegeMode)xc->readMiscReg(
+                                MISCREG_PRV);
+                            if (pm == PRV_U ||
+                                (pm == PRV_S && status.tsr == 1)) {
+                                fault = make_shared<IllegalInstFault>(
+                                            "sret in user mode or TSR enabled",
+                                            machInst);
+                                NPC = NPC;
+                            } else {
+                                xc->setMiscReg(MISCREG_PRV, status.spp);
+                                status.sie = status.spie;
+                                status.spie = 1;
+                                status.spp = PRV_U;
+                                xc->setMiscReg(MISCREG_STATUS, status);
+                                NPC = xc->readMiscReg(MISCREG_SEPC);
+                            }
+                        }}, IsSerializeAfter, IsNonSpeculative, IsReturn);
+                        0x5: wfi({{
+                            STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                            auto pm = (PrivilegeMode)xc->readMiscReg(
+                                MISCREG_PRV);
+                            if (pm == PRV_U ||
+                                (pm == PRV_S && status.tw == 1)) {
+                                fault = make_shared<IllegalInstFault>(
+                                            "wfi in user mode or TW enabled",
+                                            machInst);
+                            }
+                            // don't do anything for now
+                        }}, No_OpClass);
+                    }
+                    0x9: sfence_vma({{
+                        STATUS status = xc->readMiscReg(MISCREG_STATUS);
+                        auto pm = (PrivilegeMode)xc->readMiscReg(MISCREG_PRV);
+                        if (pm == PRV_U || (pm == PRV_S && status.tvm == 1)) {
+                            fault = make_shared<IllegalInstFault>(
+                                        "sfence in user mode or TVM enabled",
+                                        machInst);
                         }
-                    }}, IsReturn);
-                    0x302: mret({{
+                        xc->tcBase()->getITBPtr()->demapPage(Rs1, Rs2);
+                        xc->tcBase()->getDTBPtr()->demapPage(Rs1, Rs2);
+                    }}, IsNonSpeculative, IsSerializeAfter, No_OpClass);
+                    0x18: mret({{
                         if (xc->readMiscReg(MISCREG_PRV) != PRV_M) {
                             fault = make_shared<IllegalInstFault>(
                                         "mret at lower privilege", machInst);
@@ -1939,35 +2051,36 @@ decode QUADRANT default Unknown::unknown() {
                             xc->setMiscReg(MISCREG_STATUS, status);
                             NPC = xc->readMiscReg(MISCREG_MEPC);
                         }
-                    }}, IsReturn);
+                    }}, IsSerializeAfter, IsNonSpeculative, IsReturn);
                 }
             }
             format CSROp {
                 0x1: csrrw({{
                     Rd = data;
                     data = Rs1;
-                }}, IsNonSpeculative, No_OpClass);
+                }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
                 0x2: csrrs({{
                     Rd = data;
                     data |= Rs1;
-                }}, IsNonSpeculative, No_OpClass);
+                }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
                 0x3: csrrc({{
                     Rd = data;
                     data &= ~Rs1;
-                }}, IsNonSpeculative, No_OpClass);
+                }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
                 0x5: csrrwi({{
                     Rd = data;
                     data = uimm;
-                }}, IsNonSpeculative, No_OpClass);
+                }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
                 0x6: csrrsi({{
                     Rd = data;
                     data |= uimm;
-                }}, IsNonSpeculative, No_OpClass);
+                }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
                 0x7: csrrci({{
                     Rd = data;
                     data &= ~uimm;
-                }}, IsNonSpeculative, No_OpClass);
+                }}, IsSerializeAfter, IsNonSpeculative, No_OpClass);
             }
         }
+
     }
  }

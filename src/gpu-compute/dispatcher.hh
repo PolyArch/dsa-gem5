@@ -29,10 +29,6 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Brad Beckmann,
- *          Marc Orr,
- *          Anthony Gutierrez
  */
 
 #ifndef __GPU_DISPATCHER_HH__
@@ -103,8 +99,8 @@ class GpuDispatcher : public DmaDevice
         ~GpuDispatcher() { }
 
         void exec();
-        virtual void serialize(CheckpointOut &cp) const;
-        virtual void unserialize(CheckpointIn &cp);
+        virtual void serialize(CheckpointOut &cp) const override;
+        virtual void unserialize(CheckpointIn &cp) override;
         void notifyWgCompl(Wavefront *w);
         void scheduleDispatch();
         void accessUserVar(BaseCPU *cpu, uint64_t addr, int val, int off);
@@ -140,12 +136,12 @@ class GpuDispatcher : public DmaDevice
 
         TLBPort *tlbPort;
 
-        virtual BaseMasterPort& getMasterPort(const std::string &if_name,
-                                              PortID idx);
+        Port &getPort(const std::string &if_name,
+                      PortID idx=InvalidPortID) override;
 
-        AddrRangeList getAddrRanges() const;
-        Tick read(PacketPtr pkt);
-        Tick write(PacketPtr pkt);
+        AddrRangeList getAddrRanges() const override;
+        Tick read(PacketPtr pkt) override;
+        Tick write(PacketPtr pkt) override;
 
         // helper functions to retrieve/set GPU attributes
         int getNumCUs();

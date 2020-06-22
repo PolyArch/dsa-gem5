@@ -53,9 +53,12 @@ Topology::Topology(uint32_t num_routers,
                    const vector<BasicExtLink *> &ext_links,
                    const vector<SpuExtLink *> &spu_ext_links,
                    const vector<BasicIntLink *> &int_links)
-    : m_nodes(ext_links.size()+spu_ext_links.size()), ctrl_nodes(ext_links.size()), m_number_of_switches(num_routers),
-    // : m_nodes(ext_links.size()), m_number_of_switches(num_routers),
-      m_ext_link_vector(ext_links), spu_ext_link_vector (spu_ext_links), m_int_link_vector(int_links)
+    : m_nodes(ext_links.size() + spu_ext_links.size()),
+      ctrl_nodes(ext_links.size()),
+      m_number_of_switches(num_routers),
+      m_ext_link_vector(ext_links),
+      spu_ext_link_vector (spu_ext_links),
+      m_int_link_vector(int_links)
 {
 
     // Total nodes/controllers in network

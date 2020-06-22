@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
  */
 
 #include "dev/arm/timer_sp804.hh"
@@ -86,7 +84,7 @@ Sp804::Timer::read(PacketPtr pkt, Addr daddr)
 {
     switch(daddr) {
       case LoadReg:
-        pkt->set<uint32_t>(loadValue);
+        pkt->setLE<uint32_t>(loadValue);
         break;
       case CurrentReg:
         DPRINTF(Timer, "Event schedule for %d, clock=%d, prescale=%d\n",
@@ -95,25 +93,26 @@ Sp804::Timer::read(PacketPtr pkt, Addr daddr)
         time = zeroEvent.when() - curTick();
         time = time / clock / power(16, control.timerPrescale);
         DPRINTF(Timer, "-- returning counter at %d\n", time);
-        pkt->set<uint32_t>(time);
+        pkt->setLE<uint32_t>(time);
         break;
       case ControlReg:
-        pkt->set<uint32_t>(control);
+        pkt->setLE<uint32_t>(control);
         break;
       case RawISR:
-        pkt->set<uint32_t>(rawInt);
+        pkt->setLE<uint32_t>(rawInt);
         break;
       case MaskedISR:
-        pkt->set<uint32_t>(pendingInt);
+        pkt->setLE<uint32_t>(pendingInt);
         break;
       case BGLoad:
-        pkt->set<uint32_t>(loadValue);
+        pkt->setLE<uint32_t>(loadValue);
         break;
       default:
         panic("Tried to read SP804 timer at offset %#x\n", daddr);
         break;
     }
-    DPRINTF(Timer, "Reading %#x from Timer at offset: %#x\n", pkt->get<uint32_t>(), daddr);
+    DPRINTF(Timer, "Reading %#x from Timer at offset: %#x\n",
+            pkt->getLE<uint32_t>(), daddr);
 }
 
 Tick
@@ -137,10 +136,11 @@ Sp804::write(PacketPtr pkt)
 void
 Sp804::Timer::write(PacketPtr pkt, Addr daddr)
 {
-    DPRINTF(Timer, "Writing %#x to Timer at offset: %#x\n", pkt->get<uint32_t>(), daddr);
+    DPRINTF(Timer, "Writing %#x to Timer at offset: %#x\n",
+            pkt->getLE<uint32_t>(), daddr);
     switch (daddr) {
       case LoadReg:
-        loadValue = pkt->get<uint32_t>();
+        loadValue = pkt->getLE<uint32_t>();
         restartCounter(loadValue);
         break;
       case CurrentReg:
@@ -149,7 +149,7 @@ Sp804::Timer::write(PacketPtr pkt, Addr daddr)
       case ControlReg:
         bool old_enable;
         old_enable = control.timerEnable;
-        control = pkt->get<uint32_t>();
+        control = pkt->getLE<uint32_t>();
         if ((old_enable == 0) && control.timerEnable)
             restartCounter(loadValue);
         break;
@@ -162,7 +162,7 @@ Sp804::Timer::write(PacketPtr pkt, Addr daddr)
         }
         break;
       case BGLoad:
-        loadValue = pkt->get<uint32_t>();
+        loadValue = pkt->getLE<uint32_t>();
         break;
       default:
         panic("Tried to write SP804 timer at offset %#x\n", daddr);

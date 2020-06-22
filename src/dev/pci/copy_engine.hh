@@ -36,8 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
  */
 
 /* @file
@@ -95,7 +93,7 @@ class CopyEngine : public PciDevice
       public:
         CopyEngineChannel(CopyEngine *_ce, int cid);
         virtual ~CopyEngineChannel();
-        BaseMasterPort &getMasterPort();
+        Port &getPort();
 
         std::string name() { assert(ce); return ce->name() + csprintf("-chan%d", channelId); }
         virtual Tick read(PacketPtr pkt)
@@ -193,8 +191,8 @@ class CopyEngine : public PciDevice
 
     void regStats() override;
 
-    BaseMasterPort &getMasterPort(const std::string &if_name,
-                                  PortID idx = InvalidPortID) override;
+    Port &getPort(const std::string &if_name,
+            PortID idx = InvalidPortID) override;
 
     Tick read(PacketPtr pkt) override;
     Tick write(PacketPtr pkt) override;

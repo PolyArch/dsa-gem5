@@ -3,8 +3,12 @@
 #include <iostream>
 #include <unordered_set>
 #include <utility>
+
+#include "dsa/dfg/utils.h"
+
 #include "../cpu.hh"
 #include "ssim.hh"
+
 
 
 using namespace std;
@@ -48,13 +52,14 @@ void accel_t::req_config(addr_t addr, int size, uint64_t context) {
 
   if (debug && (SS_DEBUG::COMMAND || SS_DEBUG::SCR_BARRIER)) {
     timestamp();
-    cout << "SS_CONFIGURE(request): "
+    cout << "dsaURE(request): "
          << "0x" << std::hex << addr << " " << std::dec << size << "\n";
   }
   SSMemReqInfoPtr sdInfo = new SSMemReqInfo(-4, context, CONFIG_STREAM);
 
   _lsq->pushRequest(cur_minst(), true /*isLoad*/, NULL /*data*/,
                     size * 8 /*cache line*/, addr, 0 /*flags*/, 0 /*res*/,
+                    nullptr /*atom op*/, std::vector<bool>() /*byte enable*/,
                     sdInfo);
 }
 
@@ -490,7 +495,9 @@ void port_interf_t::initialize(SSModel *ssconfig) {
 }
 
 // ---------------------------- ACCEL ------------------------------------------
-uint64_t accel_t::now() { return _lsq->get_cpu().curCycle(); }
+uint64_t accel_t::now() {
+  return curTick();
+}
 
 accel_t::accel_t(Minor::LSQ *lsq, int i, ssim_t *ssim)
     : NUM_ACCEL(ssim->NUM_ACCEL), _ssim(ssim), _lsq(lsq), _accel_index(i), _accel_mask(1 << i),
@@ -1157,7 +1164,6 @@ void accel_t::cycle_cgra_backpressure() {
   }
 
   // calling with the default parameters for now
-  //num_computed = _dfg->cycle(print, true);
   num_computed = _dfg->forward(_back_cgra, _sched);
 
   _cgra_issued += _dfg->total_dyn_insts(0) + _dfg->total_dyn_insts(1);
@@ -1193,23 +1199,22 @@ void accel_t::cycle_cgra_backpressure() {
       vec_output->pop(data, data_valid);
 
       if(SS_DEBUG::COMP) {
-        cout << "outvec[" << vec_output->name() << "] allowed to pop output: ";
+        cerr << "outvec[" << vec_output->name() << "] allowed to pop output: ";
         assert(data_valid.size() == data.size());
         for (int j = 0, n = data.size(); j < n; ++j) {
           std::cout << data[j] << "(" << data_valid[j] << ") ";
         }
-        cout << "\n";
+        cerr << "\n";
       }
       if (in_roi()) {
         // _stat_comp_instances += 1;
         _stat_comp_instances += len; // number of scalar inputs
       }
-      if(data_valid.size() != len) {
-        cout << "port vec elem: " << cur_out_port.port_vec_elem() << " port width: " << cur_out_port.get_port_width() << endl;
-        cout << "Length of output required: " << len << " and size: " << data_valid.size() << endl;
 
-      }
-      assert(data_valid.size()==len);
+      CHECK(data_valid.size() == len) << "port vec elem: " << cur_out_port.port_vec_elem()
+                                      << " port width: " << cur_out_port.get_port_width()
+                                      << " length of output required: " << len
+                                      << " and size: " << data_valid.size();
 
       int j = 0, n_times=0;
       for (j = 0; j < len; ++j) {
@@ -1234,7 +1239,8 @@ void accel_t::cycle_cgra_backpressure() {
 
   // Statistics to measure port imbalance
   if(_ssim->in_roi() && _ssim->in_use()) { // would measure only when something was issued
-    _stat_port_imbalance += _dfg->count_starving_nodes();
+    // TODO(@were): Fix this.
+    // _stat_port_imbalance += _dfg->count_starving_nodes();
   }
 }
 
@@ -1583,7 +1589,7 @@ void accel_t::print_statistics(std::ostream &out) {
       << ((double)_stat_comp_instances) / ((double)roi_cycles()) << "\n";
   if (_dfg) {
     out << "For backcgra, Average thoughput of all ports (overall): "
-      << ((double)_stat_comp_instances)/((double)roi_cycles()*_dfg->num_vec_output()) // gives seg fault when no dfg
+      << ((double)_stat_comp_instances)/((double)roi_cycles()*_dfg->nodes<SSDfgVecOutput*>().size()) // gives seg fault when no dfg
       << ", CGRA outputs/cgra busy cycles: "
       <<  ((double)_stat_comp_instances)/((double)_stat_cgra_busy_cycles)  << "\n";
   }
@@ -2246,7 +2252,6 @@ void apply_map(uint8_t *raw_data, const vector<int> &imap,
 }
 
 void dma_controller_t::port_resp(unsigned cur_port) {
-
   if (Minor::LSQ::LSQRequestPtr response =
           _accel->_lsq->findResponse(cur_port)) {
   
@@ -2556,20 +2561,22 @@ void dma_controller_t::make_read_request() {
 
   auto to_sort = _read_streams;
 
-  auto to_key = [this](base_stream_t *s) {
-    int ready = 0, on_the_fly;
-    for (auto &port : s->in_ports())
-      ready += _accel->port_interf().in_port(port).mem_size();
-    on_the_fly = s->on_the_fly;
-    return std::pair<int, int>(ready, on_the_fly);
-  };
+  //auto to_key = [this](base_stream_t *s) {
+  //  int ready = 0, on_the_fly;
+  //  for (auto &port : s->in_ports())
+  //    ready += _accel->port_interf().in_port(port).mem_size();
+  //  on_the_fly = s->on_the_fly;
+  //  return std::pair<int, int>(ready, on_the_fly);
+  //};
 
-  std::sort(to_sort.begin(), to_sort.end(), [to_key](base_stream_t *a, base_stream_t *b) {
-    return to_key(a) < to_key(b);
-  });
+  //std::sort(to_sort.begin(), to_sort.end(), [to_key](base_stream_t *a, base_stream_t *b) {
+  //  return to_key(a) < to_key(b);
+  //});
+
+  _which_rd += 1;
 
   for (unsigned i = 0, n = to_sort.size(); i < n; ++i) {
-    _which_rd = i;
+    _which_rd = (_which_rd + i) % to_sort.size();
 
     base_stream_t *s = _read_streams[_which_rd];
 
@@ -2730,7 +2737,9 @@ int dma_controller_t::req_read(affine_read_stream_t &stream) {
   // make request
   _accel->_lsq->pushRequest(_accel->cur_minst(), true /*isLoad*/, NULL /*data*/,
                             MEM_WIDTH /*cache line*/, base_addr, 0 /*flags*/,
-                            0 /*res*/, sdInfo);
+                            0 /*res*/, nullptr /*atomic op*/,
+                            std::vector<bool>() /*byte enable*/,
+                            sdInfo);
 
   if (SS_DEBUG::MEM_REQ) {
     _accel->timestamp();
@@ -3456,7 +3465,8 @@ void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
   // make request
   _accel->_lsq->pushRequest(stream.minst(), true /*isLoad*/, NULL /*data*/,
                             MEM_WIDTH /*cache line*/, base_addr, 0 /*flags*/,
-                            0 /*res*/, sdInfo);
+                            0 /*res*/, nullptr /*atomic op*/,
+                            std::vector<bool>() /*byte enable*/, sdInfo);
 
   if (_accel->_ssim->in_roi()) {
     add_bw(stream.src(), stream.dest(), 1, imap.size());
@@ -3582,7 +3592,8 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t &stream) {
   // make store request
   _accel->_lsq->pushRequest(stream.minst(), false /*isLoad*/, data8,
                             bytes_written, init_addr, 0 /*flags*/, 0 /*res*/,
-                            sdInfo);
+                            nullptr /*atomic op*/,
+                            std::vector<bool>() /*byte enable*/, sdInfo);
 
   if(SS_DEBUG::MEM_WR) {
     cout << "bytes written: " << bytes_written << "addr: " << std::hex <<
@@ -3665,7 +3676,8 @@ void dma_controller_t::req_write(affine_write_stream_t &stream,
   // make store request
   _accel->_lsq->pushRequest(stream.minst(), false /*isLoad*/, data8,
                             bytes_written, init_addr, 0 /*flags*/, 0 /*res*/,
-                            sdInfo);
+                            nullptr/*atomic op*/,
+                            std::vector<bool>(), sdInfo);
 
   if (SS_DEBUG::MEM_REQ) {
     _accel->timestamp();
@@ -6057,7 +6069,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
 
   if (debug && (SS_DEBUG::COMMAND || SS_DEBUG::SCR_BARRIER)) {
     timestamp();
-    cout << "SS_CONFIGURE(response): "
+    cout << "dsaURE(response): "
          << "0x" << std::hex << addr << " " << std::dec << size << "\n";
     // for(int i = 0; i < size/8; ++i) {
     //  cout << "0x" << std::hex << bits[i] << " ";
@@ -6075,43 +6087,15 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
     _sched->clear_ssdfg();
     delete _sched;
   }
-  _sched = new Schedule(_ssconfig);
-  // assert(_sched);
 
-  _soft_config.inst_histo = _sched->interpretConfigBits(size, bits);
+  {
+    std::string basename = ((char*)(bits) + 9);
+    SSDfg *dfg = dsa::dfg::Import("sched/" + basename + ".dfg.json");
+    _sched = new Schedule(_ssconfig, dfg);
+    _sched->LoadMappingInJson("sched/" + basename + ".sched.json");
+  }
 
   _dfg = _sched->ssdfg();                 // now we have the dfg!
-  _dfg->set_dbg_stream(_cgra_dbg_stream); // change debug stream for dfg
-
-  //for(auto i : _dfg->nodes<SSDfgVecInput*>()) {
-  //  ssvport* vp = dynamic_cast<ssvport*>(_sched->locationOf(i));
-
-  //  int port_number = vp->port();
-
-  //  cout << i->name() << " is mapped to " << vp->name() 
-  //    << " with id: " << vp->id() << " and vp pointer:" << vp << " and port: " << port_number << "\n";
-
-  //  vp =_sched->ssModel()->subModel()->node_list()[vp->id()];
-
-  //  cout << "and also is mapped to " << vp->name() 
-  //    << " with id: " << vp->id() << " and vp pointer:" << vp << " and port: " << port_number << "\n";
-
-
-  //  SSDfgVecInput* vertex = dynamic_cast<SSDfgVecInput*>(_sched->dfgNodeOf(vp));
-  //  if(vertex) {
-  //    cout << vertex->name() << "is what schedule recorded \n";
-  //  }
-  //  assert(vertex);
-
-  //}
-
-  //for(auto i : _dfg->nodes<SSDfgVecOutput*>()) {
-  //  ssnode* n = _sched->locationOf(i);
-
-  //  cout << i->name() << " is mapped to " << n->name() 
-  //    << " with id: " << n->id() << " and vp pointer:" << n << "\n";
-  //}
-
 
   // Lets print it for debugging purposes
   std::ofstream ofs("viz/dfg-reconstructed.dot", std::ios::out);
@@ -6133,9 +6117,11 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
   _soft_config.in_ports_name.resize(64);
   _soft_config.out_ports_name.resize(64);
 
-  for (int ind = 0; ind < _dfg->num_vec_input(); ++ind) {
-    SSDfgVec *vec_in = _dfg->vec_in(ind);
+  auto &in_vecs = _dfg->nodes<SSDfgVecInput*>();
+  for (int ind = 0; ind < in_vecs.size(); ++ind) {
+    SSDfgVec *vec_in = in_vecs[ind];
     int i = _sched->vecPortOf(vec_in);
+    CHECK(i != -1);
     _soft_config.in_ports_active.push_back(i); // activate input vector port
 
     SSDfgVecInput *vec_input = dynamic_cast<SSDfgVecInput *>(vec_in);
@@ -6165,8 +6151,9 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
 
   //SSDfgNode *dfg_node = vec_output->at(port_idx*vec_output->get_port_width()/64 );
 
-  for (int ind = 0; ind < _dfg->num_vec_output(); ++ind) {
-    SSDfgVec *vec_out = _dfg->vec_out(ind);
+  auto &out_vecs = _dfg->nodes<SSDfgVecOutput*>();
+  for (int ind = 0; ind < out_vecs.size(); ++ind) {
+    SSDfgVec *vec_out = out_vecs[ind];
     int i = _sched->vecPortOf(vec_out);
 
     _soft_config.out_ports_active.push_back(i);

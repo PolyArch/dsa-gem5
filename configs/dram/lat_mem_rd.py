@@ -32,12 +32,12 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Andreas Hansson
 
 from __future__ import print_function
+from __future__ import absolute_import
 
 import gzip
+import six
 import optparse
 import os
 
@@ -47,10 +47,14 @@ from m5.util import addToPath
 from m5.stats import periodicStatDump
 
 addToPath('../')
+from common import ObjectList
 from common import MemConfig
 
 addToPath('../../util')
 import protolib
+
+if six.PY3:
+    long = int
 
 # this script is helpful to observe the memory latency for various
 # levels in a cache hierarchy, and various cache and memory
@@ -83,7 +87,7 @@ except:
 parser = optparse.OptionParser()
 
 parser.add_option("--mem-type", type="choice", default="DDR3_1600_8x8",
-                  choices=MemConfig.mem_names(),
+                  choices=ObjectList.mem_list.get_names(),
                   help = "type of memory to use")
 parser.add_option("--mem-size", action="store", type="string",
                   default="16MB",
@@ -188,7 +192,7 @@ def create_trace(filename, max_addr, burst_size, itt):
     protolib.encodeMessage(proto_out, header)
 
     # create a list of every single address to touch
-    addrs = range(0, max_addr, burst_size)
+    addrs = list(range(0, max_addr, burst_size))
 
     import random
     random.shuffle(addrs)

@@ -25,12 +25,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
- *          Steve Reinhardt
- *          Jaidev Patwardhan
- *          Zhengxing Li
- *          Deyuan Guo
  */
 
 #include "arch/mips/tlb.hh"
@@ -70,8 +64,7 @@ TLB::TLB(const Params *p)
 
 TLB::~TLB()
 {
-    if (table)
-        delete [] table;
+    delete [] table;
 }
 
 // look up an entry in the TLB
@@ -282,42 +275,10 @@ TLB::regStats()
 }
 
 Fault
-TLB::translateInst(const RequestPtr &req, ThreadContext *tc)
-{
-    if (FullSystem)
-        panic("translateInst not implemented in MIPS.\n");
-
-    Process * p = tc->getProcessPtr();
-
-    Fault fault = p->pTable->translate(req);
-    if (fault != NoFault)
-        return fault;
-
-    return NoFault;
-}
-
-Fault
-TLB::translateData(const RequestPtr &req, ThreadContext *tc, bool write)
-{
-    if (FullSystem)
-        panic("translateData not implemented in MIPS.\n");
-
-    Process * p = tc->getProcessPtr();
-
-    Fault fault = p->pTable->translate(req);
-    if (fault != NoFault)
-        return fault;
-
-    return NoFault;
-}
-
-Fault
 TLB::translateAtomic(const RequestPtr &req, ThreadContext *tc, Mode mode)
 {
-    if (mode == Execute)
-        return translateInst(req, tc);
-    else
-        return translateData(req, tc, mode == Write);
+    panic_if(FullSystem, "translateAtomic not implemented in full system.");
+    return tc->getProcessPtr()->pTable->translate(req);
 }
 
 void
@@ -326,6 +287,13 @@ TLB::translateTiming(const RequestPtr &req, ThreadContext *tc,
 {
     assert(translation);
     translation->finish(translateAtomic(req, tc, mode), req, tc, mode);
+}
+
+Fault
+TLB::translateFunctional(const RequestPtr &req, ThreadContext *tc, Mode mode)
+{
+    panic_if(FullSystem, "translateAtomic not implemented in full system.");
+    return tc->getProcessPtr()->pTable->translate(req);
 }
 
 Fault

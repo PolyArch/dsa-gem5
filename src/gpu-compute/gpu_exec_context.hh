@@ -29,14 +29,13 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Anthony Gutierrez
  */
 
 #ifndef __GPU_EXEC_CONTEXT_HH__
 #define __GPU_EXEC_CONTEXT_HH__
 
 #include "arch/gpu_isa.hh"
+#include "base/types.hh"
 #include "config/the_gpu_isa.hh"
 
 class ComputeUnit;
@@ -49,8 +48,8 @@ class GPUExecContext
     Wavefront* wavefront();
     ComputeUnit* computeUnit();
 
-    TheGpuISA::MiscReg readMiscReg(int opIdx) const;
-    void writeMiscReg(int opIdx, TheGpuISA::MiscReg operandVal);
+    RegVal readMiscReg(int opIdx) const;
+    void writeMiscReg(int opIdx, RegVal operandVal);
 
   protected:
     ComputeUnit *cu;

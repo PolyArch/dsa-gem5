@@ -23,8 +23,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __SYSTEMC_EXT_DT_INT__USING_HH__
@@ -60,5 +58,10 @@ using sc_dt::sc_uint;
 using sc_dt::sc_uint_base;
 using sc_dt::sc_unsigned;
 using sc_dt::uint64;
+
+using sc_core::SC_ID_INIT_FAILED_;
+using sc_core::SC_ID_ASSIGNMENT_FAILED_;
+using sc_core::SC_ID_OPERATION_FAILED_;
+using sc_core::SC_ID_CONVERSION_FAILED_;
 
 #endif  //__SYSTEMC_EXT_DT_INT__USING_HH__

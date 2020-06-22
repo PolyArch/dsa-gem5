@@ -23,14 +23,13 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __SYSTEMC_EXT_UTIL__UTIL_HH__
 #define __SYSTEMC_EXT_UTIL__UTIL_HH__
 
 #include "functions.hh"
+#include "messages.hh"
 #include "sc_exception.hh"
 #include "sc_report.hh"
 #include "sc_report_handler.hh"

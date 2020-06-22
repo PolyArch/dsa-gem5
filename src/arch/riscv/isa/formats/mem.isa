@@ -26,8 +26,6 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Authors: Alec Roelke
 
 ////////////////////////////////////////////////////////////////////
 //
@@ -75,7 +73,7 @@ def LoadStoreBase(name, Name, offset_code, ea_code, memacc_code, mem_flags,
 
     if mem_flags:
         mem_flags = [ 'Request::%s' % flag for flag in mem_flags ]
-        s = '\n\tmemAccessFlags = ' + string.join(mem_flags, '|') + ';'
+        s = '\n\tmemAccessFlags = ' + '|'.join(mem_flags) + ';'
         iop.constructor += s
 
     # select templates
@@ -106,7 +104,7 @@ def template LoadExecute {{
         %(ea_code)s;
 
         if (fault == NoFault) {
-            fault = readMemAtomic(xc, traceData, EA, Mem, memAccessFlags);
+            fault = readMemAtomicLE(xc, traceData, EA, Mem, memAccessFlags);
             %(memacc_code)s;
         }
 
@@ -148,7 +146,7 @@ def template LoadCompleteAcc {{
         %(op_decl)s;
         %(op_rd)s;
 
-        getMem(pkt, Mem, traceData);
+        getMemLE(pkt, Mem, traceData);
 
         if (fault == NoFault) {
             %(memacc_code)s;
@@ -179,7 +177,7 @@ def template StoreExecute {{
         }
 
         if (fault == NoFault) {
-            fault = writeMemAtomic(xc, traceData, Mem, EA, memAccessFlags,
+            fault = writeMemAtomicLE(xc, traceData, Mem, EA, memAccessFlags,
                 nullptr);
         }
 
@@ -212,7 +210,7 @@ def template StoreInitiateAcc {{
         }
 
         if (fault == NoFault) {
-            fault = writeMemTiming(xc, traceData, Mem, EA,
+            fault = writeMemTimingLE(xc, traceData, Mem, EA,
                 memAccessFlags, nullptr);
         }
 

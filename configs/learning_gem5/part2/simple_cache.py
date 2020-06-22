@@ -24,8 +24,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Jason Lowe-Power
 
 """ This file creates a barebones system and executes 'hello', a simple Hello
 World application. Adds a simple cache between the CPU and the membus.
@@ -34,6 +32,7 @@ This config file assumes that the x86 ISA was built.
 """
 
 from __future__ import print_function
+from __future__ import absolute_import
 
 # import the m5 (gem5) library created when gem5 is built
 import m5
@@ -87,8 +86,12 @@ system.system_port = system.membus.slave
 # Create a process for a simple "Hello World" application
 process = Process()
 # Set the command
+# grab the specific path to the binary
+thispath = os.path.dirname(os.path.realpath(__file__))
+binpath = os.path.join(thispath, '../../../',
+                       'tests/test-progs/hello/bin/x86/linux/hello')
 # cmd is a list which begins with the executable (like argv)
-process.cmd = ['tests/test-progs/hello/bin/x86/linux/hello']
+process.cmd = [binpath]
 # Set the cpu to use the process as its workload and create thread contexts
 system.cpu.workload = process
 system.cpu.createThreads()

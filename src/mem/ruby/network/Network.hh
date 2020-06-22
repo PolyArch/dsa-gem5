@@ -60,11 +60,13 @@
 #include "base/addr_range.hh"
 #include "base/types.hh"
 #include "mem/packet.hh"
-#include "mem/protocol/LinkDirection.hh"
-#include "mem/protocol/MessageSizeType.hh"
+#include "mem/port.hh"
 #include "mem/ruby/common/MachineID.hh"
 #include "mem/ruby/common/TypeDefines.hh"
 #include "mem/ruby/network/Topology.hh"
+#include "mem/ruby/network/dummy_port.hh"
+#include "mem/ruby/protocol/LinkDirection.hh"
+#include "mem/ruby/protocol/MessageSizeType.hh"
 #include "params/RubyNetwork.hh"
 #include "sim/clocked_object.hh"
 
@@ -80,7 +82,7 @@ class Network : public ClockedObject
     { return dynamic_cast<const Params *>(_params); }
 
     virtual ~Network();
-    virtual void init();
+    void init();
     virtual bool internal_links_idle() = 0;
 
     static uint32_t getNumberOfVirtualNetworks() { return m_virtual_networks; }
@@ -152,6 +154,12 @@ class Network : public ClockedObject
 
 	// TODO: Is it being used anywhere? No!
 	// MessageBuffer* getSpuQueue(int core_id) { return s_toNetQueues[core_id][0]; }
+
+    Port &
+    getPort(const std::string &, PortID idx=InvalidPortID) override
+    {
+        return RubyDummyPort::instance();
+    }
 
   protected:
     // Private copy constructor and assignment operator

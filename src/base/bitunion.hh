@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __BASE_BITUNION_HH__
@@ -86,6 +84,9 @@ class BitfieldTypeImpl : public Base
     Type getter(const Storage &storage) const = delete;
     void setter(Storage &storage, Type val) = delete;
 
+    BitfieldTypeImpl() = default;
+    BitfieldTypeImpl(const BitfieldTypeImpl &) = default;
+
     Storage __storage;
 
     operator Type () const
@@ -116,6 +117,9 @@ class BitfieldType : public BitfieldTypeImpl<Base>
     using typename Impl::Type;
 
   public:
+    BitfieldType() = default;
+    BitfieldType(const BitfieldType &) = default;
+
     operator Type () const { return Impl::operator Type(); }
     Type operator=(const Type val) { return Impl::operator=(val); }
     Type
@@ -133,6 +137,9 @@ class BitfieldROType : public BitfieldTypeImpl<Base>
     using Impl = BitfieldTypeImpl<Base>;
     using typename Impl::Type;
 
+    BitfieldROType() = default;
+    BitfieldROType(const BitfieldROType &) = default;
+
     Type operator=(BitfieldROType<Base> const &other) = delete;
     operator Type () const { return Impl::operator Type(); }
 };
@@ -146,6 +153,9 @@ class BitfieldWOType : public BitfieldTypeImpl<Base>
     using typename Impl::Type;
 
   public:
+    BitfieldWOType() = default;
+    BitfieldWOType(const BitfieldWOType &) = default;
+
     Type operator=(const Type val) { return Impl::operator=(val); }
     Type
     operator=(BitfieldWOType<Base> const & other)
@@ -243,6 +253,8 @@ namespace BitfieldBackend
         {
             Base::__storage = val;
         }
+
+        BitUnionOperators(const BitUnionOperators &) = default;
 
         BitUnionOperators() {}
 
@@ -435,7 +447,7 @@ namespace BitfieldBackend
     inline std::ostream &
     bitfieldBackendPrinter(std::ostream &os, const char &t)
     {
-        os << (const int)t;
+        os << (int)t;
         return os;
     }
 
@@ -443,7 +455,7 @@ namespace BitfieldBackend
     inline std::ostream &
     bitfieldBackendPrinter(std::ostream &os, const unsigned char &t)
     {
-        os << (const unsigned int)t;
+        os << (unsigned int)t;
         return os;
     }
 }

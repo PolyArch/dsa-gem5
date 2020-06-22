@@ -23,12 +23,12 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __SYSTEMC_EXT_CHANNEL_SC_SIGNAL_RESOLVED_HH__
 #define __SYSTEMC_EXT_CHANNEL_SC_SIGNAL_RESOLVED_HH__
+
+#include <map>
 
 #include "sc_signal.hh"
 #include "sc_signal_inout_if.hh"
@@ -39,6 +39,13 @@ namespace sc_dt
 class sc_logic;
 
 };
+
+namespace sc_gem5
+{
+
+class Process;
+
+} // namespace sc_gem5
 
 namespace sc_core
 {
@@ -58,7 +65,7 @@ class sc_signal_resolved : public sc_signal<sc_dt::sc_logic, SC_MANY_WRITERS>
     sc_signal_resolved &operator = (const sc_dt::sc_logic &);
     sc_signal_resolved &operator = (const sc_signal_resolved &);
 
-    virtual const char *kind() const;
+    virtual const char *kind() const { return "sc_signal_resolved"; }
 
   protected:
     virtual void update();
@@ -68,6 +75,8 @@ class sc_signal_resolved : public sc_signal<sc_dt::sc_logic, SC_MANY_WRITERS>
     sc_signal_resolved(const sc_signal_resolved &) :
             sc_interface(), sc_signal<sc_dt::sc_logic, SC_MANY_WRITERS>()
     {}
+
+    std::map<::sc_gem5::Process *, sc_dt::sc_logic> inputs;
 };
 
 } // namespace sc_core

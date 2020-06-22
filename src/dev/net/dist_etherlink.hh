@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabor Dozsa
  */
 
 /* @file
@@ -61,7 +59,7 @@ class EthPacketData;
 /**
  * Model for a fixed bandwidth full duplex ethernet link.
  */
-class DistEtherLink : public EtherObject
+class DistEtherLink : public SimObject
 {
   protected:
     class LocalIface;
@@ -223,8 +221,8 @@ class DistEtherLink : public EtherObject
         return dynamic_cast<const Params *>(_params);
     }
 
-    virtual EtherInt *getEthPort(const std::string &if_name,
-                                 int idx) override;
+    Port &getPort(const std::string &if_name,
+                  PortID idx=InvalidPortID) override;
 
     virtual void init() override;
     virtual void startup() override;

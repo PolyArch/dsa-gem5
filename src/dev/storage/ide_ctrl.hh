@@ -24,9 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andrew Schultz
- *          Miguel Serrano
  */
 
 /** @file
@@ -81,6 +78,10 @@ class IdeController : public PciDevice
         /** Registers used for bus master interface */
         struct BMIRegs
         {
+            void reset() {
+                memset(static_cast<void *>(this), 0, sizeof(*this));
+            }
+
             BMICommandReg command;
             uint8_t reserved0;
             BMIStatusReg status;

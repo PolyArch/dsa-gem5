@@ -36,9 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Erik Hallnor
- *          Nikos Nikoleris
  */
 
 /**
@@ -53,13 +50,14 @@
 #include <functional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "base/bitfield.hh"
 #include "base/intmath.hh"
 #include "base/logging.hh"
 #include "base/statistics.hh"
 #include "base/types.hh"
-#include "mem/cache/blk.hh"
+#include "mem/cache/cache_blk.hh"
 #include "mem/cache/tags/base.hh"
 #include "mem/packet.hh"
 #include "params/FALRU.hh"
@@ -68,6 +66,7 @@
 // TrackedCaches class
 //#define FALRU_DEBUG
 
+class BaseCache;
 class ReplaceableEntry;
 
 // A bitmask of the caches we are keeping track of. Currently the
@@ -82,6 +81,8 @@ typedef uint32_t CachesMask;
 class FALRUBlk : public CacheBlk
 {
   public:
+    FALRUBlk() : CacheBlk(), prev(nullptr), next(nullptr), inCachesMask(0) {}
+
     /** The previous block in LRU order. */
     FALRUBlk *prev;
     /** The next block in LRU order. */
@@ -89,6 +90,13 @@ class FALRUBlk : public CacheBlk
 
     /** A bit mask of the caches that fit this block. */
     CachesMask inCachesMask;
+
+    /**
+     * Pretty-print inCachesMask and other CacheBlk information.
+     *
+     * @return string with basic state information
+     */
+    std::string print() const override;
 };
 
 /**
@@ -149,6 +157,11 @@ class FALRU : public BaseTags
     ~FALRU();
 
     /**
+     * Initialize blocks as FALRUBlk instances.
+     */
+    void tagsInit() override;
+
+    /**
      * Register the stats for this object.
      */
     void regStats() override;
@@ -163,10 +176,11 @@ class FALRU : public BaseTags
      * Access block and update replacement data.  May not succeed, in which
      * case nullptr pointer is returned.  This has all the implications of a
      * cache access and should only be used as such.
-     * Returns the access latency and inCachesMask flags as a side effect.
+     * Returns tag lookup latency and the inCachesMask flags as a side effect.
+     *
      * @param addr The address to look for.
      * @param is_secure True if the target memory space is secure.
-     * @param lat The latency of the access.
+     * @param lat The latency of the tag lookup.
      * @param in_cache_mask Mask indicating the caches in which the blk fits.
      * @return Pointer to the cache block.
      */
@@ -202,11 +216,13 @@ class FALRU : public BaseTags
      *
      * @param addr Address to find a victim for.
      * @param is_secure True if the target memory space is secure.
+     * @param size Size, in bits, of new block to allocate.
      * @param evict_blks Cache blocks to be evicted.
      * @return Cache block to be replaced.
      */
     CacheBlk* findVictim(Addr addr, const bool is_secure,
-                         std::vector<CacheBlk*>& evict_blks) const override;
+                         const std::size_t size,
+                         std::vector<CacheBlk*>& evict_blks) override;
 
     /**
      * Insert the new block into the cache and update replacement data.
@@ -270,17 +286,12 @@ class FALRU : public BaseTags
               numTrackedCaches(max_size > min_size ?
                                floorLog2(max_size) - floorLog2(min_size) : 0),
               inAllCachesMask(mask(numTrackedCaches)),
-              boundaries(new FALRUBlk *[numTrackedCaches])
+              boundaries(numTrackedCaches)
         {
             fatal_if(numTrackedCaches > sizeof(CachesMask) * 8,
                      "Not enough bits (%s) in type CachesMask type to keep "
                      "track of %d caches\n", sizeof(CachesMask),
                      numTrackedCaches);
-        }
-
-        ~CacheTracking()
-        {
-            delete[] boundaries;
         }
 
         /**
@@ -337,7 +348,7 @@ class FALRU : public BaseTags
          * @param head the MRU block of the actual cache
          * @param head the LRU block of the actual cache
          */
-        void check(FALRUBlk *head, FALRUBlk *tail);
+        void check(const FALRUBlk *head, const FALRUBlk *tail) const;
 
         /**
          * Register the stats for this object.
@@ -354,7 +365,7 @@ class FALRU : public BaseTags
         /** A mask for all cache being tracked. */
         const CachesMask inAllCachesMask;
         /** Array of pointers to blocks at the cache boundaries. */
-        FALRUBlk** boundaries;
+        std::vector<FALRUBlk*> boundaries;
 
       protected:
         /**

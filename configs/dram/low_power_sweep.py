@@ -1,4 +1,4 @@
-# Copyright (c) 2014-2015, 2017 ARM Limited
+# Copyright (c) 2014-2015, 2017, 2019 ARM Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -32,11 +32,9 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Radhika Jagtap
-#          Andreas Hansson
 
 from __future__ import print_function
+from __future__ import absolute_import
 
 import argparse
 
@@ -45,8 +43,10 @@ from m5.objects import *
 from m5.util import addToPath
 from m5.stats import periodicStatDump
 
-addToPath(os.getcwd() + '/configs/common')
-import MemConfig
+addToPath('../')
+
+from common import ObjectList
+from common import MemConfig
 
 # This script aims at triggering low power state transitions in the DRAM
 # controller. The traffic generator is used in DRAM mode and traffic
@@ -59,7 +59,7 @@ parser = argparse.ArgumentParser(
 
 # Use a single-channel DDR4-2400 in 16x4 configuration by default
 parser.add_argument("--mem-type", default="DDR4_2400_16x4",
-                    choices=MemConfig.mem_names(),
+                    choices=ObjectList.mem_list.get_names(),
                     help = "type of memory to use")
 
 parser.add_argument("--mem-ranks", "-r", type=int, default=1,
@@ -76,8 +76,9 @@ parser.add_argument("--itt-list", "-t", default="1 20 100",
 parser.add_argument("--rd-perc", type=int, default=100,
                     help = "Percentage of read commands")
 
-parser.add_argument("--addr-map", type=int, default=1,
-                    help = "0: RoCoRaBaCh; 1: RoRaBaCoCh/RoRaBaChCo")
+parser.add_argument("--addr-map",
+                    choices=m5.objects.AddrMap.vals,
+                    default="RoRaBaCoCh", help = "DRAM address map policy")
 
 parser.add_argument("--idle-end", type=int, default=50000000,
                     help = "time in ps of an idle period at the end ")
@@ -116,14 +117,7 @@ if not isinstance(system.mem_ctrls[0], m5.objects.DRAMCtrl):
 system.mem_ctrls[0].null = True
 
 # Set the address mapping based on input argument
-# Default to RoRaBaCoCh
-if args.addr_map == 0:
-   system.mem_ctrls[0].addr_mapping = "RoCoRaBaCh"
-elif args.addr_map == 1:
-   system.mem_ctrls[0].addr_mapping = "RoRaBaCoCh"
-else:
-    fatal("Did not specify a valid address map argument")
-
+system.mem_ctrls[0].addr_mapping = args.addr_map
 system.mem_ctrls[0].page_policy = args.page_policy
 
 # We create a traffic generator state for each param combination we want to
@@ -133,8 +127,9 @@ system.mem_ctrls[0].page_policy = args.page_policy
 period = 250000000
 
 # We specify the states in a config file input to the traffic generator.
-cfg_file_name = "configs/dram/lowp_sweep.cfg"
-cfg_file = open(cfg_file_name, 'w')
+cfg_file_name = "lowp_sweep.cfg"
+cfg_file_path = os.path.dirname(__file__) + "/" +cfg_file_name
+cfg_file = open(cfg_file_path, 'w')
 
 # Get the number of banks
 nbr_banks = int(system.mem_ctrls[0].banks_per_rank.value)
@@ -166,11 +161,11 @@ pd_entry_time = (system.mem_ctrls[0].tRAS.value +
 
 # We sweep itt max using the multipliers specified by the user.
 itt_max_str = args.itt_list.strip().split()
-itt_max_multiples = map(lambda x : int(x), itt_max_str)
+itt_max_multiples = [ int(x) for x in itt_max_str ]
 if len(itt_max_multiples) == 0:
     fatal("String for itt-max-list detected empty\n")
 
-itt_max_values = map(lambda m : pd_entry_time * m, itt_max_multiples)
+itt_max_values = [ pd_entry_time * m for m in itt_max_multiples ]
 
 # Generate request addresses in the entire range, assume we start at 0
 max_addr = mem_range.end
@@ -190,6 +185,8 @@ cfg_file.write("""# STATE state# period mode=DRAM
 # read_percent start_addr end_addr req_size min_itt max_itt data_limit
 # stride_size page_size #banks #banks_util addr_map #ranks\n""")
 
+addr_map = m5.objects.AddrMap.map[args.addr_map]
+
 nxt_state = 0
 for itt_max in itt_max_values:
     for bank in bank_util_values:
@@ -198,7 +195,7 @@ for itt_max in itt_max_values:
                            "%d %d %d %d %d %d %d %d %d\n" %
                            (nxt_state, period, "DRAM", args.rd_perc, max_addr,
                             burst_size, itt_min, itt_max, 0, stride_size,
-                            page_size, nbr_banks, bank, args.addr_map,
+                            page_size, nbr_banks, bank, addr_map,
                             args.mem_ranks))
             nxt_state = nxt_state + 1
 
@@ -218,7 +215,7 @@ cfg_file.write("TRANSITION %d %d 1\n" % (nxt_state, nxt_state))
 cfg_file.close()
 
 # create a traffic generator, and point it to the file we just created
-system.tgen = TrafficGen(config_file = cfg_file_name)
+system.tgen = TrafficGen(config_file = cfg_file_path)
 
 # add a communication monitor
 system.monitor = CommMonitor()

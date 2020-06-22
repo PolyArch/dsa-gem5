@@ -1,6 +1,7 @@
 /*
- * Copyright (c) 2008 Princeton University
+ * Copyright (c) 2020 Inria
  * Copyright (c) 2016 Georgia Institute of Technology
+ * Copyright (c) 2008 Princeton University
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -25,28 +26,15 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Niket Agarwal
- *          Tushar Krishna
  */
 
 
 #include "mem/ruby/network/garnet2.0/VirtualChannel.hh"
 
-VirtualChannel::VirtualChannel(int id)
-    : m_enqueue_time(INFINITE_)
+VirtualChannel::VirtualChannel()
+  : inputBuffer(), m_vc_state(IDLE_, Cycles(0)), m_output_port(-1),
+    m_enqueue_time(INFINITE_), m_output_vc(-1)
 {
-    m_id = id;
-    m_input_buffer = new flitBuffer();
-    m_vc_state.first = IDLE_;
-    m_vc_state.second = Cycles(0);
-    m_output_vc = -1;
-    m_output_port = -1;
-}
-
-VirtualChannel::~VirtualChannel()
-{
-    delete m_input_buffer;
 }
 
 void
@@ -70,9 +58,9 @@ VirtualChannel::set_active(Cycles curTime)
 bool
 VirtualChannel::need_stage(flit_stage stage, Cycles time)
 {
-    if (m_input_buffer->isReady(time)) {
+    if (inputBuffer.isReady(time)) {
         assert(m_vc_state.first == ACTIVE_ && m_vc_state.second <= time);
-        flit *t_flit = m_input_buffer->peekTopFlit();
+        flit *t_flit = inputBuffer.peekTopFlit();
         return(t_flit->is_stage(stage, time));
     }
     return false;
@@ -81,5 +69,5 @@ VirtualChannel::need_stage(flit_stage stage, Cycles time)
 uint32_t
 VirtualChannel::functionalWrite(Packet *pkt)
 {
-    return m_input_buffer->functionalWrite(pkt);
+    return inputBuffer.functionalWrite(pkt);
 }

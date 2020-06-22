@@ -36,9 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andreas Sandberg
- *          Stephen Hines
  */
 
 #ifndef __ARCH_ARM_INSTS_PSEUDO_HH__
@@ -60,7 +57,7 @@ class DecoderFaultInst : public ArmStaticInst
                   Trace::InstRecord *traceData) const override;
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 /**
@@ -86,7 +83,7 @@ class FailUnimplemented : public ArmStaticInst
                   Trace::InstRecord *traceData) const override;
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 /**
@@ -116,49 +113,7 @@ class WarnUnimplemented : public ArmStaticInst
                   Trace::InstRecord *traceData) const override;
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
-};
-
-/**
- * Certain mrc/mcr instructions act as nops or flush the pipe based on what
- * register the instruction is trying to access. This inst/class exists so that
- * we can still check for hyp traps, as the normal nop instruction
- * does not.
- */
-class McrMrcMiscInst : public ArmStaticInst
-{
-  protected:
-    uint64_t iss;
-    MiscRegIndex miscReg;
-
-  public:
-    McrMrcMiscInst(const char *_mnemonic, ExtMachInst _machInst,
-                   uint64_t _iss, MiscRegIndex _miscReg);
-
-    Fault execute(ExecContext *xc,
-                  Trace::InstRecord *traceData) const override;
-
-    std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
-
-};
-
-/**
- * This class is also used for IMPLEMENTATION DEFINED registers, whose mcr/mrc
- * behaviour is trappable even for unimplemented registers.
- */
-class McrMrcImplDefined : public McrMrcMiscInst
-{
-  public:
-    McrMrcImplDefined(const char *_mnemonic, ExtMachInst _machInst,
-                      uint64_t _iss, MiscRegIndex _miscReg);
-
-    Fault execute(ExecContext *xc,
-                  Trace::InstRecord *traceData) const override;
-
-    std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
-
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 /**

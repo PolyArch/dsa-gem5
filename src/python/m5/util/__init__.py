@@ -1,4 +1,4 @@
-# Copyright (c) 2016 ARM Limited
+# Copyright (c) 2016, 2020 ARM Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -36,8 +36,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Nathan Binkert
 
 from __future__ import print_function
 
@@ -45,15 +43,16 @@ import os
 import re
 import sys
 
-import convert
-import jobfile
+from six import string_types
 
-from attrdict import attrdict, multiattrdict, optiondict
-from code_formatter import code_formatter
-from multidict import multidict
-from orderdict import orderdict
-from smartdict import SmartDict
-from sorteddict import SortedDict
+from . import convert
+from . import jobfile
+
+from .attrdict import attrdict, multiattrdict, optiondict
+from .code_formatter import code_formatter
+from .multidict import multidict
+from .smartdict import SmartDict
+from .sorteddict import SortedDict
 
 # panic() should be called when something happens that should never
 # ever happen regardless of what the user does (i.e., an acutal m5
@@ -125,10 +124,11 @@ def compareVersions(v1, v2):
     def make_version_list(v):
         if isinstance(v, (list,tuple)):
             return v
-        elif isinstance(v, str):
-            return map(lambda x: int(re.match('\d+', x).group()), v.split('.'))
+        elif isinstance(v, string_types):
+            return list(map(lambda x: int(re.match('\d+', x).group()),
+                            v.split('.')))
         else:
-            raise TypeError
+            raise TypeError()
 
     v1 = make_version_list(v1)
     v2 = make_version_list(v2)
@@ -177,9 +177,16 @@ def printList(items, indent=4):
             line += item
             print(line)
 
-def readCommand(cmd, **kwargs):
-    """run the command cmd, read the results and return them
-    this is sorta like `cmd` in shell"""
+def readCommandWithReturn(cmd, **kwargs):
+    """
+    run the command cmd, read the results and return them
+    this is sorta like `cmd` in shell
+
+    :param cmd: command to run with Popen
+    :type cmd: string, list
+    :returns: pair consisting on Popen retcode and the command stdout
+    :rtype: (int, string)
+    """
     from subprocess import Popen, PIPE, STDOUT
 
     if isinstance(cmd, str):
@@ -194,19 +201,32 @@ def readCommand(cmd, **kwargs):
     kwargs.setdefault('close_fds', True)
     try:
         subp = Popen(cmd, **kwargs)
-    except Exception, e:
+    except Exception as e:
         if no_exception:
-            return exception
+            return -1, exception
         raise
 
-    return subp.communicate()[0]
+    output = subp.communicate()[0].decode('utf-8')
+    return subp.returncode, output
+
+def readCommand(cmd, **kwargs):
+    """
+    run the command cmd, read the results and return them
+    this is sorta like `cmd` in shell
+
+    :param cmd: command to run with Popen
+    :type cmd: string, list
+    :returns: command stdout
+    :rtype: string
+    """
+    return readCommandWithReturn(cmd, **kwargs)[1]
 
 def makeDir(path):
     """Make a directory if it doesn't exist.  If the path does exist,
     ensure that it is a directory"""
     if os.path.exists(path):
         if not os.path.isdir(path):
-            raise AttributeError, "%s exists but is not directory" % path
+            raise AttributeError("%s exists but is not directory" % path)
     else:
         os.mkdir(path)
 

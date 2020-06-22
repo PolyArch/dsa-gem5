@@ -33,9 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andreas Sandberg
- *          Curtis Dunham
  */
 
 #ifndef __ARCH_ARM_KVM_GIC_HH__
@@ -44,7 +41,7 @@
 #include "arch/arm/system.hh"
 #include "cpu/kvm/device.hh"
 #include "cpu/kvm/vm.hh"
-#include "dev/arm/gic_pl390.hh"
+#include "dev/arm/gic_v2.hh"
 #include "dev/platform.hh"
 
 /**
@@ -168,7 +165,7 @@ class KvmKernelGicV2 : public BaseGicRegisters
 
 struct MuxingKvmGicParams;
 
-class MuxingKvmGic : public Pl390
+class MuxingKvmGic : public GicV2
 {
   public: // SimObject / Serializable / Drainable
     MuxingKvmGic(const MuxingKvmGicParams *p);
@@ -182,14 +179,14 @@ class MuxingKvmGic : public Pl390
     Tick read(PacketPtr pkt) override;
     Tick write(PacketPtr pkt) override;
 
-  public: // Pl390
+  public: // GicV2
     void sendInt(uint32_t num) override;
     void clearInt(uint32_t num) override;
 
     void sendPPInt(uint32_t num, uint32_t cpu) override;
     void clearPPInt(uint32_t num, uint32_t cpu) override;
 
-  protected: // Pl390
+  protected: // GicV2
     void updateIntState(int hint) override;
 
   protected:
@@ -203,8 +200,8 @@ class MuxingKvmGic : public Pl390
     bool usingKvm;
 
     /** Multiplexing implementation */
-    void fromPl390ToKvm();
-    void fromKvmToPl390();
+    void fromGicV2ToKvm();
+    void fromKvmToGicV2();
 
     void copyGicState(BaseGicRegisters* from, BaseGicRegisters* to);
 

@@ -37,9 +37,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Nathan Binkert
-#          Andrew Bardsley
 
 Import('*')
 
@@ -67,11 +64,11 @@ if 'MinorCPU' in env['CPU_MODELS']:
     Source('ssim/accel.cc')
 
     env.Append(CPPPATH=Dir(os.environ['RISCV']+'/include/'))
-    env.Append(CPPPATH=Dir(os.environ['RISCV']+'/include/ss-scheduler'))
-    env.Append(CPPPATH=Dir(os.environ['RISCV']+'/include/ss-config'))
-    env.Append(LIBS=['ssconfig'])
-    env.Append(LIBS=['ssscheduler'])
+    env.Append(CPPPATH=Dir(os.environ['SS_TOOLS']+'/include/'))
+    env.Append(LIBS=['dsa'])
+    env.Append(LIBS=['json'])
     env.Append(LIBPATH=[Dir(os.environ['RISCV']+'/lib/')])
+    env.Append(LIBPATH=[Dir(os.environ['SS_TOOLS']+'/lib/')])
 
     env.Append(CPPPATH=Dir('ssim'))
 

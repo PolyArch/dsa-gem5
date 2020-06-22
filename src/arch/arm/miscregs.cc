@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2013, 2015-2018 ARM Limited
+ * Copyright (c) 2010-2013, 2015-2020 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -33,10 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
- *          Ali Saidi
- *          Giacomo Gabrielli
  */
 
 #include "arch/arm/miscregs.hh"
@@ -257,6 +253,8 @@ decodeCP15Reg(unsigned crn, unsigned opc1, unsigned crm, unsigned opc2)
                     return MISCREG_HDCR;
                   case 2:
                     return MISCREG_HCPTR;
+                  case 4:
+                    return MISCREG_HCR2;
                   case 3:
                     return MISCREG_HSTR;
                   case 7:
@@ -285,6 +283,11 @@ decodeCP15Reg(unsigned crn, unsigned opc1, unsigned crm, unsigned opc2)
       case 3:
         if (opc1 == 0 && crm == 0 && opc2 == 0) {
             return MISCREG_DACR;
+        }
+        break;
+      case 4:
+        if (opc1 == 0 && crm == 6 && opc2 == 0) {
+            return MISCREG_ICC_PMR;
         }
         break;
       case 5:
@@ -668,10 +671,193 @@ decodeCP15Reg(unsigned crn, unsigned opc1, unsigned crm, unsigned opc2)
                 if (opc2 == 0) {
                     return MISCREG_ISR;
                 }
+            } else if (crm == 8) {
+                switch (opc2) {
+                    case 0:
+                        return MISCREG_ICC_IAR0;
+                    case 1:
+                        return MISCREG_ICC_EOIR0;
+                    case 2:
+                        return MISCREG_ICC_HPPIR0;
+                    case 3:
+                        return MISCREG_ICC_BPR0;
+                    case 4:
+                        return MISCREG_ICC_AP0R0;
+                    case 5:
+                        return MISCREG_ICC_AP0R1;
+                    case 6:
+                        return MISCREG_ICC_AP0R2;
+                    case 7:
+                        return MISCREG_ICC_AP0R3;
+                }
+            } else if (crm == 9) {
+                switch (opc2) {
+                    case 0:
+                        return MISCREG_ICC_AP1R0;
+                    case 1:
+                        return MISCREG_ICC_AP1R1;
+                    case 2:
+                        return MISCREG_ICC_AP1R2;
+                    case 3:
+                        return MISCREG_ICC_AP1R3;
+                }
+            } else if (crm == 11) {
+                switch (opc2) {
+                    case 1:
+                        return MISCREG_ICC_DIR;
+                    case 3:
+                        return MISCREG_ICC_RPR;
+                }
+            } else if (crm == 12) {
+                switch (opc2) {
+                    case 0:
+                        return MISCREG_ICC_IAR1;
+                    case 1:
+                        return MISCREG_ICC_EOIR1;
+                    case 2:
+                        return MISCREG_ICC_HPPIR1;
+                    case 3:
+                        return MISCREG_ICC_BPR1;
+                    case 4:
+                        return MISCREG_ICC_CTLR;
+                    case 5:
+                        return MISCREG_ICC_SRE;
+                    case 6:
+                        return MISCREG_ICC_IGRPEN0;
+                    case 7:
+                        return MISCREG_ICC_IGRPEN1;
+                }
             }
         } else if (opc1 == 4) {
-            if (crm == 0 && opc2 == 0)
+            if (crm == 0 && opc2 == 0) {
                 return MISCREG_HVBAR;
+            } else if (crm == 8) {
+                switch (opc2) {
+                    case 0:
+                        return MISCREG_ICH_AP0R0;
+                    case 1:
+                        return MISCREG_ICH_AP0R1;
+                    case 2:
+                        return MISCREG_ICH_AP0R2;
+                    case 3:
+                        return MISCREG_ICH_AP0R3;
+                }
+            } else if (crm == 9) {
+                switch (opc2) {
+                    case 0:
+                        return MISCREG_ICH_AP1R0;
+                    case 1:
+                        return MISCREG_ICH_AP1R1;
+                    case 2:
+                        return MISCREG_ICH_AP1R2;
+                    case 3:
+                        return MISCREG_ICH_AP1R3;
+                    case 5:
+                        return MISCREG_ICC_HSRE;
+                }
+            } else if (crm == 11) {
+                switch (opc2) {
+                    case 0:
+                        return MISCREG_ICH_HCR;
+                    case 1:
+                        return MISCREG_ICH_VTR;
+                    case 2:
+                        return MISCREG_ICH_MISR;
+                    case 3:
+                        return MISCREG_ICH_EISR;
+                    case 5:
+                        return MISCREG_ICH_ELRSR;
+                    case 7:
+                        return MISCREG_ICH_VMCR;
+                }
+            } else if (crm == 12) {
+                switch (opc2) {
+                    case 0:
+                        return MISCREG_ICH_LR0;
+                    case 1:
+                        return MISCREG_ICH_LR1;
+                    case 2:
+                        return MISCREG_ICH_LR2;
+                    case 3:
+                        return MISCREG_ICH_LR3;
+                    case 4:
+                        return MISCREG_ICH_LR4;
+                    case 5:
+                        return MISCREG_ICH_LR5;
+                    case 6:
+                        return MISCREG_ICH_LR6;
+                    case 7:
+                        return MISCREG_ICH_LR7;
+                }
+            } else if (crm == 13) {
+                switch (opc2) {
+                    case 0:
+                        return MISCREG_ICH_LR8;
+                    case 1:
+                        return MISCREG_ICH_LR9;
+                    case 2:
+                        return MISCREG_ICH_LR10;
+                    case 3:
+                        return MISCREG_ICH_LR11;
+                    case 4:
+                        return MISCREG_ICH_LR12;
+                    case 5:
+                        return MISCREG_ICH_LR13;
+                    case 6:
+                        return MISCREG_ICH_LR14;
+                    case 7:
+                        return MISCREG_ICH_LR15;
+                }
+            } else if (crm == 14) {
+                switch (opc2) {
+                    case 0:
+                        return MISCREG_ICH_LRC0;
+                    case 1:
+                        return MISCREG_ICH_LRC1;
+                    case 2:
+                        return MISCREG_ICH_LRC2;
+                    case 3:
+                        return MISCREG_ICH_LRC3;
+                    case 4:
+                        return MISCREG_ICH_LRC4;
+                    case 5:
+                        return MISCREG_ICH_LRC5;
+                    case 6:
+                        return MISCREG_ICH_LRC6;
+                    case 7:
+                        return MISCREG_ICH_LRC7;
+                }
+            } else if (crm == 15) {
+                switch (opc2) {
+                    case 0:
+                        return MISCREG_ICH_LRC8;
+                    case 1:
+                        return MISCREG_ICH_LRC9;
+                    case 2:
+                        return MISCREG_ICH_LRC10;
+                    case 3:
+                        return MISCREG_ICH_LRC11;
+                    case 4:
+                        return MISCREG_ICH_LRC12;
+                    case 5:
+                        return MISCREG_ICH_LRC13;
+                    case 6:
+                        return MISCREG_ICH_LRC14;
+                    case 7:
+                        return MISCREG_ICH_LRC15;
+                }
+            }
+        } else if (opc1 == 6) {
+            if (crm == 12) {
+                switch (opc2) {
+                    case 4:
+                        return MISCREG_ICC_MCTLR;
+                    case 5:
+                        return MISCREG_ICC_MSRE;
+                    case 7:
+                        return MISCREG_ICC_MGRPEN1;
+                }
+            }
         }
         break;
       case 13:
@@ -774,6 +960,18 @@ decodeCP15Reg64(unsigned crm, unsigned opc1)
             return MISCREG_CNTHP_CVAL;
         }
         break;
+      case 12:
+        switch (opc1) {
+          case 0:
+            return MISCREG_ICC_SGI1R;
+          case 1:
+            return MISCREG_ICC_ASGI1R;
+          case 2:
+            return MISCREG_ICC_SGI0R;
+          default:
+            break;
+        }
+        break;
       case 15:
         if (opc1 == 0)
             return MISCREG_CPUMERRSR;
@@ -786,7 +984,7 @@ decodeCP15Reg64(unsigned crm, unsigned opc1)
 }
 
 std::tuple<bool, bool>
-canReadCoprocReg(MiscRegIndex reg, SCR scr, CPSR cpsr)
+canReadCoprocReg(MiscRegIndex reg, SCR scr, CPSR cpsr, ThreadContext *tc)
 {
     bool secure = !scr.ns;
     bool canRead = false;
@@ -816,13 +1014,23 @@ canReadCoprocReg(MiscRegIndex reg, SCR scr, CPSR cpsr)
       default:
         undefined = true;
     }
+
+    switch (reg) {
+      case MISCREG_CNTFRQ ... MISCREG_CNTVOFF:
+        if (!undefined)
+            undefined = AArch32isUndefinedGenericTimer(reg, tc);
+        break;
+      default:
+        break;
+    }
+
     // can't do permissions checkes on the root of a banked pair of regs
     assert(!miscRegInfo[reg][MISCREG_BANKED]);
     return std::make_tuple(canRead, undefined);
 }
 
 std::tuple<bool, bool>
-canWriteCoprocReg(MiscRegIndex reg, SCR scr, CPSR cpsr)
+canWriteCoprocReg(MiscRegIndex reg, SCR scr, CPSR cpsr, ThreadContext *tc)
 {
     bool secure = !scr.ns;
     bool canWrite = false;
@@ -852,9 +1060,31 @@ canWriteCoprocReg(MiscRegIndex reg, SCR scr, CPSR cpsr)
       default:
         undefined = true;
     }
+
+    switch (reg) {
+      case MISCREG_CNTFRQ ... MISCREG_CNTVOFF:
+        if (!undefined)
+            undefined = AArch32isUndefinedGenericTimer(reg, tc);
+        break;
+      default:
+        break;
+    }
+
     // can't do permissions checkes on the root of a banked pair of regs
     assert(!miscRegInfo[reg][MISCREG_BANKED]);
     return std::make_tuple(canWrite, undefined);
+}
+
+bool
+AArch32isUndefinedGenericTimer(MiscRegIndex reg, ThreadContext *tc)
+{
+    if (currEL(tc) == EL0 && ELIs32(tc, EL1)) {
+        const HCR hcr = tc->readMiscReg(MISCREG_HCR_EL2);
+        bool trap_cond = condGenericTimerSystemAccessTrapEL1(reg, tc);
+        if (trap_cond && (!EL2Enabled(tc) || !hcr.tge))
+            return true;
+    }
+    return false;
 }
 
 int
@@ -875,6 +1105,13 @@ snsBankedIndex(MiscRegIndex reg, ThreadContext *tc, bool ns)
     return reg_as_int;
 }
 
+int
+snsBankedIndex64(MiscRegIndex reg, ThreadContext *tc)
+{
+    auto *isa = static_cast<ArmISA::ISA *>(tc->getIsaPtr());
+    SCR scr = tc->readMiscReg(MISCREG_SCR);
+    return isa->snsBankedIndex64(reg, scr.ns);
+}
 
 /**
  * If the reg is a child reg of a banked set, then the parent is the last
@@ -909,7 +1146,8 @@ unflattenMiscReg(int reg)
 }
 
 bool
-canReadAArch64SysReg(MiscRegIndex reg, SCR scr, CPSR cpsr, ThreadContext *tc)
+canReadAArch64SysReg(MiscRegIndex reg, HCR hcr, SCR scr, CPSR cpsr,
+                     ThreadContext *tc)
 {
     // Check for SP_EL0 access while SPSEL == 0
     if ((reg == MISCREG_SP_EL0) && (tc->readMiscReg(MISCREG_SPSEL) == 0))
@@ -928,8 +1166,9 @@ canReadAArch64SysReg(MiscRegIndex reg, SCR scr, CPSR cpsr, ThreadContext *tc)
     }
 
     bool secure = ArmSystem::haveSecurity(tc) && !scr.ns;
+    bool el2_host = EL2Enabled(tc) && hcr.e2h;
 
-    switch (opModeToEL((OperatingMode) (uint8_t) cpsr.mode)) {
+    switch (currEL(cpsr)) {
       case EL0:
         return secure ? miscRegInfo[reg][MISCREG_USR_S_RD] :
             miscRegInfo[reg][MISCREG_USR_NS_RD];
@@ -937,9 +1176,11 @@ canReadAArch64SysReg(MiscRegIndex reg, SCR scr, CPSR cpsr, ThreadContext *tc)
         return secure ? miscRegInfo[reg][MISCREG_PRI_S_RD] :
             miscRegInfo[reg][MISCREG_PRI_NS_RD];
       case EL2:
-        return miscRegInfo[reg][MISCREG_HYP_RD];
+        return el2_host ? miscRegInfo[reg][MISCREG_HYP_E2H_RD] :
+            miscRegInfo[reg][MISCREG_HYP_RD];
       case EL3:
-        return secure ? miscRegInfo[reg][MISCREG_MON_NS0_RD] :
+        return el2_host ? miscRegInfo[reg][MISCREG_MON_E2H_RD] :
+            secure ? miscRegInfo[reg][MISCREG_MON_NS0_RD] :
             miscRegInfo[reg][MISCREG_MON_NS1_RD];
       default:
         panic("Invalid exception level");
@@ -947,12 +1188,13 @@ canReadAArch64SysReg(MiscRegIndex reg, SCR scr, CPSR cpsr, ThreadContext *tc)
 }
 
 bool
-canWriteAArch64SysReg(MiscRegIndex reg, SCR scr, CPSR cpsr, ThreadContext *tc)
+canWriteAArch64SysReg(MiscRegIndex reg, HCR hcr, SCR scr, CPSR cpsr,
+                      ThreadContext *tc)
 {
     // Check for SP_EL0 access while SPSEL == 0
     if ((reg == MISCREG_SP_EL0) && (tc->readMiscReg(MISCREG_SPSEL) == 0))
         return false;
-    ExceptionLevel el = opModeToEL((OperatingMode) (uint8_t) cpsr.mode);
+    ExceptionLevel el = currEL(cpsr);
     if (reg == MISCREG_DAIF) {
         SCTLR sctlr = tc->readMiscReg(MISCREG_SCTLR_EL1);
         if (el == EL0 && !sctlr.uma)
@@ -972,6 +1214,7 @@ canWriteAArch64SysReg(MiscRegIndex reg, SCR scr, CPSR cpsr, ThreadContext *tc)
     }
 
     bool secure = ArmSystem::haveSecurity(tc) && !scr.ns;
+    bool el2_host = EL2Enabled(tc) && hcr.e2h;
 
     switch (el) {
       case EL0:
@@ -981,9 +1224,11 @@ canWriteAArch64SysReg(MiscRegIndex reg, SCR scr, CPSR cpsr, ThreadContext *tc)
         return secure ? miscRegInfo[reg][MISCREG_PRI_S_WR] :
             miscRegInfo[reg][MISCREG_PRI_NS_WR];
       case EL2:
-        return miscRegInfo[reg][MISCREG_HYP_WR];
+        return el2_host ? miscRegInfo[reg][MISCREG_HYP_E2H_WR] :
+            miscRegInfo[reg][MISCREG_HYP_WR];
       case EL3:
-        return secure ? miscRegInfo[reg][MISCREG_MON_NS0_WR] :
+        return el2_host ? miscRegInfo[reg][MISCREG_MON_E2H_WR] :
+            secure ? miscRegInfo[reg][MISCREG_MON_NS0_WR] :
             miscRegInfo[reg][MISCREG_MON_NS1_WR];
       default:
         panic("Invalid exception level");
@@ -1228,6 +1473,11 @@ decodeAArch64SysReg(unsigned op0, unsigned op1,
                 break;
             }
             break;
+          case 11:
+          case 15:
+            // SYS Instruction with CRn = { 11, 15 }
+            // (Trappable by HCR_EL2.TIDCP)
+            return MISCREG_IMPDEF_UNIMPL;
         }
         break;
       case 2:
@@ -1502,7 +1752,11 @@ decodeAArch64SysReg(unsigned op0, unsigned op1,
                         return MISCREG_ID_AA64PFR0_EL1;
                       case 1:
                         return MISCREG_ID_AA64PFR1_EL1;
-                      case 2 ... 7:
+                      case 2 ... 3:
+                        return MISCREG_RAZ;
+                      case 4:
+                        return MISCREG_ID_AA64ZFR0_EL1;
+                      case 5 ... 7:
                         return MISCREG_RAZ;
                     }
                     break;
@@ -1539,7 +1793,9 @@ decodeAArch64SysReg(unsigned op0, unsigned op1,
                         return MISCREG_ID_AA64MMFR0_EL1;
                       case 1:
                         return MISCREG_ID_AA64MMFR1_EL1;
-                      case 2 ... 7:
+                      case 2:
+                        return MISCREG_ID_AA64MMFR2_EL1;
+                      case 3 ... 7:
                         return MISCREG_RAZ;
                     }
                     break;
@@ -1609,6 +1865,12 @@ decodeAArch64SysReg(unsigned op0, unsigned op1,
                         return MISCREG_CPACR_EL1;
                     }
                     break;
+                  case 2:
+                    switch (op2) {
+                      case 0:
+                        return MISCREG_ZCR_EL1;
+                    }
+                    break;
                 }
                 break;
               case 4:
@@ -1635,6 +1897,22 @@ decodeAArch64SysReg(unsigned op0, unsigned op1,
                         return MISCREG_HACR_EL2;
                     }
                     break;
+                  case 2:
+                    switch (op2) {
+                      case 0:
+                        return MISCREG_ZCR_EL2;
+                    }
+                    break;
+                }
+                break;
+              case 5:
+                switch (crm) {
+                  case 2:
+                    switch (op2) {
+                      case 0:
+                        return MISCREG_ZCR_EL12;
+                    }
+                    break;
                 }
                 break;
               case 6:
@@ -1655,6 +1933,12 @@ decodeAArch64SysReg(unsigned op0, unsigned op1,
                         return MISCREG_SDER32_EL3;
                       case 2:
                         return MISCREG_CPTR_EL3;
+                    }
+                    break;
+                  case 2:
+                    switch (op2) {
+                      case 0:
+                        return MISCREG_ZCR_EL3;
                     }
                     break;
                   case 3:
@@ -1679,6 +1963,39 @@ decodeAArch64SysReg(unsigned op0, unsigned op1,
                         return MISCREG_TTBR1_EL1;
                       case 2:
                         return MISCREG_TCR_EL1;
+                    }
+                    break;
+                  case 0x1:
+                    switch (op2) {
+                      case 0x0:
+                        return MISCREG_APIAKeyLo_EL1;
+                      case 0x1:
+                        return MISCREG_APIAKeyHi_EL1;
+                      case 0x2:
+                        return MISCREG_APIBKeyLo_EL1;
+                      case 0x3:
+                        return MISCREG_APIBKeyHi_EL1;
+                    }
+                    break;
+                  case 0x2:
+                    switch (op2) {
+                      case 0x0:
+                        return MISCREG_APDAKeyLo_EL1;
+                      case 0x1:
+                        return MISCREG_APDAKeyHi_EL1;
+                      case 0x2:
+                        return MISCREG_APDBKeyLo_EL1;
+                      case 0x3:
+                        return MISCREG_APDBKeyHi_EL1;
+                    }
+                    break;
+
+                  case 0x3:
+                    switch (op2) {
+                      case 0x0:
+                        return MISCREG_APGAKeyLo_EL1;
+                      case 0x1:
+                        return MISCREG_APGAKeyHi_EL1;
                     }
                     break;
                 }
@@ -1757,6 +2074,14 @@ decodeAArch64SysReg(unsigned op0, unsigned op1,
                         return MISCREG_SPSEL;
                       case 2:
                         return MISCREG_CURRENTEL;
+                      case 3:
+                        return MISCREG_PAN;
+                    }
+                    break;
+                  case 6:
+                    switch (op2) {
+                      case 0:
+                        return MISCREG_ICC_PMR_EL1;
                     }
                     break;
                 }
@@ -2138,6 +2463,72 @@ decodeAArch64SysReg(unsigned op0, unsigned op1,
                         return MISCREG_DISR_EL1;
                     }
                     break;
+                  case 8:
+                    switch (op2) {
+                      case 0:
+                        return MISCREG_ICC_IAR0_EL1;
+                      case 1:
+                        return MISCREG_ICC_EOIR0_EL1;
+                      case 2:
+                        return MISCREG_ICC_HPPIR0_EL1;
+                      case 3:
+                        return MISCREG_ICC_BPR0_EL1;
+                      case 4:
+                        return MISCREG_ICC_AP0R0_EL1;
+                      case 5:
+                        return MISCREG_ICC_AP0R1_EL1;
+                      case 6:
+                        return MISCREG_ICC_AP0R2_EL1;
+                      case 7:
+                        return MISCREG_ICC_AP0R3_EL1;
+                    }
+                    break;
+                  case 9:
+                    switch (op2) {
+                      case 0:
+                        return MISCREG_ICC_AP1R0_EL1;
+                      case 1:
+                        return MISCREG_ICC_AP1R1_EL1;
+                      case 2:
+                        return MISCREG_ICC_AP1R2_EL1;
+                      case 3:
+                        return MISCREG_ICC_AP1R3_EL1;
+                    }
+                    break;
+                  case 11:
+                    switch (op2) {
+                      case 1:
+                        return MISCREG_ICC_DIR_EL1;
+                      case 3:
+                        return MISCREG_ICC_RPR_EL1;
+                      case 5:
+                        return MISCREG_ICC_SGI1R_EL1;
+                      case 6:
+                        return MISCREG_ICC_ASGI1R_EL1;
+                      case 7:
+                        return MISCREG_ICC_SGI0R_EL1;
+                    }
+                    break;
+                  case 12:
+                    switch (op2) {
+                      case 0:
+                        return MISCREG_ICC_IAR1_EL1;
+                      case 1:
+                        return MISCREG_ICC_EOIR1_EL1;
+                      case 2:
+                        return MISCREG_ICC_HPPIR1_EL1;
+                      case 3:
+                        return MISCREG_ICC_BPR1_EL1;
+                      case 4:
+                        return MISCREG_ICC_CTLR_EL1;
+                      case 5:
+                        return MISCREG_ICC_SRE_EL1;
+                      case 6:
+                        return MISCREG_ICC_IGRPEN0_EL1;
+                      case 7:
+                        return MISCREG_ICC_IGRPEN1_EL1;
+                    }
+                    break;
                 }
                 break;
               case 4:
@@ -2156,6 +2547,88 @@ decodeAArch64SysReg(unsigned op0, unsigned op1,
                         return MISCREG_VDISR_EL2;
                     }
                     break;
+                  case 8:
+                    switch (op2) {
+                      case 0:
+                        return MISCREG_ICH_AP0R0_EL2;
+                      case 1:
+                        return MISCREG_ICH_AP0R1_EL2;
+                      case 2:
+                        return MISCREG_ICH_AP0R2_EL2;
+                      case 3:
+                        return MISCREG_ICH_AP0R3_EL2;
+                    }
+                    break;
+                  case 9:
+                    switch (op2) {
+                      case 0:
+                        return MISCREG_ICH_AP1R0_EL2;
+                      case 1:
+                        return MISCREG_ICH_AP1R1_EL2;
+                      case 2:
+                        return MISCREG_ICH_AP1R2_EL2;
+                      case 3:
+                        return MISCREG_ICH_AP1R3_EL2;
+                      case 5:
+                        return MISCREG_ICC_SRE_EL2;
+                    }
+                    break;
+                  case 11:
+                    switch (op2) {
+                      case 0:
+                        return MISCREG_ICH_HCR_EL2;
+                      case 1:
+                        return MISCREG_ICH_VTR_EL2;
+                      case 2:
+                        return MISCREG_ICH_MISR_EL2;
+                      case 3:
+                        return MISCREG_ICH_EISR_EL2;
+                      case 5:
+                        return MISCREG_ICH_ELRSR_EL2;
+                      case 7:
+                        return MISCREG_ICH_VMCR_EL2;
+                    }
+                    break;
+                  case 12:
+                    switch (op2) {
+                      case 0:
+                        return MISCREG_ICH_LR0_EL2;
+                      case 1:
+                        return MISCREG_ICH_LR1_EL2;
+                      case 2:
+                        return MISCREG_ICH_LR2_EL2;
+                      case 3:
+                        return MISCREG_ICH_LR3_EL2;
+                      case 4:
+                        return MISCREG_ICH_LR4_EL2;
+                      case 5:
+                        return MISCREG_ICH_LR5_EL2;
+                      case 6:
+                        return MISCREG_ICH_LR6_EL2;
+                      case 7:
+                        return MISCREG_ICH_LR7_EL2;
+                    }
+                    break;
+                  case 13:
+                    switch (op2) {
+                      case 0:
+                        return MISCREG_ICH_LR8_EL2;
+                      case 1:
+                        return MISCREG_ICH_LR9_EL2;
+                      case 2:
+                        return MISCREG_ICH_LR10_EL2;
+                      case 3:
+                        return MISCREG_ICH_LR11_EL2;
+                      case 4:
+                        return MISCREG_ICH_LR12_EL2;
+                      case 5:
+                        return MISCREG_ICH_LR13_EL2;
+                      case 6:
+                        return MISCREG_ICH_LR14_EL2;
+                      case 7:
+                        return MISCREG_ICH_LR15_EL2;
+                    }
+                    break;
                 }
                 break;
               case 6:
@@ -2168,6 +2641,16 @@ decodeAArch64SysReg(unsigned op0, unsigned op1,
                         return MISCREG_RVBAR_EL3;
                       case 2:
                         return MISCREG_RMR_EL3;
+                    }
+                    break;
+                  case 12:
+                    switch (op2) {
+                      case 4:
+                        return MISCREG_ICC_CTLR_EL3;
+                      case 5:
+                        return MISCREG_ICC_SRE_EL3;
+                      case 7:
+                        return MISCREG_ICC_IGRPEN1_EL3;
                     }
                     break;
                 }
@@ -2343,6 +2826,36 @@ decodeAArch64SysReg(unsigned op0, unsigned op1,
                     break;
                 }
                 break;
+              case 5:
+                switch (crm) {
+                  case 1:
+                    switch (op2) {
+                      case 0:
+                        return MISCREG_CNTKCTL_EL12;
+                    }
+                    break;
+                  case 2:
+                    switch (op2) {
+                      case 0:
+                        return MISCREG_CNTP_TVAL_EL02;
+                      case 1:
+                        return MISCREG_CNTP_CTL_EL02;
+                      case 2:
+                        return MISCREG_CNTP_CVAL_EL02;
+                    }
+                    break;
+                  case 3:
+                    switch (op2) {
+                      case 0:
+                        return MISCREG_CNTV_TVAL_EL02;
+                      case 1:
+                        return MISCREG_CNTV_CTL_EL02;
+                      case 2:
+                        return MISCREG_CNTV_CVAL_EL02;
+                    }
+                    break;
+                }
+                break;
               case 7:
                 switch (crm) {
                   case 2:
@@ -2445,6 +2958,26 @@ ISA::initializeMiscRegMetadata()
     // EL3 (aarch32EL3 = true). It is false if EL3 is not implemented, or it
     // is running in aarch64 (aarch32EL3 = false)
     bool aarch32EL3 = haveSecurity && !highestELIs64;
+
+    // Set Privileged Access Never on taking an exception to EL1 (Arm 8.1+),
+    // unsupported
+    bool SPAN = false;
+
+    // Implicit error synchronization event enable (Arm 8.2+), unsupported
+    bool IESB = false;
+
+    // Load Multiple and Store Multiple Atomicity and Ordering (Arm 8.2+),
+    // unsupported
+    bool LSMAOE = false;
+
+    // No Trap Load Multiple and Store Multiple (Arm 8.2+), unsupported
+    bool nTLSMD = false;
+
+    // Pointer authentication (Arm 8.3+), unsupported
+    bool EnDA = true; // using APDAKey_EL1 key of instr addrs in ELs 0,1
+    bool EnDB = true; // using APDBKey_EL1 key of instr addrs in ELs 0,1
+    bool EnIA = true; // using APIAKey_EL1 key of instr addrs in ELs 0,1
+    bool EnIB = true; // using APIBKey_EL1 key of instr addrs in ELs 0,1
 
     /**
      * Some registers alias with others, and therefore need to be translated.
@@ -2740,7 +3273,13 @@ ISA::initializeMiscRegMetadata()
     InitReg(MISCREG_VMPIDR)
       .hyp().monNonSecure();
     InitReg(MISCREG_SCTLR)
-      .banked();
+      .banked()
+      // readMiscRegNoEffect() uses this metadata
+      // despite using children (below) as backing store
+      .res0(0x8d22c600)
+      .res1(0x00400800 | (SPAN   ? 0 : 0x800000)
+                       | (LSMAOE ? 0 :     0x10)
+                       | (nTLSMD ? 0 :      0x8));
     InitReg(MISCREG_SCTLR_NS)
       .bankedChild()
       .privSecure(!aarch32EL3)
@@ -2768,11 +3307,21 @@ ISA::initializeMiscRegMetadata()
     InitReg(MISCREG_NSACR)
       .allPrivileges().hypWrite(0).privNonSecureWrite(0).exceptUserMode();
     InitReg(MISCREG_HSCTLR)
-      .hyp().monNonSecure();
+      .hyp().monNonSecure()
+      .res0(0x0512c7c0 | (EnDB   ? 0 :     0x2000)
+                       | (IESB   ? 0 :   0x200000)
+                       | (EnDA   ? 0 :  0x8000000)
+                       | (EnIB   ? 0 : 0x40000000)
+                       | (EnIA   ? 0 : 0x80000000))
+      .res1(0x30c50830);
     InitReg(MISCREG_HACTLR)
       .hyp().monNonSecure();
     InitReg(MISCREG_HCR)
-      .hyp().monNonSecure();
+      .hyp().monNonSecure()
+      .res0(0x90000000);
+    InitReg(MISCREG_HCR2)
+      .hyp().monNonSecure()
+      .res0(0xffa9ff8c);
     InitReg(MISCREG_HDCR)
       .hyp().monNonSecure();
     InitReg(MISCREG_HCPTR)
@@ -3158,14 +3707,18 @@ ISA::initializeMiscRegMetadata()
       .bankedChild()
       .secure().exceptUserMode();
     InitReg(MISCREG_MVBAR)
-      .mon().secure().exceptUserMode();
+      .mon().secure()
+      .hypRead(FullSystem && system->highestEL() == EL2)
+      .privRead(FullSystem && system->highestEL() == EL1)
+      .exceptUserMode();
     InitReg(MISCREG_RMR)
       .unimplemented()
       .mon().secure().exceptUserMode();
     InitReg(MISCREG_ISR)
       .allPrivileges().exceptUserMode().writes(0);
     InitReg(MISCREG_HVBAR)
-      .hyp().monNonSecure();
+      .hyp().monNonSecure()
+      .res0(0x1f);
     InitReg(MISCREG_FCSEIDR)
       .unimplemented()
       .warnNotFail()
@@ -3211,41 +3764,78 @@ ISA::initializeMiscRegMetadata()
       .secure().exceptUserMode();
     InitReg(MISCREG_HTPIDR)
       .hyp().monNonSecure();
+    // BEGIN Generic Timer (AArch32)
     InitReg(MISCREG_CNTFRQ)
+      .reads(1)
+      .highest(system)
+      .privSecureWrite(aarch32EL3);
+    InitReg(MISCREG_CNTPCT)
       .unverifiable()
-      .reads(1).mon();
-    InitReg(MISCREG_CNTKCTL)
-      .allPrivileges().exceptUserMode();
-    InitReg(MISCREG_CNTP_TVAL)
-      .banked();
-    InitReg(MISCREG_CNTP_TVAL_NS)
-      .bankedChild()
-      .allPrivileges()
-      .privSecure(!aarch32EL3)
-      .monSecure(0);
-    InitReg(MISCREG_CNTP_TVAL_S)
-      .bankedChild()
-      .secure().user(1);
+      .reads(1);
+    InitReg(MISCREG_CNTVCT)
+      .unverifiable()
+      .reads(1);
     InitReg(MISCREG_CNTP_CTL)
       .banked();
     InitReg(MISCREG_CNTP_CTL_NS)
       .bankedChild()
-      .allPrivileges()
+      .nonSecure()
       .privSecure(!aarch32EL3)
-      .monSecure(0);
+      .res0(0xfffffff8);
     InitReg(MISCREG_CNTP_CTL_S)
       .bankedChild()
-      .secure().user(1);
+      .secure()
+      .privSecure(aarch32EL3)
+      .res0(0xfffffff8);
+    InitReg(MISCREG_CNTP_CVAL)
+      .banked();
+    InitReg(MISCREG_CNTP_CVAL_NS)
+      .bankedChild()
+      .nonSecure()
+      .privSecure(!aarch32EL3);
+    InitReg(MISCREG_CNTP_CVAL_S)
+      .bankedChild()
+      .secure()
+      .privSecure(aarch32EL3);
+    InitReg(MISCREG_CNTP_TVAL)
+      .banked();
+    InitReg(MISCREG_CNTP_TVAL_NS)
+      .bankedChild()
+      .nonSecure()
+      .privSecure(!aarch32EL3);
+    InitReg(MISCREG_CNTP_TVAL_S)
+      .bankedChild()
+      .secure()
+      .privSecure(aarch32EL3);
+    InitReg(MISCREG_CNTV_CTL)
+      .allPrivileges()
+      .res0(0xfffffff8);
+    InitReg(MISCREG_CNTV_CVAL)
+      .allPrivileges();
     InitReg(MISCREG_CNTV_TVAL)
       .allPrivileges();
-    InitReg(MISCREG_CNTV_CTL)
-      .allPrivileges();
+    InitReg(MISCREG_CNTKCTL)
+      .allPrivileges()
+      .exceptUserMode()
+      .res0(0xfffdfc00);
     InitReg(MISCREG_CNTHCTL)
-      .hypWrite().monNonSecureRead();
-    InitReg(MISCREG_CNTHP_TVAL)
-      .hypWrite().monNonSecureRead();
+      .monNonSecure()
+      .hyp()
+      .res0(0xfffdff00);
     InitReg(MISCREG_CNTHP_CTL)
-      .hypWrite().monNonSecureRead();
+      .monNonSecure()
+      .hyp()
+      .res0(0xfffffff8);
+    InitReg(MISCREG_CNTHP_CVAL)
+      .monNonSecure()
+      .hyp();
+    InitReg(MISCREG_CNTHP_TVAL)
+      .monNonSecure()
+      .hyp();
+    InitReg(MISCREG_CNTVOFF)
+      .monNonSecure()
+      .hyp();
+    // END Generic Timer (AArch32)
     InitReg(MISCREG_IL1DATA0)
       .unimplemented()
       .allPrivileges().exceptUserMode();
@@ -3286,27 +3876,6 @@ ISA::initializeMiscRegMetadata()
       .hyp().monNonSecure();
     InitReg(MISCREG_VTTBR)
       .hyp().monNonSecure();
-    InitReg(MISCREG_CNTPCT)
-      .reads(1);
-    InitReg(MISCREG_CNTVCT)
-      .unverifiable()
-      .reads(1);
-    InitReg(MISCREG_CNTP_CVAL)
-      .banked();
-    InitReg(MISCREG_CNTP_CVAL_NS)
-      .bankedChild()
-      .allPrivileges()
-      .privSecure(!aarch32EL3)
-      .monSecure(0);
-    InitReg(MISCREG_CNTP_CVAL_S)
-      .bankedChild()
-      .secure().user(1);
-    InitReg(MISCREG_CNTV_CVAL)
-      .allPrivileges();
-    InitReg(MISCREG_CNTVOFF)
-      .hyp().monNonSecure();
-    InitReg(MISCREG_CNTHP_CVAL)
-      .hypWrite().monNonSecureRead();
     InitReg(MISCREG_CPUMERRSR)
       .unimplemented()
       .allPrivileges().exceptUserMode();
@@ -3504,6 +4073,30 @@ ISA::initializeMiscRegMetadata()
       .allPrivileges().exceptUserMode().writes(0);
     InitReg(MISCREG_ID_AA64MMFR1_EL1)
       .allPrivileges().exceptUserMode().writes(0);
+    InitReg(MISCREG_ID_AA64MMFR2_EL1)
+      .allPrivileges().exceptUserMode().writes(0);
+
+    InitReg(MISCREG_APDAKeyHi_EL1)
+      .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_APDAKeyLo_EL1)
+      .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_APDBKeyHi_EL1)
+      .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_APDBKeyLo_EL1)
+      .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_APGAKeyHi_EL1)
+      .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_APGAKeyLo_EL1)
+      .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_APIAKeyHi_EL1)
+      .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_APIAKeyLo_EL1)
+      .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_APIBKeyHi_EL1)
+      .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_APIBKeyLo_EL1)
+      .allPrivileges().exceptUserMode();
+
     InitReg(MISCREG_CCSIDR_EL1)
       .allPrivileges().exceptUserMode().writes(0);
     InitReg(MISCREG_CLIDR_EL1)
@@ -3525,6 +4118,14 @@ ISA::initializeMiscRegMetadata()
       .mapsTo(MISCREG_VMPIDR);
     InitReg(MISCREG_SCTLR_EL1)
       .allPrivileges().exceptUserMode()
+      .res0( 0x20440 | (EnDB   ? 0 :     0x2000)
+                     | (IESB   ? 0 :   0x200000)
+                     | (EnDA   ? 0 :  0x8000000)
+                     | (EnIB   ? 0 : 0x40000000)
+                     | (EnIA   ? 0 : 0x80000000))
+      .res1(0x500800 | (SPAN   ? 0 :   0x800000)
+                     | (nTLSMD ? 0 :  0x8000000)
+                     | (LSMAOE ? 0 : 0x10000000))
       .mapsTo(MISCREG_SCTLR_NS);
     InitReg(MISCREG_ACTLR_EL1)
       .allPrivileges().exceptUserMode()
@@ -3534,13 +4135,19 @@ ISA::initializeMiscRegMetadata()
       .mapsTo(MISCREG_CPACR);
     InitReg(MISCREG_SCTLR_EL2)
       .hyp().mon()
+      .res0(0x0512c7c0 | (EnDB   ? 0 :     0x2000)
+                       | (IESB   ? 0 :   0x200000)
+                       | (EnDA   ? 0 :  0x8000000)
+                       | (EnIB   ? 0 : 0x40000000)
+                       | (EnIA   ? 0 : 0x80000000))
+      .res1(0x30c50830)
       .mapsTo(MISCREG_HSCTLR);
     InitReg(MISCREG_ACTLR_EL2)
       .hyp().mon()
       .mapsTo(MISCREG_HACTLR);
     InitReg(MISCREG_HCR_EL2)
       .hyp().mon()
-      .mapsTo(MISCREG_HCR /*, MISCREG_HCR2*/);
+      .mapsTo(MISCREG_HCR, MISCREG_HCR2);
     InitReg(MISCREG_MDCR_EL2)
       .hyp().mon()
       .mapsTo(MISCREG_HDCR);
@@ -3554,7 +4161,13 @@ ISA::initializeMiscRegMetadata()
       .hyp().mon()
       .mapsTo(MISCREG_HACR);
     InitReg(MISCREG_SCTLR_EL3)
-      .mon();
+      .mon()
+      .res0(0x0512c7c0 | (EnDB   ? 0 :     0x2000)
+                       | (IESB   ? 0 :   0x200000)
+                       | (EnDA   ? 0 :  0x8000000)
+                       | (EnIB   ? 0 : 0x40000000)
+                       | (EnIA   ? 0 : 0x80000000))
+      .res1(0x30c50830);
     InitReg(MISCREG_ACTLR_EL3)
       .mon();
     InitReg(MISCREG_SCR_EL3)
@@ -3608,6 +4221,9 @@ ISA::initializeMiscRegMetadata()
       .allPrivileges().exceptUserMode();
     InitReg(MISCREG_CURRENTEL)
       .allPrivileges().exceptUserMode().writes(0);
+    InitReg(MISCREG_PAN)
+      .allPrivileges().exceptUserMode()
+      .implemented(havePAN);
     InitReg(MISCREG_NZCV)
       .allPrivileges();
     InitReg(MISCREG_DAIF)
@@ -3880,6 +4496,7 @@ ISA::initializeMiscRegMetadata()
       .allPrivileges().exceptUserMode().writes(0);
     InitReg(MISCREG_VBAR_EL2)
       .hyp().mon()
+      .res0(0x7ff)
       .mapsTo(MISCREG_HVBAR);
     InitReg(MISCREG_RVBAR_EL2)
       .mon().hyp().writes(0);
@@ -3906,37 +4523,128 @@ ISA::initializeMiscRegMetadata()
       .mapsTo(MISCREG_HTPIDR);
     InitReg(MISCREG_TPIDR_EL3)
       .mon();
-    InitReg(MISCREG_CNTKCTL_EL1)
-      .allPrivileges().exceptUserMode()
-      .mapsTo(MISCREG_CNTKCTL);
+    // BEGIN Generic Timer (AArch64)
     InitReg(MISCREG_CNTFRQ_EL0)
-      .reads(1).mon()
+      .reads(1)
+      .highest(system)
+      .privSecureWrite(aarch32EL3)
       .mapsTo(MISCREG_CNTFRQ);
     InitReg(MISCREG_CNTPCT_EL0)
+      .unverifiable()
       .reads(1)
-      .mapsTo(MISCREG_CNTPCT); /* 64b */
+      .mapsTo(MISCREG_CNTPCT);
     InitReg(MISCREG_CNTVCT_EL0)
       .unverifiable()
       .reads(1)
-      .mapsTo(MISCREG_CNTVCT); /* 64b */
-    InitReg(MISCREG_CNTP_TVAL_EL0)
-      .allPrivileges()
-      .mapsTo(MISCREG_CNTP_TVAL_NS);
+      .mapsTo(MISCREG_CNTVCT);
     InitReg(MISCREG_CNTP_CTL_EL0)
       .allPrivileges()
+      .res0(0xfffffffffffffff8)
       .mapsTo(MISCREG_CNTP_CTL_NS);
     InitReg(MISCREG_CNTP_CVAL_EL0)
       .allPrivileges()
-      .mapsTo(MISCREG_CNTP_CVAL_NS); /* 64b */
-    InitReg(MISCREG_CNTV_TVAL_EL0)
+      .mapsTo(MISCREG_CNTP_CVAL_NS);
+    InitReg(MISCREG_CNTP_TVAL_EL0)
       .allPrivileges()
-      .mapsTo(MISCREG_CNTV_TVAL);
+      .res0(0xffffffff00000000)
+      .mapsTo(MISCREG_CNTP_TVAL_NS);
     InitReg(MISCREG_CNTV_CTL_EL0)
       .allPrivileges()
+      .res0(0xfffffffffffffff8)
       .mapsTo(MISCREG_CNTV_CTL);
     InitReg(MISCREG_CNTV_CVAL_EL0)
       .allPrivileges()
-      .mapsTo(MISCREG_CNTV_CVAL); /* 64b */
+      .mapsTo(MISCREG_CNTV_CVAL);
+    InitReg(MISCREG_CNTV_TVAL_EL0)
+      .allPrivileges()
+      .res0(0xffffffff00000000)
+      .mapsTo(MISCREG_CNTV_TVAL);
+    InitReg(MISCREG_CNTP_CTL_EL02)
+      .monE2H()
+      .hypE2H()
+      .res0(0xfffffffffffffff8)
+      .mapsTo(MISCREG_CNTP_CTL_NS);
+    InitReg(MISCREG_CNTP_CVAL_EL02)
+      .monE2H()
+      .hypE2H()
+      .mapsTo(MISCREG_CNTP_CVAL_NS);
+    InitReg(MISCREG_CNTP_TVAL_EL02)
+      .monE2H()
+      .hypE2H()
+      .res0(0xffffffff00000000)
+      .mapsTo(MISCREG_CNTP_TVAL_NS);
+    InitReg(MISCREG_CNTV_CTL_EL02)
+      .monE2H()
+      .hypE2H()
+      .res0(0xfffffffffffffff8)
+      .mapsTo(MISCREG_CNTV_CTL);
+    InitReg(MISCREG_CNTV_CVAL_EL02)
+      .monE2H()
+      .hypE2H()
+      .mapsTo(MISCREG_CNTV_CVAL);
+    InitReg(MISCREG_CNTV_TVAL_EL02)
+      .monE2H()
+      .hypE2H()
+      .res0(0xffffffff00000000)
+      .mapsTo(MISCREG_CNTV_TVAL);
+    InitReg(MISCREG_CNTKCTL_EL1)
+      .allPrivileges()
+      .exceptUserMode()
+      .res0(0xfffffffffffdfc00)
+      .mapsTo(MISCREG_CNTKCTL);
+    InitReg(MISCREG_CNTKCTL_EL12)
+      .monE2H()
+      .hypE2H()
+      .res0(0xfffffffffffdfc00)
+      .mapsTo(MISCREG_CNTKCTL);
+    InitReg(MISCREG_CNTPS_CTL_EL1)
+      .mon()
+      .privSecure()
+      .res0(0xfffffffffffffff8);
+    InitReg(MISCREG_CNTPS_CVAL_EL1)
+      .mon()
+      .privSecure();
+    InitReg(MISCREG_CNTPS_TVAL_EL1)
+      .mon()
+      .privSecure()
+      .res0(0xffffffff00000000);
+    InitReg(MISCREG_CNTHCTL_EL2)
+      .mon()
+      .hyp()
+      .res0(0xfffffffffffc0000)
+      .mapsTo(MISCREG_CNTHCTL);
+    InitReg(MISCREG_CNTHP_CTL_EL2)
+      .mon()
+      .hyp()
+      .res0(0xfffffffffffffff8)
+      .mapsTo(MISCREG_CNTHP_CTL);
+    InitReg(MISCREG_CNTHP_CVAL_EL2)
+      .mon()
+      .hyp()
+      .mapsTo(MISCREG_CNTHP_CVAL);
+    InitReg(MISCREG_CNTHP_TVAL_EL2)
+      .mon()
+      .hyp()
+      .res0(0xffffffff00000000)
+      .mapsTo(MISCREG_CNTHP_TVAL);
+    // IF Armv8.1-VHE
+    InitReg(MISCREG_CNTHV_CTL_EL2)
+      .mon()
+      .hyp()
+      .res0(0xfffffffffffffff8);
+    InitReg(MISCREG_CNTHV_CVAL_EL2)
+      .mon()
+      .hyp();
+    InitReg(MISCREG_CNTHV_TVAL_EL2)
+      .mon()
+      .hyp()
+      .res0(0xffffffff00000000);
+    // ENDIF Armv8.1-VHE
+    InitReg(MISCREG_CNTVOFF_EL2)
+      .mon()
+      .hyp()
+      .mapsTo(MISCREG_CNTVOFF);
+    // END Generic Timer (AArch64)
     InitReg(MISCREG_PMEVCNTR0_EL0)
       .allPrivileges();
 //    .mapsTo(MISCREG_PMEVCNTR0);
@@ -3973,27 +4681,6 @@ ISA::initializeMiscRegMetadata()
     InitReg(MISCREG_PMEVTYPER5_EL0)
       .allPrivileges();
 //    .mapsTo(MISCREG_PMEVTYPER5);
-    InitReg(MISCREG_CNTVOFF_EL2)
-      .hyp().mon()
-      .mapsTo(MISCREG_CNTVOFF); /* 64b */
-    InitReg(MISCREG_CNTHCTL_EL2)
-      .mon().hyp()
-      .mapsTo(MISCREG_CNTHCTL);
-    InitReg(MISCREG_CNTHP_TVAL_EL2)
-      .mon().hyp()
-      .mapsTo(MISCREG_CNTHP_TVAL);
-    InitReg(MISCREG_CNTHP_CTL_EL2)
-      .mon().hyp()
-      .mapsTo(MISCREG_CNTHP_CTL);
-    InitReg(MISCREG_CNTHP_CVAL_EL2)
-      .mon().hyp()
-      .mapsTo(MISCREG_CNTHP_CVAL); /* 64b */
-    InitReg(MISCREG_CNTPS_TVAL_EL1)
-      .mon().privSecure();
-    InitReg(MISCREG_CNTPS_CTL_EL1)
-      .mon().privSecure();
-    InitReg(MISCREG_CNTPS_CVAL_EL1)
-      .mon().privSecure();
     InitReg(MISCREG_IL1DATA0_EL1)
       .allPrivileges().exceptUserMode();
     InitReg(MISCREG_IL1DATA1_EL1)
@@ -4028,12 +4715,487 @@ ISA::initializeMiscRegMetadata()
       .allPrivileges().exceptUserMode().writes(0);
     InitReg(MISCREG_CONTEXTIDR_EL2)
       .mon().hyp();
-    InitReg(MISCREG_CNTHV_CTL_EL2)
-      .mon().hyp();
-    InitReg(MISCREG_CNTHV_CVAL_EL2)
-      .mon().hyp();
-    InitReg(MISCREG_CNTHV_TVAL_EL2)
-      .mon().hyp();
+
+    // GICv3 AArch64
+    InitReg(MISCREG_ICC_PMR_EL1)
+        .res0(0xffffff00) // [31:8]
+        .allPrivileges().exceptUserMode()
+        .mapsTo(MISCREG_ICC_PMR);
+    InitReg(MISCREG_ICC_IAR0_EL1)
+        .allPrivileges().exceptUserMode().writes(0)
+        .mapsTo(MISCREG_ICC_IAR0);
+    InitReg(MISCREG_ICC_EOIR0_EL1)
+        .allPrivileges().exceptUserMode().reads(0)
+        .mapsTo(MISCREG_ICC_EOIR0);
+    InitReg(MISCREG_ICC_HPPIR0_EL1)
+        .allPrivileges().exceptUserMode().writes(0)
+        .mapsTo(MISCREG_ICC_HPPIR0);
+    InitReg(MISCREG_ICC_BPR0_EL1)
+        .res0(0xfffffff8) // [31:3]
+        .allPrivileges().exceptUserMode()
+        .mapsTo(MISCREG_ICC_BPR0);
+    InitReg(MISCREG_ICC_AP0R0_EL1)
+        .allPrivileges().exceptUserMode()
+        .mapsTo(MISCREG_ICC_AP0R0);
+    InitReg(MISCREG_ICC_AP0R1_EL1)
+        .allPrivileges().exceptUserMode()
+        .mapsTo(MISCREG_ICC_AP0R1);
+    InitReg(MISCREG_ICC_AP0R2_EL1)
+        .allPrivileges().exceptUserMode()
+        .mapsTo(MISCREG_ICC_AP0R2);
+    InitReg(MISCREG_ICC_AP0R3_EL1)
+        .allPrivileges().exceptUserMode()
+        .mapsTo(MISCREG_ICC_AP0R3);
+    InitReg(MISCREG_ICC_AP1R0_EL1)
+        .banked64()
+        .mapsTo(MISCREG_ICC_AP1R0);
+    InitReg(MISCREG_ICC_AP1R0_EL1_NS)
+        .bankedChild()
+        .allPrivileges().exceptUserMode()
+        .mapsTo(MISCREG_ICC_AP1R0_NS);
+    InitReg(MISCREG_ICC_AP1R0_EL1_S)
+        .bankedChild()
+        .allPrivileges().exceptUserMode()
+        .mapsTo(MISCREG_ICC_AP1R0_S);
+    InitReg(MISCREG_ICC_AP1R1_EL1)
+        .banked64()
+        .mapsTo(MISCREG_ICC_AP1R1);
+    InitReg(MISCREG_ICC_AP1R1_EL1_NS)
+        .bankedChild()
+        .allPrivileges().exceptUserMode()
+        .mapsTo(MISCREG_ICC_AP1R1_NS);
+    InitReg(MISCREG_ICC_AP1R1_EL1_S)
+        .bankedChild()
+        .allPrivileges().exceptUserMode()
+        .mapsTo(MISCREG_ICC_AP1R1_S);
+    InitReg(MISCREG_ICC_AP1R2_EL1)
+        .banked64()
+        .mapsTo(MISCREG_ICC_AP1R2);
+    InitReg(MISCREG_ICC_AP1R2_EL1_NS)
+        .bankedChild()
+        .allPrivileges().exceptUserMode()
+        .mapsTo(MISCREG_ICC_AP1R2_NS);
+    InitReg(MISCREG_ICC_AP1R2_EL1_S)
+        .bankedChild()
+        .allPrivileges().exceptUserMode()
+        .mapsTo(MISCREG_ICC_AP1R2_S);
+    InitReg(MISCREG_ICC_AP1R3_EL1)
+        .banked64()
+        .mapsTo(MISCREG_ICC_AP1R3);
+    InitReg(MISCREG_ICC_AP1R3_EL1_NS)
+        .bankedChild()
+        .allPrivileges().exceptUserMode()
+        .mapsTo(MISCREG_ICC_AP1R3_NS);
+    InitReg(MISCREG_ICC_AP1R3_EL1_S)
+        .bankedChild()
+        .allPrivileges().exceptUserMode()
+        .mapsTo(MISCREG_ICC_AP1R3_S);
+    InitReg(MISCREG_ICC_DIR_EL1)
+        .res0(0xFF000000) // [31:24]
+        .allPrivileges().exceptUserMode().reads(0)
+        .mapsTo(MISCREG_ICC_DIR);
+    InitReg(MISCREG_ICC_RPR_EL1)
+        .allPrivileges().exceptUserMode().writes(0)
+        .mapsTo(MISCREG_ICC_RPR);
+    InitReg(MISCREG_ICC_SGI1R_EL1)
+        .allPrivileges().exceptUserMode().reads(0)
+        .mapsTo(MISCREG_ICC_SGI1R);
+    InitReg(MISCREG_ICC_ASGI1R_EL1)
+        .allPrivileges().exceptUserMode().reads(0)
+        .mapsTo(MISCREG_ICC_ASGI1R);
+    InitReg(MISCREG_ICC_SGI0R_EL1)
+        .allPrivileges().exceptUserMode().reads(0)
+        .mapsTo(MISCREG_ICC_SGI0R);
+    InitReg(MISCREG_ICC_IAR1_EL1)
+        .allPrivileges().exceptUserMode().writes(0)
+        .mapsTo(MISCREG_ICC_IAR1);
+    InitReg(MISCREG_ICC_EOIR1_EL1)
+        .res0(0xFF000000) // [31:24]
+        .allPrivileges().exceptUserMode().reads(0)
+        .mapsTo(MISCREG_ICC_EOIR1);
+    InitReg(MISCREG_ICC_HPPIR1_EL1)
+        .allPrivileges().exceptUserMode().writes(0)
+        .mapsTo(MISCREG_ICC_HPPIR1);
+    InitReg(MISCREG_ICC_BPR1_EL1)
+        .banked64()
+        .mapsTo(MISCREG_ICC_BPR1);
+    InitReg(MISCREG_ICC_BPR1_EL1_NS)
+        .bankedChild()
+        .res0(0xfffffff8) // [31:3]
+        .allPrivileges().exceptUserMode()
+        .mapsTo(MISCREG_ICC_BPR1_NS);
+    InitReg(MISCREG_ICC_BPR1_EL1_S)
+        .bankedChild()
+        .res0(0xfffffff8) // [31:3]
+        .secure().exceptUserMode()
+        .mapsTo(MISCREG_ICC_BPR1_S);
+    InitReg(MISCREG_ICC_CTLR_EL1)
+        .banked64()
+        .mapsTo(MISCREG_ICC_CTLR);
+    InitReg(MISCREG_ICC_CTLR_EL1_NS)
+        .bankedChild()
+        .res0(0xFFFB00BC) // [31:19, 17:16, 7, 5:2]
+        .allPrivileges().exceptUserMode()
+        .mapsTo(MISCREG_ICC_CTLR_NS);
+    InitReg(MISCREG_ICC_CTLR_EL1_S)
+        .bankedChild()
+        .res0(0xFFFB00BC) // [31:19, 17:16, 7, 5:2]
+        .secure().exceptUserMode()
+        .mapsTo(MISCREG_ICC_CTLR_S);
+    InitReg(MISCREG_ICC_SRE_EL1)
+        .banked()
+        .mapsTo(MISCREG_ICC_SRE);
+    InitReg(MISCREG_ICC_SRE_EL1_NS)
+        .bankedChild()
+        .res0(0xFFFFFFF8) // [31:3]
+        .allPrivileges().exceptUserMode()
+        .mapsTo(MISCREG_ICC_SRE_NS);
+    InitReg(MISCREG_ICC_SRE_EL1_S)
+        .bankedChild()
+        .res0(0xFFFFFFF8) // [31:3]
+        .secure().exceptUserMode()
+        .mapsTo(MISCREG_ICC_SRE_S);
+    InitReg(MISCREG_ICC_IGRPEN0_EL1)
+        .res0(0xFFFFFFFE) // [31:1]
+        .allPrivileges().exceptUserMode()
+        .mapsTo(MISCREG_ICC_IGRPEN0);
+    InitReg(MISCREG_ICC_IGRPEN1_EL1)
+        .banked64()
+        .mapsTo(MISCREG_ICC_IGRPEN1);
+    InitReg(MISCREG_ICC_IGRPEN1_EL1_NS)
+        .bankedChild()
+        .res0(0xFFFFFFFE) // [31:1]
+        .allPrivileges().exceptUserMode()
+        .mapsTo(MISCREG_ICC_IGRPEN1_NS);
+    InitReg(MISCREG_ICC_IGRPEN1_EL1_S)
+        .bankedChild()
+        .res0(0xFFFFFFFE) // [31:1]
+        .secure().exceptUserMode()
+        .mapsTo(MISCREG_ICC_IGRPEN1_S);
+    InitReg(MISCREG_ICC_SRE_EL2)
+        .hyp().mon()
+        .mapsTo(MISCREG_ICC_HSRE);
+    InitReg(MISCREG_ICC_CTLR_EL3)
+        .allPrivileges().exceptUserMode()
+        .mapsTo(MISCREG_ICC_MCTLR);
+    InitReg(MISCREG_ICC_SRE_EL3)
+        .allPrivileges().exceptUserMode()
+        .mapsTo(MISCREG_ICC_MSRE);
+    InitReg(MISCREG_ICC_IGRPEN1_EL3)
+        .allPrivileges().exceptUserMode()
+        .mapsTo(MISCREG_ICC_MGRPEN1);
+
+    InitReg(MISCREG_ICH_AP0R0_EL2)
+        .hyp().mon()
+        .mapsTo(MISCREG_ICH_AP0R0);
+    InitReg(MISCREG_ICH_AP0R1_EL2)
+        .hyp().mon()
+        .unimplemented()
+        .mapsTo(MISCREG_ICH_AP0R1);
+    InitReg(MISCREG_ICH_AP0R2_EL2)
+        .hyp().mon()
+        .unimplemented()
+        .mapsTo(MISCREG_ICH_AP0R2);
+    InitReg(MISCREG_ICH_AP0R3_EL2)
+        .hyp().mon()
+        .unimplemented()
+        .mapsTo(MISCREG_ICH_AP0R3);
+    InitReg(MISCREG_ICH_AP1R0_EL2)
+        .hyp().mon()
+        .mapsTo(MISCREG_ICH_AP1R0);
+    InitReg(MISCREG_ICH_AP1R1_EL2)
+        .hyp().mon()
+        .unimplemented()
+        .mapsTo(MISCREG_ICH_AP1R1);
+    InitReg(MISCREG_ICH_AP1R2_EL2)
+        .hyp().mon()
+        .unimplemented()
+        .mapsTo(MISCREG_ICH_AP1R2);
+    InitReg(MISCREG_ICH_AP1R3_EL2)
+        .hyp().mon()
+        .unimplemented()
+        .mapsTo(MISCREG_ICH_AP1R3);
+    InitReg(MISCREG_ICH_HCR_EL2)
+        .hyp().mon()
+        .mapsTo(MISCREG_ICH_HCR);
+    InitReg(MISCREG_ICH_VTR_EL2)
+        .hyp().mon().writes(0)
+        .mapsTo(MISCREG_ICH_VTR);
+    InitReg(MISCREG_ICH_MISR_EL2)
+        .hyp().mon().writes(0)
+        .mapsTo(MISCREG_ICH_MISR);
+    InitReg(MISCREG_ICH_EISR_EL2)
+        .hyp().mon().writes(0)
+        .mapsTo(MISCREG_ICH_EISR);
+    InitReg(MISCREG_ICH_ELRSR_EL2)
+        .hyp().mon().writes(0)
+        .mapsTo(MISCREG_ICH_ELRSR);
+    InitReg(MISCREG_ICH_VMCR_EL2)
+        .hyp().mon()
+        .mapsTo(MISCREG_ICH_VMCR);
+    InitReg(MISCREG_ICH_LR0_EL2)
+        .hyp().mon()
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICH_LR1_EL2)
+        .hyp().mon()
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICH_LR2_EL2)
+        .hyp().mon()
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICH_LR3_EL2)
+        .hyp().mon()
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICH_LR4_EL2)
+        .hyp().mon()
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICH_LR5_EL2)
+        .hyp().mon()
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICH_LR6_EL2)
+        .hyp().mon()
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICH_LR7_EL2)
+        .hyp().mon()
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICH_LR8_EL2)
+        .hyp().mon()
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICH_LR9_EL2)
+        .hyp().mon()
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICH_LR10_EL2)
+        .hyp().mon()
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICH_LR11_EL2)
+        .hyp().mon()
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICH_LR12_EL2)
+        .hyp().mon()
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICH_LR13_EL2)
+        .hyp().mon()
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICH_LR14_EL2)
+        .hyp().mon()
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICH_LR15_EL2)
+        .hyp().mon()
+        .allPrivileges().exceptUserMode();
+
+    // GICv3 AArch32
+    InitReg(MISCREG_ICC_AP0R0)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_AP0R1)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_AP0R2)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_AP0R3)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_AP1R0)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_AP1R0_NS)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_AP1R0_S)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_AP1R1)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_AP1R1_NS)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_AP1R1_S)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_AP1R2)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_AP1R2_NS)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_AP1R2_S)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_AP1R3)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_AP1R3_NS)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_AP1R3_S)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_ASGI1R)
+        .allPrivileges().exceptUserMode().reads(0);
+    InitReg(MISCREG_ICC_BPR0)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_BPR1)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_BPR1_NS)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_BPR1_S)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_CTLR)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_CTLR_NS)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_CTLR_S)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_DIR)
+        .allPrivileges().exceptUserMode().reads(0);
+    InitReg(MISCREG_ICC_EOIR0)
+        .allPrivileges().exceptUserMode().reads(0);
+    InitReg(MISCREG_ICC_EOIR1)
+        .allPrivileges().exceptUserMode().reads(0);
+    InitReg(MISCREG_ICC_HPPIR0)
+        .allPrivileges().exceptUserMode().writes(0);
+    InitReg(MISCREG_ICC_HPPIR1)
+        .allPrivileges().exceptUserMode().writes(0);
+    InitReg(MISCREG_ICC_HSRE)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_IAR0)
+        .allPrivileges().exceptUserMode().writes(0);
+    InitReg(MISCREG_ICC_IAR1)
+        .allPrivileges().exceptUserMode().writes(0);
+    InitReg(MISCREG_ICC_IGRPEN0)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_IGRPEN1)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_IGRPEN1_NS)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_IGRPEN1_S)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_MCTLR)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_MGRPEN1)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_MSRE)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_PMR)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_RPR)
+        .allPrivileges().exceptUserMode().writes(0);
+    InitReg(MISCREG_ICC_SGI0R)
+        .allPrivileges().exceptUserMode().reads(0);
+    InitReg(MISCREG_ICC_SGI1R)
+        .allPrivileges().exceptUserMode().reads(0);
+    InitReg(MISCREG_ICC_SRE)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_SRE_NS)
+        .allPrivileges().exceptUserMode();
+    InitReg(MISCREG_ICC_SRE_S)
+        .allPrivileges().exceptUserMode();
+
+    InitReg(MISCREG_ICH_AP0R0)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_AP0R1)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_AP0R2)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_AP0R3)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_AP1R0)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_AP1R1)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_AP1R2)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_AP1R3)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_HCR)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_VTR)
+        .hyp().mon().writes(0);
+    InitReg(MISCREG_ICH_MISR)
+        .hyp().mon().writes(0);
+    InitReg(MISCREG_ICH_EISR)
+        .hyp().mon().writes(0);
+    InitReg(MISCREG_ICH_ELRSR)
+        .hyp().mon().writes(0);
+    InitReg(MISCREG_ICH_VMCR)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LR0)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LR1)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LR2)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LR3)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LR4)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LR5)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LR6)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LR7)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LR8)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LR9)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LR10)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LR11)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LR12)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LR13)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LR14)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LR15)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LRC0)
+        .mapsTo(MISCREG_ICH_LR0)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LRC1)
+        .mapsTo(MISCREG_ICH_LR1)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LRC2)
+        .mapsTo(MISCREG_ICH_LR2)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LRC3)
+        .mapsTo(MISCREG_ICH_LR3)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LRC4)
+        .mapsTo(MISCREG_ICH_LR4)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LRC5)
+        .mapsTo(MISCREG_ICH_LR5)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LRC6)
+        .mapsTo(MISCREG_ICH_LR6)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LRC7)
+        .mapsTo(MISCREG_ICH_LR7)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LRC8)
+        .mapsTo(MISCREG_ICH_LR8)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LRC9)
+        .mapsTo(MISCREG_ICH_LR9)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LRC10)
+        .mapsTo(MISCREG_ICH_LR10)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LRC11)
+        .mapsTo(MISCREG_ICH_LR11)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LRC12)
+        .mapsTo(MISCREG_ICH_LR12)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LRC13)
+        .mapsTo(MISCREG_ICH_LR13)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LRC14)
+        .mapsTo(MISCREG_ICH_LR14)
+        .hyp().mon();
+    InitReg(MISCREG_ICH_LRC15)
+        .mapsTo(MISCREG_ICH_LR15)
+        .hyp().mon();
+
+    // SVE
+    InitReg(MISCREG_ID_AA64ZFR0_EL1)
+        .allPrivileges().exceptUserMode().writes(0);
+    InitReg(MISCREG_ZCR_EL3)
+        .mon();
+    InitReg(MISCREG_ZCR_EL2)
+        .hyp().mon();
+    InitReg(MISCREG_ZCR_EL12)
+        .unimplemented().warnNotFail();
+    InitReg(MISCREG_ZCR_EL1)
+        .allPrivileges().exceptUserMode();
 
     // Dummy registers
     InitReg(MISCREG_NOP)

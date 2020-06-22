@@ -23,10 +23,9 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Nathan Binkert
 
 from __future__ import print_function
+from __future__ import absolute_import
 
 import os
 import sys
@@ -93,13 +92,13 @@ class Benchmark(object):
         try:
             func = getattr(self.__class__, input_set)
         except AttributeError:
-            raise AttributeError, \
-                  'The benchmark %s does not have the %s input set' % \
-                  (self.name, input_set)
+            raise AttributeError(
+                'The benchmark %s does not have the %s input set' % \
+                (self.name, input_set))
 
         executable = joinpath(spec_dist, 'binaries', isa, os, self.binary)
         if not isfile(executable):
-            raise AttributeError, '%s not found' % executable
+            raise AttributeError('%s not found' % executable)
         self.executable = executable
 
         # root of tree for input & output data files
@@ -113,7 +112,7 @@ class Benchmark(object):
         self.input_set = input_set
 
         if not isdir(inputs_dir):
-            raise AttributeError, '%s not found' % inputs_dir
+            raise AttributeError('%s not found' % inputs_dir)
 
         self.inputs_dir = [ inputs_dir ]
         if isdir(all_dir):
@@ -665,12 +664,12 @@ class vortex(Benchmark):
     stdin = None
 
     def __init__(self, isa, os, input_set):
-        if (isa in ('alpha', 'arm', 'thumb', 'aarch64')):
+        if (isa in ('arm', 'thumb', 'aarch64')):
             self.endian = 'lendian'
         elif (isa == 'sparc' or isa == 'sparc32'):
             self.endian = 'bendian'
         else:
-            raise AttributeError, "unknown ISA %s" % isa
+            raise AttributeError("unknown ISA %s" % isa)
 
         super(vortex, self).__init__(isa, os, input_set)
 
@@ -750,7 +749,7 @@ if __name__ == '__main__':
     for bench in all:
         for input_set in 'ref', 'test', 'train':
             print('class: %s' % bench.__name__)
-            x = bench('alpha', 'tru64', input_set)
+            x = bench('x86', 'linux', input_set)
             print('%s: %s' % (x, input_set))
             pprint(x.makeProcessArgs())
             print()

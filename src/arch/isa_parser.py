@@ -1,4 +1,4 @@
-# Copyright (c) 2014, 2016 ARM Limited
+# Copyright (c) 2014, 2016, 2018-2019 ARM Limited
 # All rights reserved
 #
 # The license below extends only to copyright in the software and shall
@@ -36,14 +36,11 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Steve Reinhardt
 
 from __future__ import with_statement, print_function
 import os
 import sys
 import re
-import string
 import inspect, traceback
 # get type names
 from types import *
@@ -142,14 +139,14 @@ class Template(object):
             del myDict['snippets']
 
             snippetLabels = [l for l in labelRE.findall(template)
-                             if d.snippets.has_key(l)]
+                             if l in d.snippets]
 
             snippets = dict([(s, self.parser.mungeSnippet(d.snippets[s]))
                              for s in snippetLabels])
 
             myDict.update(snippets)
 
-            compositeCode = ' '.join(map(str, snippets.values()))
+            compositeCode = ' '.join(list(map(str, snippets.values())))
 
             # Add in template itself in case it references any
             # operands explicitly (like Mem)
@@ -213,7 +210,7 @@ class Template(object):
             # if the argument is an object, we use its attribute map.
             myDict.update(d.__dict__)
         else:
-            raise TypeError, "Template.subst() arg must be or have dictionary"
+            raise TypeError("Template.subst() arg must be or have dictionary")
         return template % myDict
 
     # Convert to string.
@@ -233,13 +230,13 @@ class Format(object):
         self.params = params
         label = 'def format ' + id
         self.user_code = compile(fixPythonIndentation(code), label, 'exec')
-        param_list = string.join(params, ", ")
+        param_list = ", ".join(params)
         f = '''def defInst(_code, _context, %s):
                 my_locals = vars().copy()
-                exec _code in _context, my_locals
+                exec(_code, _context, my_locals)
                 return my_locals\n''' % param_list
         c = compile(f, label + ' wrapper', 'exec')
-        exec c
+        exec(c, globals())
         self.func = defInst
 
     def defineInst(self, parser, name, args, lineno):
@@ -252,11 +249,11 @@ class Format(object):
         context.update({ 'name' : name, 'Name' : Name })
         try:
             vars = self.func(self.user_code, context, *args[0], **args[1])
-        except Exception, exc:
+        except Exception as exc:
             if debug:
                 raise
             error(lineno, 'error defining "%s": %s.' % (name, exc))
-        for k in vars.keys():
+        for k in list(vars.keys()):
             if k not in ('header_output', 'decoder_output',
                          'exec_output', 'decode_block'):
                 del vars[k]
@@ -490,6 +487,9 @@ class Operand(object):
     def isVecElem(self):
         return 0
 
+    def isVecPredReg(self):
+        return 0
+
     def isPCState(self):
         return 0
 
@@ -617,35 +617,37 @@ class FloatRegOperand(Operand):
         return c_src + c_dest
 
     def makeRead(self, predRead):
-        bit_select = 0
-        if (self.ctype == 'float' or self.ctype == 'double'):
-            func = 'readFloatRegOperand'
-        else:
-            func = 'readFloatRegOperandBits'
         if self.read_code != None:
-            return self.buildReadCode(func)
+            return self.buildReadCode('readFloatRegOperandBits')
 
         if predRead:
             rindex = '_sourceIndex++'
         else:
             rindex = '%d' % self.src_reg_idx
 
-        return '%s = xc->%s(this, %s);\n' % \
-            (self.base_name, func, rindex)
+        code = 'xc->readFloatRegOperandBits(this, %s)' % rindex
+        if self.ctype == 'float':
+            code = 'bitsToFloat32(%s)' % code
+        elif self.ctype == 'double':
+            code = 'bitsToFloat64(%s)' % code
+        return '%s = %s;\n' % (self.base_name, code)
 
     def makeWrite(self, predWrite):
-        if (self.ctype == 'float' or self.ctype == 'double'):
-            func = 'setFloatRegOperand'
-        else:
-            func = 'setFloatRegOperandBits'
         if self.write_code != None:
-            return self.buildWriteCode(func)
+            return self.buildWriteCode('setFloatRegOperandBits')
 
         if predWrite:
             wp = '_destIndex++'
         else:
             wp = '%d' % self.dest_reg_idx
-        wp = 'xc->%s(this, %s, final_val);' % (func, wp)
+
+        val = 'final_val'
+        if self.ctype == 'float':
+            val = 'floatToBits32(%s)' % val
+        elif self.ctype == 'double':
+            val = 'floatToBits64(%s)' % val
+
+        wp = 'xc->setFloatRegOperandBits(this, %s, %s);' % (wp, val)
 
         wb = '''
         {
@@ -793,10 +795,9 @@ class VecRegOperand(Operand):
 
         wb = '''
         if (traceData) {
-            warn_once("Vectors not supported yet in tracedata");
-            /*traceData->setData(final_val);*/
+            traceData->setData(tmp_d%d);
         }
-        '''
+        ''' % self.dest_reg_idx
         return wb
 
     def finalize(self, predRead, predWrite):
@@ -805,7 +806,7 @@ class VecRegOperand(Operand):
             self.op_rd = self.makeReadW(predWrite) + self.op_rd
 
 class VecElemOperand(Operand):
-    reg_class = 'VectorElemClass'
+    reg_class = 'VecElemClass'
 
     def isReg(self):
         return 1
@@ -824,8 +825,6 @@ class VecElemOperand(Operand):
         c_dest = ''
 
         numAccessNeeded = 1
-        regId = 'RegId(%s, %s * numVecElemPerVecReg + elemIdx, %s)' % \
-                (self.reg_class, self.reg_spec)
 
         if self.is_src:
             c_src = ('\n\t_srcRegIdx[_numSrcRegs++] = RegId(%s, %s, %s);' %
@@ -838,16 +837,109 @@ class VecElemOperand(Operand):
         return c_src + c_dest
 
     def makeRead(self, predRead):
-        c_read = ('\n/* Elem is kept inside the operand description */' +
-                  '\n\tVecElem %s = xc->readVecElemOperand(this, %d);' %
-                  (self.base_name, self.src_reg_idx))
-        return c_read
+        c_read = 'xc->readVecElemOperand(this, %d)' % self.src_reg_idx
+
+        if self.ctype == 'float':
+            c_read = 'bitsToFloat32(%s)' % c_read
+        elif self.ctype == 'double':
+            c_read = 'bitsToFloat64(%s)' % c_read
+
+        return '\n\t%s %s = %s;\n' % (self.ctype, self.base_name, c_read)
 
     def makeWrite(self, predWrite):
-        c_write = ('\n/* Elem is kept inside the operand description */' +
-                   '\n\txc->setVecElemOperand(this, %d, %s);' %
-                   (self.dest_reg_idx, self.base_name))
+        if self.ctype == 'float':
+            c_write = 'floatToBits32(%s)' % self.base_name
+        elif self.ctype == 'double':
+            c_write = 'floatToBits64(%s)' % self.base_name
+        else:
+            c_write = self.base_name
+
+        c_write = ('\n\txc->setVecElemOperand(this, %d, %s);' %
+                  (self.dest_reg_idx, c_write))
+
         return c_write
+
+class VecPredRegOperand(Operand):
+    reg_class = 'VecPredRegClass'
+
+    def __init__(self, parser, full_name, ext, is_src, is_dest):
+        Operand.__init__(self, parser, full_name, ext, is_src, is_dest)
+        self.parser = parser
+
+    def isReg(self):
+        return 1
+
+    def isVecPredReg(self):
+        return 1
+
+    def makeDecl(self):
+        return ''
+
+    def makeConstructor(self, predRead, predWrite):
+        c_src = ''
+        c_dest = ''
+
+        if self.is_src:
+            c_src = src_reg_constructor % (self.reg_class, self.reg_spec)
+
+        if self.is_dest:
+            c_dest = dst_reg_constructor % (self.reg_class, self.reg_spec)
+            c_dest += '\n\t_numVecPredDestRegs++;'
+
+        return c_src + c_dest
+
+    def makeRead(self, predRead):
+        func = 'readVecPredRegOperand'
+        if self.read_code != None:
+            return self.buildReadCode(func)
+
+        if predRead:
+            rindex = '_sourceIndex++'
+        else:
+            rindex = '%d' % self.src_reg_idx
+
+        c_read =  '\t\t%s& tmp_s%s = xc->%s(this, %s);\n' % (
+                'const TheISA::VecPredRegContainer', rindex, func, rindex)
+        if self.ext:
+            c_read += '\t\tauto %s = tmp_s%s.as<%s>();\n' % (
+                    self.base_name, rindex,
+                    self.parser.operandTypeMap[self.ext])
+        return c_read
+
+    def makeReadW(self, predWrite):
+        func = 'getWritableVecPredRegOperand'
+        if self.read_code != None:
+            return self.buildReadCode(func)
+
+        if predWrite:
+            rindex = '_destIndex++'
+        else:
+            rindex = '%d' % self.dest_reg_idx
+
+        c_readw = '\t\t%s& tmp_d%s = xc->%s(this, %s);\n' % (
+                'TheISA::VecPredRegContainer', rindex, func, rindex)
+        if self.ext:
+            c_readw += '\t\tauto %s = tmp_d%s.as<%s>();\n' % (
+                    self.base_name, rindex,
+                    self.parser.operandTypeMap[self.ext])
+        return c_readw
+
+    def makeWrite(self, predWrite):
+        func = 'setVecPredRegOperand'
+        if self.write_code != None:
+            return self.buildWriteCode(func)
+
+        wb = '''
+        if (traceData) {
+            traceData->setData(tmp_d%d);
+        }
+        ''' % self.dest_reg_idx
+        return wb
+
+    def finalize(self, predRead, predWrite):
+        super(VecPredRegOperand, self).finalize(predRead, predWrite)
+        if self.is_dest:
+            self.op_rd = self.makeReadW(predWrite) + self.op_rd
 
 class CCRegOperand(Operand):
     reg_class = 'CCRegClass'
@@ -1102,6 +1194,7 @@ class OperandList(object):
         self.numFPDestRegs = 0
         self.numIntDestRegs = 0
         self.numVecDestRegs = 0
+        self.numVecPredDestRegs = 0
         self.numCCDestRegs = 0
         self.numMiscDestRegs = 0
         self.memOperand = None
@@ -1125,6 +1218,8 @@ class OperandList(object):
                         self.numIntDestRegs += 1
                     elif op_desc.isVecReg():
                         self.numVecDestRegs += 1
+                    elif op_desc.isVecPredReg():
+                        self.numVecPredDestRegs += 1
                     elif op_desc.isCCReg():
                         self.numCCDestRegs += 1
                     elif op_desc.isControlReg():
@@ -1194,7 +1289,7 @@ class OperandList(object):
         return self.__internalConcatAttrs(attr_name, filter, [])
 
     def sort(self):
-        self.items.sort(lambda a, b: a.sort_pri - b.sort_pri)
+        self.items.sort(key=lambda a: a.sort_pri)
 
 class SubOperandList(OperandList):
     '''Find all the operands in the given code block.  Returns an operand
@@ -1303,7 +1398,7 @@ def makeFlagConstructor(flag_list):
             i += 1
     pre = '\n\tflags['
     post = '] = true;'
-    code = pre + string.join(flag_list, post + pre) + post
+    code = pre + (post + pre).join(flag_list) + post
     return code
 
 # Assume all instruction flags are of the form 'IsFoo'
@@ -1320,7 +1415,7 @@ class InstObjParams(object):
         self.base_class = base_class
         if not isinstance(snippets, dict):
             snippets = {'code' : snippets}
-        compositeCode = ' '.join(map(str, snippets.values()))
+        compositeCode = ' '.join(list(map(str, snippets.values())))
         self.snippets = snippets
 
         self.operands = OperandList(parser, compositeCode)
@@ -1333,6 +1428,7 @@ class InstObjParams(object):
         header += '\n\t_numFPDestRegs = 0;'
         header += '\n\t_numVecDestRegs = 0;'
         header += '\n\t_numVecElemDestRegs = 0;'
+        header += '\n\t_numVecPredDestRegs = 0;'
         header += '\n\t_numIntDestRegs = 0;'
         header += '\n\t_numCCDestRegs = 0;'
 
@@ -1487,7 +1583,7 @@ class ISAParser(Grammar):
         # file where it was included.
         self.fileNameStack = Stack()
 
-        symbols = ('makeList', 're', 'string')
+        symbols = ('makeList', 're')
         self.exportContext = dict([(s, eval(s)) for s in symbols])
 
         self.maxInstSrcRegs = 0
@@ -1553,6 +1649,9 @@ class ISAParser(Grammar):
         # decoder header - everything depends on this
         file = 'decoder.hh'
         with self.open(file) as f:
+            f.write('#ifndef __ARCH_%(isa)s_GENERATED_DECODER_HH__\n'
+                    '#define __ARCH_%(isa)s_GENERATED_DECODER_HH__\n\n' %
+                    {'isa': self.isa_name.upper()})
             fn = 'decoder-g.hh.inc'
             assert(fn in self.files)
             f.write('#include "%s"\n' % fn)
@@ -1561,6 +1660,8 @@ class ISAParser(Grammar):
             assert(fn in self.files)
             f.write('namespace %s {\n#include "%s"\n}\n'
                     % (self.namespace, fn))
+            f.write('\n#endif  // __ARCH_%s_GENERATED_DECODER_HH__\n' %
+                    self.isa_name.upper())
 
         # decoder method - cannot be split
         file = 'decoder.cc'
@@ -1815,10 +1916,10 @@ class ISAParser(Grammar):
     def p_specification(self, t):
         'specification : opt_defs_and_outputs top_level_decode_block'
 
-        for f in self.splits.iterkeys():
+        for f in self.splits.keys():
             f.write('\n#endif\n')
 
-        for f in self.files.itervalues(): # close ALL the files;
+        for f in self.files.values(): # close ALL the files;
             f.close() # not doing so can cause compilation to fail
 
         self.write_top_level_files()
@@ -1905,20 +2006,23 @@ class ISAParser(Grammar):
         kwargs = { t[2]+'_output' : self.process_output(t[3]) }
         GenCode(self, **kwargs).emit()
 
+    def make_split(self):
+        def _split(sec):
+            return self.split(sec)
+        return _split
+
     # global let blocks 'let {{...}}' (Python code blocks) are
     # executed directly when seen.  Note that these execute in a
     # special variable context 'exportContext' to prevent the code
     # from polluting this script's namespace.
     def p_global_let(self, t):
         'global_let : LET CODELIT SEMI'
-        def _split(sec):
-            return self.split(sec)
         self.updateExportContext()
         self.exportContext["header_output"] = ''
         self.exportContext["decoder_output"] = ''
         self.exportContext["exec_output"] = ''
         self.exportContext["decode_block"] = ''
-        self.exportContext["split"] = _split
+        self.exportContext["split"] = self.make_split()
         split_setup = '''
 def wrap(func):
     def split(sec):
@@ -1935,8 +2039,9 @@ del wrap
         # next split's #define from the parser and add it to the current
         # emission-in-progress.
         try:
-            exec split_setup+fixPythonIndentation(t[2]) in self.exportContext
-        except Exception, exc:
+            exec(split_setup+fixPythonIndentation(t[2]), self.exportContext)
+        except Exception as exc:
+            traceback.print_exc(file=sys.stdout)
             if debug:
                 raise
             error(t.lineno(1), 'In global let block: %s' % exc)
@@ -1952,7 +2057,7 @@ del wrap
         'def_operand_types : DEF OPERAND_TYPES CODELIT SEMI'
         try:
             self.operandTypeMap = eval('{' + t[3] + '}')
-        except Exception, exc:
+        except Exception as exc:
             if debug:
                 raise
             error(t.lineno(1),
@@ -1967,7 +2072,7 @@ del wrap
                   'error: operand types must be defined before operands')
         try:
             user_dict = eval('{' + t[3] + '}', self.exportContext)
-        except Exception, exc:
+        except Exception as exc:
             if debug:
                 raise
             error(t.lineno(1), 'In def operands: %s' % exc)
@@ -2266,7 +2371,7 @@ StaticInstPtr
         # Pass the ID and arg list to the current format class to deal with.
         currentFormat = self.formatStack.top()
         codeObj = currentFormat.defineInst(self, t[1], t[3], t.lexer.lineno)
-        args = ','.join(map(str, t[3]))
+        args = ','.join(list(map(str, t[3])))
         args = re.sub('(?m)^', '//', args)
         args = re.sub('^//', '', args)
         comment = '\n// %s::%s(%s)\n' % (currentFormat.id, t[1], args)
@@ -2405,7 +2510,7 @@ StaticInstPtr
 
     def buildOperandNameMap(self, user_dict, lineno):
         operand_name = {}
-        for op_name, val in user_dict.iteritems():
+        for op_name, val in user_dict.items():
 
             # Check if extra attributes have been specified.
             if len(val) > 9:
@@ -2478,7 +2583,7 @@ StaticInstPtr
         self.operandNameMap = operand_name
 
         # Define operand variables.
-        operands = user_dict.keys()
+        operands = list(user_dict.keys())
         # Add the elems defined in the vector operands and
         # build a map elem -> vector (used in OperandList)
         elem_to_vec = {}
@@ -2494,7 +2599,7 @@ StaticInstPtr
         (?<!\w)      # neg. lookbehind assertion: prevent partial matches
         ((%s)(?:_(%s))?)   # match: operand with optional '_' then suffix
         (?!\w)       # neg. lookahead assertion: prevent partial matches
-        ''' % (string.join(operands, '|'), string.join(extensions, '|'))
+        ''' % ('|'.join(operands), '|'.join(extensions))
 
         self.operandsRE = re.compile(operandsREString, re.MULTILINE|re.VERBOSE)
 
@@ -2502,7 +2607,7 @@ StaticInstPtr
         # groups are returned (base and ext, not full name as above).
         # Used for subtituting '_' for '.' to make C++ identifiers.
         operandsWithExtREString = r'(?<!\w)(%s)_(%s)(?!\w)' \
-            % (string.join(operands, '|'), string.join(extensions, '|'))
+            % ('|'.join(operands), '|'.join(extensions))
 
         self.operandsWithExtRE = \
             re.compile(operandsWithExtREString, re.MULTILINE)
@@ -2607,7 +2712,7 @@ StaticInstPtr
     def parse_isa_desc(self, *args, **kwargs):
         try:
             self._parse_isa_desc(*args, **kwargs)
-        except ISAParserError, e:
+        except ISAParserError as e:
             print(backtrace(self.fileNameStack))
             print("At %s:" % e.lineno)
             print(e)

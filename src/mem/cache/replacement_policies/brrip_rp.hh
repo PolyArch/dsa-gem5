@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Daniel Carvalho
  */
 
 /**
@@ -54,6 +52,7 @@
 #ifndef __MEM_CACHE_REPLACEMENT_POLICIES_BRRIP_RP_HH__
 #define __MEM_CACHE_REPLACEMENT_POLICIES_BRRIP_RP_HH__
 
+#include "base/sat_counter.hh"
 #include "mem/cache/replacement_policies/base.hh"
 
 struct BRRIPRPParams;
@@ -66,24 +65,32 @@ class BRRIPRP : public BaseReplacementPolicy
     {
         /**
          * Re-Reference Interval Prediction Value.
-         * A value equal to max_RRPV + 1 indicates an invalid entry.
+         * Some values have specific names (according to the paper):
+         * 0 -> near-immediate re-rereference interval
+         * max_RRPV-1 -> long re-rereference interval
+         * max_RRPV -> distant re-rereference interval
          */
-        int rrpv;
+        SatCounter rrpv;
+
+        /** Whether the entry is valid. */
+        bool valid;
 
         /**
          * Default constructor. Invalidate data.
          */
-        BRRIPReplData(const int max_RRPV) : rrpv(max_RRPV + 1) {}
+        BRRIPReplData(const int num_bits)
+            : rrpv(num_bits), valid(false)
+        {
+        }
     };
 
     /**
-     * Maximum Re-Reference Prediction Value possible. An entry with this
-     * value as the rrpv has the longest possible re-reference interval,
-     * that is, it is likely not to be used in the near future, and is
-     * among the best eviction candidates.
-     * A maxRRPV of 1 implies in a NRU.
+     * Number of RRPV bits. An entry that saturates its RRPV has the longest
+     * possible re-reference interval, that is, it is likely not to be used
+     * in the near future, and is among the best eviction candidates.
+     * A maximum RRPV of 1 implies in a NRU.
      */
-    const int maxRRPV;
+    const unsigned numRRPVBits;
 
     /**
      * The hit priority (HP) policy replaces entries that do not receive cache

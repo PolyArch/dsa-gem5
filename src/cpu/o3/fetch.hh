@@ -36,9 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Kevin Lim
- *          Korey Sewell
  */
 
 #ifndef __CPU_O3_FETCH_HH__
@@ -52,12 +49,15 @@
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/translation.hh"
+#include "enums/FetchPolicy.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
 #include "sim/eventq.hh"
 #include "sim/probe/probe.hh"
 
 struct DerivO3CPUParams;
+template <class Impl>
+class FullO3CPU;
 
 /**
  * DefaultFetch class handles both single threaded and SMT fetch. Its
@@ -83,6 +83,31 @@ class DefaultFetch
 
     /** Typedefs from ISA. */
     typedef TheISA::MachInst MachInst;
+
+    /**
+     * IcachePort class for instruction fetch.
+     */
+    class IcachePort : public MasterPort
+    {
+      protected:
+        /** Pointer to fetch. */
+        DefaultFetch<Impl> *fetch;
+
+      public:
+        /** Default constructor. */
+        IcachePort(DefaultFetch<Impl> *_fetch, FullO3CPU<Impl>* _cpu)
+            : MasterPort(_cpu->name() + ".icache_port", _cpu), fetch(_fetch)
+        { }
+
+      protected:
+
+        /** Timing version of receive.  Handles setting fetch to the
+         * proper status to start fetching. */
+        virtual bool recvTimingResp(PacketPtr pkt);
+
+        /** Handles doing a retry of a failed fetch. */
+        virtual void recvReqRetry();
+    };
 
     class FetchTranslation : public BaseTLB::Translation
     {
@@ -121,7 +146,7 @@ class DefaultFetch
 
       public:
         FinishTranslationEvent(DefaultFetch<Impl> *_fetch)
-            : fetch(_fetch)
+            : fetch(_fetch), req(nullptr)
         {}
 
         void setFault(Fault _fault)
@@ -172,15 +197,6 @@ class DefaultFetch
         NoGoodAddr
     };
 
-    /** Fetching Policy, Add new policies here.*/
-    enum FetchPriority {
-        SingleThread,
-        RoundRobin,
-        Branch,
-        IQ,
-        LSQ
-    };
-
   private:
     /** Fetch status. */
     FetchStatus _status;
@@ -189,7 +205,7 @@ class DefaultFetch
     ThreadStatus fetchStatus[Impl::MaxThreads];
 
     /** Fetch policy. */
-    FetchPriority fetchPolicy;
+    FetchPolicy fetchPolicy;
 
     /** List that has the threads organized by priority. */
     std::list<ThreadID> priorityList;
@@ -223,6 +239,9 @@ class DefaultFetch
 
     /** Initialize stage. */
     void startupStage();
+
+    /** Clear all thread-specific states*/
+    void clearStates(ThreadID tid);
 
     /** Handles retrying the fetch access. */
     void recvReqRetry();
@@ -281,7 +300,7 @@ class DefaultFetch
      * @param next_NPC Used for ISAs which use delay slots.
      * @return Whether or not a branch was predicted as taken.
      */
-    bool lookupAndUpdateNextPC(DynInstPtr &inst, TheISA::PCState &pc);
+    bool lookupAndUpdateNextPC(const DynInstPtr &inst, TheISA::PCState &pc);
 
     /**
      * Fetches the cache line that contains the fetch PC.  Returns any
@@ -303,7 +322,7 @@ class DefaultFetch
     bool
     checkInterrupt(Addr pc)
     {
-        return (interruptPending && (THE_ISA != ALPHA_ISA || !(pc & 0x3)));
+        return interruptPending;
     }
 
     /** Squashes a specific thread and resets the PC. */
@@ -358,13 +377,15 @@ class DefaultFetch
     /** The decoder. */
     TheISA::Decoder *decoder[Impl::MaxThreads];
 
+    MasterPort &getInstPort() { return icachePort; }
+
   private:
     DynInstPtr buildInst(ThreadID tid, StaticInstPtr staticInst,
                          StaticInstPtr curMacroop, TheISA::PCState thisPC,
                          TheISA::PCState nextPC, bool trace);
 
     /** Returns the appropriate thread to fetch, given the fetch policy. */
-    ThreadID getFetchingThread(FetchPriority &fetch_priority);
+    ThreadID getFetchingThread();
 
     /** Returns the appropriate thread to fetch using a round robin policy. */
     ThreadID roundRobin();
@@ -515,6 +536,9 @@ class DefaultFetch
      * must stop once it is not fetching PAL instructions.
      */
     bool interruptPending;
+
+    /** Instruction port. Note that it has to appear after the fetch stage. */
+    IcachePort icachePort;
 
     /** Set to true if a pipelined I-cache request should be issued. */
     bool issuePipelinedIfetch[Impl::MaxThreads];

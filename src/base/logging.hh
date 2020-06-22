@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2017 ARM Limited
+ * Copyright (c) 2014, 2017, 2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -36,10 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
- *          Dave Greene
- *          Andreas Sandberg
  */
 
 #ifndef __BASE_LOGGING_HH__
@@ -229,6 +225,12 @@ class Logger
     do { \
         if ((cond)) \
             warn(__VA_ARGS__); \
+    } while (0)
+
+#define warn_if_once(cond, ...) \
+    do { \
+        if ((cond)) \
+            warn_once(__VA_ARGS__); \
     } while (0)
 
 /**

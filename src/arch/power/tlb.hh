@@ -27,11 +27,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
- *          Steve Reinhardt
- *          Stephen Hines
- *          Timothy M. Jones
  */
 
 #ifndef __ARCH_POWER_TLB_HH__
@@ -43,7 +38,6 @@
 #include "arch/power/isa_traits.hh"
 #include "arch/power/pagetable.hh"
 #include "arch/power/utility.hh"
-#include "arch/power/vtophys.hh"
 #include "base/statistics.hh"
 #include "mem/request.hh"
 #include "params/PowerTLB.hh"
@@ -167,6 +161,8 @@ class TLB : public BaseTLB
     void translateTiming(
             const RequestPtr &req, ThreadContext *tc,
             Translation *translation, Mode mode) override;
+    Fault translateFunctional(
+            const RequestPtr &req, ThreadContext *tc, Mode mode) override;
     Fault finalizePhysical(
             const RequestPtr &req,
             ThreadContext *tc, Mode mode) const override;

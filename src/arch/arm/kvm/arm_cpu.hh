@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andreas Sandberg
  */
 
 #ifndef __ARCH_ARM_KVM_ARM_CPU_HH__
@@ -93,8 +91,6 @@ class ArmKvmCPU : public BaseKvmCPU
 
     void updateKvmState();
     void updateThreadContext();
-
-    Tick onKvmExitHypercall();
 
     /**
      * Get a list of registers supported by getOneReg() and setOneReg().

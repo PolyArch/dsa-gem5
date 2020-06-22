@@ -25,8 +25,6 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Authors: Gabe Black
 
 def template MediaOpExecute {{
         Fault %(class_name)s::execute(ExecContext *xc,
@@ -196,8 +194,8 @@ let {{
             return cls
 
 
+    @six.add_metaclass(MediaOpMeta)
     class MediaOp(X86Microop):
-        __metaclass__ = MediaOpMeta
         # This class itself doesn't act as a microop
         abstract = True
 
@@ -214,9 +212,9 @@ let {{
             if destSize is not None:
                 self.destSize = destSize
             if self.srcSize is None:
-                raise Exception, "Source size not set."
+                raise Exception("Source size not set.")
             if self.destSize is None:
-                raise Exception, "Dest size not set."
+                raise Exception("Dest size not set.")
             if ext is None:
                 self.ext = 0
             else:
@@ -245,7 +243,7 @@ let {{
                     src2, size, destSize, srcSize, ext)
         op_class = 'SimdMiscOp'
         code = '''
-            int items = sizeof(FloatRegBits) / srcSize;
+            int items = sizeof(double) / srcSize;
             int offset = imm8;
             if (bits(src1, 0) && (ext & 0x1))
                 offset -= items;
@@ -267,7 +265,7 @@ let {{
                     src2, size, destSize, srcSize, ext)
         op_class = 'SimdMiscOp'
         code = '''
-            int items = sizeof(FloatRegBits) / destSize;
+            int items = sizeof(double) / destSize;
             int offset = imm8;
             if (bits(dest, 0) && (ext & 0x1))
                 offset -= items;
@@ -289,7 +287,7 @@ let {{
                     "InstRegIndex(0)", size, destSize, srcSize, ext)
         op_class = 'SimdMiscOp'
         code = '''
-            int items = sizeof(FloatRegBits) / srcSize;
+            int items = sizeof(double) / srcSize;
             uint64_t result = 0;
             int offset = (ext & 0x1) ? items : 0;
             for (int i = 0; i < items; i++) {
@@ -325,7 +323,7 @@ let {{
             assert(srcSize == destSize);
             int size = srcSize;
             int sizeBits = size * 8;
-            int items = sizeof(FloatRegBits) / size;
+            int items = sizeof(double) / size;
             int options;
             int optionBits;
             if (size == 8) {
@@ -342,7 +340,7 @@ let {{
             for (int i = 0; i < items; i++) {
                 uint64_t resBits;
                 uint8_t lsel = sel & mask(optionBits);
-                if (lsel * size >= sizeof(FloatRegBits)) {
+                if (lsel * size >= sizeof(double)) {
                     lsel -= options / 2;
                     resBits = bits(FpSrcReg2_uqw,
                             (lsel + 1) * sizeBits - 1,
@@ -367,7 +365,7 @@ let {{
         code = '''
             assert(srcSize == destSize);
             int size = destSize;
-            int items = (sizeof(FloatRegBits) / size) / 2;
+            int items = (sizeof(double) / size) / 2;
             int offset = ext ? items : 0;
             uint64_t result = 0;
             for (int i = 0; i < items; i++) {
@@ -393,7 +391,7 @@ let {{
         op_class = 'SimdMiscOp'
         code = '''
             assert(srcSize == destSize * 2);
-            int items = (sizeof(FloatRegBits) / destSize);
+            int items = (sizeof(double) / destSize);
             int destBits = destSize * 8;
             int srcBits = srcSize * 8;
             uint64_t result = 0;
@@ -1091,7 +1089,7 @@ let {{
         op_class = 'SimdAddOp'
         code = '''
             int srcBits = srcSize * 8;
-            int items = sizeof(FloatRegBits) / srcSize;
+            int items = sizeof(double) / srcSize;
 
             uint64_t sum = 0;
             for (int i = 0; i < items; i++) {

@@ -33,14 +33,13 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andreas Sandberg
  */
 
 #include "arch/arm/kvm/base_cpu.hh"
 
 #include <linux/kvm.h>
 
+#include "arch/arm/interrupts.hh"
 #include "debug/KvmInt.hh"
 #include "params/BaseArmKvmCPU.hh"
 
@@ -88,8 +87,9 @@ BaseArmKvmCPU::startup()
 Tick
 BaseArmKvmCPU::kvmRun(Tick ticks)
 {
-    const bool simFIQ(interrupts[0]->checkRaw(INT_FIQ));
-    const bool simIRQ(interrupts[0]->checkRaw(INT_IRQ));
+    auto interrupt = static_cast<ArmISA::Interrupts *>(interrupts[0]);
+    const bool simFIQ(interrupt->checkRaw(INT_FIQ));
+    const bool simIRQ(interrupt->checkRaw(INT_IRQ));
 
     if (!vm.hasKernelIRQChip()) {
         if (fiqAsserted != simFIQ) {

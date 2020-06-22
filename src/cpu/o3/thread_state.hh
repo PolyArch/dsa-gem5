@@ -36,8 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Kevin Lim
  */
 
 #ifndef __CPU_O3_THREAD_STATE_HH__
@@ -72,7 +70,15 @@ struct O3ThreadState : public ThreadState {
   private:
     /** Pointer to the CPU. */
     O3CPU *cpu;
+
   public:
+    PCEventQueue pcEventQueue;
+    /**
+     * An instruction-based event queue. Used for scheduling events based on
+     * number of instructions committed.
+     */
+    EventQueue comInstEventQueue;
+
     /* This variable controls if writes to a thread context should cause a all
      * dynamic/speculative state to be thrown away. Nominally this is the
      * desired behavior because the external thread context write has updated
@@ -89,16 +95,16 @@ struct O3ThreadState : public ThreadState {
     bool trapPending;
 
     O3ThreadState(O3CPU *_cpu, int _thread_num, Process *_process)
-        : ThreadState(_cpu, _thread_num, _process),
-          cpu(_cpu), noSquashFromTC(false), trapPending(false),
-          tc(nullptr)
+        : ThreadState(_cpu, _thread_num, _process), cpu(_cpu),
+          comInstEventQueue("instruction-based event queue"),
+          noSquashFromTC(false), trapPending(false), tc(nullptr)
     {
         if (!FullSystem)
             return;
 
         if (cpu->params()->profile) {
             profile = new FunctionProfile(
-                    cpu->params()->system->kernelSymtab);
+                    cpu->params()->system->workload->symtab(tc));
             Callback *cb =
                 new MakeCallback<O3ThreadState,
                 &O3ThreadState::dumpFuncProfile>(this);
@@ -140,9 +146,9 @@ struct O3ThreadState : public ThreadState {
     ThreadContext *getTC() { return tc; }
 
     /** Handles the syscall. */
-    void syscall(int64_t callnum, Fault *fault)
+    void syscall(Fault *fault)
     {
-        process->syscall(callnum, tc, fault);
+        process->syscall(tc, fault);
     }
 
     void dumpFuncProfile()

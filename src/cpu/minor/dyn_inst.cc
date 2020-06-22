@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2014, 2016 ARM Limited
+ * Copyright (c) 2013-2014, 2016,2018 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andrew Bardsley
  */
 
 #include "cpu/minor/dyn_inst.hh"
@@ -108,6 +106,8 @@ MinorDynInst::reportData(std::ostream &os) const
         os << "-";
     else if (isFault())
         os << "F;" << id;
+    else if (translationFault != NoFault)
+        os << "TF;" << id;
     else
         os << id;
 }
@@ -120,6 +120,8 @@ operator <<(std::ostream &os, const MinorDynInst &inst)
 
     if (inst.isFault())
         os << "fault: \"" << inst.fault->name() << '"';
+    else if (inst.translationFault != NoFault)
+        os << "translation fault: \"" << inst.translationFault->name() << '"';
     else if (inst.staticInst)
         os << inst.staticInst->getName();
     else

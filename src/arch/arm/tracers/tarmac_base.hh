@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011,2017-2018 ARM Limited
+ * Copyright (c) 2011,2017-2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -33,9 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Giacomo Gabrielli
- *          Giacomo Travaglini
  */
 
 /**
@@ -78,14 +75,14 @@ class TarmacBaseRecord : public InstRecord
                      ISET_UNSUPPORTED };
 
     /** ARM register type. */
-    enum RegType { REG_R, REG_X, REG_S, REG_D, REG_Q, REG_MISC };
+    enum RegType { REG_R, REG_X, REG_S, REG_D, REG_P, REG_Q, REG_Z, REG_MISC };
 
     /** TARMAC instruction trace record. */
     struct InstEntry
     {
         InstEntry() = default;
         InstEntry(ThreadContext* thread,
-                  TheISA::PCState pc,
+                  ArmISA::PCState pc,
                   const StaticInstPtr staticInst,
                   bool predicate);
 
@@ -100,14 +97,20 @@ class TarmacBaseRecord : public InstRecord
     /** TARMAC register trace record. */
     struct RegEntry
     {
+        enum RegElement {
+            Lo = 0,
+            Hi = 1,
+            // Max = (max SVE vector length) 2048b / 64 = 32
+            Max = 32
+        };
+
         RegEntry() = default;
-        RegEntry(TheISA::PCState pc);
+        RegEntry(ArmISA::PCState pc);
 
         RegType type;
         RegIndex index;
         ISetState isetstate;
-        uint64_t valueHi;
-        uint64_t valueLo;
+        std::vector<uint64_t> values;
     };
 
     /** TARMAC memory access trace record (stores only). */
@@ -123,7 +126,7 @@ class TarmacBaseRecord : public InstRecord
 
   public:
     TarmacBaseRecord(Tick _when, ThreadContext *_thread,
-                     const StaticInstPtr _staticInst, TheISA::PCState _pc,
+                     const StaticInstPtr _staticInst, ArmISA::PCState _pc,
                      const StaticInstPtr _macroStaticInst = NULL);
 
     virtual void dump() = 0;
@@ -135,7 +138,7 @@ class TarmacBaseRecord : public InstRecord
      * @param pc program counter (PCState) variable
      * @return Instruction Set State for the given PCState
      */
-    static ISetState pcToISetState(TheISA::PCState pc);
+    static ISetState pcToISetState(ArmISA::PCState pc);
 };
 
 

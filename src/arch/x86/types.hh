@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __ARCH_X86_TYPES_HH__
@@ -199,6 +197,10 @@ namespace X86ISA
     //The intermediate structure used by the x86 decoder.
     struct ExtMachInst
     {
+        void reset() {
+            memset(static_cast<void *>(this), 0, sizeof(*this));
+        }
+
         //Prefixes
         LegacyPrefixVector legacy;
         Rex rex;

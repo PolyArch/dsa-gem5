@@ -24,14 +24,12 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
- *          Lisa Hsu
  */
 
 #ifndef __ARCH_SPARC_INTERRUPT_HH__
 #define __ARCH_SPARC_INTERRUPT_HH__
 
+#include "arch/generic/interrupts.hh"
 #include "arch/sparc/faults.hh"
 #include "arch/sparc/isa_traits.hh"
 #include "arch/sparc/registers.hh"
@@ -43,7 +41,19 @@
 namespace SparcISA
 {
 
-class Interrupts : public SimObject
+enum InterruptTypes
+{
+    IT_TRAP_LEVEL_ZERO,
+    IT_HINTP,
+    IT_INT_VEC,
+    IT_CPU_MONDO,
+    IT_DEV_MONDO,
+    IT_RES_ERROR,
+    IT_SOFT_INT,
+    NumInterruptTypes
+};
+
+class Interrupts : public BaseInterrupts
 {
   private:
     BaseCPU * cpu;
@@ -54,7 +64,7 @@ class Interrupts : public SimObject
   public:
 
     void
-    setCPU(BaseCPU * _cpu)
+    setCPU(BaseCPU * _cpu) override
     {
         cpu = _cpu;
     }
@@ -67,7 +77,7 @@ class Interrupts : public SimObject
         return dynamic_cast<const Params *>(_params);
     }
 
-    Interrupts(Params * p) : SimObject(p), cpu(NULL)
+    Interrupts(Params * p) : BaseInterrupts(p), cpu(NULL)
     {
         clearAll();
     }
@@ -87,7 +97,7 @@ class Interrupts : public SimObject
     }
 
     void
-    post(int int_num, int index)
+    post(int int_num, int index) override
     {
         DPRINTF(Interrupt, "Interrupt %d:%d posted\n", int_num, index);
         assert(int_num >= 0 && int_num < NumInterruptTypes);
@@ -98,7 +108,7 @@ class Interrupts : public SimObject
     }
 
     void
-    clear(int int_num, int index)
+    clear(int int_num, int index) override
     {
         DPRINTF(Interrupt, "Interrupt %d:%d cleared\n", int_num, index);
         assert(int_num >= 0 && int_num < NumInterruptTypes);
@@ -110,7 +120,7 @@ class Interrupts : public SimObject
     }
 
     void
-    clearAll()
+    clearAll() override
     {
         for (int i = 0; i < NumInterruptTypes; ++i) {
             interrupts[i] = 0;
@@ -119,7 +129,7 @@ class Interrupts : public SimObject
     }
 
     bool
-    checkInterrupts(ThreadContext *tc) const
+    checkInterrupts(ThreadContext *tc) const override
     {
         if (!intStatus)
             return false;
@@ -177,7 +187,7 @@ class Interrupts : public SimObject
     }
 
     Fault
-    getInterrupt(ThreadContext *tc)
+    getInterrupt(ThreadContext *tc) override
     {
         assert(checkInterrupts(tc));
 
@@ -233,9 +243,7 @@ class Interrupts : public SimObject
         return NoFault;
     }
 
-    void
-    updateIntrInfo(ThreadContext *tc)
-    {}
+    void updateIntrInfo(ThreadContext *tc) override {}
 
     uint64_t
     get_vec(int int_num)

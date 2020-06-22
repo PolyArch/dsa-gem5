@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
  */
 
 #ifndef __SIM_DEBUG_HH__
@@ -50,13 +48,6 @@ void schedBreak(Tick when);
  * @param delta the number of ticks to execute until breaking
  */
 void schedRelBreak(Tick delta);
-
-/**
- * Cause the simulator to execute a breakpoint when
- * the given kernel function is reached
- * @param funcName the name of the kernel function at which to break
- */
-void breakAtKernelFunction(const char* funcName);
 
 /** Cause the simulator to return to python to create a checkpoint
  * @param when the cycle to break

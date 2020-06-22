@@ -25,8 +25,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Alec Roelke
  */
 
 #include "arch/riscv/insts/compressed.hh"
@@ -41,7 +39,8 @@ namespace RiscvISA
 {
 
 std::string
-CompRegOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+CompRegOp::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream ss;
     ss << mnemonic << ' ' << registerName(_destRegIdx[0]) << ", " <<

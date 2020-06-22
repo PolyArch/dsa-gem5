@@ -29,8 +29,6 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Sooraj Puthoor
  */
 
 #ifndef __MEM_RUBY_SYSTEM_VIPERCOALESCER_HH__
@@ -38,11 +36,11 @@
 
 #include <iostream>
 
-#include "mem/protocol/PrefetchBit.hh"
-#include "mem/protocol/RubyAccessMode.hh"
-#include "mem/protocol/RubyRequestType.hh"
 #include "mem/ruby/common/Address.hh"
 #include "mem/ruby/common/Consumer.hh"
+#include "mem/ruby/protocol/PrefetchBit.hh"
+#include "mem/ruby/protocol/RubyAccessMode.hh"
+#include "mem/ruby/protocol/RubyRequestType.hh"
 #include "mem/ruby/system/GPUCoalescer.hh"
 #include "mem/ruby/system/RubyPort.hh"
 

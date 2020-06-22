@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabor Dozsa
  */
 
 /* @file
@@ -869,11 +867,13 @@ DistIface::toggleSync(ThreadContext *tc)
         // stop point.  Suspend execution of all local thread contexts.
         // Dist-gem5 will reactivate all thread contexts when everyone has
         // reached the sync stop point.
+#if THE_ISA != NULL_ISA
         for (int i = 0; i < master->sys->numContexts(); i++) {
             ThreadContext *tc = master->sys->getThreadContext(i);
             if (tc->status() == ThreadContext::Active)
                 tc->quiesce();
         }
+#endif
     } else {
         inform("Request toggling syncronization on\n");
         master->syncEvent->start();
@@ -882,11 +882,13 @@ DistIface::toggleSync(ThreadContext *tc)
         // nodes to prevent causality errors.  We can also schedule CPU
         // activation here, since we know exactly when the next sync will
         // occur.
+#if THE_ISA != NULL_ISA
         for (int i = 0; i < master->sys->numContexts(); i++) {
             ThreadContext *tc = master->sys->getThreadContext(i);
             if (tc->status() == ThreadContext::Active)
                 tc->quiesceTick(master->syncEvent->when() + 1);
         }
+#endif
     }
 }
 

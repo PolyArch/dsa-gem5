@@ -36,8 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Stephen Hines
  */
 
 #include "arch/arm/insts/mem.hh"
@@ -78,21 +76,7 @@ MemoryReg::printOffset(std::ostream &os) const
 }
 
 string
-Swap::generateDisassembly(Addr pc, const SymbolTable *symtab) const
-{
-    stringstream ss;
-    printMnemonic(ss);
-    printIntReg(ss, dest);
-    ss << ", ";
-    printIntReg(ss, op1);
-    ss << ", [";
-    printIntReg(ss, base);
-    ss << "]";
-    return ss.str();
-}
-
-string
-RfeOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+RfeOp::generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
 {
     stringstream ss;
     switch (mode) {
@@ -117,7 +101,7 @@ RfeOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
 }
 
 string
-SrsOp::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+SrsOp::generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
 {
     stringstream ss;
     switch (mode) {

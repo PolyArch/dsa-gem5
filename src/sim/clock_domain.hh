@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2014 ARM Limited
+ * Copyright (c) 2013-2014, 2019 ARM Limited
  * Copyright (c) 2013 Cornell University
  * All rights reserved
  *
@@ -34,11 +34,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Vasileios Spiliopoulos
- *          Akash Bagdia
- *          Christopher Torng
- *          Stephan Diestelhorst
  */
 
 /**
@@ -72,14 +67,6 @@ class Clocked;
  */
 class ClockDomain : public SimObject
 {
-
-  private:
-
-    /**
-     * Stat to report clock period of clock domain
-     */
-    Stats::Value currentClock;
-
   protected:
 
     /**
@@ -108,12 +95,7 @@ class ClockDomain : public SimObject
   public:
 
     typedef ClockDomainParams Params;
-    ClockDomain(const Params *p, VoltageDomain *voltage_domain) :
-        SimObject(p),
-        _clockPeriod(0),
-        _voltageDomain(voltage_domain) {}
-
-    void regStats();
+    ClockDomain(const Params *p, VoltageDomain *voltage_domain);
 
     /**
      * Get the clock period.
@@ -157,6 +139,16 @@ class ClockDomain : public SimObject
     void addDerivedDomain(DerivedClockDomain *clock_domain)
     { children.push_back(clock_domain); }
 
+  private:
+    struct ClockDomainStats : public Stats::Group
+    {
+        ClockDomainStats(ClockDomain &cd);
+
+        /**
+         * Stat to report clock period of clock domain
+         */
+        Stats::Value clock;
+    } stats;
 };
 
 /**

@@ -23,8 +23,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __SYSTEMC_EXT_CHANNEL_SC_OUT_RV_HH__
@@ -34,7 +32,6 @@
 #include "sc_inout_rv.hh"
 #include "sc_signal_in_if.hh"
 #include "sc_signal_inout_if.hh"
-#include "warn_unimpl.hh"
 
 namespace sc_dt
 {
@@ -56,33 +53,33 @@ class sc_out_rv : public sc_inout_rv<W>
     virtual ~sc_out_rv() {};
 
     sc_out_rv<W> &
-    operator = (const sc_dt::sc_lv<W> &)
+    operator = (const sc_dt::sc_lv<W> &l)
     {
-        sc_channel_warn_unimpl(__PRETTY_FUNCTION__);
+        (*this)->write(l);
         return *this;
     }
     sc_out_rv<W> &
-    operator = (const sc_signal_in_if<sc_dt::sc_lv<W>> &)
+    operator = (const sc_signal_in_if<sc_dt::sc_lv<W>> &i)
     {
-        sc_channel_warn_unimpl(__PRETTY_FUNCTION__);
+        (*this)->write(i.read());
         return *this;
     }
     sc_out_rv<W> &
-    operator = (const sc_port<sc_signal_in_if<sc_dt::sc_lv<W>>, 1> &)
+    operator = (const sc_port<sc_signal_in_if<sc_dt::sc_lv<W>>, 1> &p)
     {
-        sc_channel_warn_unimpl(__PRETTY_FUNCTION__);
+        (*this)->write(p->read());
         return *this;
     }
     sc_out_rv<W> &
-    operator = (const sc_port<sc_signal_inout_if<sc_dt::sc_lv<W>>, 1> &)
+    operator = (const sc_port<sc_signal_inout_if<sc_dt::sc_lv<W>>, 1> &p)
     {
-        sc_channel_warn_unimpl(__PRETTY_FUNCTION__);
+        (*this)->write(p->read());
         return *this;
     }
     sc_out_rv<W> &
-    operator = (const sc_out_rv<W> &)
+    operator = (const sc_out_rv<W> &p)
     {
-        sc_channel_warn_unimpl(__PRETTY_FUNCTION__);
+        (*this)->write(p->read());
         return *this;
     }
 

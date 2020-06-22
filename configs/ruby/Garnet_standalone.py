@@ -24,15 +24,12 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Brad Beckmann
-#          Tushar Krishna
 
 import m5
 from m5.objects import *
 from m5.defines import buildEnv
 from m5.util import addToPath
-from Ruby import create_topology, create_directories
+from .Ruby import create_topology, create_directories
 
 #
 # Declare caches used by the protocol
@@ -66,7 +63,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
     # controller constructors are called before the network constructor
     #
 
-    for i in xrange(options.num_cpus):
+    for i in range(options.num_cpus):
         #
         # First create the Ruby objects associated with this cpu
         # Only one cache exists for this protocol, so by default use the L1D
@@ -101,7 +98,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         l1_cntrl.forwardFromCache = MessageBuffer()
 
     mem_dir_cntrl_nodes, rom_dir_cntrl_node = create_directories(
-        options, system.mem_ranges, bootmem, ruby_system, system)
+        options, bootmem, ruby_system, system)
     dir_cntrl_nodes = mem_dir_cntrl_nodes[:]
     if rom_dir_cntrl_node is not None:
         dir_cntrl_nodes.append(rom_dir_cntrl_node)

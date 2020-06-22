@@ -1,6 +1,6 @@
 /*
  * Copyright 2014 Google, Inc.
- * Copyright (c) 2010-2013,2015,2017 ARM Limited
+ * Copyright (c) 2010-2013,2015,2017-2018 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -37,14 +37,11 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Steve Reinhardt
  */
 
 #include "cpu/simple/timing.hh"
 
 #include "arch/locked_mem.hh"
-#include "arch/mmapped_ipr.hh"
 #include "arch/utility.hh"
 #include "config/the_isa.hh"
 #include "cpu/exetrace.hh"
@@ -100,7 +97,7 @@ TimingSimpleCPU::drain()
         return DrainState::Drained;
 
     if (_status == Idle ||
-        (_status == BaseSimpleCPU::Running && isDrained())) {
+        (_status == BaseSimpleCPU::Running && isCpuDrained())) {
         DPRINTF(Drain, "No need to drain.\n");
         activeThreads.clear();
         return DrainState::Drained;
@@ -161,7 +158,7 @@ TimingSimpleCPU::tryCompleteDrain()
         return false;
 
     DPRINTF(Drain, "tryCompleteDrain.\n");
-    if (!isDrained())
+    if (!isCpuDrained())
         return false;
 
     DPRINTF(Drain, "CPU done draining, processing drain event\n");
@@ -268,8 +265,8 @@ TimingSimpleCPU::handleReadPacket(PacketPtr pkt)
     if (pkt->isRead() && pkt->req->isLLSC()) {
         TheISA::handleLockedRead(thread, pkt->req);
     }
-    if (req->isMmappedIpr()) {
-        Cycles delay = TheISA::handleIprRead(thread->getTC(), pkt);
+    if (req->isLocalAccess()) {
+        Cycles delay = req->localAccessor(thread->getTC(), pkt);
         new IprEvent(pkt, this, clockEdge(delay));
         _status = DcacheWaitResponse;
         dcache_pkt = NULL;
@@ -293,6 +290,7 @@ TimingSimpleCPU::sendData(const RequestPtr &req, uint8_t *data, uint64_t *res,
 
     PacketPtr pkt = buildPacket(req, read);
     pkt->dataDynamic<uint8_t>(data);
+
     if (req->getFlags().isSet(Request::NO_ACCESS)) {
         assert(!dcache_pkt);
         pkt->makeResponse();
@@ -389,7 +387,7 @@ TimingSimpleCPU::buildSplitPacket(PacketPtr &pkt1, PacketPtr &pkt2,
 {
     pkt1 = pkt2 = NULL;
 
-    assert(!req1->isMmappedIpr() && !req2->isMmappedIpr());
+    assert(!req1->isLocalAccess() && !req2->isLocalAccess());
 
     if (req->getFlags().isSet(Request::NO_ACCESS)) {
         pkt1 = buildPacket(req, read);
@@ -415,22 +413,14 @@ TimingSimpleCPU::buildSplitPacket(PacketPtr &pkt1, PacketPtr &pkt2,
 }
 
 Fault
-TimingSimpleCPU::readMem(Addr addr, uint8_t *data,
-                         unsigned size, Request::Flags flags)
-{
-    panic("readMem() is for atomic accesses, and should "
-          "never be called on TimingSimpleCPU.\n");
-}
-
-Fault
 TimingSimpleCPU::initiateMemRead(Addr addr, unsigned size,
-                                 Request::Flags flags)
+                                 Request::Flags flags,
+                                 const std::vector<bool>& byte_enable)
 {
     SimpleExecContext &t_info = *threadInfo[curThread];
     SimpleThread* thread = t_info.thread;
 
     Fault fault;
-    const int asid = 0;
     const Addr pc = thread->instAddr();
     unsigned block_size = cacheLineSize();
     BaseTLB::Mode mode = BaseTLB::Read;
@@ -439,8 +429,10 @@ TimingSimpleCPU::initiateMemRead(Addr addr, unsigned size,
         traceData->setMem(addr, size, flags);
 
     RequestPtr req = std::make_shared<Request>(
-        asid, addr, size, flags, dataMasterId(), pc,
-        thread->contextId());
+        addr, size, flags, dataMasterId(), pc, thread->contextId());
+    if (!byte_enable.empty()) {
+        req->setByteEnable(byte_enable);
+    }
 
     req->taskId(taskId());
 
@@ -481,8 +473,8 @@ TimingSimpleCPU::handleWritePacket()
     SimpleThread* thread = t_info.thread;
 
     const RequestPtr &req = dcache_pkt->req;
-    if (req->isMmappedIpr()) {
-        Cycles delay = TheISA::handleIprWrite(thread->getTC(), dcache_pkt);
+    if (req->isLocalAccess()) {
+        Cycles delay = req->localAccessor(thread->getTC(), dcache_pkt);
         new IprEvent(dcache_pkt, this, clockEdge(delay));
         _status = DcacheWaitResponse;
         dcache_pkt = NULL;
@@ -498,13 +490,13 @@ TimingSimpleCPU::handleWritePacket()
 
 Fault
 TimingSimpleCPU::writeMem(uint8_t *data, unsigned size,
-                          Addr addr, Request::Flags flags, uint64_t *res)
+                          Addr addr, Request::Flags flags, uint64_t *res,
+                          const std::vector<bool>& byte_enable)
 {
     SimpleExecContext &t_info = *threadInfo[curThread];
     SimpleThread* thread = t_info.thread;
 
     uint8_t *newData = new uint8_t[size];
-    const int asid = 0;
     const Addr pc = thread->instAddr();
     unsigned block_size = cacheLineSize();
     BaseTLB::Mode mode = BaseTLB::Write;
@@ -521,8 +513,10 @@ TimingSimpleCPU::writeMem(uint8_t *data, unsigned size,
         traceData->setMem(addr, size, flags);
 
     RequestPtr req = std::make_shared<Request>(
-        asid, addr, size, flags, dataMasterId(), pc,
-        thread->contextId());
+        addr, size, flags, dataMasterId(), pc, thread->contextId());
+    if (!byte_enable.empty()) {
+        req->setByteEnable(byte_enable);
+    }
 
     req->taskId(taskId());
 
@@ -530,6 +524,10 @@ TimingSimpleCPU::writeMem(uint8_t *data, unsigned size,
     assert(split_addr <= addr || split_addr - addr < block_size);
 
     _status = DTBWaitResponse;
+
+    // TODO: TimingSimpleCPU doesn't support arbitrarily long multi-line mem.
+    // accesses yet
+
     if (split_addr > addr) {
         RequestPtr req1, req2;
         assert(!req->isLLSC() && !req->isSwap());
@@ -553,6 +551,54 @@ TimingSimpleCPU::writeMem(uint8_t *data, unsigned size,
     }
 
     // Translation faults will be returned via finishTranslation()
+    return NoFault;
+}
+
+Fault
+TimingSimpleCPU::initiateMemAMO(Addr addr, unsigned size,
+                                Request::Flags flags,
+                                AtomicOpFunctorPtr amo_op)
+{
+    SimpleExecContext &t_info = *threadInfo[curThread];
+    SimpleThread* thread = t_info.thread;
+
+    Fault fault;
+    const Addr pc = thread->instAddr();
+    unsigned block_size = cacheLineSize();
+    BaseTLB::Mode mode = BaseTLB::Write;
+
+    if (traceData)
+        traceData->setMem(addr, size, flags);
+
+    RequestPtr req = make_shared<Request>(addr, size, flags,
+                            dataMasterId(), pc, thread->contextId(),
+                            std::move(amo_op));
+
+    assert(req->hasAtomicOpFunctor());
+
+    req->taskId(taskId());
+
+    Addr split_addr = roundDown(addr + size - 1, block_size);
+
+    // AMO requests that access across a cache line boundary are not
+    // allowed since the cache does not guarantee AMO ops to be executed
+    // atomically in two cache lines
+    // For ISAs such as x86 that requires AMO operations to work on
+    // accesses that cross cache-line boundaries, the cache needs to be
+    // modified to support locking both cache lines to guarantee the
+    // atomicity.
+    if (split_addr > addr) {
+        panic("AMO requests should not access across a cache line boundary\n");
+    }
+
+    _status = DTBWaitResponse;
+
+    WholeTranslationState *state =
+        new WholeTranslationState(req, new uint8_t[size], NULL, mode);
+    DataTranslation<TimingSimpleCPU *> *translation
+        = new DataTranslation<TimingSimpleCPU *>(this, state);
+    thread->dtb->translateTiming(req, thread->getTC(), translation, mode);
+
     return NoFault;
 }
 

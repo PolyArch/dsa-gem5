@@ -1,8 +1,6 @@
 #ifndef __ACCEL_H__
 #define __ACCEL_H__
 
-#include <model.h>
-#include <schedule.h>
 #include <vector>
 #include <deque>
 #include <map>
@@ -24,6 +22,9 @@
 #include <iomanip>
 #include <memory>
 
+#include "dsa/arch/model.h"
+#include "dsa/mapper/schedule.h"
+
 #include "sim-debug.hh"
 #include "cpu/minor/dyn_inst.hh"
 #include "cpu/minor/lsq.hh"
@@ -31,8 +32,7 @@
 #include "consts.hh"
 
 
-
-using namespace SS_CONFIG;
+using namespace dsa;
 
 struct pair_hash {
     template <class T1, class T2>
@@ -77,7 +77,7 @@ public:
 
   std::vector<bool> cgra_in_ports_active;
 
-  std::map<SS_CONFIG::OpCode, int> inst_histo;
+  std::map<dsa::OpCode, int> inst_histo;
   void reset();
 };
 
@@ -1690,7 +1690,7 @@ int get_cur_cycle();
   // newly added
   const char* _banked_spad_mapping_strategy = "";
 
-  std::map<SS_CONFIG::OpCode,int> _total_histo;
+  std::map<dsa::OpCode,int> _total_histo;
   std::map<int,int> _vport_histo;
 
   stream_stats_t _stream_stats;

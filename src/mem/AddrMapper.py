@@ -32,11 +32,9 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Andreas Hansson
 
 from m5.params import *
-from MemObject import MemObject
+from m5.SimObject import SimObject
 
 # An address mapper changes the packet addresses in going from the
 # slave port side of the mapper to the master port side. When the
@@ -44,7 +42,7 @@ from MemObject import MemObject
 # necessary range updates. Note that snoop requests that travel from
 # the master port (i.e. the memory side) to the slave port are
 # currently not modified.
-class AddrMapper(MemObject):
+class AddrMapper(SimObject):
     type = 'AddrMapper'
     cxx_header = 'mem/addr_mapper.hh'
     abstract = True

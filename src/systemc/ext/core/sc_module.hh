@@ -23,18 +23,42 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __SYSTEMC_CORE_EXT_SC_MODULE_HH__
 #define __SYSTEMC_CORE_EXT_SC_MODULE_HH__
 
+#include <string>
 #include <vector>
 
 #include "sc_object.hh"
+#include "sc_process_handle.hh"
 #include "sc_sensitive.hh"
 #include "sc_time.hh"
+
+namespace sc_dt
+{
+
+class sc_logic;
+
+} // namespace sc_dt
+
+namespace sc_gem5
+{
+
+class Kernel;
+class Module;
+class Process;
+struct ProcessFuncWrapper;
+
+Process *newMethodProcess(const char *name, ProcessFuncWrapper *func);
+Process *newThreadProcess(const char *name, ProcessFuncWrapper *func);
+Process *newCThreadProcess(const char *name, ProcessFuncWrapper *func);
+
+} // namespace sc_gem5
+
+// Gem5 prototype
+class Port;
 
 namespace sc_core
 {
@@ -55,9 +79,17 @@ class sc_module_name;
 
 class sc_bind_proxy
 {
+  private:
+    sc_interface *_interface;
+    sc_port_base *_port;
+
   public:
-    sc_bind_proxy(const sc_interface &interface);
-    sc_bind_proxy(const sc_port_base &port);
+    sc_bind_proxy();
+    sc_bind_proxy(sc_interface &_interface);
+    sc_bind_proxy(sc_port_base &_port);
+
+    sc_interface *interface() const { return _interface; }
+    sc_port_base *port() const { return _port; }
 };
 
 extern const sc_bind_proxy SC_BIND_PROXY_NIL;
@@ -65,9 +97,16 @@ extern const sc_bind_proxy SC_BIND_PROXY_NIL;
 class sc_module : public sc_object
 {
   public:
+    // Gem5 specific extensions
+    virtual ::Port &gem5_getPort(const std::string &if_name, int idx=-1);
+
+  public:
+    friend class ::sc_gem5::Kernel;
+    friend class ::sc_gem5::Module;
+
     virtual ~sc_module();
 
-    virtual const char *kind() const;
+    virtual const char *kind() const { return "sc_module"; }
 
     void operator () (const sc_bind_proxy &p001,
                       const sc_bind_proxy &p002 = SC_BIND_PROXY_NIL,
@@ -134,12 +173,25 @@ class sc_module : public sc_object
                       const sc_bind_proxy &p063 = SC_BIND_PROXY_NIL,
                       const sc_bind_proxy &p064 = SC_BIND_PROXY_NIL);
 
+    // Deprecated
+    sc_module &operator << (sc_interface &);
+    sc_module &operator << (sc_port_base &);
+    sc_module &operator , (sc_interface &);
+    sc_module &operator , (sc_port_base &);
+
     virtual const std::vector<sc_object *> &get_child_objects() const;
     virtual const std::vector<sc_event *> &get_child_events() const;
 
   protected:
     sc_module(const sc_module_name &);
     sc_module();
+
+    // Deprecated
+    sc_module(const char *);
+    sc_module(const std::string &);
+
+    /* Deprecated, but used in the regression tests. */
+    void end_module();
 
     void reset_signal_is(const sc_in<bool> &, bool);
     void reset_signal_is(const sc_inout<bool> &, bool);
@@ -169,6 +221,9 @@ class sc_module : public sc_object
     void next_trigger(const sc_time &, const sc_event_and_list &);
     void next_trigger(double, sc_time_unit, const sc_event_and_list &);
 
+    // Nonstandard
+    bool timed_out();
+
     void wait();
     void wait(int);
     void wait(const sc_event &);
@@ -183,12 +238,21 @@ class sc_module : public sc_object
     void wait(const sc_time &, const sc_event_and_list &);
     void wait(double, sc_time_unit, const sc_event_and_list &);
 
+    // Nonstandard
+    void halt();
+    void at_posedge(const sc_signal_in_if<bool> &);
+    void at_posedge(const sc_signal_in_if<sc_dt::sc_logic> &);
+    void at_negedge(const sc_signal_in_if<bool> &);
+    void at_negedge(const sc_signal_in_if<sc_dt::sc_logic> &);
+
     virtual void before_end_of_elaboration() {}
     virtual void end_of_elaboration() {}
     virtual void start_of_simulation() {}
     virtual void end_of_simulation() {}
 
   private:
+    sc_gem5::Module *_gem5_module;
+
     // Disabled
     sc_module(const sc_module &) : sc_object() {};
     sc_module &operator = (const sc_module &) { return *this; }
@@ -221,6 +285,9 @@ void wait(double, sc_time_unit, const sc_event_or_list &);
 void wait(const sc_time &, const sc_event_and_list &);
 void wait(double, sc_time_unit, const sc_event_and_list &);
 
+// Nonstandard
+bool timed_out();
+
 #define SC_MODULE(name) struct name : ::sc_core::sc_module
 
 #define SC_CTOR(name) \
@@ -229,17 +296,79 @@ void wait(double, sc_time_unit, const sc_event_and_list &);
 
 #define SC_HAS_PROCESS(name) typedef name SC_CURRENT_USER_MODULE
 
-#define SC_METHOD(name) /* Implementation defined */
-#define SC_THREAD(name) /* Implementation defined */
-#define SC_CTHREAD(name, clk) /* Implementation defined */
+#define SC_METHOD(name) \
+    { \
+        ::sc_gem5::Process *p = \
+            ::sc_gem5::newMethodProcess( \
+                #name, new ::sc_gem5::ProcessMemberFuncWrapper< \
+                    SC_CURRENT_USER_MODULE>(this, \
+                        &SC_CURRENT_USER_MODULE::name)); \
+        if (p) \
+            this->sensitive << p; \
+    }
+#define SC_THREAD(name) \
+    { \
+        ::sc_gem5::Process *p = \
+            ::sc_gem5::newThreadProcess( \
+                #name, new ::sc_gem5::ProcessMemberFuncWrapper< \
+                    SC_CURRENT_USER_MODULE>(this, \
+                        &SC_CURRENT_USER_MODULE::name)); \
+        if (p) \
+            this->sensitive << p; \
+    }
+#define SC_CTHREAD(name, clk) \
+    { \
+        ::sc_gem5::Process *p = \
+            ::sc_gem5::newCThreadProcess( \
+                #name, new ::sc_gem5::ProcessMemberFuncWrapper< \
+                    SC_CURRENT_USER_MODULE>(this, \
+                        &SC_CURRENT_USER_MODULE::name)); \
+        if (p) \
+            this->sensitive(p, clk); \
+    }
+
+// Nonstandard
+// Documentation for this is very scarce, but it looks like it's supposed to
+// stop the currently executing cthread, or if a cthread isn't running report
+// an error.
+void halt();
+void at_posedge(const sc_signal_in_if<bool> &);
+void at_posedge(const sc_signal_in_if<sc_dt::sc_logic> &);
+void at_negedge(const sc_signal_in_if<bool> &);
+void at_negedge(const sc_signal_in_if<sc_dt::sc_logic> &);
 
 const char *sc_gen_unique_name(const char *);
+
+// Nonstandard
+bool sc_hierarchical_name_exists(const char *name);
 
 typedef sc_module sc_behavior;
 typedef sc_module sc_channel;
 
 bool sc_start_of_simulation_invoked();
 bool sc_end_of_simulation_invoked();
+
+// Nonstandard
+// Allocates a module of type x and records a pointer to it so that it gets
+// destructed automatically at the end of the simulation.
+sc_module *sc_module_sc_new(sc_module *);
+#define SC_NEW(x) ::sc_core::sc_module_sc_new(new x);
+
+// Nonstandard
+#define SC_WAIT() \
+    ::sc_core::sc_set_location(__FILE__, __LINE__); \
+    ::sc_core::wait(); \
+    ::sc_core::sc_set_location(NULL, 0)
+
+// Nonstandard
+#define SC_WAITN(n) \
+    ::sc_core::sc_set_location(__FILE__, __LINE__); \
+    ::sc_core::wait(n); \
+    ::sc_core::sc_set_location(NULL, 0)
+
+// Nonstandard
+#define SC_WAIT_UNTIL(expr) \
+    do { SC_WAIT(); } while (!(expr))
 
 } // namespace sc_core
 

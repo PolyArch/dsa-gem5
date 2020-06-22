@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 ARM Limited
+ * Copyright (c) 2017-2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Giacomo Travaglini
  */
 
 /**
@@ -108,7 +106,23 @@ class TarmacTracerRecordV8 : public TarmacTracerRecord
         void updateMisc(const TarmacContext& tarmCtx,
                         RegIndex regRelIdx) override;
 
-        uint8_t regWidth;
+        void updateVec(const TarmacContext& tarmCtx,
+                       RegIndex regRelIdx) override;
+
+        void updatePred(const TarmacContext& tarmCtx,
+                        RegIndex regRelIdx) override;
+
+        /**
+         * Returning a string which contains the formatted
+         * register value: transformed in hex, 0 padded or/and
+         * split in chunks separated by underscores in case of
+         * vector register.
+         * @return str formatted string
+         */
+        std::string formatReg() const;
+
+        /** Size in bits of arch register */
+        uint16_t regWidth;
     };
 
     /**
@@ -130,7 +144,7 @@ class TarmacTracerRecordV8 : public TarmacTracerRecord
 
   public:
     TarmacTracerRecordV8(Tick _when, ThreadContext *_thread,
-                         const StaticInstPtr _staticInst, TheISA::PCState _pc,
+                         const StaticInstPtr _staticInst, ArmISA::PCState _pc,
                          TarmacTracer& _parent,
                          const StaticInstPtr _macroStaticInst = NULL)
       : TarmacTracerRecord(_when, _thread, _staticInst, _pc,

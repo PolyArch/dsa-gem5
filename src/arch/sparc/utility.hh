@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __ARCH_SPARC_UTILITY_HH__
@@ -62,28 +60,9 @@ inUserMode(ThreadContext *tc)
     return !(pstate.priv || hpstate.hpriv);
 }
 
-/**
- * Function to insure ISA semantics about 0 registers.
- * @param tc The thread context.
- */
-template <class TC>
-void zeroRegisters(TC *tc);
-
-void initCPU(ThreadContext *tc, int cpuId);
-
-inline void
-startupCPU(ThreadContext *tc, int cpuId)
-{
-    // Other CPUs will get activated by IPIs
-    if (cpuId == 0 || !FullSystem)
-        tc->activate();
-}
-
 void copyRegs(ThreadContext *src, ThreadContext *dest);
 
 void copyMiscRegs(ThreadContext *src, ThreadContext *dest);
-
-void skipFunction(ThreadContext *tc);
 
 inline void
 advancePC(PCState &pc, const StaticInstPtr &inst)

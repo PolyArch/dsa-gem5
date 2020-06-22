@@ -23,15 +23,13 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Steve Reinhardt
-#          Brad Beckmann
 
 from m5.params import *
 from m5.proxy import *
-from Network import RubyNetwork
-from BasicRouter import BasicRouter
-from MessageBuffer import MessageBuffer
+
+from m5.objects.Network import RubyNetwork
+from m5.objects.BasicRouter import BasicRouter
+from m5.objects.MessageBuffer import MessageBuffer
 
 class SimpleNetwork(RubyNetwork):
     type = 'SimpleNetwork'
@@ -49,7 +47,7 @@ class SimpleNetwork(RubyNetwork):
         for link in self.int_links:
             # The network needs number_of_virtual_networks buffers per
             # int_link port
-            for i in xrange(self.number_of_virtual_networks):
+            for i in range(int(self.number_of_virtual_networks)):
                 network_buffers.append(MessageBuffer(ordered = True))
                 network_buffers.append(MessageBuffer(ordered = True))
         self.int_link_buffers = network_buffers
@@ -66,14 +64,14 @@ class SimpleNetwork(RubyNetwork):
             # unidirectional internal link
             for link in self.int_links:
                 if link.dst_node == router:
-                    for i in xrange(self.number_of_virtual_networks):
+                    for i in range(int(self.number_of_virtual_networks)):
                         router_buffers.append(MessageBuffer(ordered = True))
 
             # Add message buffers to routers for each external link connection
             for link in self.ext_links:
                 # Routers can only be int_nodes on ext_links
                 if link.int_node in self.routers:
-                    for i in xrange(self.number_of_virtual_networks):
+                    for i in range(int(self.number_of_virtual_networks)):
                         router_buffers.append(MessageBuffer(ordered = True))
             # router.port_buffers = router_buffers
             

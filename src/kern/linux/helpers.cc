@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andreas Sandberg
  */
 
 #include "kern/linux/helpers.hh"
@@ -42,7 +40,8 @@
 #include "arch/isa_traits.hh"
 #include "config/the_isa.hh"
 #include "cpu/thread_context.hh"
-#include "mem/fs_translating_port_proxy.hh"
+#include "mem/port_proxy.hh"
+#include "sim/byteswap.hh"
 #include "sim/system.hh"
 
 struct DmesgEntry {
@@ -55,7 +54,8 @@ struct DmesgEntry {
 } M5_ATTR_PACKED;
 
 static int
-dumpDmesgEntry(const uint8_t *base, const uint8_t *end, std::ostream &os)
+dumpDmesgEntry(const uint8_t *base, const uint8_t *end, const ByteOrder bo,
+               std::ostream &os)
 {
     const size_t max_length = end - base;
     DmesgEntry de;
@@ -66,9 +66,9 @@ dumpDmesgEntry(const uint8_t *base, const uint8_t *end, std::ostream &os)
     }
 
     memcpy(&de, base, sizeof(de));
-    de.ts_nsec = TheISA::gtoh(de.ts_nsec);
-    de.len = TheISA::gtoh(de.len);
-    de.text_len = TheISA::gtoh(de.text_len);
+    de.ts_nsec = gtoh(de.ts_nsec, bo);
+    de.len = gtoh(de.len, bo);
+    de.text_len = gtoh(de.text_len, bo);
 
     if (de.len < sizeof(de) ||
         max_length < de.len ||
@@ -92,8 +92,9 @@ void
 Linux::dumpDmesg(ThreadContext *tc, std::ostream &os)
 {
     System *system = tc->getSystemPtr();
-    const SymbolTable *symtab = system->kernelSymtab;
-    FSTranslatingPortProxy proxy(tc);
+    const ByteOrder bo = system->getGuestByteOrder();
+    const auto *symtab = system->workload->symtab(tc);
+    PortProxy &proxy = tc->getVirtProxy();
 
     Addr addr_lb = 0, addr_lb_len = 0, addr_first = 0, addr_next = 0;
     const bool found_symbols =
@@ -107,9 +108,12 @@ Linux::dumpDmesg(ThreadContext *tc, std::ostream &os)
         return;
     }
 
-    uint32_t log_buf_len = proxy.readGtoH<uint32_t>(addr_lb_len);
-    uint32_t log_first_idx = proxy.readGtoH<uint32_t>(addr_first);
-    uint32_t log_next_idx = proxy.readGtoH<uint32_t>(addr_next);
+    uint32_t log_buf_len =
+        proxy.read<uint32_t>(addr_lb_len, TheISA::GuestByteOrder);
+    uint32_t log_first_idx =
+        proxy.read<uint32_t>(addr_first, TheISA::GuestByteOrder);
+    uint32_t log_next_idx =
+        proxy.read<uint32_t>(addr_next, TheISA::GuestByteOrder);
 
     if (log_first_idx >= log_buf_len || log_next_idx >= log_buf_len) {
         warn("dmesg pointers/length corrupted\n");
@@ -140,7 +144,7 @@ Linux::dumpDmesg(ThreadContext *tc, std::ostream &os)
     // Print dmesg buffer content
     const uint8_t *cur = log_buf.data(), *end = log_buf.data() + length;
     while (cur < end) {
-        int ret = dumpDmesgEntry(cur, end, os);
+        int ret = dumpDmesgEntry(cur, end, bo, os);
         if (ret < 0)
             return;
         cur += ret;

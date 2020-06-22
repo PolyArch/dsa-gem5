@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #include "dev/x86/i8042.hh"
@@ -50,7 +48,6 @@ X86ISA::I8042::I8042(Params *p)
       latency(p->pio_latency),
       dataPort(p->data_port), commandPort(p->command_port),
       statusReg(0), commandByte(0), dataReg(0), lastCommand(NoCommand),
-      mouseIntPin(p->mouse_int_pin), keyboardIntPin(p->keyboard_int_pin),
       mouse(p->mouse), keyboard(p->keyboard)
 {
     fatal_if(!mouse, "The i8042 model requires a mouse instance");
@@ -63,6 +60,15 @@ X86ISA::I8042::I8042(Params *p)
     commandByte.convertScanCodes = 1;
     commandByte.passedSelfTest = 1;
     commandByte.keyboardFullInt = 1;
+
+    for (int i = 0; i < p->port_keyboard_int_pin_connection_count; i++) {
+        keyboardIntPin.push_back(new IntSourcePin<I8042>(
+                    csprintf("%s.keyboard_int_pin[%d]", name(), i), i, this));
+    }
+    for (int i = 0; i < p->port_mouse_int_pin_connection_count; i++) {
+        mouseIntPin.push_back(new IntSourcePin<I8042>(
+                    csprintf("%s.mouse_int_pin[%d]", name(), i), i, this));
+    }
 }
 
 
@@ -85,14 +91,18 @@ X86ISA::I8042::writeData(uint8_t newData, bool mouse)
     statusReg.mouseOutputFull = (mouse ? 1 : 0);
     if (!mouse && commandByte.keyboardFullInt) {
         DPRINTF(I8042, "Sending keyboard interrupt.\n");
-        keyboardIntPin->raise();
-        //This is a hack
-        keyboardIntPin->lower();
+        for (auto *wire: keyboardIntPin) {
+            wire->raise();
+            //This is a hack
+            wire->lower();
+        }
     } else if (mouse && commandByte.mouseFullInt) {
         DPRINTF(I8042, "Sending mouse interrupt.\n");
-        mouseIntPin->raise();
-        //This is a hack
-        mouseIntPin->lower();
+        for (auto *wire: mouseIntPin) {
+            wire->raise();
+            //This is a hack
+            wire->lower();
+        }
     }
 }
 
@@ -118,10 +128,10 @@ X86ISA::I8042::read(PacketPtr pkt)
     if (addr == dataPort) {
         uint8_t data = readDataOut();
         //DPRINTF(I8042, "Read from data port got %#02x.\n", data);
-        pkt->set<uint8_t>(data);
+        pkt->setLE<uint8_t>(data);
     } else if (addr == commandPort) {
         //DPRINTF(I8042, "Read status as %#02x.\n", (uint8_t)statusReg);
-        pkt->set<uint8_t>((uint8_t)statusReg);
+        pkt->setLE<uint8_t>((uint8_t)statusReg);
     } else {
         panic("Read from unrecognized port %#x.\n", addr);
     }
@@ -134,7 +144,7 @@ X86ISA::I8042::write(PacketPtr pkt)
 {
     assert(pkt->getSize() == 1);
     Addr addr = pkt->getAddr();
-    uint8_t data = pkt->get<uint8_t>();
+    uint8_t data = pkt->getLE<uint8_t>();
     if (addr == dataPort) {
         statusReg.commandLast = 0;
         switch (lastCommand) {

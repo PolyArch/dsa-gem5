@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Giacomo Travaglini
  */
 
 #include "tarmac_tracer.hh"
@@ -75,7 +73,7 @@ TarmacTracer::TarmacTracer(const Params *p)
 InstRecord *
 TarmacTracer::getInstRecord(Tick when, ThreadContext *tc,
                            const StaticInstPtr staticInst,
-                           TheISA::PCState pc,
+                           ArmISA::PCState pc,
                            const StaticInstPtr macroStaticInst)
 {
     // Check if we need to start tracing since we have passed the

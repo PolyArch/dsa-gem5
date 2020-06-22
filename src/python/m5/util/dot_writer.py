@@ -1,4 +1,4 @@
-# Copyright (c) 2012-2013 ARM Limited
+# Copyright (c) 2012-2013,2019 ARM Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -32,10 +32,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Andreas Hansson
-#          Uri Wiener
-#          Sascha Bischoff
 
 #####################################################################
 #
@@ -57,6 +53,9 @@
 #
 #####################################################################
 
+from __future__ import print_function
+from __future__ import absolute_import
+
 import m5, os, re
 from m5.SimObject import isRoot, isSimObjectVector
 from m5.params import PortRef, isNullPointer
@@ -67,7 +66,7 @@ except:
     pydot = False
 
 def simnode_children(simNode):
-    for child in simNode._children.itervalues():
+    for child in simNode._children.values():
         if isNullPointer(child):
             continue
         if isSimObjectVector(child):
@@ -114,20 +113,34 @@ def dot_create_edges(simNode, callgraph):
             port_node = dot_create_node(simNode, full_port_name, port_name)
             # create edges
             if isinstance(port, PortRef):
-                dot_add_edge(simNode, callgraph, full_port_name, port)
+                if port.peer:
+                    dot_add_edge(simNode, callgraph, full_port_name, port)
             else:
                 for p in port.elements:
-                    dot_add_edge(simNode, callgraph, full_port_name, p)
+                    if p.peer:
+                        dot_add_edge(simNode, callgraph, full_port_name, p)
 
     # recurse to children
     for child in simnode_children(simNode):
         dot_create_edges(child, callgraph)
 
-def dot_add_edge(simNode, callgraph, full_port_name, peerPort):
-    if peerPort.role == "MASTER":
-        peer_port_name = re.sub('\.', '_', peerPort.peer.simobj.path() \
-                + "." + peerPort.peer.name)
-        callgraph.add_edge(pydot.Edge(full_port_name, peer_port_name))
+def dot_add_edge(simNode, callgraph, full_port_name, port):
+    peer = port.peer
+    full_peer_path = re.sub('\.', '_', peer.simobj.path())
+    full_peer_port_name = full_peer_path + "_" + peer.name
+
+    # Each edge is encountered twice, once for each peer. We only want one
+    # edge, so we'll arbitrarily chose which peer "wins" based on their names.
+    if full_peer_port_name < full_port_name:
+        dir_type = {
+            (False, False) : 'both',
+            (True,  False) : 'forward',
+            (False, True)  : 'back',
+            (True,  True)  : 'none'
+        }[ (port.is_source,
+            peer.is_source) ]
+        edge = pydot.Edge(full_port_name, full_peer_port_name, dir=dir_type)
+        callgraph.add_edge(edge)
 
 def dot_create_cluster(simNode, full_path, label):
     # get the parameter values of the node and use them as a tooltip
@@ -139,7 +152,7 @@ def dot_create_cluster(simNode, full_path, label):
             ini_strings.append(str(param) + "&#61;" +
                                simNode._values[param].ini_str())
     # join all the parameters with an HTML newline
-    tooltip = "&#10;".join(ini_strings)
+    tooltip = "&#10;\\".join(ini_strings)
 
     return pydot.Cluster( \
                          full_path, \
@@ -254,7 +267,7 @@ def dot_gen_colour(simNode, isPort = False):
     return dot_rgb_to_html(r, g, b)
 
 def dot_rgb_to_html(r, g, b):
-    return "#%.2x%.2x%.2x" % (r, g, b)
+    return "#%.2x%.2x%.2x" % (int(r), int(g), int(b))
 
 # We need to create all of the clock domains. We abuse the alpha channel to get
 # the correct domain colouring.
@@ -325,6 +338,8 @@ def dot_create_dvfs_nodes(simNode, callgraph, domain=None):
 
 def do_dot(root, outdir, dotFilename):
     if not pydot:
+        warn("No dot file generated. " +
+             "Please install pydot to generate the dot file and pdf.")
         return
     # * use ranksep > 1.0 for for vertical separation between nodes
     # especially useful if you need to annotate edges using e.g. visio
@@ -345,6 +360,8 @@ def do_dot(root, outdir, dotFilename):
 
 def do_dvfs_dot(root, outdir, dotFilename):
     if not pydot:
+        warn("No dot file generated. " +
+             "Please install pydot to generate the dot file and pdf.")
         return
 
     # There is a chance that we are unable to resolve the clock or

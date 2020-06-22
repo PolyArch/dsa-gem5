@@ -38,8 +38,6 @@
  * section 8.2.4 explains the protocol in detail.
  *
  * See Learning gem5 Part 3: Ruby for more details.
- *
- * Authors: Jason Lowe-Power
  */
 
 /// Declare a machine with type L1Cache.
@@ -482,7 +480,7 @@ machine(MachineType:L1Cache, "MSI cache")
             // across different directories, so query the network.
             out_msg.Destination.add(mapAddressToMachine(address,
                                     MachineType:Directory));
-            // See mem/protocol/RubySlicc_Exports.sm for possible sizes.
+            // See mem/ruby/protocol/RubySlicc_Exports.sm for possible sizes.
             out_msg.MessageSize := MessageSizeType:Control;
             // Set that the reqeustor is this machine so we get the response.
             out_msg.Requestor := machineID;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2013 ARM Limited
+ * Copyright (c) 2010-2013, 2019 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __ARCH_ARM_INSTS_VFP_HH__
@@ -446,6 +444,9 @@ uint32_t unsignedRSqrtEstimate(uint32_t op);
 
 float fpRecipEstimate(FPSCR &fpscr, float op);
 uint32_t unsignedRecipEstimate(uint32_t op);
+
+FPSCR
+fpStandardFPSCRValue(const FPSCR &fpscr);
 
 class VfpMacroOp : public PredMacroOp
 {
@@ -891,7 +892,7 @@ class FpCondCompRegOp : public FpOp
     {}
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 class FpCondSelOp : public FpOp
@@ -908,7 +909,7 @@ class FpCondSelOp : public FpOp
     {}
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 class FpRegRegOp : public FpOp
@@ -926,7 +927,7 @@ class FpRegRegOp : public FpOp
     }
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 class FpRegImmOp : public FpOp
@@ -944,7 +945,7 @@ class FpRegImmOp : public FpOp
     }
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 class FpRegRegImmOp : public FpOp
@@ -963,7 +964,7 @@ class FpRegRegImmOp : public FpOp
     }
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 class FpRegRegRegOp : public FpOp
@@ -982,7 +983,7 @@ class FpRegRegRegOp : public FpOp
     }
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 class FpRegRegRegCondOp : public FpOp
@@ -1004,7 +1005,7 @@ class FpRegRegRegCondOp : public FpOp
     }
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 class FpRegRegRegRegOp : public FpOp
@@ -1025,7 +1026,7 @@ class FpRegRegRegRegOp : public FpOp
     }
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 class FpRegRegRegImmOp : public FpOp
@@ -1047,7 +1048,7 @@ class FpRegRegRegImmOp : public FpOp
     }
 
     std::string generateDisassembly(
-            Addr pc, const SymbolTable *symtab) const override;
+            Addr pc, const Loader::SymbolTable *symtab) const override;
 };
 
 }

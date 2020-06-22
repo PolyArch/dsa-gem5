@@ -1,5 +1,5 @@
 # -*- mode:python -*-
-# Copyright (c) 2009-2014, 2017 ARM Limited
+# Copyright (c) 2009-2014, 2017, 2020 ARM Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -33,15 +33,13 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Matt Horsnell
-#          Andreas Sandberg
 
 from m5.defines import buildEnv
 from m5.SimObject import *
 from m5.params import *
 from m5.params import isNullPointer
 from m5.proxy import *
+from m5.objects.Gic import ArmInterruptPin
 
 class ProbeEvent(object):
     def __init__(self, pmu, _eventId, obj, *listOfNames):
@@ -67,7 +65,6 @@ class SoftwareIncrement(object):
 ARCH_EVENT_CORE_CYCLES = 0x11
 
 class ArmPMU(SimObject):
-
     type = 'ArmPMU'
     cxx_class = 'ArmISA::PMU'
     cxx_header = 'arch/arm/pmu.hh'
@@ -131,7 +128,7 @@ class ArmPMU(SimObject):
         # 0x09: EXC_TAKEN
         # 0x0A: EXC_RETURN
         # 0x0B: CID_WRITE_RETIRED
-        self.addEvent(ProbeEvent(self,0x0C, cpu, "RetiredBranches"))
+        # 0x0C: PC_WRITE_RETIRED
         # 0x0D: BR_IMMED_RETIRED
         # 0x0E: BR_RETURN_RETIRED
         # 0x0F: UNALIGEND_LDST_RETIRED
@@ -154,7 +151,7 @@ class ArmPMU(SimObject):
         # 0x1E: CHAIN
         # 0x1F: L1D_CACHE_ALLOCATE
         # 0x20: L2D_CACHE_ALLOCATE
-        # 0x21: BR_RETIRED
+        self.addEvent(ProbeEvent(self,0x21, cpu, "RetiredBranches"))
         # 0x22: BR_MIS_PRED_RETIRED
         # 0x23: STALL_FRONTEND
         # 0x24: STALL_BACKEND
@@ -174,4 +171,4 @@ class ArmPMU(SimObject):
     cycleEventId = Param.Int(ARCH_EVENT_CORE_CYCLES, "Cycle event id")
     platform = Param.Platform(Parent.any, "Platform this device is part of.")
     eventCounters = Param.Int(31, "Number of supported PMU counters")
-    pmuInterrupt = Param.Int(68, "PMU GIC interrupt number")
+    interrupt = Param.ArmInterruptPin("PMU interrupt")

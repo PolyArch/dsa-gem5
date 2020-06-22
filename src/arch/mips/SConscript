@@ -25,15 +25,10 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Gabe Black
-#          Steve Reinhardt
-#          Korey Sewell
 
 Import('*')
 
 if env['TARGET_ISA'] == 'mips':
-    Source('bare_iron/system.cc')
     Source('decoder.cc')
     Source('dsp.cc')
     Source('faults.cc')
@@ -42,19 +37,15 @@ if env['TARGET_ISA'] == 'mips':
     Source('isa.cc')
     Source('linux/linux.cc')
     Source('linux/process.cc')
-    Source('linux/system.cc')
     Source('pagetable.cc')
     Source('process.cc')
     Source('remote_gdb.cc')
     Source('stacktrace.cc')
-    Source('system.cc')
     Source('tlb.cc')
     Source('utility.cc')
-    Source('vtophys.cc')
 
     SimObject('MipsInterrupts.py')
     SimObject('MipsISA.py')
-    SimObject('MipsSystem.py')
     SimObject('MipsTLB.py')
 
     DebugFlag('MipsPRA')

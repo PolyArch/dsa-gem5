@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __BASE_TRIE_HH__
@@ -33,16 +31,27 @@
 
 #include <cassert>
 #include <iostream>
+#include <type_traits>
 
 #include "base/cprintf.hh"
 #include "base/logging.hh"
 #include "base/types.hh"
 
-// Key has to be an integral type.
+/**
+ * A trie is a tree-based data structure used for data retrieval. It uses
+ * bits masked from the msb of the key to to determine a value's location,
+ * so its lookups have their worst case time dictated by the key's size.
+ *
+ * @tparam Key Type of the key of the tree nodes. Must be an integral type.
+ * @tparam Value Type of the values associated to the keys.
+ */
 template <class Key, class Value>
 class Trie
 {
   protected:
+    static_assert(std::is_integral<Key>::value,
+        "Key has to be an integral type");
+
     struct Node
     {
         Key key;

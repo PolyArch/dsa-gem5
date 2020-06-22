@@ -38,7 +38,7 @@
 #include "mem/ruby/network/simple/Switch.hh"
 #include "mem/ruby/slicc_interface/Message.hh"
 #include "mem/ruby/system/RubySystem.hh"
-#include "mem/protocol/SpuRequestMsg.hh"
+//#include "mem/protocol/SpuRequestMsg.hh"
 
 using namespace std;
 

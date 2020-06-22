@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Tushar Krishna
  */
 
 #ifndef __CPU_GARNET_SYNTHETIC_TRAFFIC_HH__
@@ -34,9 +32,9 @@
 #include <set>
 
 #include "base/statistics.hh"
-#include "mem/mem_object.hh"
 #include "mem/port.hh"
 #include "params/GarnetSyntheticTraffic.hh"
+#include "sim/clocked_object.hh"
 #include "sim/eventq.hh"
 #include "sim/sim_exit.hh"
 #include "sim/sim_object.hh"
@@ -53,19 +51,19 @@ enum TrafficType {BIT_COMPLEMENT_ = 0,
                   NUM_TRAFFIC_PATTERNS_};
 
 class Packet;
-class GarnetSyntheticTraffic : public MemObject
+class GarnetSyntheticTraffic : public ClockedObject
 {
   public:
     typedef GarnetSyntheticTrafficParams Params;
     GarnetSyntheticTraffic(const Params *p);
 
-    virtual void init();
+    void init() override;
 
     // main simulation loop (one cycle)
     void tick();
 
-    virtual BaseMasterPort &getMasterPort(const std::string &if_name,
-                                          PortID idx = InvalidPortID);
+    Port &getPort(const std::string &if_name,
+                  PortID idx=InvalidPortID) override;
 
     /**
      * Print state of address in memory system via PrintReq (for

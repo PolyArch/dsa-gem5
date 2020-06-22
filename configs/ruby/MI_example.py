@@ -24,15 +24,13 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Brad Beckmann
 
 import math
 import m5
 from m5.objects import *
 from m5.defines import buildEnv
-from Ruby import create_topology, create_directories
-from Ruby import send_evicts
+from .Ruby import create_topology, create_directories
+from .Ruby import send_evicts
 
 #
 # Declare caches used by the protocol
@@ -64,7 +62,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
     #
     block_size_bits = int(math.log(options.cacheline_size, 2))
 
-    for i in xrange(options.num_cpus):
+    for i in range(options.num_cpus):
         #
         # First create the Ruby objects associated with this cpu
         # Only one cache exists for this protocol, so by default use the L1D
@@ -115,7 +113,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         l1_cntrl.responseToCache = MessageBuffer(ordered = True)
         l1_cntrl.responseToCache.slave = ruby_system.network.master
 
-    phys_mem_size = sum(map(lambda r: r.size(), system.mem_ranges))
+    phys_mem_size = sum([r.size() for r in system.mem_ranges])
     assert(phys_mem_size % options.num_dirs == 0)
     mem_module_size = phys_mem_size / options.num_dirs
 
@@ -127,7 +125,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
                                           clk_divider=3)
 
     mem_dir_cntrl_nodes, rom_dir_cntrl_node = create_directories(
-        options, system.mem_ranges, bootmem, ruby_system, system)
+        options, bootmem, ruby_system, system)
     dir_cntrl_nodes = mem_dir_cntrl_nodes[:]
     if rom_dir_cntrl_node is not None:
         dir_cntrl_nodes.append(rom_dir_cntrl_node)
@@ -144,6 +142,7 @@ def create_system(options, full_system, system, dma_ports, bootmem,
         dir_cntrl.dmaResponseFromDir.master = ruby_system.network.slave
         dir_cntrl.forwardFromDir = MessageBuffer()
         dir_cntrl.forwardFromDir.master = ruby_system.network.slave
+        dir_cntrl.requestToMemory = MessageBuffer()
         dir_cntrl.responseFromMemory = MessageBuffer()
 
 

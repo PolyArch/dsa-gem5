@@ -1,6 +1,6 @@
 # -*- mode:python -*-
 
-# Copyright (c) 2016 ARM Limited
+# Copyright (c) 2016-2017 ARM Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -37,8 +37,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Steve Reinhardt
 
 import sys
 import os
@@ -60,22 +58,17 @@ Import('*')
 env.SwitchingHeaders(
     Split('''
         decoder.hh
-        interrupts.hh
         isa.hh
         isa_traits.hh
         kernel_stats.hh
         locked_mem.hh
         microcode_rom.hh
-        mmapped_ipr.hh
-        mt.hh
-        process.hh
         pseudo_inst.hh
         registers.hh
         remote_gdb.hh
         stacktrace.hh
         types.hh
         utility.hh
-        vtophys.hh
         '''),
     env.subst('${TARGET_ISA}'))
 
@@ -226,6 +219,8 @@ Export('ISADesc')
 DebugFlag('IntRegs')
 DebugFlag('FloatRegs')
 DebugFlag('VecRegs')
+DebugFlag('VecPredRegs')
 DebugFlag('CCRegs')
 DebugFlag('MiscRegs')
-CompoundFlag('Registers', [ 'IntRegs', 'FloatRegs', 'CCRegs', 'MiscRegs' ])
+CompoundFlag('Registers', [ 'IntRegs', 'FloatRegs', 'VecRegs', 'VecPredRegs',
+                            'CCRegs', 'MiscRegs' ])

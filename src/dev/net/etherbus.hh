@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
  */
 
 /* @file
@@ -35,7 +33,6 @@
 #ifndef __DEV_NET_ETHERBUS_HH__
 #define __DEV_NET_ETHERBUS_HH__
 
-#include "dev/net/etherobject.hh"
 #include "dev/net/etherpkt.hh"
 #include "params/EtherBus.hh"
 #include "sim/eventq.hh"
@@ -43,7 +40,7 @@
 
 class EtherDump;
 class EtherInt;
-class EtherBus : public EtherObject
+class EtherBus : public SimObject
 {
   protected:
     typedef std::list<EtherInt *> devlist_t;
@@ -72,7 +69,8 @@ class EtherBus : public EtherObject
     void reg(EtherInt *dev);
     bool busy() const { return (bool)packet; }
     bool send(EtherInt *sender, EthPacketPtr &packet);
-    virtual EtherInt *getEthPort(const std::string &if_name, int idx);
+    Port &getPort(const std::string &if_name,
+                  PortID idx=InvalidPortID) override;
 };
 
 #endif // __DEV_NET_ETHERBUS_HH__

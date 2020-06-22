@@ -25,9 +25,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Niket Agarwal
- *          Tushar Krishna
  */
 
 
@@ -54,8 +51,8 @@ class GarnetNetwork : public Network
   public:
     typedef GarnetNetworkParams Params;
     GarnetNetwork(const Params *p);
+    ~GarnetNetwork() = default;
 
-    ~GarnetNetwork();
     void init();
 
     // Configuration (set externally)

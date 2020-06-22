@@ -38,9 +38,13 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+from __future__ import print_function
+
 import os
+import textwrap
 
 from gem5_scons.util import get_termcap
+import SCons.Script
 
 termcap = get_termcap()
 
@@ -80,10 +84,10 @@ class Transform(object):
         def strip(f):
             return strip_build_path(str(f), env)
         if len(source) > 0:
-            srcs = map(strip, source)
+            srcs = list(map(strip, source))
         else:
             srcs = ['']
-        tgts = map(strip, target)
+        tgts = list(map(strip, target))
         # surprisingly, os.path.commonprefix is a dumb char-by-char string
         # operation that has nothing to do with paths.
         com_pfx = os.path.commonprefix(srcs + tgts)
@@ -120,8 +124,74 @@ class Transform(object):
         # recalculate length in case com_pfx was modified
         com_pfx_len = len(com_pfx)
         def fmt(files):
-            f = map(lambda s: s[com_pfx_len:], files)
+            f = list(map(lambda s: s[com_pfx_len:], files))
             return ', '.join(f)
         return self.format % (com_pfx, fmt(srcs), fmt(tgts))
 
-__all__ = ['Transform']
+# The width warning and error messages should be wrapped at.
+text_width = None
+
+# This should work in python 3.3 and above.
+if text_width is None:
+    try:
+        import shutil
+        text_width = shutil.get_terminal_size().columns
+    except:
+        pass
+
+# This should work if the curses python module is installed.
+if text_width is None:
+    try:
+        import curses
+        try:
+            _, text_width = curses.initscr().getmaxyx()
+        finally:
+            curses.endwin()
+    except:
+        pass
+
+# If all else fails, default to 80 columns.
+if text_width is None:
+    text_width = 80
+
+def print_message(prefix, color, message, **kwargs):
+    # Precompute some useful values.
+    prefix_len = len(prefix)
+    wrap_width = text_width - prefix_len
+    padding = ' ' * prefix_len
+
+    # First split on newlines.
+    lines = message.split('\n')
+    # Then wrap each line to the required width.
+    wrapped_lines = []
+    for line in lines:
+        wrapped_lines.extend(textwrap.wrap(line, wrap_width))
+    # Finally add the prefix and padding on extra lines, and glue it all back
+    # together.
+    message = prefix + ('\n' + padding).join(wrapped_lines)
+    # Add in terminal escape sequences.
+    message = color + termcap.Bold + message + termcap.Normal
+    # Actually print the message.
+    print(message, **kwargs)
+    return message
+
+all_warnings = []
+def summarize_warnings():
+    if not all_warnings:
+        return
+    print(termcap.Yellow + termcap.Bold +
+            '*** Summary of Warnings ***' +
+            termcap.Normal)
+    list(map(print, all_warnings))
+
+def warning(*args, **kwargs):
+    message = ' '.join(args)
+    printed = print_message('Warning: ', termcap.Yellow, message, **kwargs)
+    all_warnings.append(printed)
+
+def error(*args, **kwargs):
+    message = ' '.join(args)
+    print_message('Error: ', termcap.Red, message, **kwargs)
+    SCons.Script.Exit(1)
+
+__all__ = ['Transform', 'warning', 'error']

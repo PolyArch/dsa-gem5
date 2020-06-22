@@ -25,21 +25,22 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Nathan Binkert
 
 Import('*')
 
 SimObject('ClockedObject.py')
 SimObject('TickedObject.py')
+SimObject('Workload.py')
 SimObject('Root.py')
 SimObject('ClockDomain.py')
 SimObject('VoltageDomain.py')
 SimObject('System.py')
 SimObject('DVFSHandler.py')
 SimObject('SubSystem.py')
+SimObject('RedirectPath.py')
+SimObject('PowerState.py')
+SimObject('PowerDomain.py')
 
-Source('arguments.cc')
 Source('async.cc')
 Source('backtrace_%s.cc' % env['BACKTRACE_IMPL'])
 Source('core.cc')
@@ -54,6 +55,10 @@ Source('global_event.cc')
 Source('init.cc', add_tags='python')
 Source('init_signals.cc')
 Source('main.cc', tags='main')
+Source('kernel_workload.cc')
+Source('port.cc')
+Source('python.cc', add_tags='python')
+Source('redirect_path.cc')
 Source('root.cc')
 Source('serialize.cc')
 Source('drain.cc')
@@ -72,18 +77,24 @@ Source('system.cc')
 Source('dvfs_handler.cc')
 Source('clocked_object.cc')
 Source('mathexpr.cc')
+Source('power_state.cc')
+Source('power_domain.cc')
+
+GTest('byteswap.test', 'byteswap.test.cc', '../base/types.cc')
+GTest('guest_abi.test', 'guest_abi.test.cc')
 
 if env['TARGET_ISA'] != 'null':
     SimObject('InstTracer.py')
     SimObject('Process.py')
-    Source('aux_vector.cc')
     Source('faults.cc')
     Source('process.cc')
     Source('fd_array.cc')
     Source('fd_entry.cc')
+    Source('mem_state.cc')
     Source('pseudo_inst.cc')
     Source('syscall_emul.cc')
     Source('syscall_desc.cc')
+    Source('vma.cc')
 
 if env['TARGET_ISA'] != 'x86':
     Source('microcode_rom.cc')
@@ -111,5 +122,7 @@ DebugFlag('WorkItems')
 DebugFlag('ClockDomain')
 DebugFlag('VoltageDomain')
 DebugFlag('DVFS')
+DebugFlag('Vma')
+DebugFlag('PowerDomain')
 
 CompoundFlag('SyscallAll', [ 'SyscallBase', 'SyscallVerbose'])

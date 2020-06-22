@@ -23,8 +23,6 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Steve Reinhardt
 
 import m5
 from m5.objects import *
@@ -97,6 +95,3 @@ cpu.connectAllPorts(system.ruby._cpu_ports[0])
 
 root = Root(full_system = False, system = system)
 root.system.mem_mode = 'timing'
-
-# Not much point in this being higher than the L1 latency
-m5.ticks.setGlobalFrequency('1ns')

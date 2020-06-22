@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011 ARM Limited
+ * Copyright (c) 2011, 2019 ARM Limited
  * All rights reserved.
  *
  * The license below extends only to copyright in the software and shall
@@ -36,8 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Kevin Lim
  */
 
 #ifndef __CPU_BASE_DYN_INST_IMPL_HH__
@@ -63,7 +61,13 @@ BaseDynInst<Impl>::BaseDynInst(const StaticInstPtr &_staticInst,
                                const StaticInstPtr &_macroop,
                                TheISA::PCState _pc, TheISA::PCState _predPC,
                                InstSeqNum seq_num, ImplCPU *cpu)
-  : staticInst(_staticInst), cpu(cpu), traceData(NULL), macroop(_macroop)
+  : staticInst(_staticInst), cpu(cpu),
+    thread(nullptr),
+    traceData(nullptr),
+    macroop(_macroop),
+    memData(nullptr),
+    savedReq(nullptr),
+    reqToVerify(nullptr)
 {
     seqNum = seq_num;
 
@@ -88,8 +92,7 @@ BaseDynInst<Impl>::initVars()
 {
     memData = NULL;
     effAddr = 0;
-    physEffAddrLow = 0;
-    physEffAddrHigh = 0;
+    physEffAddr = 0;
     readyRegs = 0;
     memReqFlags = 0;
 
@@ -98,15 +101,13 @@ BaseDynInst<Impl>::initVars()
     instFlags.reset();
     instFlags[RecordResult] = true;
     instFlags[Predicate] = true;
+    instFlags[MemAccPredicate] = true;
 
     lqIdx = -1;
     sqIdx = -1;
 
     // Eventually make this a parameter.
     threadNumber = 0;
-
-    // Also make this a parameter, or perhaps get it from xc or cpu.
-    asid = 0;
 
     // Initialize the fault to be NoFault.
     fault = NoFault;
@@ -217,7 +218,7 @@ BaseDynInst<Impl>::markSrcRegReady(RegIndex src_idx)
 
 template <class Impl>
 bool
-BaseDynInst<Impl>::eaSrcsReady()
+BaseDynInst<Impl>::eaSrcsReady() const
 {
     // For now I am assuming that src registers 1..n-1 are the ones that the
     // EA calc depends on.  (i.e. src reg 0 is the source of the data to be
@@ -230,5 +231,35 @@ BaseDynInst<Impl>::eaSrcsReady()
 
     return true;
 }
+
+
+
+template <class Impl>
+void
+BaseDynInst<Impl>::setSquashed()
+{
+    status.set(Squashed);
+
+    if (!isPinnedRegsRenamed() || isPinnedRegsSquashDone())
+        return;
+
+    // This inst has been renamed already so it may go through rename
+    // again (e.g. if the squash is due to memory access order violation).
+    // Reset the write counters for all pinned destination register to ensure
+    // that they are in a consistent state for a possible re-rename. This also
+    // ensures that dest regs will be pinned to the same phys register if
+    // re-rename happens.
+    for (int idx = 0; idx < numDestRegs(); idx++) {
+        PhysRegIdPtr phys_dest_reg = renamedDestRegIdx(idx);
+        if (phys_dest_reg->isPinned()) {
+            phys_dest_reg->incrNumPinnedWrites();
+            if (isPinnedRegsWritten())
+                phys_dest_reg->incrNumPinnedWritesToComplete();
+        }
+    }
+    setPinnedRegsSquashDone();
+}
+
+
 
 #endif//__CPU_BASE_DYN_INST_IMPL_HH__

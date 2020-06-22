@@ -33,9 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
- *          Giacomo Gabrielli
  */
 
 #ifndef __ARCH_ARM_STAGE2_LOOKUP_HH__
@@ -83,7 +80,7 @@ class Stage2LookUp : public BaseTLB::Translation
         fault(NoFault), complete(false), selfDelete(false)
     {
         req = std::make_shared<Request>();
-        req->setVirt(0, s1Te.pAddr(s1Req->getVaddr()), s1Req->getSize(),
+        req->setVirt(s1Te.pAddr(s1Req->getVaddr()), s1Req->getSize(),
                      s1Req->getFlags(), s1Req->masterId(), 0);
     }
 

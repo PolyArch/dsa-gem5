@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #ifndef __ARCH_X86_ISATRAITS_HH__
@@ -45,13 +43,9 @@
 #include "base/compiler.hh"
 #include "base/types.hh"
 
-namespace LittleEndianGuest {}
-
 namespace X86ISA
 {
-    //This makes sure the little endian version of certain functions
-    //are used.
-    using namespace LittleEndianGuest;
+    const ByteOrder GuestByteOrder = LittleEndianByteOrder;
 
     const Addr PageShift = 12;
     const Addr PageBytes = ULL(1) << PageShift;

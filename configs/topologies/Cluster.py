@@ -23,11 +23,11 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Jason Power
 
+from __future__ import print_function
+from __future__ import absolute_import
 
-from BaseTopology import BaseTopology
+from topologies.BaseTopology import BaseTopology
 
 class Cluster(BaseTopology):
     """ A cluster is a group of nodes which are all one hop from eachother
@@ -83,7 +83,8 @@ class Cluster(BaseTopology):
 
         for node in self.nodes:
             if type(node) == Cluster:
-                node.makeTopology(options, network, IntLink, ExtLink, Router)
+                node.makeTopology(options, network, IntLink,
+                                  ExtLink, Router)
 
                 # connect this cluster to the router
                 link_out = IntLink(link_id=self.num_int_links(), src_node=self.router,

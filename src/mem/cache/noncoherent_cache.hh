@@ -36,13 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Erik Hallnor
- *          Dave Greene
- *          Steve Reinhardt
- *          Ron Dreslinski
- *          Andreas Hansson
- *          Nikos Nikoleris
  */
 
 /**
@@ -86,7 +79,7 @@ class NoncoherentCache : public BaseCache
     void doWritebacksAtomic(PacketList& writebacks) override;
 
     void serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt,
-                            CacheBlk *blk, PacketList& writebacks) override;
+                            CacheBlk *blk) override;
 
     void recvTimingResp(PacketPtr pkt) override;
 
@@ -98,7 +91,7 @@ class NoncoherentCache : public BaseCache
         panic("Unexpected timing snoop response %s", pkt->print());
     }
 
-    Cycles handleAtomicReqMiss(PacketPtr pkt, CacheBlk *blk,
+    Cycles handleAtomicReqMiss(PacketPtr pkt, CacheBlk *&blk,
                                PacketList &writebacks) override;
 
     Tick recvAtomic(PacketPtr pkt) override;
@@ -120,11 +113,10 @@ class NoncoherentCache : public BaseCache
      * needs_writeble parameter is ignored.
      */
     PacketPtr createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
-                               bool needs_writable) const override;
+                               bool needs_writable,
+                               bool is_whole_line_write) const override;
 
     M5_NODISCARD PacketPtr evictBlock(CacheBlk *blk) override;
-
-    void evictBlock(CacheBlk *blk, PacketList &writebacks) override;
 
   public:
     NoncoherentCache(const NoncoherentCacheParams *p);

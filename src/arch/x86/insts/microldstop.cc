@@ -34,8 +34,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #include "arch/x86/insts/microldstop.hh"
@@ -44,8 +42,9 @@
 
 namespace X86ISA
 {
-    std::string LdStOp::generateDisassembly(Addr pc,
-            const SymbolTable *symtab) const
+    std::string
+    LdStOp::generateDisassembly(
+            Addr pc, const Loader::SymbolTable *symtab) const
     {
         std::stringstream response;
 
@@ -60,8 +59,9 @@ namespace X86ISA
         return response.str();
     }
 
-    std::string LdStSplitOp::generateDisassembly(Addr pc,
-            const SymbolTable *symtab) const
+    std::string
+    LdStSplitOp::generateDisassembly(
+            Addr pc, const Loader::SymbolTable *symtab) const
     {
         std::stringstream response;
 

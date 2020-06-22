@@ -1,4 +1,4 @@
-# Copyright (c) 2018 ARM Limited
+# Copyright (c) 2018, 2019 ARM Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -32,14 +32,12 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Andreas Sandberg
 
 from m5.params import *
 from m5.SimObject import *
 
-from Serial import SerialDevice
-from Terminal import Terminal
+from m5.objects.Serial import SerialDevice
+from m5.objects.Terminal import Terminal
 
 class ArmSemihosting(SimObject):
     type = 'ArmSemihosting'
@@ -52,6 +50,8 @@ class ArmSemihosting(SimObject):
                           "Standard output (stdout for gem5's terminal)")
     stderr = Param.String("stderr",
                           "Standard error (stderr for gem5's terminal)")
+    files_root_dir = Param.String("",
+        "Host root directory for files handled by Semihosting")
 
     mem_reserve = Param.MemorySize("32MB",
         "Amount of memory to reserve at the start of the address map. This "

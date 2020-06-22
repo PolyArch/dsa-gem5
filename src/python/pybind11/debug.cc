@@ -37,9 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Nathan Binkert
- *          Andreas Sandberg
  */
 
 #include "pybind11/pybind11.h"
@@ -75,7 +72,7 @@ ignore(const char *expr)
 {
     ObjectMatch ignore(expr);
 
-    Trace::getDebugLogger()->setIgnore(ignore);
+    Trace::getDebugLogger()->addIgnore(ignore);
 }
 
 void

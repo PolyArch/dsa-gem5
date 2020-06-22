@@ -36,8 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Kevin Lim
  */
 
 #ifndef __CPU_O3_MEM_DEP_UNIT_IMPL_HH__
@@ -171,7 +169,7 @@ MemDepUnit<MemDepPred, Impl>::setIQ(InstructionQueue<Impl> *iq_ptr)
 
 template <class MemDepPred, class Impl>
 void
-MemDepUnit<MemDepPred, Impl>::insert(DynInstPtr &inst)
+MemDepUnit<MemDepPred, Impl>::insert(const DynInstPtr &inst)
 {
     ThreadID tid = inst->threadNumber;
 
@@ -191,11 +189,11 @@ MemDepUnit<MemDepPred, Impl>::insert(DynInstPtr &inst)
     // Check any barriers and the dependence predictor for any
     // producing memrefs/stores.
     InstSeqNum producing_store;
-    if (inst->isLoad() && loadBarrier) {
+    if ((inst->isLoad() || inst->isAtomic()) && loadBarrier) {
         DPRINTF(MemDepUnit, "Load barrier [sn:%lli] in flight\n",
                 loadBarrierSN);
         producing_store = loadBarrierSN;
-    } else if (inst->isStore() && storeBarrier) {
+    } else if ((inst->isStore() || inst->isAtomic()) && storeBarrier) {
         DPRINTF(MemDepUnit, "Store barrier [sn:%lli] in flight\n",
                 storeBarrierSN);
         producing_store = storeBarrierSN;
@@ -252,8 +250,8 @@ MemDepUnit<MemDepPred, Impl>::insert(DynInstPtr &inst)
         }
     }
 
-    if (inst->isStore()) {
-        DPRINTF(MemDepUnit, "Inserting store PC %s [sn:%lli].\n",
+    if (inst->isStore() || inst->isAtomic()) {
+        DPRINTF(MemDepUnit, "Inserting store/atomic PC %s [sn:%lli].\n",
                 inst->pcState(), inst->seqNum);
 
         depPred.insertStore(inst->instAddr(), inst->seqNum, inst->threadNumber);
@@ -268,7 +266,7 @@ MemDepUnit<MemDepPred, Impl>::insert(DynInstPtr &inst)
 
 template <class MemDepPred, class Impl>
 void
-MemDepUnit<MemDepPred, Impl>::insertNonSpec(DynInstPtr &inst)
+MemDepUnit<MemDepPred, Impl>::insertNonSpec(const DynInstPtr &inst)
 {
     ThreadID tid = inst->threadNumber;
 
@@ -288,8 +286,8 @@ MemDepUnit<MemDepPred, Impl>::insertNonSpec(DynInstPtr &inst)
 
     // Might want to turn this part into an inline function or something.
     // It's shared between both insert functions.
-    if (inst->isStore()) {
-        DPRINTF(MemDepUnit, "Inserting store PC %s [sn:%lli].\n",
+    if (inst->isStore() || inst->isAtomic()) {
+        DPRINTF(MemDepUnit, "Inserting store/atomic PC %s [sn:%lli].\n",
                 inst->pcState(), inst->seqNum);
 
         depPred.insertStore(inst->instAddr(), inst->seqNum, inst->threadNumber);
@@ -304,7 +302,7 @@ MemDepUnit<MemDepPred, Impl>::insertNonSpec(DynInstPtr &inst)
 
 template <class MemDepPred, class Impl>
 void
-MemDepUnit<MemDepPred, Impl>::insertBarrier(DynInstPtr &barr_inst)
+MemDepUnit<MemDepPred, Impl>::insertBarrier(const DynInstPtr &barr_inst)
 {
     InstSeqNum barr_sn = barr_inst->seqNum;
     // Memory barriers block loads and stores, write barriers only stores.
@@ -340,7 +338,7 @@ MemDepUnit<MemDepPred, Impl>::insertBarrier(DynInstPtr &barr_inst)
 
 template <class MemDepPred, class Impl>
 void
-MemDepUnit<MemDepPred, Impl>::regsReady(DynInstPtr &inst)
+MemDepUnit<MemDepPred, Impl>::regsReady(const DynInstPtr &inst)
 {
     DPRINTF(MemDepUnit, "Marking registers as ready for "
             "instruction PC %s [sn:%lli].\n",
@@ -363,7 +361,7 @@ MemDepUnit<MemDepPred, Impl>::regsReady(DynInstPtr &inst)
 
 template <class MemDepPred, class Impl>
 void
-MemDepUnit<MemDepPred, Impl>::nonSpecInstReady(DynInstPtr &inst)
+MemDepUnit<MemDepPred, Impl>::nonSpecInstReady(const DynInstPtr &inst)
 {
     DPRINTF(MemDepUnit, "Marking non speculative "
             "instruction PC %s as ready [sn:%lli].\n",
@@ -376,7 +374,7 @@ MemDepUnit<MemDepPred, Impl>::nonSpecInstReady(DynInstPtr &inst)
 
 template <class MemDepPred, class Impl>
 void
-MemDepUnit<MemDepPred, Impl>::reschedule(DynInstPtr &inst)
+MemDepUnit<MemDepPred, Impl>::reschedule(const DynInstPtr &inst)
 {
     instsToReplay.push_back(inst);
 }
@@ -404,7 +402,7 @@ MemDepUnit<MemDepPred, Impl>::replay()
 
 template <class MemDepPred, class Impl>
 void
-MemDepUnit<MemDepPred, Impl>::completed(DynInstPtr &inst)
+MemDepUnit<MemDepPred, Impl>::completed(const DynInstPtr &inst)
 {
     DPRINTF(MemDepUnit, "Completed mem instruction PC %s [sn:%lli].\n",
             inst->pcState(), inst->seqNum);
@@ -428,7 +426,7 @@ MemDepUnit<MemDepPred, Impl>::completed(DynInstPtr &inst)
 
 template <class MemDepPred, class Impl>
 void
-MemDepUnit<MemDepPred, Impl>::completeBarrier(DynInstPtr &inst)
+MemDepUnit<MemDepPred, Impl>::completeBarrier(const DynInstPtr &inst)
 {
     wakeDependents(inst);
     completed(inst);
@@ -449,10 +447,11 @@ MemDepUnit<MemDepPred, Impl>::completeBarrier(DynInstPtr &inst)
 
 template <class MemDepPred, class Impl>
 void
-MemDepUnit<MemDepPred, Impl>::wakeDependents(DynInstPtr &inst)
+MemDepUnit<MemDepPred, Impl>::wakeDependents(const DynInstPtr &inst)
 {
-    // Only stores and barriers have dependents.
-    if (!inst->isStore() && !inst->isMemBarrier() && !inst->isWriteBarrier()) {
+    // Only stores, atomics and barriers have dependents.
+    if (!inst->isStore() && !inst->isAtomic() && !inst->isMemBarrier() &&
+        !inst->isWriteBarrier()) {
         return;
     }
 
@@ -536,8 +535,8 @@ MemDepUnit<MemDepPred, Impl>::squash(const InstSeqNum &squashed_num,
 
 template <class MemDepPred, class Impl>
 void
-MemDepUnit<MemDepPred, Impl>::violation(DynInstPtr &store_inst,
-                                        DynInstPtr &violating_load)
+MemDepUnit<MemDepPred, Impl>::violation(const DynInstPtr &store_inst,
+                                        const DynInstPtr &violating_load)
 {
     DPRINTF(MemDepUnit, "Passing violating PCs to store sets,"
             " load: %#x, store: %#x\n", violating_load->instAddr(),
@@ -548,7 +547,7 @@ MemDepUnit<MemDepPred, Impl>::violation(DynInstPtr &store_inst,
 
 template <class MemDepPred, class Impl>
 void
-MemDepUnit<MemDepPred, Impl>::issue(DynInstPtr &inst)
+MemDepUnit<MemDepPred, Impl>::issue(const DynInstPtr &inst)
 {
     DPRINTF(MemDepUnit, "Issuing instruction PC %#x [sn:%lli].\n",
             inst->instAddr(), inst->seqNum);
@@ -558,7 +557,7 @@ MemDepUnit<MemDepPred, Impl>::issue(DynInstPtr &inst)
 
 template <class MemDepPred, class Impl>
 inline typename MemDepUnit<MemDepPred,Impl>::MemDepEntryPtr &
-MemDepUnit<MemDepPred, Impl>::findInHash(const DynInstPtr &inst)
+MemDepUnit<MemDepPred, Impl>::findInHash(const DynInstConstPtr &inst)
 {
     MemDepHashIt hash_it = memDepHash.find(inst->seqNum);
 
@@ -592,7 +591,7 @@ MemDepUnit<MemDepPred, Impl>::dumpLists()
         int num = 0;
 
         while (inst_list_it != instList[tid].end()) {
-            cprintf("Instruction:%i\nPC: %s\n[sn:%i]\n[tid:%i]\nIssued:%i\n"
+            cprintf("Instruction:%i\nPC: %s\n[sn:%llu]\n[tid:%i]\nIssued:%i\n"
                     "Squashed:%i\n\n",
                     num, (*inst_list_it)->pcState(),
                     (*inst_list_it)->seqNum,

@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: David Guillen Fandos
  */
 
 #ifndef __SIM_POWER_POWER_MODEL_HH__
@@ -86,6 +84,8 @@ class PowerModelState : public SimObject
     }
 
     void regStats() {
+        SimObject::regStats();
+
         dynamicPower
           .method(this, &PowerModelState::getDynamicPower)
           .name(params()->name + ".dynamic_power")
@@ -137,6 +137,8 @@ class PowerModel : public SimObject
     double getStaticPower() const;
 
     void regStats() {
+        SimObject::regStats();
+
         dynamicPower
           .method(this, &PowerModel::getDynamicPower)
           .name(params()->name + ".dynamic_power")

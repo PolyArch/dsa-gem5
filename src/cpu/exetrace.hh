@@ -24,9 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Steve Reinhardt
- *          Nathan Binkert
  */
 
 #ifndef __CPU_EXETRACE_HH__
@@ -57,7 +54,6 @@ class ExeTracerRecord : public InstRecord
     void traceInst(const StaticInstPtr &inst, bool ran);
 
     void dump();
-    virtual void dumpTicks(std::ostream &outs);
 };
 
 class ExeTracer : public InstTracer

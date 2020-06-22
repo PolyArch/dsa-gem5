@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andreas Sandberg
  */
 
 #ifndef __DEV_VIRTIO_FS9P_HH__
@@ -147,8 +145,9 @@ class VirtIO9PBase : public VirtIODeviceBase
     class FSQueue : public VirtQueue
     {
       public:
-        FSQueue(PortProxy &proxy, uint16_t size, VirtIO9PBase &_parent)
-            : VirtQueue(proxy, size), parent(_parent) {}
+        FSQueue(PortProxy &proxy, ByteOrder bo,
+                uint16_t size, VirtIO9PBase &_parent)
+            : VirtQueue(proxy, bo, size), parent(_parent) {}
         virtual ~FSQueue() {}
 
         void onNotifyDescriptor(VirtDescriptor *desc);

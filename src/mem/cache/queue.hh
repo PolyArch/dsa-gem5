@@ -36,10 +36,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Erik Hallnor
- *          Andreas Sandberg
- *          Andreas Hansson
  */
 
 /** @file
@@ -51,7 +47,9 @@
 
 #include <cassert>
 #include <string>
+#include <type_traits>
 
+#include "base/logging.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
 #include "debug/Drain.hh"
@@ -67,6 +65,9 @@
 template<class Entry>
 class Queue : public Drainable
 {
+    static_assert(std::is_base_of<QueueEntry, Entry>::value,
+        "Entry must be derived from QueueEntry");
+
   protected:
     /** Local label (for functional print requests) */
     const std::string label;
@@ -108,8 +109,7 @@ class Queue : public Drainable
                 return readyList.insert(i, entry);
             }
         }
-        assert(false);
-        return readyList.end();  // keep stupid compilers happy
+        panic("Failed to add to ready list.");
     }
 
     /** The number of entries that are in service. */
@@ -170,18 +170,19 @@ class Queue : public Drainable
             // cacheable accesses being added to an WriteQueueEntry
             // serving an uncacheable access
             if (!(ignore_uncacheable && entry->isUncacheable()) &&
-                entry->blkAddr == blk_addr && entry->isSecure == is_secure) {
+                entry->matchBlockAddr(blk_addr, is_secure)) {
                 return entry;
             }
         }
         return nullptr;
     }
 
-    bool trySatisfyFunctional(PacketPtr pkt, Addr blk_addr)
+    bool trySatisfyFunctional(PacketPtr pkt)
     {
         pkt->pushLabel(label);
         for (const auto& entry : allocatedList) {
-            if (entry->blkAddr == blk_addr && entry->trySatisfyFunctional(pkt)) {
+            if (entry->matchBlockAddr(pkt) &&
+                entry->trySatisfyFunctional(pkt)) {
                 pkt->popLabel();
                 return true;
             }
@@ -191,16 +192,17 @@ class Queue : public Drainable
     }
 
     /**
-     * Find any pending requests that overlap the given request.
-     * @param blk_addr Block address.
-     * @param is_secure True if the target memory space is secure.
-     * @return A pointer to the earliest matching WriteQueueEntry.
+     * Find any pending requests that overlap the given request of a
+     * different queue.
+     *
+     * @param entry The entry to be compared against.
+     * @return A pointer to the earliest matching entry.
      */
-    Entry* findPending(Addr blk_addr, bool is_secure) const
+    Entry* findPending(const QueueEntry* entry) const
     {
-        for (const auto& entry : readyList) {
-            if (entry->blkAddr == blk_addr && entry->isSecure == is_secure) {
-                return entry;
+        for (const auto& ready_entry : readyList) {
+            if (ready_entry->conflictAddr(entry)) {
+                return ready_entry;
             }
         }
         return nullptr;

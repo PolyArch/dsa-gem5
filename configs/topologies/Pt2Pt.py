@@ -24,14 +24,14 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-# Authors: Brad Beckmann
-#          Tushar Krishna
+
+from __future__ import print_function
+from __future__ import absolute_import
 
 from m5.params import *
 from m5.objects import *
 
-from BaseTopology import SimpleTopology
+from topologies.BaseTopology import SimpleTopology
 
 class Pt2Pt(SimpleTopology):
     description='Pt2Pt'
@@ -63,8 +63,8 @@ class Pt2Pt(SimpleTopology):
 
         link_count = len(nodes)
         int_links = []
-        for i in xrange(len(nodes)):
-            for j in xrange(len(nodes)):
+        for i in range(len(nodes)):
+            for j in range(len(nodes)):
                 if (i != j):
                     link_count += 1
                     int_links.append(IntLink(link_id=link_count,

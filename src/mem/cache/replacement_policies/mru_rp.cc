@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Daniel Carvalho
  */
 
 #include "mem/cache/replacement_policies/mru_rp.hh"
@@ -74,9 +72,14 @@ MRURP::getVictim(const ReplacementCandidates& candidates) const
     // Visit all candidates to find victim
     ReplaceableEntry* victim = candidates[0];
     for (const auto& candidate : candidates) {
-        // Update victim entry if necessary
-        if (std::static_pointer_cast<MRUReplData>(
-                    candidate->replacementData)->lastTouchTick >
+        std::shared_ptr<MRUReplData> candidate_replacement_data =
+            std::static_pointer_cast<MRUReplData>(candidate->replacementData);
+
+        // Stop searching entry if a cache line that doesn't warm up is found.
+        if (candidate_replacement_data->lastTouchTick == 0) {
+            victim = candidate;
+            break;
+        } else if (candidate_replacement_data->lastTouchTick >
                 std::static_pointer_cast<MRUReplData>(
                     victim->replacementData)->lastTouchTick) {
             victim = candidate;

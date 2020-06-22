@@ -24,8 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
  */
 
 #include "dev/x86/speaker.hh"
@@ -48,7 +46,7 @@ X86ISA::Speaker::read(PacketPtr pkt)
             controlVal.gate ? "on" : "off",
             controlVal.speaker ? "on" : "off",
             controlVal.timer ? "on" : "off");
-    pkt->set((uint8_t)controlVal);
+    pkt->setLE((uint8_t)controlVal);
     pkt->makeAtomicResponse();
     return latency;
 }
@@ -58,7 +56,7 @@ X86ISA::Speaker::write(PacketPtr pkt)
 {
     assert(pkt->getAddr() == pioAddr);
     assert(pkt->getSize() == 1);
-    SpeakerControl val = pkt->get<uint8_t>();
+    SpeakerControl val = pkt->getLE<uint8_t>();
     controlVal.gate = val.gate;
     //Change the gate value in the timer.
     if (!val.gate)

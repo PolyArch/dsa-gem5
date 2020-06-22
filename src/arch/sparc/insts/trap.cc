@@ -24,9 +24,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Gabe Black
- *          Steve Reinhardt
  */
 
 #include "arch/sparc/insts/trap.hh"
@@ -35,7 +32,7 @@ namespace SparcISA
 {
 
 std::string
-Trap::generateDisassembly(Addr pc, const SymbolTable *symtab) const
+Trap::generateDisassembly(Addr pc, const Loader::SymbolTable *symtab) const
 {
     std::stringstream response;
 

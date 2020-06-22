@@ -37,11 +37,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Ali Saidi
- *          Steve Reinhardt
- *          Andreas Hansson
- *          Erfan Azarkhish
  */
 
 /**
@@ -56,8 +51,9 @@
 #include <deque>
 
 #include "base/types.hh"
-#include "mem/mem_object.hh"
+#include "mem/port.hh"
 #include "params/SerialLink.hh"
+#include "sim/clocked_object.hh"
 
 /**
  * SerialLink is a simple variation of the Bridge class, with the ability to
@@ -66,7 +62,7 @@
  * whole packet to start the serialization. But the deserializer waits for the
  * complete packet to check its integrity first.
   */
-class SerialLink : public MemObject
+class SerialLink : public ClockedObject
 {
   protected:
 
@@ -315,10 +311,8 @@ class SerialLink : public MemObject
 
   public:
 
-    virtual BaseMasterPort& getMasterPort(const std::string& if_name,
-                                          PortID idx = InvalidPortID);
-    virtual BaseSlavePort& getSlavePort(const std::string& if_name,
-                                        PortID idx = InvalidPortID);
+    Port &getPort(const std::string &if_name,
+                  PortID idx=InvalidPortID);
 
     virtual void init();
 

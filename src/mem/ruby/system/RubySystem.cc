@@ -1,4 +1,16 @@
 /*
+ * Copyright (c) 2019 ARM Limited
+ * All rights reserved.
+ *
+ * The license below extends only to copyright in the software and shall
+ * not be construed as granting a license to any other intellectual
+ * property including but not limited to intellectual property relating
+ * to a hardware implementation of the functionality of the software
+ * licensed hereunder.  You may use the software subject to the license
+ * terms below provided that you ensure that this notice is replicated
+ * unmodified and in its entirety in all distributions of the software,
+ * modified or unmodified, in source code or in binary form.
+ *
  * Copyright (c) 1999-2011 Mark D. Hill and David A. Wood
  * All rights reserved.
  *
@@ -40,6 +52,8 @@
 #include "debug/RubySystem.hh"
 #include "mem/ruby/common/Address.hh"
 #include "mem/ruby/network/Network.hh"
+#include "mem/ruby/system/DMASequencer.hh"
+#include "mem/ruby/system/Sequencer.hh"
 #include "mem/simple_mem.hh"
 #include "sim/eventq.hh"
 #include "sim/simulate.hh"
@@ -317,7 +331,7 @@ RubySystem::unserialize(CheckpointIn &cp)
 
     UNSERIALIZE_SCALAR(cache_trace_file);
     UNSERIALIZE_SCALAR(cache_trace_size);
-    cache_trace_file = cp.cptDir + "/" + cache_trace_file;
+    cache_trace_file = cp.getCptDir() + "/" + cache_trace_file;
 
     readCompressedTrace(cache_trace_file, uncompressed_trace,
                         cache_trace_size);
@@ -409,30 +423,43 @@ RubySystem::functionalRead(PacketPtr pkt)
     unsigned int num_ro = 0;
     unsigned int num_rw = 0;
     unsigned int num_busy = 0;
+    unsigned int num_maybe_stale = 0;
     unsigned int num_backing_store = 0;
     unsigned int num_invalid = 0;
+
+    AbstractController *ctrl_ro = nullptr;
+    AbstractController *ctrl_rw = nullptr;
+    AbstractController *ctrl_backing_store = nullptr;
 
     // In this loop we count the number of controllers that have the given
     // address in read only, read write and busy states.
     for (unsigned int i = 0; i < num_controllers; ++i) {
         access_perm = m_abs_cntrl_vec[i]-> getAccessPermission(line_address);
-        if (access_perm == AccessPermission_Read_Only)
+        if (access_perm == AccessPermission_Read_Only){
             num_ro++;
-        else if (access_perm == AccessPermission_Read_Write)
+            if (ctrl_ro == nullptr) ctrl_ro = m_abs_cntrl_vec[i];
+        }
+        else if (access_perm == AccessPermission_Read_Write){
             num_rw++;
+            if (ctrl_rw == nullptr) ctrl_rw = m_abs_cntrl_vec[i];
+        }
         else if (access_perm == AccessPermission_Busy)
             num_busy++;
-        else if (access_perm == AccessPermission_Backing_Store)
+        else if (access_perm == AccessPermission_Maybe_Stale)
+            num_maybe_stale++;
+        else if (access_perm == AccessPermission_Backing_Store) {
             // See RubySlicc_Exports.sm for details, but Backing_Store is meant
             // to represent blocks in memory *for Broadcast/Snooping protocols*,
             // where memory has no idea whether it has an exclusive copy of data
             // or not.
             num_backing_store++;
+            if (ctrl_backing_store == nullptr)
+                ctrl_backing_store = m_abs_cntrl_vec[i];
+        }
         else if (access_perm == AccessPermission_Invalid ||
                  access_perm == AccessPermission_NotPresent)
             num_invalid++;
     }
-    assert(num_rw <= 1);
 
     // This if case is meant to capture what happens in a Broadcast/Snoop
     // protocol where the block does not exist in the cache hierarchy. You
@@ -444,31 +471,48 @@ RubySystem::functionalRead(PacketPtr pkt)
     // it only if it's not in the cache hierarchy at all.
     if (num_invalid == (num_controllers - 1) && num_backing_store == 1) {
         DPRINTF(RubySystem, "only copy in Backing_Store memory, read from it\n");
-        for (unsigned int i = 0; i < num_controllers; ++i) {
-            access_perm = m_abs_cntrl_vec[i]->getAccessPermission(line_address);
-            if (access_perm == AccessPermission_Backing_Store) {
-                m_abs_cntrl_vec[i]->functionalRead(line_address, pkt);
-                return true;
-            }
+        ctrl_backing_store->functionalRead(line_address, pkt);
+        return true;
+    } else if (num_ro > 0 || num_rw >= 1) {
+        if (num_rw > 1) {
+            // We iterate over the vector of abstract controllers, and return
+            // the first copy found. If we have more than one cache with block
+            // in writable permission, the first one found would be returned.
+            warn("More than one Abstract Controller with RW permission for "
+                 "addr: %#x on cacheline: %#x.", address, line_address);
         }
-    } else if (num_ro > 0 || num_rw == 1) {
         // In Broadcast/Snoop protocols, this covers if you know the block
         // exists somewhere in the caching hierarchy, then you want to read any
         // valid RO or RW block.  In directory protocols, same thing, you want
         // to read any valid readable copy of the block.
-        DPRINTF(RubySystem, "num_busy = %d, num_ro = %d, num_rw = %d\n",
-                num_busy, num_ro, num_rw);
-        // In this loop, we try to figure which controller has a read only or
-        // a read write copy of the given address. Any valid copy would suffice
-        // for a functional read.
-        for (unsigned int i = 0;i < num_controllers;++i) {
-            access_perm = m_abs_cntrl_vec[i]->getAccessPermission(line_address);
-            if (access_perm == AccessPermission_Read_Only ||
-                access_perm == AccessPermission_Read_Write) {
-                m_abs_cntrl_vec[i]->functionalRead(line_address, pkt);
-                return true;
-            }
+        DPRINTF(RubySystem, "num_maybe_stale=%d, num_busy = %d, num_ro = %d, "
+                            "num_rw = %d\n",
+                num_maybe_stale, num_busy, num_ro, num_rw);
+        // Use the copy from the controller with read/write permission (if
+        // any), otherwise use get the first read only found
+        if (ctrl_rw) {
+            ctrl_rw->functionalRead(line_address, pkt);
+        } else {
+            assert(ctrl_ro);
+            ctrl_ro->functionalRead(line_address, pkt);
         }
+        return true;
+    } else if ((num_busy + num_maybe_stale) > 0) {
+        // No controller has a valid copy of the block, but a transient or
+        // stale state indicates a valid copy should be in transit in the
+        // network or in a message buffer waiting to be handled
+        DPRINTF(RubySystem, "Controllers functionalRead lookup "
+                            "(num_maybe_stale=%d, num_busy = %d)\n",
+                num_maybe_stale, num_busy);
+        for (unsigned int i = 0; i < num_controllers;++i) {
+            if (m_abs_cntrl_vec[i]->functionalReadBuffers(pkt))
+                return true;
+        }
+        DPRINTF(RubySystem, "Network functionalRead lookup "
+                            "(num_maybe_stale=%d, num_busy = %d)\n",
+                num_maybe_stale, num_busy);
+        if (m_network->functionalRead(pkt))
+            return true;
     }
 
     return false;
@@ -500,6 +544,17 @@ RubySystem::functionalWrite(PacketPtr pkt)
             num_functional_writes +=
                 m_abs_cntrl_vec[i]->functionalWrite(line_addr, pkt);
         }
+
+        // Also updates requests pending in any sequencer associated
+        // with the controller
+        if (m_abs_cntrl_vec[i]->getCPUSequencer()) {
+            num_functional_writes +=
+                m_abs_cntrl_vec[i]->getCPUSequencer()->functionalWrite(pkt);
+        }
+        if (m_abs_cntrl_vec[i]->getDMASequencer()) {
+            num_functional_writes +=
+                m_abs_cntrl_vec[i]->getDMASequencer()->functionalWrite(pkt);
+        }
     }
 
     num_functional_writes += m_network->functionalWrite(pkt);
@@ -507,58 +562,6 @@ RubySystem::functionalWrite(PacketPtr pkt)
 
     return true;
 }
-
-#ifdef CHECK_COHERENCE
-// This code will check for cases if the given cache block is exclusive in
-// one node and shared in another-- a coherence violation
-//
-// To use, the SLICC specification must call sequencer.checkCoherence(address)
-// when the controller changes to a state with new permissions.  Do this
-// in setState.  The SLICC spec must also define methods "isBlockShared"
-// and "isBlockExclusive" that are specific to that protocol
-//
-void
-RubySystem::checkGlobalCoherenceInvariant(const Address& addr)
-{
-#if 0
-    NodeID exclusive = -1;
-    bool sharedDetected = false;
-    NodeID lastShared = -1;
-
-    for (int i = 0; i < m_chip_vector.size(); i++) {
-        if (m_chip_vector[i]->isBlockExclusive(addr)) {
-            if (exclusive != -1) {
-                // coherence violation
-                WARN_EXPR(exclusive);
-                WARN_EXPR(m_chip_vector[i]->getID());
-                WARN_EXPR(addr);
-                WARN_EXPR(getTime());
-                ERROR_MSG("Coherence Violation Detected -- 2 exclusive chips");
-            } else if (sharedDetected) {
-                WARN_EXPR(lastShared);
-                WARN_EXPR(m_chip_vector[i]->getID());
-                WARN_EXPR(addr);
-                WARN_EXPR(getTime());
-                ERROR_MSG("Coherence Violation Detected -- exclusive chip with >=1 shared");
-            } else {
-                exclusive = m_chip_vector[i]->getID();
-            }
-        } else if (m_chip_vector[i]->isBlockShared(addr)) {
-            sharedDetected = true;
-            lastShared = m_chip_vector[i]->getID();
-
-            if (exclusive != -1) {
-                WARN_EXPR(lastShared);
-                WARN_EXPR(exclusive);
-                WARN_EXPR(addr);
-                WARN_EXPR(getTime());
-                ERROR_MSG("Coherence Violation Detected -- exclusive chip with >=1 shared");
-            }
-        }
-    }
-#endif
-}
-#endif
 
 RubySystem *
 RubySystemParams::create()

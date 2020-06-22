@@ -25,8 +25,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Alec Roelke
  */
 
 #include "arch/riscv/insts/amo.hh"
@@ -34,6 +32,7 @@
 #include <sstream>
 #include <string>
 
+#include "arch/riscv/insts/bitfields.hh"
 #include "arch/riscv/utility.hh"
 #include "cpu/exec_context.hh"
 #include "cpu/static_inst.hh"
@@ -43,8 +42,43 @@ using namespace std;
 namespace RiscvISA
 {
 
-string LoadReserved::generateDisassembly(Addr pc,
-    const SymbolTable *symtab) const
+// memfence micro instruction
+string
+MemFenceMicro::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
+{
+    stringstream ss;
+    ss << csprintf("0x%08x", machInst) << ' ' << mnemonic;
+    return ss.str();
+}
+
+Fault MemFenceMicro::execute(ExecContext *xc,
+    Trace::InstRecord *traceData) const
+{
+    return NoFault;
+}
+
+// load-reserved
+string
+LoadReserved::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
+{
+    stringstream ss;
+    ss << mnemonic;
+    if (AQ || RL)
+        ss << '_';
+    if (AQ)
+        ss << "aq";
+    if (RL)
+        ss << "rl";
+    ss << ' ' << registerName(RegId(IntRegClass, RD)) << ", ("
+            << registerName(RegId(IntRegClass, RS1)) << ')';
+    return ss.str();
+}
+
+string
+LoadReservedMicro::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     stringstream ss;
     ss << mnemonic << ' ' << registerName(_destRegIdx[0]) << ", ("
@@ -52,8 +86,28 @@ string LoadReserved::generateDisassembly(Addr pc,
     return ss.str();
 }
 
-string StoreCond::generateDisassembly(Addr pc,
-    const SymbolTable *symtab) const
+// store-conditional
+string
+StoreCond::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
+{
+    stringstream ss;
+    ss << mnemonic;
+    if (AQ || RL)
+        ss << '_';
+    if (AQ)
+        ss << "aq";
+    if (RL)
+        ss << "rl";
+    ss << ' ' << registerName(RegId(IntRegClass, RD)) << ", "
+            << registerName(RegId(IntRegClass, RS2)) << ", ("
+            << registerName(RegId(IntRegClass, RS1)) << ')';
+    return ss.str();
+}
+
+string
+StoreCondMicro::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     stringstream ss;
     ss << mnemonic << ' ' << registerName(_destRegIdx[0]) << ", "
@@ -62,21 +116,33 @@ string StoreCond::generateDisassembly(Addr pc,
     return ss.str();
 }
 
-string AtomicMemOp::generateDisassembly(Addr pc,
-    const SymbolTable *symtab) const
+// AMOs
+string
+AtomicMemOp::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
+{
+    stringstream ss;
+    ss << mnemonic;
+    if (AQ || RL)
+        ss << '_';
+    if (AQ)
+        ss << "aq";
+    if (RL)
+        ss << "rl";
+    ss << ' ' << registerName(RegId(IntRegClass, RD)) << ", "
+            << registerName(RegId(IntRegClass, RS2)) << ", ("
+            << registerName(RegId(IntRegClass, RS1)) << ')';
+    return ss.str();
+}
+
+string
+AtomicMemOpMicro::generateDisassembly(
+        Addr pc, const Loader::SymbolTable *symtab) const
 {
     stringstream ss;
     ss << mnemonic << ' ' << registerName(_destRegIdx[0]) << ", "
             << registerName(_srcRegIdx[1]) << ", ("
             << registerName(_srcRegIdx[0]) << ')';
-    return ss.str();
-}
-
-string AtomicMemOpMicro::generateDisassembly(Addr pc,
-    const SymbolTable *symtab) const
-{
-    stringstream ss;
-    ss << csprintf("0x%08x", machInst) << ' ' << mnemonic;
     return ss.str();
 }
 

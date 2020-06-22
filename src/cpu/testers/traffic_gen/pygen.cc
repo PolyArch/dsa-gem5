@@ -33,8 +33,6 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Authors: Andreas Sandberg
  */
 #include "cpu/testers/traffic_gen/pygen.hh"
 
@@ -74,7 +72,7 @@ PyTrafficGen::nextGenerator()
             metaGenerator->cast<std::shared_ptr<BaseGen>>();
         metaGenerator++;
         return gen;
-    } catch (py::cast_error) {
+    } catch (py::cast_error&) {
         fatal("Meta generator didn't return a valid trace generator\n");
     }
 }
