@@ -39,6 +39,9 @@
 
 #include <algorithm>
 
+#include "dsa/arch/model.h"
+#include "dsa/mapper/schedule.h"
+
 #include "cpu/minor/decode.hh"
 #include "cpu/minor/execute.hh"
 #include "cpu/minor/fetch1.hh"
@@ -47,8 +50,6 @@
 #include "debug/MinorCPU.hh"
 #include "debug/MinorTrace.hh"
 #include "debug/Quiesce.hh"
-#include "ss-config/model.h"
-#include "ss-scheduler/schedule.h"
 
 
 namespace Minor
