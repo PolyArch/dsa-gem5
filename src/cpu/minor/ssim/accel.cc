@@ -274,7 +274,7 @@ void port_data_t::reformat_in() { // rearrange data for CGRA
     std::cerr << "Too few elem, zero padding\n";
     _mem_data.resize(_mem_data.size() + port_vec_elem()-extra_elem);
   }*/
-  cout << "Came to reformat in at port: " << _port << " and mem data size: " << _mem_data.size() << endl;
+  // cout << "Came to reformat in at port: " << _port << " and mem data size: " << _mem_data.size() << endl;
   while (_mem_data.size() >= port_vec_elem()) {
     reformat_in_work();
   }
@@ -421,8 +421,8 @@ void port_data_t::pop(unsigned instances) {
 
 // rearrange data from CGRA
 void port_data_t::reformat_out() {
-    cout << "Came to reformat in at port: " << _port << " and mem data size: " << _mem_data.size() << endl;
-    cout << "Can output: " << can_output() << endl;
+    // cout << "Came to reformat in at port: " << _port << " and mem data size: " << _mem_data.size() << endl;
+   // cout << "Can output: " << can_output() << endl;
   while (can_output()) {
     reformat_out_work();
   }
@@ -4632,6 +4632,8 @@ void scratch_write_controller_t::serve_atomic_requests(bool &performed_atomic_sc
       atomic_in_val.push_data(data_value);
       // atomic_in_val.push_data(_atom_val_store.front());
       // _atom_val_store.erase(tid);
+      
+        cout << "Atomic update value being read from scratchpad with first value: " << (read_value[0] | read_value[1]<<8) << " OR: " << (read_value[0]<<8 | read_value[1]) << " with atomic sent: " << _accel->_num_atomic_sent << " at addr: " << scr_addr << " core: " << _accel->_lsq->getCpuId() << "\n";
       if(SS_DEBUG::COMP) {
         cout << "Atomic update value being read from scratchpad with first value: " << (read_value[0] | read_value[1]<<8) << " OR: " << (read_value[0]<<8 | read_value[1]) << " with atomic sent: " << _accel->_num_atomic_sent << " at addr: " << scr_addr << "\n";
       }
@@ -4654,7 +4656,7 @@ void scratch_write_controller_t::serve_atomic_requests(bool &performed_atomic_sc
                      data_bytes, 0);
 
     if(_conflict_detection_queue.front().second==_accel->_assumed_bytes) {
-      cout << "Value written is: " << correct_val << " scr addr: " << scr_addr << " and bytes: " << data_bytes << endl;
+      cout << "Value written is: " << correct_val << " scr addr: " << scr_addr << " core: " << _accel->_lsq->getCpuId() << " and bytes: " << data_bytes << endl;
     }
     // cout << "Number of bytes written from atomic update: " << data_bytes << endl;
     // fix the writing scr addr
@@ -6563,7 +6565,7 @@ int scratch_write_controller_t::push_and_update_addr_in_pq(int tid, int num_byte
   assert(it!=_pending_request_queue.end());
 
   unsigned num_addr = it->second.second.size();
-  cout << "Came to push new atomic addresses, with num_addr: " << num_addr << " and num bytes: " << num_bytes << endl;
+  // cout << "Came to push new atomic addresses, with num_addr: " << num_addr << " and num bytes: " << num_bytes << endl;
   assert(num_addr!=0);
    // Step1: delete the entry if not required anymore
   it->second.first -= num_bytes;

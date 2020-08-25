@@ -50,9 +50,16 @@ addr_t base_stream_t::memory_map(addr_t logical_addr, addr_t cur_scr_offset) {
   int part_id = logical_addr >> (_part_bits+_core_bits); // which partition index
 
   int mapped_local_scr_addr = cur_scr_offset + part_offset + (part_id*_part_size);
-  assert(mapped_local_scr_addr<SCRATCH_SIZE);
 
   int core_id = (logical_addr >> _part_bits) & (_num_dist_cores-1); // 0th core
+
+  if(mapped_local_scr_addr==SCRATCH_SIZE) { // looping
+    mapped_local_scr_addr=0;
+    core_id = (core_id+1)%_num_dist_cores;
+  }
+
+  assert(mapped_local_scr_addr<SCRATCH_SIZE);
+
   
   // adding the importance of core
   mapped_local_scr_addr = SCRATCH_SIZE*_used_cores[core_id] + mapped_local_scr_addr;
