@@ -13,12 +13,8 @@ typedef uint64_t addr_t;
 #define SPU_NET_PACKET_SIZE 64
 #define NUM_SCRATCH_BANKS 64
 
-<<<<<<< HEAD
 #define LSCRATCH_SIZE (1 << 20) //size in bytes -- 16KB
 #define NUM_SCRATCH_BANKS 64
-=======
-#define LSCRATCH_SIZE (16384) //size in bytes -- 16KB
->>>>>>> remote_read
 #define MAX_BANK_BUFFER_SIZE 64 // 8
 // #define NUM_SPU_CORES 64 // for global address space
 
