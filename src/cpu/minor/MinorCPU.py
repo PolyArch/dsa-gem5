@@ -252,15 +252,15 @@ class MinorCPU(BaseCPU):
         " the system cacheLineSize)")
     executeMaxAccessesInMemory = Param.Unsigned(2,
         "Maximum number of concurrent accesses allowed to the memory system"
-        " from the dcache port")
+        " from the dcache port") # 8
     executeLSQMaxStoreBufferStoresPerCycle = Param.Unsigned(2,
         "Maximum number of stores that the store buffer can issue per cycle")
     executeLSQRequestsQueueSize = Param.Unsigned(1,
-        "Size of LSQ requests queue (address translation queue)")
+        "Size of LSQ requests queue (address translation queue)") # 2
     executeLSQTransfersQueueSize = Param.Unsigned(2,
-        "Size of LSQ transfers queue (memory transaction queue)")
+        "Size of LSQ transfers queue (memory transaction queue)") # 16
     executeLSQStoreBufferSize = Param.Unsigned(5,
-        "Size of LSQ store buffer")
+        "Size of LSQ store buffer") # 10
     executeBranchDelay = Param.Cycles(1,
         "Delay from Execute deciding to branch and Fetch1 reacting"
         " (1 means next cycle)")

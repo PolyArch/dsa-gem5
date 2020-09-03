@@ -234,6 +234,8 @@ MessageBuffer::enqueue(MsgPtr message, Tick current_time, Tick delta)
     Message* msg_ptr = message.get();
     assert(msg_ptr != NULL);
 
+    // time_last_time_enqueue
+    // printf("current time: %ld last enqueue time: %ld\n", current_time, msg_ptr->getLastEnqueueTime());
     assert(current_time >= msg_ptr->getLastEnqueueTime() &&
            "ensure we aren't dequeued early");
 

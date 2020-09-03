@@ -143,6 +143,7 @@ public:
 
   bool can_push_bytes_vp(int num_bytes) {
     int num_elem = num_bytes/_port_width;
+    // std::cout << "num elem: " << num_elem << " num can push: " << num_can_push() << "\n";
     return num_elem <= num_can_push();
   }
 
@@ -282,29 +283,6 @@ public:
 
   int port() {return _port;}
 
-  /*
-  template <typename T>
-  void push_cgra_port(unsigned cgra_port, T val, bool valid) {
-    int data_size = sizeof(T);
-    assert(data_size=_port_width && "data size doesn't match the port width in dfg");
-    // std::cout << "Data being pushed to cgra port" << std::hex << val << std::endl;
-    // _cgra_data[cgra_port].push_back(val);
-    // _cgra_data[cgra_port].push_back(get_byte_vector(val,_port_width));
-    // _cgra_valid[cgra_port].push_back(valid);
-
-    int num_chunks = sizeof(T)/_port_width;
-    // std::cout << "Data being pushed to cgra" << std::hex << val << std::endl;
-    for(int i=0; i<num_chunks; ++i){
-      // std::cout << "Scalar data beng sent to cgra" << std::hex << (data >> (i*_port_width*8)) << std::endl;
-      std::vector<uint8_t> v = get_byte_vector(val >> (i*_port_width*8),_port_width);
-      // std::cout << "Data after conversion to vector and back" << std::hex << get_sbdt_val(v,_port_width) << std::endl;
-        _cgra_data[cgra_port].push_back(v);
-        _cgra_valid[cgra_port].push_back(valid);
-        //_total_pushed+=valid;
-    }
-
-  }
-  */
 
   void push_cgra_port(unsigned cgra_port, SBDT val, bool valid) {
     std::vector<uint8_t> v(sizeof(SBDT));
@@ -482,6 +460,32 @@ public:
   // stats info (see if I need it)
   void inc_rem_wr(int x) { _num_rem_wr+=x; }
   unsigned get_rem_wr() { return _num_rem_wr; }
+
+  void set_is_bytes_waiting_final() {
+    _is_bytes_waiting_final=true;
+  }
+
+
+  void reset_is_bytes_waiting_final() {
+    _is_bytes_waiting_final=false;
+  }
+
+  void inc_bytes_waiting(int x) {
+    _bytes_waiting += x;
+    // std::cout << "New bytes waiting: " << _bytes_waiting << " and inc: " << x << "\n";
+  }
+
+  bool is_bytes_waiting_zero() {
+    return _bytes_waiting==0;
+  }
+
+  bool get_is_bytes_waiting_final() {
+    return _is_bytes_waiting_final;
+  }
+
+  int get_bytes_waiting() {
+    return _bytes_waiting;
+  }
  
 private:
   //Programmable Repeat:
@@ -513,6 +517,8 @@ private:
   unsigned _num_rem_wr=0;
 
   uint64_t _total_pushed=0;
+  int _bytes_waiting=0;
+  bool _is_bytes_waiting_final=false;
 };
 
 //Entire Port interface with each being port_data_t
@@ -830,10 +836,15 @@ class scratch_write_controller_t : public data_controller_t {
   void write_scratch_remote_direct(direct_remote_scr_stream_t& stream);
   void atomic_scratch_update(atomic_scr_stream_t& stream);
   void serve_atomic_requests(bool &performed_atomic_scr);
+  void serve_atomic_requests_local(bool &performed_atomic_scr);
   void push_remote_wr_req(uint8_t *val, int num_bytes, addr_t scr_addr);
   void scr_write(addr_t addr, affine_write_stream_t& stream, port_data_t& out_vp);
   // for remote atomic update
   void push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int out_bytes, uint64_t inc);
+
+  void insert_pending_request_queue(int tid, std::vector<int> start_addr, int bytes_waiting);
+  int push_and_update_addr_in_pq(int tid, int num_bytes);
+  void push_atomic_inc(int tid, std::vector<uint8_t> inc, int repeat_times);
 
   void reset_stream_engines() {
     _port_scr_streams.clear();
@@ -849,6 +860,13 @@ class scratch_write_controller_t : public data_controller_t {
   }
 
   bool crossbar_backpressureOn();
+  bool atomic_addr_full(int bytes);
+  bool atomic_val_full(int bytes);
+  bool pending_request_queue_full();
+
+  int atomic_val_size() { return _atom_val_store.size(); }
+  int pending_request_queue_size() { return _pending_request_queue.size(); }
+  int conflict_queue_size() { return _conflict_detection_queue.size(); }
 
   // void cycle();
   void cycle(bool can_perform_atomic_scr, bool &performed_atomic_scr);
@@ -884,6 +902,14 @@ class scratch_write_controller_t : public data_controller_t {
     _df_count = df_count;
   }
 
+  void set_atomic_cgra_addr_port(int p) { _atomic_cgra_addr_port=p; }
+  void set_atomic_cgra_val_port(int p) { _atomic_cgra_val_port=p; }
+  void set_atomic_cgra_out_port(int p) { _atomic_cgra_out_port=p; }
+  void set_atomic_addr_bytes(int p) { _atomic_addr_bytes=p; }
+  void set_atomic_val_bytes(int p) { _atomic_val_bytes=p; }
+  bool is_conflict(addr_t scr_addr, int num_bytes);
+  void push_atomic_val();
+
   private:
   int _which_wr=0; // for banked scratchpad
   int _which_linear_wr=0; // for linear scratchpad
@@ -892,6 +918,37 @@ class scratch_write_controller_t : public data_controller_t {
   // int _num_bytes_to_update=0;
   std::vector<int> _update_broadcast_dest;
   std::vector<int> _update_coalesce_vals;
+
+  int _atomic_cgra_addr_port=-1;
+  int _atomic_cgra_val_port=-1;
+  int _atomic_cgra_out_port=-1;
+  int _atomic_addr_bytes=8;
+  int _atomic_val_bytes=8;
+  // for each bank
+  std::unordered_map<int, std::pair<int, std::vector<int>>> _pending_request_queue; // [NUM_SCRATCH_BANKS];
+  // std::unordered_map<int, int> _conflict_detection_queue;
+  // addr, bytes
+  std::deque<std::pair<int,int>> _conflict_detection_queue;
+  // std::queue<std::vector<uint8_t>> _atom_val_store;
+  // tid, and its corresponding data
+  /*
+  struct atomic_reorder_entry { // create when you receive an address
+    std::vector<uint8_t> data;
+    int tid;
+    bool done;
+    int req_bytes;
+    int repeat_times;
+  };
+  atomic_reorder_entry reorder_buffer[MAX_ATOM_REQ_QUEUE_SIZE]; // tid, done?
+  */
+
+  std::unordered_map<int, std::vector<uint8_t>> _atom_val_store;
+  // tid, repeat_times, done?
+  std::pair<int,std::pair<int,bool>> reorder_buffer[MAX_ATOM_REQ_QUEUE_SIZE]; // tid, done?
+  int _cur_drob_fill_ptr=0;
+  int _cur_drob_pop_ptr=0;
+  int _drob_size_used=0;
+  // std::vector<uint8_t> _temp_accum;
 
   struct atomic_scr_op_req{
     addr_t _scr_addr;
@@ -960,6 +1017,7 @@ class network_controller_t : public data_controller_t {
   }
 
   void serve_pending_net_req();
+  void check_cpu_response_queue();
   void multicast_data(remote_port_multicast_stream_t& stream, int message_size);
   void write_remote_scr(remote_scr_stream_t& stream);
   void write_direct_remote_scr(direct_remote_scr_stream_t& stream);
@@ -1525,12 +1583,23 @@ private:
 
   // void push_scratch_remote_buf(int64_t val, int16_t scr_addr){
   void push_scratch_remote_buf(uint8_t* val, int num_bytes, uint16_t scr_addr){
-      // _scr_w_c.push_remote_wr_req(val,scr_addr);
       _scr_w_c.push_remote_wr_req(val, num_bytes, scr_addr);
   }
 
   void push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int out_bytes, uint64_t inc) {
     _scr_w_c.push_atomic_update_req(scr_addr, opcode, val_bytes, out_bytes, inc);
+  }
+
+  void insert_pending_request_queue(int tid, std::vector<int> start_addr, int bytes_waiting) {
+    _scr_w_c.insert_pending_request_queue(tid, start_addr, bytes_waiting);
+  }
+
+  int push_and_update_addr_in_pq(int tid, int num_bytes) {
+    return _scr_w_c.push_and_update_addr_in_pq(tid, num_bytes);
+  }
+  
+  void push_atomic_inc(int tid, std::vector<uint8_t> inc, int repeat_times) {
+    _scr_w_c.push_atomic_inc(tid, inc, repeat_times);
   }
 
   void push_ind_rem_read_req(bool is_remote, int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry) {
@@ -1671,6 +1740,8 @@ int get_cur_cycle();
   int _stat_hit_bytes_rd=0;
   int _stat_miss_bytes_rd=0;
   int _stat_num_spu_req_coalesced=0;
+  int _stat_conflict_cycles=0;
+  int _stat_tot_atom_cycles=0;
   // for backcgra
   // int _stat_mem_initiation_interval = 10000;
   double _stat_port_imbalance=0;
@@ -1681,6 +1752,8 @@ int get_cur_cycle();
 
   //FIXME: just for debug, fix later
   int _num_cycles_issued=0;
+  int _num_atomic_sent=0;
+  int _assumed_bytes=512; // to debug
 
   // int _bytes_rd5=0;
 

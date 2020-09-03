@@ -63,6 +63,9 @@ class RubySequencer(RubyPort):
 
    max_outstanding_requests = Param.Int(16,
        "max requests (incl. prefetches) outstanding")
+ 
+   # max_outstanding_requests = Param.Int(16,
+   #     "max requests (incl. prefetches) outstanding")
    deadlock_threshold = Param.Cycles(500000,
        "max outstanding cycles for a request before deadlock/livelock declared")
    garnet_standalone = Param.Bool(False, "")
@@ -73,4 +76,5 @@ class RubySequencer(RubyPort):
 class DMASequencer(RubyPort):
    type = 'DMASequencer'
    cxx_header = "mem/ruby/system/DMASequencer.hh"
-   max_outstanding_requests = Param.Int(64, "max outstanding requests")
+   # max_outstanding_requests = Param.Int(64, "max outstanding requests")
+   max_outstanding_requests = Param.Int(256, "max outstanding requests")

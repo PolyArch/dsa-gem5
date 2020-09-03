@@ -1147,6 +1147,11 @@ struct direct_remote_scr_stream_t : public remote_scr_stream_t {
 //Indirect Read Port -> SCR
 struct atomic_scr_stream_t;
 struct atomic_scr_stream_t : public base_stream_t {
+
+  // int _atomic_cgra_addr_port=-1;
+  // int _atomic_cgra_val_port=-1;
+  // int _atomic_cgra_out_port=-1;
+
   int _val_port;
   int _out_port;
   int _op_code;
@@ -1237,8 +1242,10 @@ struct atomic_scr_stream_t : public base_stream_t {
   void update_strides() {
     _num_strides--;
     if(_is_update_cnt_port) _num_updates=-1;
-    std::cout << "Reducing num strides, value sstream left: " << _sstream_left << " addr left: " << _val_sstream_left << "\n";
+    // std::cout << "Reducing num strides, value sstream left: " << _sstream_left << " addr left: " << _val_sstream_left << "\n";
+    //i if strides are set to 0, not an issue...
     _val_sstream_left=_num_updates; _sstream_left=_val_num;
+    
     /*if(_val_sstream_left==0 && _sstream_left==0) {
     // if(_val_sstream_left==_num_updates && _sstream_left==_val_num) {
     }*/
@@ -1253,11 +1260,12 @@ struct atomic_scr_stream_t : public base_stream_t {
     return (mem_addr() >> ((_addr_in_word-_cur_addr_index-1)*_addr_bytes*8)) & _addr_mask;
   }
   uint64_t cur_addr(uint64_t loc){
-    // extracting from right (least significant bits)
-    // return (loc >> (_cur_addr_index*_addr_bytes*8)) & _addr_mask;
-    addr_t addr = (loc >> ((_addr_in_word-_cur_addr_index-1)*_addr_bytes*8)) & _addr_mask;
+    addr_t addr = loc*_val_num*_value_bytes;
+    /*if(SS_DEBUG::SHOW_CONFIG) {
+      std::cout << "input loc: " << loc << " val num: " << _val_num << " value bytes: " << _value_bytes << " computd addr: " << addr << "\n";
+    }*/
     // addr += (_val_num-_sstream_left)*_addr_bytes;
-    return addr;
+    return memory_map(addr, 0);
   }
   uint64_t cur_val(uint64_t val){
     // return (val >> (_cur_val_index*_value_bytes*8)) & _value_mask;

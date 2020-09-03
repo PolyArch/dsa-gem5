@@ -32,7 +32,6 @@ void base_stream_t::print_in_ports() {
   }
 }
 
-// TODO: set part bits in the constructor
 // based on memory mapping, extract these two information
 uint64_t base_stream_t::get_core_id(addr_t logical_addr) {
   if(_part_size==0) return logical_addr/SCRATCH_SIZE;
@@ -50,13 +49,17 @@ addr_t base_stream_t::memory_map(addr_t logical_addr, addr_t cur_scr_offset) {
 
   int part_id = logical_addr >> (_part_bits+_core_bits); // which partition index
 
-  // part_id * part_size + part_offset + core_id*SCRATCH_SIZE
-  // + local_scr_offset
-
-
-  int mapped_local_scr_addr = cur_scr_offset + part_offset + (part_id << _part_bits);
+  int mapped_local_scr_addr = cur_scr_offset + part_offset + (part_id*_part_size);
 
   int core_id = (logical_addr >> _part_bits) & (_num_dist_cores-1); // 0th core
+
+  if(mapped_local_scr_addr==SCRATCH_SIZE) { // looping
+    mapped_local_scr_addr=0;
+    core_id = (core_id+1)%_num_dist_cores;
+  }
+
+  assert(mapped_local_scr_addr<SCRATCH_SIZE);
+
   
   // adding the importance of core
   mapped_local_scr_addr = SCRATCH_SIZE*_used_cores[core_id] + mapped_local_scr_addr;

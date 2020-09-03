@@ -1213,6 +1213,12 @@ LSQ::all_spu_done(int num_active_threads) {
   return thread->getSystemPtr()->all_spu_done(num_active_threads);
 }
 
+void
+LSQ::print_spu_stats(int spu_id) {
+  return;
+  // ThreadContext *thread = cpu.getContext(0); // assume tid=0?
+  // thread->getSystemPtr()->print_spu_stats(spu_id);
+}
 
 bool
 LSQ::spu_net_done() {
@@ -1558,7 +1564,9 @@ LSQ::LSQ(std::string name_, std::string dcache_port_name_,
      */
     for(int i = 0; i < 100; ++i) {
         //Logically this would be implemented with a single queue
+      // sd_transfers.emplace_back(name_ + ".sd_transfers", "addr", 21);
       sd_transfers.emplace_back(name_ + ".sd_transfers", "addr", 22);
+
     }
 
     if (in_memory_system_limit < 1) {

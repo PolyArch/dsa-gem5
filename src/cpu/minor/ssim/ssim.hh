@@ -55,7 +55,9 @@ public:
                       SBDT constant, uint64_t num_elem,
                       SBDT constant2, uint64_t num_elem2,
                       uint64_t flags, int const_width, bool iter_port);
-  void atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode, int val_num, int num_updates, bool is_update_cnt_port);
+
+  void atomic_update_hardware_config(int addr_port, int val_port, int out_port);
+  void atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode, int val_num, int num_updates, bool is_update_cnt_port, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type);
   void multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_port, int rem_port, bool dest_flag, bool spad_type, int64_t stride, int64_t access_size);
   void write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int num_elem, int const_width);
 
@@ -64,6 +66,33 @@ public:
   void push_ind_rem_read_req(bool is_remote, int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry);
   void push_ind_rem_read_data(int8_t* data, int request_ptr, int addr, int data_bytes, int reorder_entry);
   void write_remote_banked_scratchpad(uint8_t* val, int num_bytes, uint16_t scr_addr);
+
+  int get_bytes_from_type(int t);
+
+  bool atomic_addr_full(int bytes) {
+    return accel_arr[0]->_scr_w_c.atomic_addr_full(bytes);
+  }
+  bool atomic_val_full(int bytes) {
+    return accel_arr[0]->_scr_w_c.atomic_val_full(bytes);
+  }
+  bool pending_request_queue_full() {
+    return accel_arr[0]->_scr_w_c.pending_request_queue_full();
+  }
+
+
+  void insert_pending_request_queue(int tid, std::vector<int> start_addr, int bytes_waiting) {
+    accel_arr[0]->insert_pending_request_queue(tid, start_addr, bytes_waiting);
+  }
+    
+  int push_and_update_addr_in_pq(int tid, int num_bytes) {
+  
+    return accel_arr[0]->push_and_update_addr_in_pq(tid, num_bytes);
+  }
+  
+void push_atomic_inc(int tag, std::vector<uint8_t> inc, int repeat_times) {
+    accel_arr[0]->push_atomic_inc(tag, inc, repeat_times);
+  }
+
 
   // We integrate Buffet to achieve double-buffering.
   void instantiate_buffet(int repeat, int repeat_str);
@@ -166,8 +195,7 @@ public:
   static bool stall_core(uint64_t mask) {
     // std::cout << "Came in stall core with mask: " << mask << std::endl;
     return (mask==0) || (mask&WAIT_CMP) ||
-      (mask&WAIT_MEM_WR) || (mask&WAIT_SCR_ATOMIC) || (mask/GLOBAL_WAIT>0) || (mask&STREAM_WAIT);
-      // (mask&WAIT_MEM_WR) || (mask&WAIT_SCR_ATOMIC) || (mask&GLOBAL_WAIT) || (mask&STREAM_WAIT);
+      (mask&WAIT_MEM_WR) || (mask&WAIT_SCR_ATOMIC) || (mask&GLOBAL_WAIT) || (mask&STREAM_WAIT);
 
   }
 

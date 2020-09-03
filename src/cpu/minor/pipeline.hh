@@ -107,8 +107,34 @@ class Pipeline : public Ticked {
     Pipeline(MinorCPU &cpu_, MinorCPUParams &params);
 
   public:
+
+    void push_atomic_inc(int tid, std::vector<uint8_t> inc, int repeat_times) {
+      execute.getSSIM().push_atomic_inc(tid, inc, repeat_times);
+    }
+
+    int push_and_update_addr_in_pq(int tid, int num_bytes) {
+      return execute.getSSIM().push_and_update_addr_in_pq(tid, num_bytes);
+    }
+
+    void insert_pending_request_queue(int tid, std::vector<int> start_addr, int bytes_waiting) {
+      execute.getSSIM().insert_pending_request_queue(tid, start_addr, bytes_waiting);
+    }
+
+
+    bool atomic_addr_full(int bytes) {
+      return execute.getSSIM().atomic_addr_full(bytes);
+    }
+    bool atomic_val_full(int bytes) {
+      return execute.getSSIM().atomic_val_full(bytes);
+    }
+    bool pending_request_queue_full() {
+      return execute.getSSIM().pending_request_queue_full();
+    }
+
+
+
+
 	// TODO:FIXME: need to access execute from cpu to talk to accel
-	// void receiveSpuMessage(int64_t val, int in_port)
 	void receiveSpuMessage(int8_t* val, int num_bytes, int in_port)
 	{
 	  return execute.receiveSpuMessage(val, num_bytes, in_port);

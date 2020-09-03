@@ -1019,6 +1019,140 @@ decode QUADRANT default Unknown::unknown() {
             }}, No_OpClass);
         }
         format SSOp {
+            0x2: decode FUNCT3 {
+                0x0: IOp::ss_cfg({{
+                    xc->setSSReg(Rs1,SS_MEM_ADDR);
+                    xc->setSSReg(imm,SS_CFG_SIZE);
+                    xc->callSSFunc(SS_CFG);
+                }}, uint64_t, IsSSConfig, IsNonSpeculative, No_OpClass);
+                0x1: ss_cfg_port({{
+                    xc->setSSReg(Rs1,SS_REPEAT);
+                    xc->setSSReg(imm,SS_REPEAT_STRETCH);
+                }}, IsSSParam, IsNonSpeculative, No_OpClass);
+                0x2: ss_cfg_ctx({{
+                    if(imm == 0) {
+                      xc->setSSReg(Rs1,SS_CONTEXT);
+                    } else {
+                      xc->setSSReg(imm,SS_CONTEXT);
+                    }
+                    xc->setSSReg(Rs2,SS_OFFSET);
+                    xc->callSSFunc(SS_CTX);
+                }}, IsSSParam, IsNonSpeculative, No_OpClass);
+                0x3: ss_fill_mode({{
+                    xc->setSSReg(imm,SS_CONSTANT);
+                    xc->callSSFunc(SS_FILL_MODE);
+                }}, IsSSParam, IsNonSpeculative, No_OpClass);
+            }
+            0xa: decode FUNCT3 {
+                0x0: ss_add_port({{
+                    xc->setSSReg(imm,SS_IN_PORT);
+                    xc->callSSFunc(SS_ADD_PRT);
+                }}, IsNonSpeculative, No_OpClass);
+                0x1: ss_scr_rd({{
+                    xc->pushStreamDimension(Rs1, Rs2, (imm >> 2) & 63);
+                    if (~imm & 1) {
+                      if (imm >> 1 & 1) {
+                        // Invoke a Buffet stream!
+                        xc->setSSReg((imm >> 7) & 63, SS_OUT_PORT);
+                        xc->callSSFunc(SS_BUFFET);
+                      } else {
+                        xc->callSSFunc(SS_SCR_PRT);
+                      }
+                    }
+                }}, IsSSStream, IsNonSpeculative, No_OpClass);
+                0x2: ss_dma_rd({{
+                    xc->pushStreamDimension(Rs1, Rs2, imm >> 1);
+                    if (~imm & 1)
+                      xc->callSSFunc(SS_MEM_PRT);
+                }}, IsSSStream, IsNonSpeculative, No_OpClass);
+                0x4: ss_const({{
+                    xc->setSSReg(imm & 0x3f, SS_IN_PORT);
+                    xc->setSSReg(imm >> 6, SS_FLAGS);
+                    xc->setSSReg((imm >> 8) & 1, SS_IND_TYPE);
+                    xc->setSSReg(imm >> 9, SS_DTYPE);
+                    if(imm & (1<<7)) {
+                      xc->setSSReg(Rs1,SS_CONSTANT2);
+                      xc->setSSReg(Rs2,SS_NUM_ELEM2);
+                    } else {
+                      xc->setSSReg(Rs1,SS_CONSTANT);
+                      xc->setSSReg(Rs2,SS_NUM_ELEM);
+                      xc->callSSFunc(SS_CNS_PRT);
+                    }
+                }}, IsSSStream, IsNonSpeculative, No_OpClass);
+                0x5: IOp::ss_recv({{
+                    xc->setSSReg(0x3f & imm, SS_OUT_PORT);
+                    Rd = xc->receiveSS();
+                }}, uint64_t, IsSSRecv, IsNonSpeculative, No_OpClass);
+                0x6: ss_atom_op({{
+                    if (imm & 1) {
+					  xc->setSSReg(Rs1 & 0xffffff,SS_OFFSET);
+                      xc->setSSReg(Rs2,SS_NUM_ELEM);
+                      xc->setSSReg((Rs1 >> 24) & 0x1f, SS_OUT_PORT);
+                      xc->setSSReg((imm >> 3) & 0x1f, SS_VAL_PORT);
+                      xc->setSSReg((imm >> 1 & 0x3),SS_OPCODE);
+                      xc->callSSFunc(SS_ATOMIC_SCR_OP);
+					} else {
+					  xc->configAtomicHardware(Rs1, Rs2, imm>>1);
+					}
+                }}, IsSSStream, IsNonSpeculative, No_OpClass);
+                0x7: ss_cfg_mmap({{
+                    xc->setSSReg(Rs1,SS_CFG_SIZE);
+                    xc->setSSReg(Rs2, SS_CONTEXT);
+                    xc->setSSReg(imm,SS_GARB_ELEM);
+                }}, IsSSParam, IsNonSpeculative, No_OpClass);
+
+            }
+            0x16: decode FUNCT3 {
+                0x1: ss_wr_scr({{
+                    xc->pushStreamDimension(Rs1, Rs2, (imm >> 2) & 63);
+                    if (~imm & 1) {
+                      if (imm >> 1 & 1) {
+                        // Do nothing! This is to get prepared for Buffet!
+                      } else {
+                        xc->callSSFunc(SS_PRT_SCR);
+                      }
+                    }
+                }}, IsSSStream, No_OpClass);
+				0x2: ss_rem_port({{
+					xc->setSSReg(Rs1,SS_NUM_ELEM);
+                    xc->setSSReg(Rs2,SS_SCRATCH_ADDR);
+                    xc->setSSReg((imm >> 7) & 0x1f, SS_OUT_PORT);
+                    xc->setSSReg((imm >> 6) & 0x1, SS_ADDR_TYPE);
+                    xc->setSSReg((imm >> 1) & 0x1f, SS_IN_PORT);
+					xc->setSSReg(imm & 0x1, SS_FLAGS);
+                    xc->callSSFunc(SS_REM_PORT);
+                }}, IsSSStream, No_OpClass);
+                0x3: ss_garb({{
+                     xc->setSSReg(Rs1,SS_GARB_ELEM);
+                }}, IsSSStream, No_OpClass);
+                0x4: ss_wr_dma({{
+                    xc->pushStreamDimension(Rs1, Rs2, imm >> 1);
+                    if (~imm & 1)
+                      xc->callSSFunc(SS_PRT_MEM);
+                }}, IsSSStream, IsNonSpeculative, No_OpClass);
+                0x5: ss_wr_rd({{
+                    xc->setSSReg(Rs1,SS_NUM_ELEM);
+                    xc->setSSReg(Rs2,SS_FLAGS);
+                    xc->setSSReg((imm >> 0) & 31, SS_OUT_PORT);
+                    xc->setSSReg((imm >> 6) & 31, SS_IN_PORT);
+                    xc->callSSFunc(SS_PRT_PRT);
+                }}, IsSSStream, IsNonSpeculative, No_OpClass);
+                0x6: IOp::ss_const_scr({{
+                    xc->setSSReg(Rs1,SS_SCRATCH_ADDR);
+                    xc->setSSReg(Rs2,SS_CONSTANT);
+                    xc->setSSReg(imm,SS_DTYPE);
+                    xc->callSSFunc(SS_CONST_SCR);
+                }}, uint64_t, IsSSStream, IsNonSpeculative, No_OpClass);
+                0x7: ss_cfg_atom_op({{
+                    xc->setSSReg(Rs1, SS_OFFSET_LIST); 
+                    xc->setSSReg(Rs2 & 0xffff, SS_STRETCH); 
+                    xc->setSSReg(Rs2 >> 16, SS_IS_SCRATCH); 
+                    xc->setSSReg(imm>>4, SS_IND_TYPE); 
+                    xc->setSSReg((imm>>2)&0x3, SS_DTYPE); 
+                    xc->setSSReg(imm&0x3, SS_ADDR_TYPE); 
+                }}, No_OpClass);
+
+            }
             0x1e: decode FUNCT3 {
                 0x0: ss_stride({{
                     xc->setSSReg(Rs1,SS_STRIDE);
