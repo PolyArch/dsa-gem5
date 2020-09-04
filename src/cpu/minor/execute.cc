@@ -983,7 +983,7 @@ void Execute::timeout_check(bool should_commit, MinorDynInstPtr inst) {
   uint64_t last_event = std::max(last_sd_issue,
                         ssim.forward_progress_cycle());
   if(!should_commit) {
-    if(cyc > 999990 + last_event) {
+    if(cyc > 99990 + last_event) {
     // if(cyc > 999000 + last_event) {
       DPRINTF(SS,"Almost Aborting because of wait", *inst);
     }
@@ -1800,7 +1800,7 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
   // std::cout << "Received an atomic op request with dest size: " << update_broadcast_dest.size() << " and coalesce size: " << update_coalesce_vals.size() << "\n";
   
 
-  if(ssim.num_active_threads()<0) assert(0);
+  // if(ssim.num_active_threads()<0) assert(0);
 
   int num_updates = update_broadcast_dest.size();
   int num_vals = update_coalesce_vals.size();

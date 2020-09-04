@@ -835,6 +835,7 @@ class scratch_write_controller_t : public data_controller_t {
   void write_scratch_remote_ind(remote_core_net_stream_t& stream);
   void write_scratch_remote_direct(direct_remote_scr_stream_t& stream);
   void atomic_scratch_update(atomic_scr_stream_t& stream);
+  void atomic_scratch_update_local(atomic_scr_stream_t& stream);
   void serve_atomic_requests(bool &performed_atomic_scr);
   void serve_atomic_requests_local(bool &performed_atomic_scr);
   void push_remote_wr_req(uint8_t *val, int num_bytes, addr_t scr_addr);

@@ -251,7 +251,7 @@ private:
 
   std::vector<accel_t*> accel_arr;
 
-  int _num_active_threads=-1; // for global barrier
+  int _num_active_threads=1; // -1; // for global barrier
 
   bool _prev_done = true;
 

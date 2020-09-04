@@ -990,7 +990,9 @@ void accel_t::tick() {
 // simpler than it used to be
 void accel_t::cycle_indirect_interf() {
   for (unsigned i = START_IND_PORTS; i < STOP_IND_PORTS; ++i) { // ind read ports
-    if(i==ATOMIC_ADDR_PORT || i==ATOMIC_BYTES_PORT) continue; //dedicated ports
+    if(_ssim->num_active_threads()>1) {
+      if(i==ATOMIC_ADDR_PORT || i==ATOMIC_BYTES_PORT) continue; //dedicated ports
+    }
     auto &ind_in_port = _port_interf.in_port(i);
     auto &ind_out_port = _port_interf.out_port(i);
     
@@ -2618,11 +2620,15 @@ void dma_controller_t::make_write_request() {
 void dma_controller_t::make_read_request() {
   //--------------------------
   float min_port_ready = -2;
+  int max_reqs=-1;
   int num_cores = _accel->_ssim->num_active_threads();
-  if(_accel->_lsq->getCpuId()==0) num_cores=1;
-  int max_reqs=SD_TRANSFERS_ALLOWED/num_cores; // 22/16=1
-  // if(max_reqs==0) if(_accel->get_cur_cycle()%2) max_reqs=1;
-  if(mem_reqs()>=max_reqs) return; // may be in worse case
+  if(num_cores>1) {
+    assert(num_cores<64 && "currently we support max 64 threads");
+    if(_accel->_lsq->getCpuId()==0) num_cores=1;
+    max_reqs=SD_TRANSFERS_ALLOWED/num_cores; // 22/16=1
+    // if(max_reqs==0) if(_accel->get_cur_cycle()%2) max_reqs=1;
+    if(mem_reqs()>=max_reqs) return; // may be in worse case
+  }
   //----------------------------
 
   auto to_sort = _read_streams;
@@ -2674,7 +2680,9 @@ void dma_controller_t::make_read_request() {
         if (no_space) continue;
 
         // this used to be 64..
-        if(in_vp.get_bytes_waiting()>MEM_WIDTH*max_reqs) continue; 
+        if(num_cores>1) {
+          if(in_vp.get_bytes_waiting()>MEM_WIDTH*max_reqs) continue; 
+        }
 
         // Oh no unreserved remaining space (both of them should have)
         // but that should return back then maybe only one stream has consumed
@@ -2733,11 +2741,13 @@ void dma_controller_t::make_read_request() {
         bool no_space = (in_vp.num_ready() * in_vp.port_vec_elem() + (in_vp.mem_size())*8/in_vp.get_port_width()) > CGRA_FIFO_LEN;
         if(no_space) continue;
 
-        if(in_vp.get_bytes_waiting()>MEM_WIDTH*max_reqs) continue; 
+        if(num_cores>1) {
+          if(in_vp.get_bytes_waiting()>MEM_WIDTH*max_reqs) continue; 
+        }
 
         //--------------------------------
-        // cout << "memory in ind_vp: " << ind_vp.mem_size() << "\n"; 
-        // cout << "susize mem: " << subsize_vp.mem_size() << "\n";
+        // cout << "memory in ind_vp: " << ind_vp.mem_size() << "\n";  // 0
+        // cout << "susize mem: " << subsize_vp.mem_size() << "\n"; // 0
         // cout << "lsq sd transfer: " <<  _accel->_lsq->sd_transfers[in_port].unreservedRemainingSpace() << endl;
         // cout << "cal lsq request: " << _accel->_lsq->canRequest() << endl;
 
@@ -5058,6 +5068,192 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
   // break;
 }
 
+void scratch_write_controller_t::atomic_scratch_update_local(atomic_scr_stream_t &stream) {
+  SBDT loc;
+  addr_t scr_addr, max_addr;
+  int logical_banks = NUM_SCRATCH_BANKS;
+  int bank_id = 0;
+  // added to correct bank conflict calculation
+  int num_addr_pops = 0;
+  int num_val_pops = 0;
+
+  port_data_t &out_addr = _accel->port_interf().out_port(stream._out_port);
+  port_data_t &out_val = _accel->port_interf().out_port(stream._val_port);
+
+  // strides left in the stream or requests left in the queue
+  // if(stream.stream_active() || atomic_scr_issued_requests_active()) {
+  if (stream.stream_active()) {
+    logical_banks = NUM_SCRATCH_BANKS / stream._value_bytes;
+
+    addr_t base_addr = stream._mem_addr; // this is like offset
+    int n=0;
+
+    if (out_addr.mem_size() > 0 && out_val.mem_size() > 0 &&
+        stream._value_bytes*n < 64 && // number of pushes should be max
+        !crossbar_backpressureOn()) { // enough in src and dest
+      n++;
+
+      // hopefully it pushes data here
+      if (_accel->_ssim->in_roi()) {
+        _accel->_stat_cycles_atomic_scr_pushed++;
+      }
+
+      num_addr_pops = 0;
+      num_val_pops = 0;
+      loc = out_addr.peek_out_data(0, stream._output_bytes);
+      if (SS_DEBUG::COMP) {
+        std::cout << "1 cycle execution : " << std::endl;
+        std::cout << "64-bit value at the addr port is: " << loc;
+      }
+      loc = stream.cur_addr(loc);
+      //cout << "cur addr index: " << stream._cur_addr_index << " addr bytes: " << stream._addr_bytes << endl;
+      //std::cout << "updated loc: " << loc << "\n";
+
+      base_addr = stream.cur_offset() * stream._output_bytes;
+      scr_addr = base_addr + loc * stream._output_bytes;
+      max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
+
+
+      //cout << "SCR ADDR: " << scr_addr << " BASE ADDR: " << base_addr << "\n";
+
+      // FIXME: check if this correct
+      // max_addr = (scr_addr & stream._value_mask) + stream._value_bytes;
+
+      // go while stream and port does not run out
+      // number of iterations of this loop cannot be more than 8*64-bits
+      // => cannot pop more than 8 values from the port
+
+      // num_value_pops should be less than 64 bytes?
+      // Stage 1: push requests in scratch banks
+      int remote_update_this_cycle=0;
+      while (scr_addr < max_addr && stream._num_strides > 0 &&
+             out_addr.mem_size() && out_val.mem_size() &&
+             num_val_pops < 64/stream._value_bytes && remote_update_this_cycle<1) {
+             // num_val_pops < 64) {
+        if (SS_DEBUG::COMP) {
+          std::cout << "\tupdate at index location: " << loc
+                    << " and scr_addr: " << scr_addr
+                    << " and scr_size is: " << SCRATCH_SIZE
+                    << " input num strides: " << stream._num_strides;
+        }
+
+        // TODO: instead of assert, if this condition holds true, send a remote
+        // request (for now let's send a complete packet -- I don't think we
+        // want to say about decomposable n/w but we can study that by
+        // increasing the network bandwidth)
+
+        // if(scr_addr + stream._output_bytes > SCRATCH_SIZE) { cout << "scratch_addr: " << scr_addr << endl; }
+        // assert(scr_addr + stream._output_bytes <= SCRATCH_SIZE);
+
+        struct atomic_scr_op_req temp_req;
+        SBDT cur_value = out_val.peek_out_data(0, stream._value_bytes);
+        if (SS_DEBUG::COMP) {
+          cout << "64-bit value popped from out_val port: " << cur_value << endl;
+        }
+        temp_req._scr_addr = scr_addr;
+        temp_req._inc = stream.cur_val(cur_value);
+        temp_req._opcode = stream._op_code;
+        temp_req._value_bytes = stream._value_bytes;
+        temp_req._output_bytes = stream._output_bytes;
+
+        // by default is row interleaving for now
+        if (_accel->_banked_spad_mapping_strategy &&
+            (strcmp(_accel->_banked_spad_mapping_strategy, "COL") == 0)) {
+          // bank_id = (scr_addr >> 9) & (logical_banks - 1);
+          // bank_id = (scr_addr >> 6) & (logical_banks - 1); // log64 = 6 = log2(k)
+          bank_id = (scr_addr >> 5) & (logical_banks - 1); // log64 = 6 = log2(k)
+        } else {
+          bank_id = (scr_addr >> 1) & (logical_banks - 1);
+        }
+
+        assert(bank_id < logical_banks);
+
+        int local_core_id = (scr_addr + stream._output_bytes)/SCRATCH_SIZE;
+        local_core_id = scr_addr >> 14;
+        if(SS_DEBUG::NET_REQ) {
+          timestamp();
+          cout << " Sending remote atomic update for scratch_addr: "
+               << scr_addr << " from own core id: " << _accel->_ssim->get_core_id()
+               << " to remote core id: " << local_core_id <<  endl;
+        }
+        int local_scr_addr = scr_addr;
+        uint64_t x = temp_req._inc;
+       
+        // FIXME: currently it does not send scalar atomic update requests
+        // TODO: need the network function to work for non-multicast scalar
+        // requests as well (currently it works only for 64-bytes)
+        push_atomic_update_req(local_scr_addr, temp_req._opcode,
+                                    temp_req._value_bytes, temp_req._output_bytes, x);
+        bool rem=false;
+        if(rem) ++remote_update_this_cycle;
+
+        _accel->_stat_scratch_bank_requests_pushed++;
+        stream._num_strides--;
+        // FIXME: this is to prevent garbage value
+        assert(stream._num_strides<1000000);
+        // assert(stream._num_strides>=0);
+
+        if (SS_DEBUG::COMP) {
+          std::cout << "\tvalues input: " << temp_req._inc << "\tbank_id: " << bank_id
+                    << "\n";
+          std::cout << "stream strides left are: " << stream._num_strides
+                    << "\n";
+        }
+
+        stream.inc_val_index();
+        stream.inc_addr_index();
+
+        // pop only if index in word is last?
+        if (stream.can_pop_val()) {
+          stream._cur_val_index = 0;
+          num_val_pops++;
+          out_val.pop_out_data(stream._value_bytes);
+          if (SS_DEBUG::COMP) {
+            std::cout << "\tpopped data from val port";
+          }
+        }
+        if (stream.can_pop_addr()) {
+          stream._cur_addr_index = 0;
+          // for bank conflicts calc purposes
+          num_addr_pops++;
+          out_addr.pop_out_data(stream._addr_bytes);
+          if (SS_DEBUG::COMP) {
+            std::cout << "\tpopped data from addr port";
+          }
+        }
+        if (SS_DEBUG::COMP) {
+          std::cout << "\n";
+        }
+        // should be decremented after every computation
+        // new loop added for vector ports
+        if (out_addr.mem_size() > 0 && out_val.mem_size() > 0) {
+          loc = out_addr.peek_out_data();
+          if (SS_DEBUG::COMP) {
+            std::cout << "64-bit value at the addr port is: " << loc;
+          }
+          loc = stream.cur_addr(loc);
+          // std::cout << "loc: " << loc << "\n";
+          // making offset also configurable (same configuration as the
+          // address)
+          base_addr = stream.cur_offset() * stream._value_bytes;
+
+          // scr_addr = base_addr + loc*stream._value_bytes;
+          scr_addr = base_addr + loc * stream._value_bytes;
+          // max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
+          max_addr = (scr_addr & stream._value_mask) + stream._value_bytes;
+        }
+      }
+    }
+  }
+  if (_accel->_ssim->in_roi()) {
+    _accel->_num_cycles_issued++;
+  }
+  // this should be the case, right?
+  // break;
+}
+
+
+
 void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
                                        bool &performed_atomic_scr) {
 
@@ -5232,7 +5428,11 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
             continue;
           }
         }
-        atomic_scratch_update(stream);
+        if(_accel->_ssim->num_active_threads()==1) {
+          atomic_scratch_update_local(stream);
+        } else {
+          atomic_scratch_update(stream);
+        }
         // cout << "current core: " << _accel->_ssim->get_core_id() << " return number of strides: " << stream._num_strides << endl;
         if (stream.check_set_empty()) {
           // cout << "Setting out port: " << stream._out_port << " and val port: " << stream._val_port << " empty\n";
@@ -5282,8 +5482,11 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
 
   if(atomic_scr_issued_requests_active()) {
     if(can_perform_atomic_scr) { 
-      serve_atomic_requests(performed_atomic_scr);
-      push_atomic_val();
+      if(_accel->_ssim->num_active_threads()>1) {
+        serve_atomic_requests(performed_atomic_scr);
+      } else {
+        serve_atomic_requests_local(performed_atomic_scr);
+      }
     }
   }
 
@@ -6431,9 +6634,11 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
   _soft_config.out_ports_name.resize(64);
 
   auto &in_vecs = _dfg->nodes<SSDfgVecInput*>();
+  // cout << "number of input vecs: " << in_vecs.size() << endl;
   for (int ind = 0; ind < in_vecs.size(); ++ind) {
     SSDfgVec *vec_in = in_vecs[ind];
     int i = _sched->vecPortOf(vec_in);
+    // cout << "Done finding index of input vec port which is: " << i << endl;
     CHECK(i != -1);
     _soft_config.in_ports_active.push_back(i); // activate input vector port
 
@@ -6466,8 +6671,11 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
 
   auto &out_vecs = _dfg->nodes<SSDfgVecOutput*>();
   for (int ind = 0; ind < out_vecs.size(); ++ind) {
+    // cout << "size of output vector: " << out_vecs.size();
     SSDfgVec *vec_out = out_vecs[ind];
-    int i = _sched->vecPortOf(vec_out);
+    // cout << "output vector name: " << vec_out->name();
+    int i = _sched->vecPortOf(vec_out); // output vector is a NULL (this should the job of scheduler?)
+    // cout << "Done finding index of output vec port which is: " << i << endl;
 
     _soft_config.out_ports_active.push_back(i);
     SSDfgVecOutput *vec_output = dynamic_cast<SSDfgVecOutput *>(vec_out);

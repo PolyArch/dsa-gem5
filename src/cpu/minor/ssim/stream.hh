@@ -866,6 +866,7 @@ struct indirect_stream_t : public indirect_base_stream_t {
   virtual int repeat_in() {return _repeat_in;}
   virtual int repeat_str() {return _repeat_str;}
 
+
   virtual void print_status() {
     std::cout << "mem[ind_port]->in_port" << "\tscratch? " << scratch()
       << "\tout_port width" << _data_width << "\tind_port=" << _ind_port

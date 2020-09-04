@@ -412,7 +412,7 @@ void ssim_t::add_port(int in_port) {
   extra_in_ports.push_back(in_port);
 }
 
-void ssim_t::load_dma_to_port(int64_t repeat, int64_t repeat_str) {
+void ssim_t::load_dma_to_port(int64_t repeat, int64_t repeat_str) { // 1 and 0
   int64_t new_repeat_str = repeat_str >> 1;
   bool repeat_flag(repeat_str & 1);
 
