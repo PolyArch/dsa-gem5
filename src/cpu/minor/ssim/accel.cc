@@ -144,9 +144,6 @@ void accel_t::request_reset_streams() {
   _net_c.reset_data();
   _port_c.reset_data();
 
-  if (_sched) {
-    _sched->reset_simulation_state();
-  }
   print_status();
   _stream_cleanup_mode=false;
   _cleanup_mode = true; // it should wait for outstanding mem req to be done (wait on o/p ports and then cleanup memory)
@@ -190,9 +187,6 @@ void accel_t::reset_data() {
   _net_c.reset_data();
   _port_c.reset_data();
 
-  if (_sched) {
-    _sched->reset_simulation_state();
-  }
 }
 
 // --------------------------------- CONFIG
@@ -1141,13 +1135,13 @@ void accel_t::cycle_cgra_backpressure() {
         // TODO: this is supposed to be the verif flag, fix it later!
         // num_computed = _dfg->push_vector(vec_in, data, data_valid, print, true);
         for (int i = 0; i < data.size(); ++i) {
-          vec_in->values()[i]->push(data[i], data_valid[i], 0);
+          vec_in->values[i].push(data[i], data_valid[i], 0);
         }
 
         if(SS_DEBUG::COMP) {
           cout << "Vec name: " << vec_in->name() << " allowed to push input: ";
           for (size_t i = 0; i < data.size(); ++i) {
-            std::cout << vec_in->values()[i] << "|" << data[i] << "(" << data_valid[i] << ") ";
+            std::cout << &vec_in->values[i] << "|" << data[i] << "(" << data_valid[i] << ") ";
           }
           cout << std::endl;
         }
@@ -1169,7 +1163,7 @@ void accel_t::cycle_cgra_backpressure() {
   }
 
   // calling with the default parameters for now
-  num_computed = _dfg->forward(_back_cgra, _sched);
+  num_computed = _dfg->forward(_back_cgra);
 
   _cgra_issued += _dfg->total_dyn_insts(0) + _dfg->total_dyn_insts(1);
   _dedicated_cgra_issued += _dfg->total_dyn_insts(0);
@@ -1177,7 +1171,7 @@ void accel_t::cycle_cgra_backpressure() {
 
   if (in_roi()) {
     _stat_ss_insts += num_computed;
-    _stat_ss_dfg_util += (double)num_computed / _dfg->inst_vec().size();
+    _stat_ss_dfg_util += (double)num_computed / _dfg->instructions.size();
   }
 
   // pop the ready outputs
@@ -1638,7 +1632,7 @@ void accel_t::print_statistics(std::ostream &out) {
       << ((double)_stat_comp_instances) / ((double)roi_cycles()) << "\n";
   if (_dfg) {
     out << "For backcgra, Average thoughput of all ports (overall): "
-      << ((double)_stat_comp_instances)/((double)roi_cycles()*_dfg->nodes<SSDfgVecOutput*>().size()) // gives seg fault when no dfg
+      << ((double)_stat_comp_instances)/((double)roi_cycles()*_dfg->vouts.size()) // gives seg fault when no dfg
       << ", CGRA outputs/cgra busy cycles: "
       <<  ((double)_stat_comp_instances)/((double)_stat_cgra_busy_cycles)  << "\n";
   }
@@ -5402,11 +5396,12 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
       port_data_t &out_addr = _accel->port_interf().out_port(stream._out_port);
       port_data_t &out_val = _accel->port_interf().out_port(stream._val_port);
 
-      // cout << "own_core_id: " << _accel->_ssim->get_core_id() << " addr mem_size: "
-      //      << out_addr.mem_size() << " val mem_size: " << out_val.mem_size()
-      //      << " stream_active: " << stream.stream_active()
-      //      << " sstream left: " << stream._sstream_left << " val sstream left: " << stream._val_sstream_left 
-      //      << " out port: " << stream._out_port << " val port: " << stream._val_port <<           " strides left: " << stream._num_strides << endl;
+      cerr << "own_core_id: " << _accel->_ssim->get_core_id() << " addr mem_size: "
+           << out_addr.mem_size() << " val mem_size: " << out_val.mem_size()
+           << " stream_active: " << stream.stream_active()
+           << " sstream left: " << stream._sstream_left << " val sstream left: " << stream._val_sstream_left 
+           << " out port: " << stream._out_port << " val port: " << stream._val_port
+           << " strides left: " << stream._num_strides << endl;
 
 
       // Oh the issue is even though the stream is active, and there is no data
@@ -6600,7 +6595,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
   _port_interf.reset();
 
   if (_sched) {
-    _sched->clear_ssdfg();
+    delete _sched->ssdfg();
     delete _sched;
   }
 
@@ -6613,15 +6608,6 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
 
   _dfg = _sched->ssdfg();                 // now we have the dfg!
 
-  // Lets print it for debugging purposes
-  std::ofstream ofs("viz/dfg-reconstructed.dot", std::ios::out);
-  if (!ofs.good()) {
-    cerr << "WARNING: viz/ folder not created\n";
-  }
-  _dfg->printGraphviz(ofs);
-
-  _sched->printGraphviz("viz/sched-reconstructed.gv");
-
   _soft_config.out_ports_lat.resize(64); // make this bigger if we need
 
   _soft_config.cgra_in_ports_active.resize(128);
@@ -6633,16 +6619,17 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
   _soft_config.in_ports_name.resize(64);
   _soft_config.out_ports_name.resize(64);
 
-  auto &in_vecs = _dfg->nodes<SSDfgVecInput*>();
+  auto &in_vecs = _dfg->vins;
   // cout << "number of input vecs: " << in_vecs.size() << endl;
   for (int ind = 0; ind < in_vecs.size(); ++ind) {
-    SSDfgVec *vec_in = in_vecs[ind];
+    SSDfgVec *vec_in = &in_vecs[ind];
     int i = _sched->vecPortOf(vec_in);
     // cout << "Done finding index of input vec port which is: " << i << endl;
     CHECK(i != -1);
     _soft_config.in_ports_active.push_back(i); // activate input vector port
 
-    SSDfgVecInput *vec_input = dynamic_cast<SSDfgVecInput *>(vec_in);
+    // TODO(@were): Remove this!
+    SSDfgVecInput *vec_input = dynamic_cast<SSDfgVecInput*>(vec_in);
     assert(vec_input);
 
     _soft_config.in_ports_name[i] = vec_input->name();
@@ -6669,16 +6656,16 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
 
   //SSDfgNode *dfg_node = vec_output->at(port_idx*vec_output->get_port_width()/64 );
 
-  auto &out_vecs = _dfg->nodes<SSDfgVecOutput*>();
+  auto &out_vecs = _dfg->vouts;
   for (int ind = 0; ind < out_vecs.size(); ++ind) {
     // cout << "size of output vector: " << out_vecs.size();
-    SSDfgVec *vec_out = out_vecs[ind];
+    SSDfgVec *vec_out = &out_vecs[ind];
     // cout << "output vector name: " << vec_out->name();
     int i = _sched->vecPortOf(vec_out); // output vector is a NULL (this should the job of scheduler?)
     // cout << "Done finding index of output vec port which is: " << i << endl;
 
     _soft_config.out_ports_active.push_back(i);
-    SSDfgVecOutput *vec_output = dynamic_cast<SSDfgVecOutput *>(vec_out);
+    SSDfgVecOutput *vec_output = dynamic_cast<SSDfgVecOutput*>(vec_out);
     assert(vec_output);
 
     _soft_config.out_ports_name[i] = vec_output->name();
@@ -6694,7 +6681,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
 
   int lat, lat_mis;
   _sched->cheapCalcLatency(lat, lat_mis);
-  int max_lat_mis = lat_mis; //_sched->decode_lat_mis();
+  int max_lat_mis = lat_mis;
 
   for (int g = 0; g < NUM_GROUPS; ++g) {
     auto &active_ports = _soft_config.in_ports_active_group[g];
@@ -6702,7 +6689,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
 
     if (active_ports.size() > 0) {
 
-      int thr = _dfg->maxGroupThroughput(g);
+      int thr = _sched->group_throughput[g]; // _dfg->maxGroupThroughput(g);
 
       float thr_ratio = 1 / (float)thr;
       float mis_ratio = ((float)_fu_fifo_len) / (_fu_fifo_len + max_lat_mis);
@@ -6748,7 +6735,6 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
   // compute the in ports active for backcgra
   _soft_config.in_ports_active_backcgra = _soft_config.in_ports_active;
 
-  ofs.close();
 }
 
 bool scratch_write_controller_t::schedule_buffet(BuffetStream *buffet) {

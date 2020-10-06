@@ -1380,7 +1380,6 @@ LSQ::moveFromRequestsToTransfers(LSQRequestPtr request)
         assert(sd_transfers[streamId].remainingSpace() != 0);
         requests.pop();
         sd_transfers[streamId].push(request);
-        DEBUG(MEM_REQ) << "Move " << streamId << " to sd_transfer";
     }
 }
 
@@ -1557,7 +1556,6 @@ LSQ::LSQ(std::string name_, std::string dcache_port_name_,
     retryRequest(NULL),
     cacheBlockMask(~(cpu_.cacheLineSize() - 1))
 {
-    DEBUG(MEM_VIO) << "construct lsq, clockdomain: " << &cpu_.clockDomain;
     /*TODO:  Fix this to separate out:
      * 1. The number of streams supported (currently 100, too high)
      * 2. The size of each transfer queue (currently identical to transfers)
@@ -1644,8 +1642,6 @@ LSQ::findResponse(int streamId) {
         bool complete = request->isComplete();
         bool can_store = storeBuffer.canInsert();
         bool to_str_buf = request->state == LSQRequest::StoreToStoreBuffer;
-
-        DEBUG(MEM_REQ) << streamId << " @state: " << request->state;
 
         if(complete || (to_str_buf && can_store)) {
             ret = request;
@@ -1851,10 +1847,6 @@ LSQ::pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
     requests.push(request);
     inst->inLSQ = true;
     request->startAddrTranslation();
-
-    if (request->sdInfo) {
-        DEBUG(MEM_REQ) << "enqueued request @" << request->sdInfo->trans_idx;
-    }
 
     return inst->translationFault;
 }

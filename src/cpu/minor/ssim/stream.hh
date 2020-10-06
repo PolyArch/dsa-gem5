@@ -1311,11 +1311,10 @@ struct atomic_scr_stream_t : public base_stream_t {
   virtual void print_status() {
     std::cout << "atomic_scr " << "\tval_port=" << _val_port
               << "\taddr_port:" << _out_port  << "\top_code:" << _op_code << "\titers left: " << _num_strides
-         << std::dec << "\tinput_type:" << (int) _value_bytes << "\toutput_type:" << (int) _output_bytes << "\taddr_type:" << (int) _addr_bytes
-    << " num values in vector: " << _val_num << " broadcast updates: " << _num_updates << "\n";
-       };
+              << std::dec << "\tinput_type:" << (int) _value_bytes << "\toutput_type:" << (int) _output_bytes << "\taddr_type:" << (int) _addr_bytes
+              << " num values in vector: " << _val_num << " broadcast updates: " << _num_updates << "\n";
+  }
 
-  // base_stream_t::print_status();
 };
 
 
