@@ -891,15 +891,15 @@ decode QUADRANT default Unknown::unknown() {
         }
 
         0x2: decode FUNCT3 {
-            0x0: IOp::ss_cfg({{
+            0x0: SSOp::ss_cfg_port({{
+                xc->setSSReg(Rs1,SS_REPEAT);
+                xc->setSSReg(imm,SS_REPEAT_STRETCH);
+            }}, IsSSParam, IsNonSpeculative, No_OpClass);
+            0x1: IOp::ss_cfg({{
                 xc->setSSReg(Rs1,SS_MEM_ADDR);
                 xc->setSSReg(imm,SS_CFG_SIZE);
                 xc->callSSFunc(SS_CFG);
             }}, uint64_t, {{ imm = sext<12>(IMM12); }}, IsSSConfig, IsNonSpeculative, No_OpClass);
-            0x1: SSOp::ss_cfg_port({{
-                xc->setSSReg(Rs1,SS_REPEAT);
-                xc->setSSReg(imm,SS_REPEAT_STRETCH);
-            }}, IsSSParam, IsNonSpeculative, No_OpClass);
             0x2: SSOp::ss_cfg_ctx({{
                 if(imm == 0) {
                   xc->setSSReg(Rs1,SS_CONTEXT);
@@ -931,7 +931,7 @@ decode QUADRANT default Unknown::unknown() {
                   }
                 }
             }}, IsSSStream, IsNonSpeculative, No_OpClass);
-            0x2: SSOp::ss_dma_rd({{
+            0x3: SSOp::ss_dma_rd({{
                 xc->pushStreamDimension(Rs1, Rs2, imm >> 1);
                 if (~imm & 1)
                   xc->callSSFunc(SS_MEM_PRT);
@@ -988,14 +988,14 @@ decode QUADRANT default Unknown::unknown() {
         	    xc->setSSReg(imm & 0x1, SS_FLAGS);
                 xc->callSSFunc(SS_REM_PORT);
             }}, IsSSStream, No_OpClass);
-            0x3: SSOp::ss_garb({{
-                 xc->setSSReg(Rs1,SS_GARB_ELEM);
-            }}, IsSSStream, No_OpClass);
-            0x4: SSOp::ss_wr_dma({{
+            0x3: SSOp::ss_wr_dma({{
                 xc->pushStreamDimension(Rs1, Rs2, imm >> 1);
                 if (~imm & 1)
                   xc->callSSFunc(SS_PRT_MEM);
             }}, IsSSStream, IsNonSpeculative, No_OpClass);
+            0x4: SSOp::ss_garb({{
+                 xc->setSSReg(Rs1,SS_GARB_ELEM);
+            }}, IsSSStream, No_OpClass);
             0x5: SSOp::ss_wr_rd({{
                 xc->setSSReg(Rs1,SS_NUM_ELEM);
                 xc->setSSReg(Rs2,SS_FLAGS);

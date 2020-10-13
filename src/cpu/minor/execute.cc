@@ -980,14 +980,9 @@ Execute::doInstCommitAccounting(MinorDynInstPtr inst)
 
 void Execute::timeout_check(bool should_commit, MinorDynInstPtr inst) {
   uint64_t cyc = cpu.curCycle();
-  uint64_t last_event = std::max(last_sd_issue,
-                        ssim.forward_progress_cycle());
-  if(!should_commit) {
-    if(cyc > 99990 + last_event) {
-      DPRINTF(SS, "Almost Aborting because of wait", *inst);
-    }
+  uint64_t last_event = std::max(last_sd_issue, ssim.forward_progress_cycle());
 
-    // if(cyc > 1000000 + last_event) {
+  if(!should_commit) {
     if(cyc > 100000 + last_event) {
       DPRINTF(SS, "Instruction: %s is stalled for too long!!! ABORTING", *inst);
       ssim.print_stats();

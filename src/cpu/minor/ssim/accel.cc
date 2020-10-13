@@ -488,7 +488,7 @@ void port_interf_t::initialize(SSModel *ssconfig) {
 
 // ---------------------------- ACCEL ------------------------------------------
 uint64_t accel_t::now() {
-  return curTick();
+  return _lsq->get_cpu().curCycle();
 }
 
 accel_t::accel_t(Minor::LSQ *lsq, int i, ssim_t *ssim)
@@ -1207,8 +1207,7 @@ void accel_t::cycle_cgra_backpressure() {
         cerr << "\n";
       }
       if (in_roi()) {
-        // _stat_comp_instances += 1;
-        _stat_comp_instances += len; // number of scalar inputs
+        _stat_comp_instances += 1;
       }
 
       CHECK(data_valid.size() == len) << "port vec elem: " << cur_out_port.port_vec_elem()
@@ -5396,12 +5395,13 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
       port_data_t &out_addr = _accel->port_interf().out_port(stream._out_port);
       port_data_t &out_val = _accel->port_interf().out_port(stream._val_port);
 
-      cerr << "own_core_id: " << _accel->_ssim->get_core_id() << " addr mem_size: "
-           << out_addr.mem_size() << " val mem_size: " << out_val.mem_size()
-           << " stream_active: " << stream.stream_active()
-           << " sstream left: " << stream._sstream_left << " val sstream left: " << stream._val_sstream_left 
-           << " out port: " << stream._out_port << " val port: " << stream._val_port
-           << " strides left: " << stream._num_strides << endl;
+      // timestamp();
+      // cerr << "own_core_id: " << _accel->_ssim->get_core_id() << " addr mem_size: "
+      //      << out_addr.mem_size() << " val mem_size: " << out_val.mem_size()
+      //      << " stream_active: " << stream.stream_active()
+      //      << " sstream left: " << stream._sstream_left << " val sstream left: " << stream._val_sstream_left 
+      //      << " out port: " << stream._out_port << " val port: " << stream._val_port
+      //      << " strides left: " << stream._num_strides << endl;
 
 
       // Oh the issue is even though the stream is active, and there is no data
@@ -5410,8 +5410,9 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
 
       // FIXME: mem_size based on config (this should be greater than
       // addr_bytes/out_addr.data_width
-      
-      if(stream.stream_active() && (stream._val_sstream_left<=0 || out_addr.mem_size() >= (stream._addr_bytes/out_addr.get_port_width()))) {
+      if (stream.stream_active() &&
+          (stream._val_sstream_left <= 0 ||
+           out_addr.mem_size() >= (stream._addr_bytes / out_addr.get_port_width()))) {
       // if(stream.stream_active() && (stream._val_sstream_left<=0 || out_addr.mem_size() >= (stream._addr_bytes/out_addr.get_port_width())) && (stream._sstream_left<=0 || out_val.mem_size() >= (stream._value_bytes/out_val.get_port_width()))) {
         // Constraint: This should be same for all active atomic streams
         _logical_banks = NUM_SCRATCH_BANKS / stream._value_bytes;
@@ -5950,7 +5951,7 @@ void port_controller_t::cycle() {
 
           // should send vector version of that
           SBDT val = stream.pop_item(); // data width of const val should be >= port width
-          // cout << "popped value: " << val << endl;
+          // std::cerr << "[const] popped value: " << val << " " << const_width << endl;
           assert(val==stream._constant || val==stream._constant2);
           // if(val==-1) break; // no item to pop
 
