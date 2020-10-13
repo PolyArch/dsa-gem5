@@ -895,12 +895,7 @@ decode QUADRANT default Unknown::unknown() {
                 xc->setSSReg(Rs1,SS_REPEAT);
                 xc->setSSReg(imm,SS_REPEAT_STRETCH);
             }}, IsSSParam, IsNonSpeculative, No_OpClass);
-            0x1: IOp::ss_cfg({{
-                xc->setSSReg(Rs1,SS_MEM_ADDR);
-                xc->setSSReg(imm,SS_CFG_SIZE);
-                xc->callSSFunc(SS_CFG);
-            }}, uint64_t, {{ imm = sext<12>(IMM12); }}, IsSSConfig, IsNonSpeculative, No_OpClass);
-            0x2: SSOp::ss_cfg_ctx({{
+            0x1: SSOp::ss_cfg_ctx({{
                 if(imm == 0) {
                   xc->setSSReg(Rs1,SS_CONTEXT);
                 } else {
@@ -909,6 +904,11 @@ decode QUADRANT default Unknown::unknown() {
                 xc->setSSReg(Rs2,SS_OFFSET);
                 xc->callSSFunc(SS_CTX);
             }}, IsSSParam, IsNonSpeculative, No_OpClass);
+            0x2: IOp::ss_cfg({{
+                xc->setSSReg(Rs1,SS_MEM_ADDR);
+                xc->setSSReg(imm,SS_CFG_SIZE);
+                xc->callSSFunc(SS_CFG);
+            }}, uint64_t, {{ imm = sext<12>(IMM12); }}, IsSSConfig, IsNonSpeculative, No_OpClass);
             0x3: SSOp::ss_fill_mode({{
                 xc->setSSReg(imm,SS_CONSTANT);
                 xc->callSSFunc(SS_FILL_MODE);
