@@ -1464,7 +1464,7 @@ void accel_t::print_status() {
 
   if(!_lsq->all_spu_done(_ssim->num_active_threads())) {
     should_return=false;
-    cout << "All SPU cores not done\n";
+    // cout << "All SPU cores not done\n";
   }
 
   should_return=true;
@@ -4002,6 +4002,9 @@ void network_controller_t::multicast_data(
   int data_width = out_vp.get_port_width(); // in bytes
   int8_t val[64]; // number of 8-byte elements to send
 
+
+  // cout << "stream active? " << stream.stream_active() << " out vp mem size: " << out_vp.mem_size() << " message size: " << message_size << endl;
+
   if (stream.stream_active() && out_vp.mem_size() >= message_size && out_vp.mem_size()) {
     while (stream.stream_active() // enough in dest
            && out_vp.mem_size() &&
@@ -4230,9 +4233,11 @@ void network_controller_t::cycle() {
 
         int data_width = out_vp.get_port_width(); // in bytes
         message_size = 64/data_width; // num of data_width elements to be written
+        // cout << "Message size original: " << message_size << endl;
         if(stream._num_elements<64/data_width){
           message_size=stream._num_elements;
         }
+        // cout << "Message size after comp: " << message_size << " stream elements: " << stream._num_elements <<  endl;
        if(stream.timeout()) {
           message_size = out_vp.mem_size() < message_size ? out_vp.mem_size() : message_size;
         } else if(out_vp.mem_size() < message_size) { // this should be here if no timeout
@@ -6145,10 +6150,7 @@ bool accel_t::done(bool show, int mask) {
   }*/
    // _lsq->check_network_idle();
 
-  if (mask == GLOBAL_WAIT && d) {
-    // _cleanup_mode = false; // Should this be here?
-    // cout << "Came to set this core done: " << _lsq->getCpuId() << " with num_threads: " << _ssim->num_active_threads() << endl;
-    // cout << "Number of active threads: " << _ssim->num_active_threads() << endl;
+  if (mask == GLOBAL_WAIT && d && (_ssim->num_active_threads()>1)) {
     _lsq->set_spu_done(_lsq->getCpuId());
     d = _lsq->all_spu_done(_ssim->num_active_threads());
 
@@ -6172,7 +6174,7 @@ bool accel_t::done(bool show, int mask) {
       // cout << "Called for global barrier for core: " << _lsq->getCpuId() << endl;
       _lsq->set_spu_global_wait_released(_lsq->getCpuId());
       if(_lsq->is_last_spu(_ssim->num_active_threads())) { // last global wait spu
-        // cout << "IT WAS LAST SPU TO RELEASE GLOBAL BARRIER\n";
+        // cout << "IT WAS LAST SPU TO RELEASE GLOBAL BARRIER with active threads: " << _ssim->num_active_threads()  << "\n";
         _lsq->reset_all_spu();
         _lsq->reset_all_spu_global_wait();
       }
@@ -6710,6 +6712,7 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
       }
 
       if (SS_DEBUG::SHOW_CONFIG) {
+        cout << "Core: " << _lsq->getCpuId() << endl;
         for (int i = 0; i < active_ports.size(); ++i) {
           int p = active_ports[i];
           cout << "in vp" << p << " ";

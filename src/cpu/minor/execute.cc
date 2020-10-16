@@ -983,6 +983,9 @@ void Execute::timeout_check(bool should_commit, MinorDynInstPtr inst) {
   uint64_t last_event = std::max(last_sd_issue, ssim.forward_progress_cycle());
 
   if(!should_commit) {
+    if(cyc > 99990 + last_event) {
+      DPRINTF(SS, "Just before abort");
+    }
     if(cyc > 100000 + last_event) {
       DPRINTF(SS, "Instruction: %s is stalled for too long!!! ABORTING", *inst);
       ssim.print_stats();
@@ -2049,7 +2052,6 @@ bool Execute::push_scalar_rem_atom_op_req(uint64_t val, std::vector<int> update_
 }
 
 void Execute::send_spu_req(int src_port_id, int dest_port_id, int8_t* val, int num_bytes, uint64_t mask){
-
  
   int req_type=1;
   uint32_t addr_to_send = dest_port_id | num_bytes << 16; // TODO: encode data_width

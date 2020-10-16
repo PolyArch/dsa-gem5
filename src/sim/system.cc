@@ -562,21 +562,21 @@ SystemParams::create()
 void
 System::set_spu_done(int spu_id) {
   _is_spu_done[spu_id-1]=1;
-  /*for(int i=0; i<64; ++i) {
-    printf("At i, it is: %d\n",_is_spu_done[i]);
-  }*/
 }
 
 bool
 System::all_spu_done(int num_active_threads) {
-  for(int i=0; i<num_active_threads; ++i) {
-    if(_is_spu_done[i]==0) {
-      // printf("SPU not done id: %d\n",i);
-      return false;
+  int threads_done=0;
+  for(int i=0; i<64; ++i) {
+    if(_is_spu_done[i]==1) {
+      ++threads_done;
     }
   }
-  return true;
+  if(threads_done==num_active_threads) return true;
+  else return false;
 }
+
+
 
 void
 System::reset_all_spu() {
@@ -599,9 +599,12 @@ System::reset_all_spu_global_wait() {
 
 bool
 System::is_last_spu(int num_active_threads) {
+  int threads_wait_released=0;
   for(int i=0; i<num_active_threads; ++i) {
-    if(_is_spu_global_wait_released[i]==0)
-      return false;
+    if(_is_spu_global_wait_released[i]==1) {
+      ++threads_wait_released;
+    }
   }
-  return true;
+  if(threads_wait_released==num_active_threads) return true;
+  else return false;
 }
