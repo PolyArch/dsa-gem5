@@ -29,6 +29,6 @@ m5out
 /system/arm/bootloader/arm64/boot_v2.arm64
 configs/example/memcheck.cfg
 configs/dram/lowp_sweep.cfg
-*compile_commands.json
+compile_commands.*
 .vscode/*
 .ycm_extra_conf.py

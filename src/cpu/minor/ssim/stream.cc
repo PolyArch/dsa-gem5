@@ -2,7 +2,13 @@
 #include "stream.hh"
 #include "sim-debug.hh"
 
-int base_stream_t::ID_SOURCE=0;
+const char *LOC_NAME[] = {
+#define MACRO(x) #x
+#include "loc.def"
+#undef MACRO
+};
+
+int base_stream_t::ID_SOURCE = 0;
 
 void base_stream_t::set_empty(bool b) {
   assert(b && "only goes one way for now");
@@ -19,6 +25,59 @@ void base_stream_t::set_empty(bool b) {
   _empty=b;
 }
 
+int BuffetEntry::Translate(int64_t addr, bool linebase) {
+  CHECK(linebase || InRange(addr))
+    << "Address out of range: " << addr << " not in ["
+    << address << ", " << addr + occupied << ")";
+  addr -= address;
+  addr += front;
+  if (addr >= end) {
+    addr = begin + addr - end;
+  }
+  return addr;
+}
+
+#define CQ_PTR(x, delta)               \
+  do {                                 \
+    x += (delta);                      \
+    if (x >= end) {                    \
+      x = begin + (x) - end;           \
+      CHECK(x >= begin && x <= end);   \
+    }                                  \
+  } while (false)
+
+void BuffetEntry::Append(int bytes) {
+  CHECK(occupied + bytes <= Size())
+    << "Buffet size overflow!" << occupied << " " << bytes << " " << Size();
+  occupied += bytes;
+  CQ_PTR(tail, bytes);
+}
+
+void BuffetEntry::Shrink(int bytes) {
+  CHECK(occupied - bytes >= 0)
+    << "Buffet size underflow!" << occupied << " " << bytes << " " << Size();
+  occupied -= bytes;
+  address += bytes;
+  CQ_PTR(front, bytes);
+}
+
+#undef CQ_PTR
+
+int BuffetEntry::SpaceAvailable() {
+  int64_t res = 0;
+  if (front < tail) {
+    res = tail - front;
+  } else {
+    res = (end - front) + (tail - begin);
+  }
+  if (res != occupied) {
+    CHECK(occupied == 0 || occupied == end - begin)
+      << occupied << " ? " << end - begin << " | "
+      << front << ", " << tail;
+  }
+  return Size() - occupied;
+}
+
 void base_stream_t::set_mem_map_config() {
   if(_part_size==0) return;
   _part_bits = log2(_part_size);
@@ -26,11 +85,20 @@ void base_stream_t::set_mem_map_config() {
 
 }
 
-void base_stream_t::print_in_ports() {
-  for(int i = 0; i < _in_ports.size();++i) {
-    std::cout << soft_port_name(_in_ports[i], true) << " ";
+void IPortStream::print_in_ports() {
+  for(int i = 0; i < pes.size();++i) {
+    std::cout << soft_port_name(pes[i].port, true) << " ";
   }
 }
+
+std::string BuffetEntry::toString() {
+  std::ostringstream oss;
+  oss << "Alloc: [" << begin << ", " << end << "), Buffered: ["
+      << front << ", " << tail << "), Occupied: " << occupied
+      << ", Address: " << address;
+  return oss.str();
+}
+
 
 // based on memory mapping, extract these two information
 uint64_t base_stream_t::get_core_id(addr_t logical_addr) {
@@ -88,4 +156,59 @@ std::string base_stream_t::soft_port_name(int x, bool is_input) {
     oss << "(" << vec[x] << ")";
   }
   return oss.str();
+}
+
+namespace dsa {
+namespace sim {
+namespace stream {
+
+void Functor::Visit(base_stream_t *) {}
+
+void Functor::Visit(IPortStream *is) {
+  Visit(static_cast<base_stream_t*>(is));
+}
+
+void Functor::Visit(OPortStream *os) {
+  Visit(static_cast<base_stream_t*>(os));
+}
+
+void Functor::Visit(LinearReadStream *ars) {
+  Visit(static_cast<IPortStream*>(ars));
+}
+
+void Functor::Visit(LinearWriteStream *aws) {
+  Visit(static_cast<OPortStream*>(aws));
+}
+
+void Functor::Visit(ConstPortStream *cps) {
+  Visit(static_cast<IPortStream*>(cps));
+}
+
+void Functor::Visit(Barrier *bar) {
+  // I do not think stream barrier should comply to a stream base.
+}
+
+void Functor::Visit(IndirectReadStream *irs) {
+  Visit(static_cast<IPortStream*>(irs));
+}
+
+void Functor::Visit(PortPortStream *irs) {
+  Visit(static_cast<base_stream_t*>(irs));
+}
+
+BarrierFlag Loc2BarrierFlag(LOC loc) {
+  return loc == LOC::DMA ? DBF_DMAStreams : DBF_SPadStreams;
+}
+
+}
+}
+}
+
+uint64_t PortOrConst::poll(accel_t *accel) {
+  if (n == -1) {
+    auto &vi = accel->port_interf().in_port(value);
+    CHECK(vi.mem_size());
+    return vi.peek_out_data();
+  }
+  return value;
 }

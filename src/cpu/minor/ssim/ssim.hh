@@ -5,6 +5,9 @@
 #include <cstdint>
 #include <iostream>
 #include "accel.hh"
+#include "state.h"
+#include "dsa/spec.h"
+#include "spec.h"
 
 //Some utilities:
 template<typename T, typename S, typename R>
@@ -22,44 +25,128 @@ class ssim_t
   friend class dma_controller_t;
   friend class port_port_controller_t;
 
-
 public:
+
   const int NUM_ACCEL;
   //Simulator Interface
   ssim_t(Minor::LSQ* lsq);
 
   uint64_t roi_enter_cycle() { return _roi_enter_cycle; }
+  /*! \brief The register file of the CGRA status. */
+  dsa::sim::ConfigState rf[DSARF::TOTAL_REG];
 
+  /*! \brief The state register of the input vector ports. */
+  dsa::sim::IVPState vps[DSA_MAX_PORTS];
+
+  /*! \brief The technical specification of this accelerator system. */
+  dsa::Specification spec;
+
+  /*! \brief Buffet entries. */
+  std::vector<BuffetEntry> bes;
+
+  /*!
+   * \brief Load the config bitstream.
+   */
+  void LoadBitStream();
+
+  /*!
+   * \brief Load memory to port.
+   * \param port The port this stream forwards to.
+   * \param signal The signal of the stream word.
+   * \param source 0: DMA, 1: SPAD.
+   * \param dim (dim+1)=dimensions of the stream.
+   * \param padding 0: No padding; 1: post-stride zero; 2: pre-stride zero;
+   *                3: post-stride predication off; 4: pre-stride predication off.
+   */
+  void LoadMemoryToPort(int port, int signal, int source, int dim, int padding);
+
+  /*!
+   * \brief Write port stream to memory.
+   * \param port The source of the value.
+   * \param signal The signal of the stream word.
+   * \param operation The operation, can be write or near storage atomic operations.
+   * \param dst 0: DMA, 1: SPAD
+   * \param dim (dim+1)=dimensions of the stream.
+   */
+  void WritePortToMemory(int port, int signal, int operation, int dst, int dim);
+
+  /*!
+   * \brief Read indirect memory to port.
+   * \param port The destination port.
+   * \param source 0: DMA, 1: SPAD
+   * \param ind The indirect memory flag.
+   * \param lin The linear memory stream flag.
+   */
+  void IndirectMemoryToPort(int port, int source, int ind, int lin);
+
+  /*!
+   * \brief Dump the current cycle info as prefix of debugging.
+   */
+  int64_t CurrentCycle();
+
+  /*!
+   * \brief Instantiate a barrier.
+   * \param mask The mask of the barrier to bar.
+   */
+  void InsertBarrier(uint64_t mask);
+
+  /*!
+   * \brief Instantiate a const stream.
+   * \param port The destination port.
+   * \param signal The signal of the stream.
+   * \param dimension The dimension of the stream.
+   */
+  void ConstStream(int port, int signal, int dim);
+
+  /*!
+   * \brief Gather all the ports involved in broadcasting.
+   * \param port The given destination port.
+   *             Even not set broadcasting, this port should be put in.
+   */
+  std::vector<PortExecState> gatherBroadcastPorts(int port);
+
+  /*!
+   * \brief Reset the state registers after instantiating a stream.
+   */
+  void resetNonStickyState();
+
+  /*!
+   * \brief Expose the affiliated DMA LSQ.
+   */
+  Minor::LSQ *lsq();
+
+  /*! \brief If this port has enough value to pop. */
+  bool CanReceive(int port, int dtype);
+  /*! \brief A raw data wrapper for the signature above. */
+  bool CanReceive(int imm);
+
+  /*!
+   * \brief Directly write a value from a port to the destination register.
+   * \param port The output port of data source.
+   * \param dtype The data type in bytes of the register.
+   */
+  uint64_t Receive(int port, int dtype);
+
+  /*!
+   * \brief Reroute value from output port to in ports.
+   */
+  void Reroute(int oport, int iport);
+  
   // Interface from instructions to streams
   // IF SB_TIMING, these just send the commands to the respective controllers
   // ELSE, they carry out all operations that are possible at that point
   void set_context(uint64_t context, uint64_t offset);
-  void set_fill_mode(uint64_t mode);
-  void req_config(addr_t addr, int size);
-  void load_dma_to_port(int64_t repeat_in, int64_t repeat_str);
   void add_port(int in_port);
-  void load_scratch_to_port(int64_t repeat_in, int64_t repeat_str, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type);
-  void write_scratchpad();
-  void write_dma();
-  void reroute(int out_port, int in_port, uint64_t num_elem,
-               int repeat, int repeat_str,  uint64_t flags, uint64_t access_size);
-  void indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
-    uint64_t num_elem, int repeat, int repeat_str, uint64_t offset_list,
-    int dtype, uint64_t ind_mult, bool scratch, bool stream, int sstride, int sacc_size, int sn_port, int val_num, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type);
+  // void indirect(int ind_port, int ind_type, int in_port, addr_t index_addr,
+  //   uint64_t num_elem, int repeat, int repeat_str, uint64_t offset_list,
+  //   int dtype, uint64_t ind_mult, bool scratch, bool stream, int sstride, int sacc_size, int sn_port, int val_num, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type);
   void indirect_write(int ind_port, int ind_type, int out_port,
     addr_t index_addr, uint64_t num_elem, uint64_t offset_list,
     int dtype, uint64_t ind_mult, bool scratch, bool is_2d_stream, int sstride, int sacc_size, int sn_port, int val_num);
-  bool can_receive(int out_port);
-  uint64_t receive(int out_port);
-  void write_constant(int num_strides, int in_port,
-                      SBDT constant, uint64_t num_elem,
-                      SBDT constant2, uint64_t num_elem2,
-                      uint64_t flags, int const_width, bool iter_port);
 
   void atomic_update_hardware_config(int addr_port, int val_port, int out_port);
   void atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode, int val_num, int num_updates, bool is_update_cnt_port, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type);
   void multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_port, int rem_port, bool dest_flag, bool spad_type, int64_t stride, int64_t access_size);
-  void write_constant_scratchpad(addr_t scratch_addr, uint64_t value, int num_elem, int const_width);
 
   void push_in_accel_port(int accel_id, int8_t* val, int num_bytes, int in_port);
   void push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int out_bytes, uint64_t inc);
@@ -89,7 +176,7 @@ public:
     return accel_arr[0]->push_and_update_addr_in_pq(tid, num_bytes);
   }
   
-void push_atomic_inc(int tag, std::vector<uint8_t> inc, int repeat_times) {
+  void push_atomic_inc(int tag, std::vector<uint8_t> inc, int repeat_times) {
     accel_arr[0]->push_atomic_inc(tag, inc, repeat_times);
   }
 
@@ -97,8 +184,6 @@ void push_atomic_inc(int tag, std::vector<uint8_t> inc, int repeat_times) {
   // We integrate Buffet to achieve double-buffering.
   void instantiate_buffet(int repeat, int repeat_str);
 
-  void insert_barrier(uint64_t mask);
-  
   void print_stats();
   uint64_t forward_progress_cycle();
   void forward_progress(uint64_t c) {_global_progress_cycle=c;}
@@ -114,18 +199,14 @@ void push_atomic_inc(int tag, std::vector<uint8_t> inc, int repeat_times) {
 
   void set_in_use() {
     if(!_in_use) {
-      if(SS_DEBUG::COMMAND || SS_DEBUG::ROI) {
-        timestamp();
-        std::cout << "SSIM in use\n";
-      }
+      LOG(COMMAND) << now() << "SSIM in use";
+      LOG(ROI) << now() << "SSIM in use";
     }
     _in_use=true;
   }
   void set_not_in_use() {
-    if(SS_DEBUG::COMMAND || SS_DEBUG::ROI) {
-      timestamp();
-      std::cout << "SSIM *NOT* in use\n";
-    }
+    LOG(COMMAND) << now() << "SSIM not in use";
+    LOG(ROI) << now() << "SSIM not in use";
     _in_use=false;
   }
   bool in_use() {return _in_use;}
@@ -148,6 +229,7 @@ void push_atomic_inc(int tag, std::vector<uint8_t> inc, int repeat_times) {
    * O.W it ignores those "white bubbles". */
   void cleanup_stat_cycle();
 
+  // TODO(@were): Deprecate this!
   void timestamp(); //print timestamp
   void timestamp_index(int i); //print timestamp
   void timestamp_context(); //print timestamp
@@ -193,9 +275,9 @@ void push_atomic_inc(int tag, std::vector<uint8_t> inc, int repeat_times) {
   }
 
   static bool stall_core(uint64_t mask) {
-    // std::cout << "Came in stall core with mask: " << mask << std::endl;
-    return (mask==0) || (mask&WAIT_CMP) ||
-      (mask&WAIT_MEM_WR) || (mask&WAIT_SCR_ATOMIC) || (mask&GLOBAL_WAIT) || (mask&STREAM_WAIT);
+    return (mask >> DBF_DMAStreams & 1) || (mask >> DBF_WriteStreams & 1) ||
+           (mask >> DBF_AtomicStreams & 1) || (mask >> DBF_ComputStreams & 1) ||
+           (mask >> DBF_AtomicStreams & 1);
 
   }
 
@@ -228,12 +310,6 @@ void push_atomic_inc(int tag, std::vector<uint8_t> inc, int repeat_times) {
   bool printed_this_before() { return _printed_this_before; }
   void set_printed_this_before(bool f) { _printed_this_before=f; }
 
-  void pushStreamDimension(uint64_t a, uint64_t b, uint64_t c) {
-    stream_stack.push_back(a);
-    stream_stack.push_back(b);
-    stream_stack.push_back(c);
-  }
-
 private:
 
   int _req_core_id=-1;
@@ -242,10 +318,7 @@ private:
 
   Minor::MinorDynInstPtr _cur_minst;
   uint64_t _context_offset=0; //no offset between addresses
-  uint64_t _context_bitmask=1; //core 1 active
   uint64_t _ever_used_bitmask=1; //bitmask if core ever used
-
-  uint64_t _fill_mode=0; //fill mode (default 0, no fill)
 
   Minor::LSQ* _lsq;
 
@@ -276,9 +349,6 @@ private:
 
   uint64_t _config_waits=0;
   std::unordered_map<uint64_t,uint64_t> _wait_map;
-
-  std::vector<uint64_t> stream_stack;
-  std::vector<int> extra_in_ports;
 
   uint64_t _global_progress_cycle=0;
 };

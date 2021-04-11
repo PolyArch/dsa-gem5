@@ -891,178 +891,225 @@ decode QUADRANT default Unknown::unknown() {
         }
 
         0x2: decode FUNCT3 {
-            0x0: SSOp::ss_cfg_port({{
-                xc->setSSReg(Rs1,SS_REPEAT);
-                xc->setSSReg(imm,SS_REPEAT_STRETCH);
-            }}, IsSSParam, IsNonSpeculative, No_OpClass);
-            0x1: SSOp::ss_cfg_ctx({{
-                if(imm == 0) {
-                  xc->setSSReg(Rs1,SS_CONTEXT);
-                } else {
-                  xc->setSSReg(imm,SS_CONTEXT);
+            0x2: SOp::ss_cfg_port({{
+                uint64_t mask = imm;
+                int field = mask & 0x1F;
+                // TODO(@were): Do we really need a direction bit?
+                mask >>= 4;
+                int direction = mask & 1;
+                (void) direction;
+                mask >>= 1;
+                int port = (imm >> 5) & 0x7F;
+                xc->setDSAVPState(port, field, Rs1);
+            }}, IsSSParam, IsNonSpeculative);
+            0x3: SOp::ss_cfg_param({{
+                uint64_t mask = imm;
+                int reg1 = mask & ((int)(DSARF::TOTAL_REG - 1));
+                mask >>= 5;
+                int reg2 = mask & ((int)(DSARF::TOTAL_REG - 1));
+                mask >>= 5;
+                int s1 = mask & 1;
+                mask >>= 1;
+                int s2 = mask & 1;
+                xc->setDSARegisterFile(reg1, Rs1, s1);
+                xc->setDSARegisterFile(reg2, Rs2, s2);
+                if (reg1 == DSARF::CSA && reg2 == DSARF::CFS) {
+                  xc->callSSFunc(SS_CFG);
                 }
-                xc->setSSReg(Rs2,SS_OFFSET);
-                xc->callSSFunc(SS_CTX);
-            }}, IsSSParam, IsNonSpeculative, No_OpClass);
-            0x2: IOp::ss_cfg({{
-                xc->setSSReg(Rs1,SS_MEM_ADDR);
-                xc->setSSReg(imm,SS_CFG_SIZE);
-                xc->callSSFunc(SS_CFG);
-            }}, uint64_t, {{ imm = sext<12>(IMM12); }}, IsSSConfig, IsNonSpeculative, No_OpClass);
-            0x3: SSOp::ss_fill_mode({{
-                xc->setSSReg(imm,SS_CONSTANT);
-                xc->callSSFunc(SS_FILL_MODE);
-            }}, IsSSParam, IsNonSpeculative, No_OpClass);
+            }}, IsSSParam, IsNonSpeculative);
+            0x6: IOp::ss_recv({{
+                auto mask = imm;
+                bool discard = mask & 1;
+                mask >>= 1;
+                int dtype = mask & 3;
+                dtype = 1 << dtype;
+                mask >>= 2;
+                mask >>= 1;
+                int port = mask;
+                if (!discard) {
+                    Rd = xc->receiveSS(port, dtype);
+                } else {
+                    // TODO(@were): Support this!
+                }
+            }}, uint64_t, {{ imm = sext<12>(IMM12); }}, IsSSRecv, IsNonSpeculative, No_OpClass);
+            // 0x0: SSOp::ss_cfg_port({{
+            //     xc->setSSReg(Rs1,SS_REPEAT);
+            //     xc->setSSReg(imm,SS_REPEAT_STRETCH);
+            // }}, IsSSParam, IsNonSpeculative, No_OpClass);
+            // 0x1: SSOp::ss_cfg_ctx({{
+            //     if(imm == 0) {
+            //       xc->setSSReg(Rs1,SS_CONTEXT);
+            //     } else {
+            //       xc->setSSReg(imm,SS_CONTEXT);
+            //     }
+            //     xc->setSSReg(Rs2,SS_OFFSET);
+            //     xc->callSSFunc(SS_CTX);
+            // }}, IsSSParam, IsNonSpeculative, No_OpClass);
+            // 0x2: IOp::ss_cfg({{
+            //     xc->setSSReg(Rs1,SS_MEM_ADDR);
+            //     xc->setSSReg(imm,SS_CFG_SIZE);
+            //     xc->callSSFunc(SS_CFG);
+            // }}, uint64_t, {{ imm = sext<12>(IMM12); }}, IsSSConfig, IsNonSpeculative, No_OpClass);
+            // 0x3: SSOp::ss_fill_mode({{
+            //     xc->setSSReg(imm,SS_CONSTANT);
+            //     xc->callSSFunc(SS_FILL_MODE);
+            // }}, IsSSParam, IsNonSpeculative, No_OpClass);
         }
         0xa: decode FUNCT3 {
-            0x0: SSOp::ss_add_port({{
-                xc->setSSReg(imm,SS_IN_PORT);
-                xc->callSSFunc(SS_ADD_PRT);
-            }}, IsNonSpeculative, No_OpClass);
-            0x1: SSOp::ss_scr_rd({{
-                xc->pushStreamDimension(Rs1, Rs2, imm >> 2);
-                if (~imm & 1) {
-                  if (imm >> 1 & 1) {
-                    // Invoke a Buffet stream!
-                    xc->setSSReg((imm >> 7) & 63, SS_OUT_PORT);
-                    xc->callSSFunc(SS_BUFFET);
-                  } else {
-                    xc->callSSFunc(SS_SCR_PRT);
-                  }
+            0x2: SOp::ss_lin_strm({{
+                uint64_t mask = Rs1;
+                int signal = (mask & 3);
+                if (signal == 3) {
+                    signal = -1;
                 }
-            }}, IsSSStream, IsNonSpeculative, No_OpClass);
-            0x3: SSOp::ss_dma_rd({{
-                xc->pushStreamDimension(Rs1, Rs2, imm >> 1);
-                if (~imm & 1)
-                  xc->callSSFunc(SS_MEM_PRT);
-            }}, IsSSStream, IsNonSpeculative, No_OpClass);
-            0x4: SSOp::ss_const({{
-                xc->setSSReg(imm & 0x3f, SS_IN_PORT);
-                xc->setSSReg(imm >> 6, SS_FLAGS);
-                xc->setSSReg((imm >> 8) & 1, SS_IND_TYPE);
-                xc->setSSReg(imm >> 9, SS_DTYPE);
-                if(imm & (1<<7)) {
-                  xc->setSSReg(Rs1,SS_CONSTANT2);
-                  xc->setSSReg(Rs2,SS_NUM_ELEM2);
+                mask >>= 2;
+                int memory = mask & 1;
+                mask >>= 1;
+                int operation = mask & 7;
+                mask >>= 3;
+                int dimension = mask & 3;
+                mask >>= 2;
+                int action = mask & 1;
+                mask >>= 1;
+                int padding = mask & 7;
+                mask >>= 3;
+                int port = mask & 127;
+                if (action == 0) {
+                    if (operation == 0) {
+                        xc->callSSFunc(SS_MEM_PRT, {port, signal, memory, dimension, padding});
+                    } else {
+                        xc->callSSFunc(SS_PRT_MEM, {port, signal, operation, memory, dimension});
+                    }
                 } else {
-                  xc->setSSReg(Rs1,SS_CONSTANT);
-                  xc->setSSReg(Rs2,SS_NUM_ELEM);
-                  xc->callSSFunc(SS_CNS_PRT);
+                    xc->callSSFunc(SS_CNS_PRT, {port, signal, dimension});
                 }
-            }}, IsSSStream, IsNonSpeculative, No_OpClass);
-            0x5: IOp::ss_recv({{
-                xc->setSSReg(0x3f & imm, SS_OUT_PORT);
-                Rd = xc->receiveSS();
-            }}, uint64_t, {{ imm = sext<12>(IMM12); }}, IsSSRecv, IsNonSpeculative, No_OpClass);
-            0x6: SSOp::ss_atom_op({{
-                xc->setSSReg(Rs1 & 0xffffff,SS_OFFSET);
-                xc->setSSReg(Rs2,SS_NUM_ELEM);
-                xc->setSSReg((Rs1 >> 24) & 0x1f, SS_OUT_PORT);
-                xc->setSSReg((imm >> 2) & 0x1f, SS_VAL_PORT);
-                xc->setSSReg((imm & 0x3),SS_OPCODE);
-                xc->callSSFunc(SS_ATOMIC_SCR_OP);
-            }}, IsSSStream, IsNonSpeculative, No_OpClass);
-            0x7: SSOp::ss_cfg_mmap({{
-                xc->setSSReg(Rs1,SS_CFG_SIZE);
-                xc->setSSReg(Rs2, SS_CONTEXT);
-                xc->setSSReg(imm,SS_GARB_ELEM);
-            }}, IsSSParam, IsNonSpeculative, No_OpClass);
+            }}, IsSSStream, IsNonSpeculative);
+            0x6: IOp::ss_wait({{
+                xc->callSSFunc(SS_WAIT, {imm});
+            }}, int64_t, {{ imm = sext<12>(IMM12); }}, IsSSWait, IsNonSpeculative, IsMemBarrier, IsSerializeAfter, No_OpClass);
+            // 0x6: SSOp::ss_atom_op({{
+            //     xc->setSSReg(Rs1 & 0xffffff,SS_OFFSET);
+            //     xc->setSSReg(Rs2,SS_NUM_ELEM);
+            //     xc->setSSReg((Rs1 >> 24) & 0x1f, SS_OUT_PORT);
+            //     xc->setSSReg((imm >> 2) & 0x1f, SS_VAL_PORT);
+            //     xc->setSSReg((imm & 0x3),SS_OPCODE);
+            //     xc->callSSFunc(SS_ATOMIC_SCR_OP);
+            // }}, IsSSStream, IsNonSpeculative, No_OpClass);
+            // 0x7: SSOp::ss_cfg_mmap({{
+            //     xc->setSSReg(Rs1,SS_CFG_SIZE);
+            //     xc->setSSReg(Rs2, SS_CONTEXT);
+            //     xc->setSSReg(imm,SS_GARB_ELEM);
+            // }}, IsSSParam, IsNonSpeculative, No_OpClass);
         }
         0x16: decode FUNCT3 {
-            0x1: SSOp::ss_wr_scr({{
-                xc->pushStreamDimension(Rs1, Rs2, (imm >> 2) & 63);
-                if (~imm & 1) {
-                  if (imm >> 1 & 1) {
-                    // Do nothing! This is to get prepared for Buffet!
-                  } else {
-                    xc->callSSFunc(SS_PRT_SCR);
-                  }
+            0x2: SOp::ss_ind_strm({{
+                // TODO (@were): Implement other multi-dimension pattern.
+                auto value = Rs1;
+                int mem = value & 1;
+                value >>= 1;
+                int op = value & 7;
+                value >>= 3;
+                int ind_mode = value & 7;
+                value >>= 3;
+                int lin_mode = value & 7;
+                value >>= 3;
+                int in_port = value & 127;
+                if (op == 0) {
+                    xc->callSSFunc(SS_IND_PRT, {in_port, mem, ind_mode, lin_mode});
+                } else {
+                    assert(false && "not supported yet!");
                 }
-            }}, IsSSStream, No_OpClass);
-			0x2: SSOp::rem_port({{
-                xc->setSSReg(Rs1, SS_NUM_ELEM);
-                xc->setSSReg(Rs2, SS_SCRATCH_ADDR);
-                xc->setSSReg((imm >> 7) & 0x1f, SS_OUT_PORT);
-                xc->setSSReg((imm >> 6) & 0x1, SS_ADDR_TYPE);
-                xc->setSSReg((imm >> 1) & 0x1f, SS_IN_PORT);
-        	    xc->setSSReg(imm & 0x1, SS_FLAGS);
-                xc->callSSFunc(SS_REM_PORT);
-            }}, IsSSStream, No_OpClass);
-            0x3: SSOp::ss_wr_dma({{
-                xc->pushStreamDimension(Rs1, Rs2, imm >> 1);
-                if (~imm & 1)
-                  xc->callSSFunc(SS_PRT_MEM);
-            }}, IsSSStream, IsNonSpeculative, No_OpClass);
-            0x4: SSOp::ss_garb({{
-                 xc->setSSReg(Rs1,SS_GARB_ELEM);
-            }}, IsSSStream, No_OpClass);
-            0x5: SSOp::ss_wr_rd({{
-                xc->setSSReg(Rs1,SS_NUM_ELEM);
-                xc->setSSReg(Rs2,SS_FLAGS);
-                xc->setSSReg((imm >> 0) & 31, SS_OUT_PORT);
-                xc->setSSReg((imm >> 6) & 31, SS_IN_PORT);
-                xc->callSSFunc(SS_PRT_PRT);
-            }}, IsSSStream, IsNonSpeculative, No_OpClass);
-            0x6: IOp::ss_const_scr({{
-                xc->setSSReg(Rs1,SS_SCRATCH_ADDR);
-                xc->setSSReg(Rs2,SS_CONSTANT);
-                xc->setSSReg(imm,SS_DTYPE);
-                xc->callSSFunc(SS_CONST_SCR);
-            }}, uint64_t, {{ imm = sext<12>(IMM12); }}, IsSSStream, IsNonSpeculative, No_OpClass);
-            0x7: SSOp::ss_cfg_atom_op({{
-                xc->setSSReg(Rs1, SS_OFFSET_LIST); 
-                xc->setSSReg(Rs2 & 0xffff, SS_STRETCH); 
-                xc->setSSReg(Rs2 >> 16, SS_IS_SCRATCH); 
-                xc->setSSReg(imm>>4, SS_IND_TYPE); 
-                xc->setSSReg((imm>>2)&0x3, SS_DTYPE); 
-                xc->setSSReg(imm&0x3, SS_ADDR_TYPE); 
-            }}, No_OpClass);
+            }}, IsSSStream, IsNonSpeculative);
+            // 0x1: SSOp::ss_wr_scr({{
+            //     xc->pushStreamDimension(Rs1, Rs2, (imm >> 2) & 63);
+            //     if (~imm & 1) {
+            //       if (imm >> 1 & 1) {
+            //         // Do nothing! This is to get prepared for Buffet!
+            //       } else {
+            //         xc->callSSFunc(SS_PRT_SCR);
+            //       }
+            //     }
+            // }}, IsSSStream, No_OpClass);
+			// 0x2: SSOp::rem_port({{
+            //     xc->setSSReg(Rs1, SS_NUM_ELEM);
+            //     xc->setSSReg(Rs2, SS_SCRATCH_ADDR);
+            //     xc->setSSReg((imm >> 7) & 0x1f, SS_OUT_PORT);
+            //     xc->setSSReg((imm >> 6) & 0x1, SS_ADDR_TYPE);
+            //     xc->setSSReg((imm >> 1) & 0x1f, SS_IN_PORT);
+        	//     xc->setSSReg(imm & 0x1, SS_FLAGS);
+            //     xc->callSSFunc(SS_REM_PORT);
+            // }}, IsSSStream, No_OpClass);
+            // 0x3: SSOp::ss_wr_dma({{
+            //     xc->pushStreamDimension(Rs1, Rs2, imm >> 1);
+            //     if (~imm & 1)
+            //       xc->callSSFunc(SS_PRT_MEM);
+            // }}, IsSSStream, IsNonSpeculative, No_OpClass);
+            // 0x4: SSOp::ss_garb({{
+            //      xc->setSSReg(Rs1,SS_GARB_ELEM);
+            // }}, IsSSStream, No_OpClass);
+            // 0x6: IOp::ss_const_scr({{
+            //     xc->setSSReg(Rs1,SS_SCRATCH_ADDR);
+            //     xc->setSSReg(Rs2,SS_CONSTANT);
+            //     xc->setSSReg(imm,SS_DTYPE);
+            //     xc->callSSFunc(SS_CONST_SCR);
+            // }}, uint64_t, {{ imm = sext<12>(IMM12); }}, IsSSStream, IsNonSpeculative, No_OpClass);
+            // 0x7: SSOp::ss_cfg_atom_op({{
+            //     xc->setSSReg(Rs1, SS_OFFSET_LIST); 
+            //     xc->setSSReg(Rs2 & 0xffff, SS_STRETCH); 
+            //     xc->setSSReg(Rs2 >> 16, SS_IS_SCRATCH); 
+            //     xc->setSSReg(imm>>4, SS_IND_TYPE); 
+            //     xc->setSSReg((imm>>2)&0x3, SS_DTYPE); 
+            //     xc->setSSReg(imm&0x3, SS_ADDR_TYPE); 
+            // }}, No_OpClass);
         }
-        format SSOp {
-            0x1e: decode FUNCT3 {
-                0x0: ss_stride({{
-                    xc->setSSReg(Rs1,SS_STRIDE);
-                    xc->setSSReg(Rs2,SS_ACCESS_SIZE);
-                    xc->setSSReg(imm & 0x3FF,SS_STRETCH);
-                    xc->setSSReg(imm >> 10, SS_FLAGS);
-                }}, IsSSParam, No_OpClass);
-                0x2: ss_set_iter({{
-                    xc->setSSReg(Rs1, SS_NUM_STRIDES);
-                }}, IsSSParam, No_OpClass);
-                0x3: ss_wait_df({{
-                    xc->setSSReg(Rs1,SS_NUM_ELEM);
-                    xc->setSSReg(imm & 1,SS_ADDR_TYPE);
-                    xc->callSSFunc(SS_WAIT_DF);
-                }}, IsSSWait, IsNonSpeculative, IsSerializeAfter, No_OpClass);
-                0x4: ss_wait({{
-                    xc->setSSReg(Rs1,SS_NUM_ELEM);
-                    xc->setSSReg(imm,SS_WAIT_MASK);
-                    xc->callSSFunc(SS_WAIT);
-                }}, IsSSWait, IsNonSpeculative, IsMemBarrier, IsSerializeAfter, No_OpClass);
-                0x5: ss_ind({{
-                    xc->setSSReg(Rs1,SS_INDEX_ADDR);
-                    xc->setSSReg(Rs2,SS_NUM_ELEM);
-                    xc->setSSReg(imm & 0x1F, SS_IND_PORT); //only 5 bits
-                    xc->setSSReg((imm >> 5) & 0x1F, SS_IN_PORT); // 5 bits
-                    xc->setSSReg(imm >> 10, SS_IS_SCRATCH);
-                    xc->callSSFunc(SS_IND_PRT);
-                }}, IsSSStream, IsNonSpeculative, No_OpClass);
-                0x6: ss_ind_wr({{
-                    xc->setSSReg(Rs1,SS_INDEX_ADDR);
-                    xc->setSSReg(Rs2,SS_NUM_ELEM);
-                    xc->setSSReg(imm & 0x1F, SS_IND_PORT); //only 5 bits
-                    xc->setSSReg((imm >> 5) & 0x1F, SS_OUT_PORT);
-                    xc->setSSReg(imm >> 10, SS_IS_SCRATCH);
-                    xc->callSSFunc(SS_PRT_IND);
-                }}, IsSSStream, IsNonSpeculative, No_OpClass);
-                0x7: ss_cfg_ind({{
-                    xc->setSSReg(Rs1,SS_OFFSET_LIST);
-                    xc->setSSReg(Rs2, SS_OFFSET); 
-                    xc->setSSReg((imm>>4), SS_IND_MULT); 
-                    xc->setSSReg((imm>>2)&0x3, SS_IND_TYPE); 
-                    xc->setSSReg((imm>>0)&0x3, SS_DTYPE); 
-                }}, No_OpClass);
-            }
+        0x1e: decode FUNCT3 {
+            0x2: SOp::ss_wr_rd({{
+              int64_t oport = (Rs1 >> 7) & 127;
+              int64_t iport = Rs1 & 127;
+              xc->callSSFunc(SS_PRT_PRT, {oport, iport});
+            }}, IsSSStream, IsNonSpeculative);
+            // 0x0: ss_stride({{
+            //     xc->setSSReg(Rs1,SS_STRIDE);
+            //     xc->setSSReg(Rs2,SS_ACCESS_SIZE);
+            //     xc->setSSReg(imm & 0x3FF,SS_STRETCH);
+            //     xc->setSSReg(imm >> 10, SS_FLAGS);
+            // }}, IsSSParam, No_OpClass);
+            // 0x2: ss_set_iter({{
+            //     xc->setSSReg(Rs1, SS_NUM_STRIDES);
+            // }}, IsSSParam, No_OpClass);
+            // 0x3: ss_wait_df({{
+            //     xc->setSSReg(Rs1,SS_NUM_ELEM);
+            //     xc->setSSReg(imm & 1,SS_ADDR_TYPE);
+            //     xc->callSSFunc(SS_WAIT_DF);
+            // }}, IsSSWait, IsNonSpeculative, IsSerializeAfter, No_OpClass);
+            // 0x4: ss_wait({{
+            //     xc->setSSReg(Rs1,SS_NUM_ELEM);
+            //     xc->setSSReg(imm,SS_WAIT_MASK);
+            //     xc->callSSFunc(SS_WAIT);
+            // }}, IsSSWait, IsNonSpeculative, IsMemBarrier, IsSerializeAfter, No_OpClass);
+            // 0x5: ss_ind({{
+            //     xc->setSSReg(Rs1,SS_INDEX_ADDR);
+            //     xc->setSSReg(Rs2,SS_NUM_ELEM);
+            //     xc->setSSReg(imm & 0x1F, SS_IND_PORT); //only 5 bits
+            //     xc->setSSReg((imm >> 5) & 0x1F, SS_IN_PORT); // 5 bits
+            //     xc->setSSReg(imm >> 10, SS_IS_SCRATCH);
+            //     xc->callSSFunc(SS_IND_PRT);
+            // }}, IsSSStream, IsNonSpeculative, No_OpClss);
+            // 0x6: ss_ind_wr({{
+            //     xc->setSSReg(Rs1,SS_INDEX_ADDR);
+            //     xc->setSSReg(Rs2,SS_NUM_ELEM);
+            //     xc->setSSReg(imm & 0x1F, SS_IND_PORT); //only 5 bits
+            //     xc->setSSReg((imm >> 5) & 0x1F, SS_OUT_PORT);
+            //     xc->setSSReg(imm >> 10, SS_IS_SCRATCH);
+            //     xc->callSSFunc(SS_PRT_IND);
+            // }}, IsSSStream, IsNonSpeculative, No_OpClass);
+            // 0x7: ss_cfg_ind({{
+            //     xc->setSSReg(Rs1,SS_OFFSET_LIST);
+            //     xc->setSSReg(Rs2, SS_OFFSET); 
+            //     xc->setSSReg((imm>>4), SS_IND_MULT); 
+            //     xc->setSSReg((imm>>2)&0x3, SS_IND_TYPE); 
+            //     xc->setSSReg((imm>>0)&0x3, SS_DTYPE); 
+            // }}, No_OpClass);
         }
 
 

@@ -1,7 +1,4 @@
-#include <cstdint>
-
-#ifndef __SS_CONSTS_H__
-#define __SS_CONSTS_H__
+#pragma once
 
 typedef uint64_t addr_t;
 
@@ -71,8 +68,8 @@ typedef uint64_t addr_t;
 
 #define MAX_WAIT (1000) //max cycles to wait for forward progress
 
-#define MEM_WR_STREAM (33)
-#define CONFIG_STREAM (34)
+#define MEM_WR_STREAM (127)
+#define CONFIG_STREAM (128)
 
 #define NUM_GROUPS (6)
 
@@ -102,6 +99,3 @@ typedef uint64_t addr_t;
 #define T08 3
 
 #define NO_PADDING (~0ull)
-
-
-#endif

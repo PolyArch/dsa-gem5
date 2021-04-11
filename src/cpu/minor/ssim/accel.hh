@@ -24,6 +24,7 @@
 
 #include "dsa/arch/model.h"
 #include "dsa/mapper/schedule.h"
+#include "./spad.h"
 
 #include "sim-debug.hh"
 #include "cpu/minor/dyn_inst.hh"
@@ -31,6 +32,13 @@
 #include "stream.hh"
 #include "consts.hh"
 
+namespace dsa {
+namespace sim {
+
+struct StreamArbiter;
+
+}
+}
 
 using namespace dsa;
 
@@ -78,6 +86,11 @@ public:
   std::vector<bool> cgra_in_ports_active;
 
   std::map<dsa::OpCode, int> inst_histo;
+
+  std::vector<int> &active_ports(bool is_input) {
+    return is_input ? in_ports_active : out_ports_active;
+  }
+
   void reset();
 };
 
@@ -90,6 +103,8 @@ public:
 
   void initialize(SSModel* ssconfig, int port, bool isInput);
   void reset(); //reset if configuration happens
+
+  port_data_t() : pes(dsa::sim::IVPState(), -1) {}
 
   //This function is similar to port_vec_elem, but...
   //For now, the *only* cases where we don't return vector length is
@@ -116,14 +131,10 @@ public:
 
   //reset all data
   void reset_data() {
+    stream = nullptr;
     _mem_data.clear();
     _valid_data.clear(); // FIXME:CHECKME: check if this is true!
-    _status = STATUS::FREE;
-    _repeat=1, _repeat_stretch=0;
-    _cur_repeat_lim=1;
-    _num_times_repeated=0;
     _outstanding=0;
-    _loc=LOC::NONE;
     for(int i = 0; i < _cgra_data.size(); ++i) {
       _cgra_data[i].clear();
       _cgra_valid[i].clear();
@@ -247,17 +258,43 @@ public:
   void push_data(T data, bool valid=true) {
     int data_size = sizeof(T);
     assert(data_size == _port_width && "data size doesn't match the port width in dfg");
-
     if (!leftover.empty()) {
       std::cout << "It's not cool to leave random incomplete words in the port, "
            << "please be more tidy next time\n";
       assert(0);
     }
-
     std::vector<uint8_t> vec(sizeof(T));
     *reinterpret_cast<T*>(&vec[0]) = data;
     push_data(vec, valid);
+  }
 
+  void PadData(bool stride_first, bool stride_last, Padding policy) {
+    auto f = [this] (bool valid) {
+      int width = port_cgra_elem();
+      int residue = _mem_data.size() % width;
+      if (residue == 0) {
+        return;
+      }
+      std::vector<uint8_t> dummy_val(_port_width, 0);
+      int extra = width - residue;
+      for(int i = 0; i < extra; ++i) {
+        push_data(dummy_val, valid);
+      }
+    };
+    if (stride_first) {
+      if (policy == DP_PreStridePredOff) {
+        f(false);
+      } else if (policy == DP_PreStrideZero) {
+        f(true);
+      }
+    }
+    if (stride_last) {
+      if (policy == DP_PostStridePredOff) {
+        f(false);
+      } else if (policy == DP_PostStrideZero) {
+        f(true);
+      }
+    }
   }
 
   void reformat_in();  //rearrange all data for CGRA
@@ -290,8 +327,6 @@ public:
     _cgra_data[cgra_port].push_back(v);
     _cgra_valid[cgra_port].push_back(valid);
   }
-
-  void inc_ready(unsigned instances) {_num_ready+=instances;}
 
   //get the value of an instance in cgra port
   SBDT value_of(unsigned port_idx, unsigned instance) {
@@ -330,126 +365,68 @@ public:
       return mem_size();
     }
   }
+
   unsigned mem_size() {
     return _mem_data.size(); // size of the deque (_mem_data.size()*_port_width)
   }
-  unsigned num_ready() {return _num_ready;}         //Num of ready instances
+
+  unsigned num_ready() { return _num_ready; }         //Num of ready instances
+
   unsigned num_in_flight() {return _num_in_flight;}  //outputs in flight
 
   std::string status_string() {
-    if(_status==STATUS::FREE) return "free";
+    if(status()==STATUS::FREE) return "free";
     std::string ret;
-    if(_loc==LOC::SCR)  ret = " (SCR)";
-    if(_loc==LOC::PORT) ret = " (PORT)";
-    if(_loc==LOC::DMA)  ret = " (DMA)";
-    if(_status==STATUS::BUSY)     return "BUSY " + ret;
-    if(_status==STATUS::COMPLETE) return "COMP " + ret;
+    if(loc()==LOC::SCR)  ret = " (SCR)";
+    if(loc()==LOC::PORT) ret = " (PORT)";
+    if(loc()==LOC::DMA)  ret = " (DMA)";
+    if(status()==STATUS::BUSY)     return "BUSY " + ret;
+    if(status()==STATUS::COMPLETE) return "COMP " + ret;
     assert(0);
   }
 
-  void set_status(STATUS status, LOC loc=LOC::NONE, uint32_t fill_mode=0) {
-    if(SS_DEBUG::VP_SCORE) {
-      std::cout << (_isInput ? "ip" : "op") << std::dec << _port;
-      std::cout << " " << status_string();
-      std::cout.flush();
-    }
+  void bindStream(base_stream_t *exec_stream);
 
-    if(_status == STATUS::BUSY) {
-      assert(status != STATUS::BUSY && "can't set busy if already busy\n");
-    }
-    if(_status == STATUS::FREE) {
-      if(status == STATUS::FREE  || status == STATUS::COMPLETE) {
-        // print_status();
-        assert(0 && "can't free if free or complete\n");
-      }
-    }
-    if(status == STATUS::BUSY) {
-      assert((_loc==loc || _status==STATUS::FREE) &&
-          "can only assign to a port with eqiv. loc, or if the status is FREE");
-    }
+  void freeStream();
 
-    if(status == STATUS::FREE) {
-      //We are really just freeing one stream! So...
-      //only enter truely free status if no outstanding streams
-      _outstanding--;
-      if(_outstanding==0){
-        _status=STATUS::FREE;
-      }
-
-      fill(fill_mode); //call fill
-
-    } else {
-       _status=status; // no need
-      if(status == STATUS::BUSY) {
-        _outstanding++;
-        _loc=loc;
-      }
-    }
-
-    if(SS_DEBUG::VP_SCORE) {
-      std::cout << " -> " << status_string() << "\n";
-    }
-  }
-
-  bool can_take(LOC loc, int repeat=1, int repeat_stretch=0) {
-    //This makes sure the input port is fully drained before sending the next
-    //stream. This causes ~1-2 cycles of pipeline bubble + memory access time
-    //as well -- NOT GOOD.   Don't switch often the repeat size, especially
-    //streams comming from memory!  (if this is required, add new h/w mechanism)
-    if(_repeat != repeat || _repeat_stretch != repeat_stretch) {
-      return !in_use() && mem_size()==0 && (_cgra_data.size()==0 ||
-                                            _cgra_data[0].size()==0);
-    }
-    return (_status == STATUS::FREE) ||
-           (_status == STATUS::COMPLETE && _loc == loc);
-  }
   bool in_use() {
-    return !(_status == STATUS::FREE);
+    return status() != STATUS::FREE;
   }
+
   bool completed() {
-    return _status == STATUS::COMPLETE;
+    return status() == STATUS::COMPLETE;
   }
-  LOC loc() {return _loc;}
-  STATUS status() {return _status;}
+
+  LOC loc() {
+    if (stream) {
+      return stream->src();
+    }
+    return LOC::NONE;
+  }
+
+  STATUS status() {
+    if (stream) {
+      return stream->stream_active() ? STATUS::BUSY : STATUS::COMPLETE;
+    }
+    return STATUS::FREE;
+  }
 
   void pop(unsigned instances);  //Throw away data in CGRA input ports
-
-  int repeat() {return _repeat;}
-  int num_times_repeated() {return _num_times_repeated;}
-  int cur_repeat_lim() {return _cur_repeat_lim;}
-  bool repeat_flag() {return _repeat_flag;}
-  void set_cur_repeat_lim(int64_t x) {
-    _cur_repeat_lim=x;
-    // std::cout << "cur repeat lim set to: " << _cur_repeat_lim << std::endl;
-  }
-
-  void set_num_times_repeated(int d) { _num_times_repeated=d; }
-
-  // void set_repeat(int r, int rs);
-  void set_repeat(int r, int rs, bool rf);
-
-  // Increase the times of data repeated.
-  // Return true if the value should be popped.
-  // Or more accurately, repeat time runs out.
-  bool inc_repeated();
-  int get_stretch() {
-    return _repeat_stretch;
-  }
 
   uint64_t total_pushed() { return _total_pushed; }
 
   void set_port_width(int num_bits){
     assert(num_bits % 8 == 0);
     _port_width = num_bits / 8;
-      // std::cout << "Setting port width of port: " << _port << " is: " << _port_width << "\n";
   }
 
   // in bytes
-  int get_port_width(){
-    return _port_width;
+  int get_port_width() {
+    CHECK(_dfg_vec) << port();
+    return _dfg_vec->bitwidth() / 8;
   }
 
-  void set_dfg_vec(SSDfgVec* dfg_vec) {
+  void set_dfg_vec(dsa::dfg::VectorPort* dfg_vec) {
     _dfg_vec = dfg_vec;
     // std::cout << "CGRA ELEM SIZE: " << port_cgra_elem() << "\n";
     _cgra_data.resize(port_cgra_elem());
@@ -486,14 +463,19 @@ public:
   int get_bytes_waiting() {
     return _bytes_waiting;
   }
- 
-private:
-  //Programmable Repeat:
-  uint64_t _repeat=1, _repeat_stretch=0; bool _repeat_flag=false;
-  int64_t _cur_repeat_lim=1;
-  int64_t _num_times_repeated=0;
 
-  SSDfgVec* _dfg_vec = NULL; // null by default
+  /*!
+   * \brief The stream this port currently executes.
+   */
+  base_stream_t *stream{nullptr};
+  /*!
+   * \brief A stream can be broadcast to multiple ports.
+   *        This stores port repeat information of "this" port.
+   */
+  dsa::sim::rt::PortExecState pes;
+private:
+
+  dsa::dfg::VectorPort *_dfg_vec{nullptr}; // null by default
 
   // cgra_port: vec_loc(offset)
   // 23: 1, 2   24: 3, 4
@@ -501,8 +483,6 @@ private:
   int _port=-1;
   int _port_width=-1; // 8; // take 8 bytes by default
   int _outstanding=0;
-  STATUS _status=STATUS::FREE;
-  LOC _loc=LOC::NONE;
   // std::deque<SBDT> _mem_data;
   std::deque<std::vector<uint8_t>> _mem_data;
   std::deque<bool> _valid_data;
@@ -540,8 +520,9 @@ public:
     _in_port_data[port].reformat_in();
   }
 
-  port_data_t& in_port(int i) {return _in_port_data[i];}
-  port_data_t& out_port(int i) {return _out_port_data[i];}
+  port_data_t& in_port(int i) { return _in_port_data[i]; }
+  port_data_t& out_port(int i) { return _out_port_data[i]; }
+  std::vector<port_data_t> &ports(bool is_input) { return is_input ? _in_port_data : _out_port_data; }
 
   void reset() {
     for(unsigned i = 0; i < _in_port_data.size(); ++i) {
@@ -576,12 +557,12 @@ private:
 
 // Each controller forwards up to one "block" of data per cycle.
 class data_controller_t {
-  public:
+ public:
   data_controller_t(accel_t* host) {
     _accel=host;
   }
 
-protected:
+ protected:
   accel_t* _accel;
   ssim_t* get_ssim();
   bool is_shared();
@@ -600,10 +581,9 @@ class dma_controller_t : public data_controller_t {
   friend class scratch_read_controller_t;
   friend class network_controller_t;
 
-  public:
+ public:
   static const int data_width=64; //data width in bytes
-  //static const int data_ssdts=data_width/SBDT; //data width in bytes
-  std::vector<bool> mask;
+  // static const int data_ssdts=data_width/SBDT; //data width in bytes
 
   dma_controller_t(accel_t* host,
       scratch_read_controller_t* scr_r_c,
@@ -612,15 +592,12 @@ class dma_controller_t : public data_controller_t {
     data_controller_t(host), _scr_r_c(scr_r_c), _scr_w_c(scr_w_c), _net_c(net_c) {
 
     _prev_port_cycle.resize(64); //resize to maximum conceivable ports
-    mask.resize(MEM_WIDTH); // mask for all bytes
   }
 
   void reset_stream_engines() {
     _read_streams.clear();
     _write_streams.clear();
-    _dma_port_streams.clear();
     _indirect_streams.clear();
-    _port_dma_streams.clear();
     _indirect_wr_streams.clear();
   }
 
@@ -636,9 +613,6 @@ class dma_controller_t : public data_controller_t {
   void finish_cycle();
   bool done(bool show, int mask);
 
-  int req_read(affine_read_stream_t& stream);
-  void req_write(affine_write_stream_t& stream, port_data_t& vp);
-
   void ind_read_req(indirect_stream_t& stream);
   void ind_write_req(indirect_wr_stream_t& stream);
 
@@ -652,13 +626,9 @@ class dma_controller_t : public data_controller_t {
   bool mem_writes_outstanding() {return _mem_write_reqs;}
   bool scr_reqs_outstanding()  {return _fake_scratch_reqs;}
 
-  bool dma_port_streams_active();
-  bool port_dma_streams_active();
   bool indirect_streams_active();
   bool indirect_wr_streams_active();
 
-  bool schedule_dma_port(affine_read_stream_t& s);
-  bool schedule_port_dma(affine_write_stream_t& s);
   bool schedule_indirect(indirect_stream_t&s);
   bool schedule_indirect_wr(indirect_wr_stream_t&s);
 
@@ -686,15 +656,10 @@ class dma_controller_t : public data_controller_t {
   std::vector<base_stream_t*> _read_streams;
   std::vector<base_stream_t*> _write_streams;
 
-  //This ordering defines convention of checking
-  std::vector<affine_read_stream_t*> _dma_port_streams;  //reads
   std::vector<indirect_stream_t*> _indirect_streams; //indirect reads
-  std::vector<affine_write_stream_t*> _port_dma_streams; //writes
   std::vector<indirect_wr_stream_t*> _indirect_wr_streams; //indirect writes
 
-  void delete_stream(int i, affine_read_stream_t* s);
   void delete_stream(int i, indirect_stream_t* s);
-  void delete_stream(int i, affine_write_stream_t* s);
   void delete_stream(int i, indirect_wr_stream_t* s);
 
   //address to stream -> [stream_index, data]
@@ -727,12 +692,12 @@ class scratch_read_controller_t : public data_controller_t {
     reset_stream_engines();
   }
 
-  // std::vector<SBDT> read_scratch(affine_read_stream_t& stream);
-  std::vector<uint8_t> read_scratch(affine_read_stream_t& stream, bool is_banked);
+  // std::vector<SBDT> read_scratch(LinearReadStream& stream);
+  std::vector<uint8_t> read_scratch(LinearReadStream& stream, bool is_banked);
   void read_scratch_ind(indirect_stream_t& stream, uint64_t scr_addr);
   void read_linear_scratch_ind(indirect_stream_t& stream, uint64_t scr_addr);
   bool checkLinearSpadStream(indirect_stream_t& stream);
-  bool checkLinearSpadStream(affine_read_stream_t& stream);
+  bool checkLinearSpadStream(LinearReadStream& stream);
 
   // float calc_min_port_ready();
   float calc_min_port_ready(bool is_banked);
@@ -748,9 +713,6 @@ class scratch_read_controller_t : public data_controller_t {
 
   void finish_cycle();
   bool done(bool,int);
-
-  bool schedule_scr_port(affine_read_stream_t& s);
-  bool schedule_indirect(indirect_stream_t& s);
 
   void print_status();
   void cycle_status();
@@ -792,10 +754,10 @@ class scratch_read_controller_t : public data_controller_t {
 
   std::vector<base_stream_t*> _read_streams;
 
-  void delete_stream(int i, affine_read_stream_t* s);
+  void delete_stream(int i, LinearReadStream* s);
   void delete_stream(int i, indirect_stream_t* s);
 
-  std::vector<affine_read_stream_t*> _scr_port_streams;
+  std::vector<LinearReadStream*> _scr_port_streams;
   std::vector<indirect_stream_t*> _ind_port_streams;
 
   std::vector<std::queue<indirect_scr_read_req>> _indirect_scr_read_requests;
@@ -839,7 +801,7 @@ class scratch_write_controller_t : public data_controller_t {
   void serve_atomic_requests(bool &performed_atomic_scr);
   void serve_atomic_requests_local(bool &performed_atomic_scr);
   void push_remote_wr_req(uint8_t *val, int num_bytes, addr_t scr_addr);
-  void scr_write(addr_t addr, affine_write_stream_t& stream, port_data_t& out_vp);
+  void scr_write(addr_t addr, LinearWriteStream& stream, port_data_t& out_vp);
   // for remote atomic update
   void push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int out_bytes, uint64_t inc);
 
@@ -849,7 +811,6 @@ class scratch_write_controller_t : public data_controller_t {
 
   void reset_stream_engines() {
     _port_scr_streams.clear();
-    _const_scr_streams.clear();
     _atomic_scr_streams.clear();
     _ind_wr_streams.clear();
     _write_streams.clear();
@@ -886,10 +847,8 @@ class scratch_write_controller_t : public data_controller_t {
   bool atomic_scr_streams_active();
   bool atomic_scr_issued_requests_active();
   bool port_scr_streams_active();
-  bool const_scr_streams_active();
 
-  bool schedule_port_scr(affine_write_stream_t& s);
-  bool schedule_const_scr(const_scr_stream_t& s);
+  base_stream_t *schedule_port_scr(LinearWriteStream& s);
   
   bool release_df_barrier(){
     assert(_df_count!=-1);
@@ -970,8 +929,7 @@ class scratch_write_controller_t : public data_controller_t {
     }
   };
 
-  void delete_stream(int i, affine_write_stream_t* s);
-  void delete_stream(int i, const_scr_stream_t* s);
+  void delete_stream(int i, LinearWriteStream* s);
   void delete_stream(int i, atomic_scr_stream_t* s);
   void delete_stream(int i, indirect_wr_stream_t* s);
 
@@ -980,8 +938,7 @@ class scratch_write_controller_t : public data_controller_t {
   int64_t _df_count=-1; // only 1 active at a time
   std::vector<base_stream_t*> _write_streams;
 
-  std::vector<affine_write_stream_t*> _port_scr_streams;
-  std::vector<const_scr_stream_t*> _const_scr_streams;
+  std::vector<LinearWriteStream*> _port_scr_streams;
   std::vector<atomic_scr_stream_t*> _atomic_scr_streams;
   std::vector<indirect_wr_stream_t*> _ind_wr_streams;
   std::vector<BuffetStream> buffets;
@@ -1060,75 +1017,6 @@ class network_controller_t : public data_controller_t {
   // TODO: do we need that?
   dma_controller_t* _dma_c;
 };
-
-class port_controller_t : public data_controller_t {
-  public:
-  port_controller_t(accel_t* host) : data_controller_t(host) {
-    _port_port_streams.resize(32);  //IS THIS ENOUGH?
-    _const_port_streams.resize(32);  //IS THIS ENOUGH?
-    _remote_port_streams.resize(32);  //IS THIS ENOUGH?
-    for(auto& i : _port_port_streams) {i.reset();}
-    for(auto& i : _const_port_streams) {i.reset();}
-    for(auto& i : _remote_port_streams) {i.reset();}
-  }
-
-  void cycle();
-  void finish_cycle();
-
-  //bool any_stream_active() {
-  //  return comm_streams_active() || read_streams_active()
-  //    || write_streams_active();
-  //}
-  //bool comm_streams_active() {
-  //  return false;
-  //}
-  //bool read_streams_active() {
-  //  return port_port_streams_active() || const_port_streams_active();
-  //}
-  //bool write_streams_active() {
-  //  return port_port_streams_active();
-  //}
-
-  bool port_port_streams_active();
-  bool const_port_streams_active();
-  bool done(bool,int);
-
-  bool schedule_port_port(port_port_stream_t& s);
-  bool schedule_const_port(const_port_stream_t& s);
-  bool schedule_remote_port(remote_port_stream_t& s);
-
-
-  // void delete_stream(int i, port_port_stream_t *s);
-
-  void reset_data() {
-    // also need to set inactive
-    for(auto& i : _port_port_streams) {
-      i.reset();
-    }
-    for(auto& i : _const_port_streams) {
-      i.reset();
-      i._elements_left=0;
-      i._elements_left2=0;
-      i._iters_left=0;
-    }
-    for(auto& i : _remote_port_streams) {i.reset();}
-  }
-
-  void print_status();
-  void cycle_status();
-
-  private:
-  unsigned _which_pp=0;
-  unsigned _which_cp=0;
-  unsigned _which_rp=0;
-
-  std::vector<port_port_stream_t>   _port_port_streams;
-  std::vector<const_port_stream_t>  _const_port_streams;
-  std::vector<remote_port_stream_t> _remote_port_streams;
-};
-
-
-
 
 struct stream_stats_histo_t {
   uint64_t vol_by_type[(int)STR_PAT::LEN];
@@ -1290,20 +1178,21 @@ struct pipeline_stats_t {
 
 };
 
-class accel_t
-{
+class accel_t {
   friend class ssim_t;
   friend class scratch_read_controller_t;
   friend class scratch_write_controller_t;
   friend class network_controller_t;
   friend class dma_controller_t;
-  friend class port_port_controller_t;
 
 public:
 
   const int NUM_ACCEL;
+  sim::StreamArbiter *arbiter{nullptr};
 
-  accel_t(Minor::LSQ* lsq, int i, ssim_t* ssim);
+  accel_t(int i, ssim_t* ssim);
+
+  Minor::LSQ *lsq();
 
   bool in_use();
   void timestamp(); //print timestamp
@@ -1390,6 +1279,7 @@ public:
   ssim_t* get_ssim() {return _ssim;}
   bool is_shared() {return _accel_index==SHARED_SP;}
   int accel_index() {return _accel_index;}
+  int get_cur_cycle();
 
   scratch_read_controller_t*  scr_r_c() {return &_scr_r_c;}
   scratch_write_controller_t* scr_w_c() {return &_scr_w_c;}
@@ -1397,7 +1287,6 @@ public:
 
 private:
   ssim_t* _ssim;
-  Minor::LSQ* _lsq;
   std::ofstream in_port_verif, out_port_verif, scr_wr_verif, scr_rd_verif, cmd_verif;
   std::ofstream cgra_multi_verif;
   bool _cleanup_mode=false;
@@ -1455,27 +1344,10 @@ private:
 
   bool in_roi();
 
-  bool can_receive(int out_port);
-  uint64_t receive(int out_port);
-
   void verif_cmd(base_stream_t* s) {
     if(SS_DEBUG::VERIF_CMD) {
-      cmd_verif << s->short_name();
-      cmd_verif << s->mem_addr()     << " ";
-      cmd_verif << s->access_size()  << " ";
-      cmd_verif << s->stride()       << " ";
-      cmd_verif << s->scratch_addr() << " ";
-      cmd_verif << s->num_strides()  << " ";
-      cmd_verif << s->num_bytes()    << " ";
-      cmd_verif << s->constant()     << " ";
-      cmd_verif << s->first_in_port()      << " ";
-      cmd_verif << s->out_port()     << " ";
-      cmd_verif << s->wait_mask()    << " ";
-      cmd_verif << s->shift_bytes()  << "\n";
     }
   }
-
-  void req_config(addr_t addr, int size, uint64_t context);
 
   void sanity_check_stream(base_stream_t* s);
 
@@ -1483,18 +1355,6 @@ private:
     sanity_check_stream(s.get());
     s->set_soft_config(&_soft_config);
 
-    /*
-    // if(auto stream = dynamic_cast<remote_core_net_stream_t*>(s)) {
-    if(auto stream = std::dynamic_pointer_cast<remote_core_net_stream_t>(s)) {
-       // printf("NETWORK STREAM\n");
-    } else {
-       // printf("NOT A NETWORK STREAM\n");
-      assert(cur_minst());
-      s->set_minst(cur_minst());
-      forward_progress(); // done in the initialization stage
-    }
-    // std::cout << "size of cmd queue: " << _cmd_queue.size() << "\n";
-    */
     assert(cur_minst());
     s->set_minst(cur_minst());
     _cmd_queue.push_back(s);
@@ -1525,7 +1385,6 @@ private:
     // TODO: change this for linear spad case
     if(SS_DEBUG::CHECK_SCR_ALIAS) { //TODO: make this check work for unaligned
       for(int i = 0; i < count; i+=sizeof(SBDT)) {
-      // for(int i = 0; i < count; i++) {
         uint64_t running_addr=  scr_addr+i;
         if(scratchpad_writers[running_addr]) {
           std::cout << "WARNING: scr_addr: " << running_addr
@@ -1543,7 +1402,6 @@ private:
     // std::cout << "NEW SCRATCHPAD SIZE: " << scratchpad.size() << "\n";
     std::memcpy(&scratchpad[scr_addr], src, count);
     if(SS_DEBUG::CHECK_SCR_ALIAS) {
-      // for(int i = 0; i < count; i++) {
       for(int i = 0; i < count; i+=sizeof(SBDT)) {
         uint64_t running_addr = scr_addr+i;
         if(scratchpad_writers[running_addr]) {
@@ -1582,7 +1440,6 @@ private:
     in_vp.inc_rem_wr(num_bytes/in_vp.get_port_width());
   }
 
-  // void push_scratch_remote_buf(int64_t val, int16_t scr_addr){
   void push_scratch_remote_buf(uint8_t* val, int num_bytes, uint16_t scr_addr){
       _scr_w_c.push_remote_wr_req(val, num_bytes, scr_addr);
   }
@@ -1630,21 +1487,9 @@ void print_spad_addr(int start, int end){
   }
 
 }
-/*
-  void send_scr_wr_message(bool scr_type, int64_t val, int64_t scr_offset, int dest_core_id, int stream_id) {
-    // TODO: write this function
-    // _lsq->push_spu_scr_wr();
-  }
-  */
 
 void push_net_in_cmd_queue(base_stream_t* s);
 
-int get_cur_cycle();
-
-
-// int get_core_id() {
-//   return _lsq->getCpuId();
-// }
 
   //members------------------------
   port_interf_t _port_interf;
@@ -1675,7 +1520,6 @@ int get_cur_cycle();
   scratch_read_controller_t _scr_r_c;
   scratch_write_controller_t _scr_w_c;
   network_controller_t _net_c;
-  port_controller_t _port_c;
 
   std::list<std::shared_ptr<base_stream_t>> _cmd_queue;
 
@@ -1687,6 +1531,7 @@ int get_cur_cycle();
 
  public:
   soft_config_t _soft_config;
+  std::vector<dsa::sim::ScratchMemory> spads;
   //* running variables
   bool _cgra_issued_group[NUM_GROUPS];
   int _cgra_issued;

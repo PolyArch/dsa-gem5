@@ -48,6 +48,7 @@ import re
 import six
 import sys
 import zlib
+import subprocess
 
 from os.path import basename, dirname, exists, isdir, isfile, join as joinpath
 
@@ -1220,6 +1221,7 @@ def makeEnv(env, label, objsfx, strip=False, disable_partial=False, **kwargs):
     # name.  Use '_' instead.
     libname = 'gem5_' + label
     secondary_exename = 'm5.' + label
+    prfx = subprocess.check_output('git rev-parse --show-toplevel', shell=True).decode('utf-8').strip()
 
     new_env = env.Clone(OBJSUFFIX=objsfx, SHOBJSUFFIX=objsfx + 's')
     new_env.Label = label
@@ -1383,7 +1385,7 @@ if env['PLATFORM'] == 'darwin':
 if 'debug' in needed_envs:
     makeEnv(env, 'debug', '.do',
             CCFLAGS = Split(ccflags['debug']),
-            CPPDEFINES = ['DEBUG', 'TRACING_ON=1'],
+            CPPDEFINES = ['DEBUG', 'TRACING_ON=1', 'DEBUG_MODE'],
             LINKFLAGS = Split(ldflags['debug']),
             disable_partial=disable_partial)
 

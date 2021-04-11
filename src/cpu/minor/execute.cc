@@ -858,7 +858,7 @@ Execute::issue(ThreadID thread_id)
 
         if (issued) {
             if(inst->isInst() && inst->staticInst->isSSRecv()) {
-                 ssim.forward_progress(cpu.curCycle());
+                ssim.forward_progress(cpu.curCycle());
             }
 
             /* Generate MinorTrace's MinorInst lines.  Do this at commit
@@ -983,14 +983,10 @@ void Execute::timeout_check(bool should_commit, MinorDynInstPtr inst) {
   uint64_t last_event = std::max(last_sd_issue, ssim.forward_progress_cycle());
 
   if(!should_commit) {
-    if(cyc > 99990 + last_event) {
-      DPRINTF(SS, "Just before abort");
-    }
-    if(cyc > 100000 + last_event) {
-      DPRINTF(SS, "Instruction: %s is stalled for too long!!! ABORTING", *inst);
+    if (cyc > 100000 + last_event) {
       ssim.print_stats();
-      //ssim.done(true,0);
-      assert(0 && "Max SS instruction wait");
+      CHECK(false) << "Instruction: " << *inst << " is stalled for too long!!! ABORTING";
+      exit(1);
     }
   } else {
     last_sd_issue = cyc;
@@ -1003,19 +999,6 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
     BranchData &branch, Fault &fault, bool &committed,
     bool &completed_mem_issue)
 {
-  /*if(cpu.cpuId()==1 || cpu.cpuId()==2) {
-    std::cout << "Came in commit inst for cpu: " << cpu.cpuId() << "\n";
-    // std::cout << "Is SS instr: " << inst->staticInst->isSS() << "\n";
-    if(inst->staticInst->isSS()) {
-      std::cout << "Imm of instr: " << inst->staticInst->get_imm() << "\n";
-      std::cout << "is reset/config: " << inst->staticInst->isSSConfig() << "\n";
-    } else {
-      std::cout << "Is load: " << inst->staticInst->isLoad() << "\n";
-      std::cout << "Is store: " << inst->staticInst->isStore() << "\n";
-      std::cout << "Number of unreserved spaces? " << lsq.accessesInFlight() << "\n";
-    }
-  }*/
- 
     ThreadID thread_id = inst->id.threadId;
     ThreadContext *thread = cpu.getContext(thread_id);
 
@@ -1097,7 +1080,7 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
          * backwards, so no other branches may evaluate this cycle*/
         completed_inst = false;
     } else if (inst->staticInst->isSSRecv() &&
-               !ssim.can_receive(inst->staticInst->get_imm())) {
+               !ssim.CanReceive(inst->staticInst->get_imm())) {
         /* Don't commit if you can't receive on output port*/
         DPRINTF(SS, "Could Not Recv: %s\n", *inst);
         completed_inst = false;
@@ -1112,8 +1095,8 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
         ssim.wait_config();
         timeout_check(false, inst);
     } else {
-          bool should_commit = true;
-            
+        bool should_commit = true;
+
         // for spu global barrier
         // ExecContext context(cpu, *cpu.threads[0], *this, inst);
 
@@ -1122,20 +1105,13 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
               (inst->staticInst->isSSWait() &&
                   (ssim_t::stall_core(inst->staticInst->get_imm()))) )
               && !ssim.can_add_stream()) {
-          
-  /*        if((inst->staticInst->isSSWait() &&
-                  ssim_t::stall_core(inst->staticInst->get_imm())) ) {
-            // ssim.set_num_active_threads(context.getSSReg(SS_STRETCH));
-            // int num_active_threads = (inst->staticInst->get_imm()) >> 7;
-            ssim.set_num_active_threads(num_active_threads);
-}*/
+
             should_commit = false;
             //DPRINTF(SS,"Can't issue stream b/c buffer is full");
             //continue;
         } else if(inst->staticInst->isSSWait() &&
                   ssim_t::stall_core(inst->staticInst->get_imm())) {
           if(!ssim.done(false,inst->staticInst->get_imm()) ) {
-            // std::cout << "Should commit is false due to ss wait instruction\n";
             should_commit = false;
             ssim.wait_inst(inst->staticInst->get_imm()); //track stats
 
@@ -1159,8 +1135,7 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
 
           DPRINTF(MinorExecute, "Committing inst: %s\n", *inst);
 
-          fault = inst->staticInst->execute(&context,
-              inst->traceData);
+          fault = inst->staticInst->execute(&context, inst->traceData);
 
           /* Set the predicate for tracing and dump */
           if (inst->traceData)

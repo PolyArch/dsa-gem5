@@ -111,10 +111,6 @@ class SimpleThread : public ThreadState, public ThreadContext
     std::array<RegVal, TheISA::NumCCRegs> ccRegs;
     TheISA::ISA *const isa;    // one "instance" of the current ISA.
 
-#ifdef ISA_HAS_SS
-    std::array<RegVal, TheISA::NumIntRegs> ssRegs;
-#endif
-
     TheISA::PCState _pcState;
 
     /** Did this instruction execute or is it predicated false */
@@ -700,18 +696,6 @@ class SimpleThread : public ThreadState, public ThreadContext
     RegVal readCCRegFlat(RegIndex idx) const override { return ccRegs[idx]; }
     void setCCRegFlat(RegIndex idx, RegVal val) override { ccRegs[idx] = val; }
 
-#ifdef ISA_HAS_SS
-    void setSSReg(uint64_t val, int ss_idx)
-    {
-        DPRINTF(SS, "Setting SS Reg %s to %llu.\n", SSRegNames[ss_idx], val);
-        ssRegs[ss_idx] = val;
-    }
-
-    uint64_t getSSReg(int ss_idx) {
-        return ssRegs[ss_idx];
-    }
-
-#endif
 };
 
 

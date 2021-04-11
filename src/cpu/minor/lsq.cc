@@ -1545,8 +1545,8 @@ LSQ::LSQ(std::string name_, std::string dcache_port_name_,
     state(MemoryRunning),
     inMemorySystemLimit(in_memory_system_limit),
     lineWidth((line_width == 0 ? cpu.cacheLineSize() : line_width)),
-    requests(name_ + ".requests", "addr", requests_queue_size + 10),
-    transfers(name_ + ".transfers", "addr", transfers_queue_size + 10),
+    requests(name_ + ".requests", "addr", requests_queue_size + 20),
+    transfers(name_ + ".transfers", "addr", transfers_queue_size + 20),
     storeBuffer(name_ + ".storeBuffer",
         *this, store_buffer_size, store_buffer_cycle_store_limit),
     numAccessesInMemorySystem(0),
@@ -1560,7 +1560,7 @@ LSQ::LSQ(std::string name_, std::string dcache_port_name_,
      * 1. The number of streams supported (currently 100, too high)
      * 2. The size of each transfer queue (currently identical to transfers)
      */
-    for(int i = 0; i < 100; ++i) {
+    for(int i = 0; i <= 128; ++i) {
         //Logically this would be implemented with a single queue
       // sd_transfers.emplace_back(name_ + ".sd_transfers", "addr", 21);
       sd_transfers.emplace_back(name_ + ".sd_transfers", "addr", 22);
@@ -1643,6 +1643,14 @@ LSQ::findResponse(int streamId) {
         bool can_store = storeBuffer.canInsert();
         bool to_str_buf = request->state == LSQRequest::StoreToStoreBuffer;
 
+        LOG(LSQ) << "Checking " << streamId << " "
+                     << complete << " " << to_str_buf << " " << can_store << " "
+                     << sd_transfers[streamId].occupiedSpace() << "/"
+                     << sd_transfers[streamId].totalSpace();
+
+        LOG(LSQ) << "requests: " << requests.occupiedSpace() << "/"
+                     << requests.totalSpace();
+
         if(complete || (to_str_buf && can_store)) {
             ret = request;
         }
@@ -1660,9 +1668,11 @@ LSQ::findResponse(int streamId) {
 
 void
 LSQ::popResponse(int streamId) {
-    assert(!sd_transfers[streamId].empty());
+    CHECK(!sd_transfers[streamId].empty());
     LSQ::LSQRequestPtr response = sd_transfers[streamId].front();
     sd_transfers[streamId].pop();
+    LOG(LSQ) << streamId << " popped";
+
 
     if (response->issuedToMemory)
         numAccessesIssuedToMemory--;

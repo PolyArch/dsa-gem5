@@ -352,20 +352,16 @@ class ExecContext {
 
 
 #ifdef ISA_HAS_SS
-    /**
-     * @{
-     * @name SS-Specific Interfaces
-     */
-
-       /** Reads an integer register. */
-    virtual void pushStreamDimension(uint64_t, uint64_t, uint64_t) {}
+    virtual void setDSARegisterFile(int, uint64_t, bool) { assert(false); };
+    virtual void setDSAVPState(int, int, int64_t) { assert(false); };
+    virtual void setSSReg(uint64_t val, int ss_idx) { assert(false); }
     virtual void configAtomicHardware(uint64_t a, uint64_t b, uint64_t c) {}
-    virtual void setSSReg(uint64_t val, int ss_idx) {}
-    virtual void callSSFunc(int ss_func_opcode) {}
-    virtual uint64_t receiveSS() {return 0;}
+    virtual void callSSFunc(int ss_func_opcode, const std::vector<int64_t> &args = {}) {}
+    virtual uint64_t receiveSS(int port, int dtype) { return 0; }
 #endif
 
     /** @} */
+
 };
 
 #endif // __CPU_EXEC_CONTEXT_HH__
