@@ -904,13 +904,11 @@ decode QUADRANT default Unknown::unknown() {
             }}, IsSSParam, IsNonSpeculative);
             0x3: SOp::ss_cfg_param({{
                 uint64_t mask = imm;
-                int reg1 = mask & ((int)(DSARF::TOTAL_REG - 1));
-                mask >>= 5;
-                int reg2 = mask & ((int)(DSARF::TOTAL_REG - 1));
-                mask >>= 5;
-                int s1 = mask & 1;
-                mask >>= 1;
-                int s2 = mask & 1;
+                auto sliced = dsa::utils::SliceBits(mask, {5, 5, 1, 1});
+                int reg1 = sliced[0];
+                int reg2 = sliced[1];
+                int s1   = sliced[2];
+                int s2   = sliced[3];
                 xc->setDSARegisterFile(reg1, Rs1, s1);
                 xc->setDSARegisterFile(reg2, Rs2, s2);
                 if (reg1 == DSARF::CSA && reg2 == DSARF::CFS) {
@@ -958,30 +956,21 @@ decode QUADRANT default Unknown::unknown() {
         0xa: decode FUNCT3 {
             0x2: SOp::ss_lin_strm({{
                 uint64_t mask = Rs1;
-                int signal = (mask & 3);
-                if (signal == 3) {
-                    signal = -1;
-                }
-                mask >>= 2;
-                int memory = mask & 1;
-                mask >>= 1;
-                int operation = mask & 7;
-                mask >>= 3;
-                int dimension = mask & 3;
-                mask >>= 2;
-                int action = mask & 1;
-                mask >>= 1;
-                int padding = mask & 7;
-                mask >>= 3;
-                int port = mask & 127;
+                auto sliced = dsa::utils::SliceBits(mask, {7, 3, 1, 3, 1, 2});
+                int port      = sliced[0];
+                int operation = sliced[1];
+                int memory    = sliced[2];
+                int padding   = sliced[3];
+                int action    = sliced[4];
+                int dimension = sliced[5];
                 if (action == 0) {
                     if (operation == 0) {
-                        xc->callSSFunc(SS_MEM_PRT, {port, signal, memory, dimension, padding});
+                        xc->callSSFunc(SS_MEM_PRT, {port, memory, dimension, padding});
                     } else {
-                        xc->callSSFunc(SS_PRT_MEM, {port, signal, operation, memory, dimension});
+                        xc->callSSFunc(SS_PRT_MEM, {port, operation, memory, dimension});
                     }
                 } else {
-                    xc->callSSFunc(SS_CNS_PRT, {port, signal, dimension});
+                    xc->callSSFunc(SS_CNS_PRT, {port, dimension});
                 }
             }}, IsSSStream, IsNonSpeculative);
             0x6: IOp::ss_wait({{

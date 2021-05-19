@@ -1297,7 +1297,7 @@ Execute::commit(ThreadID thread_id, bool only_commit_microops, bool discard,
             discard_inst = inst->id.streamSeqNum !=
                            ex_info.streamSeqNum || discard;
 
-DPRINTF(MinorExecute, "inst: %s seq number: %d"
+            DPRINTF(MinorExecute, "inst: %s seq number: %d"
                     " , expected: %d\n",
                     *inst, inst->id.streamSeqNum, ex_info.streamSeqNum);
 

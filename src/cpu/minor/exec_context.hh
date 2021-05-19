@@ -59,6 +59,7 @@
 #include "mem/request.hh"
 #include "cpu/ss_regs.hh"
 #include "dsa/debug.h"
+#include "dsa/rf.h"
 
 namespace Minor
 {
@@ -465,7 +466,8 @@ class ExecContext : public ::ExecContext
 
     void setDSARegisterFile(int idx, uint64_t value, bool sticky) override {
       if (idx) {
-        LOG(REGISTER) << idx << ": " << value << ", " << sticky;
+        LOG(REGISTER) << idx << " " << REG_NAMES[idx] << ": "
+                      << value << ", " << sticky;
         execute.getSSIM().rf[idx].value = value;
         execute.getSSIM().rf[idx].sticky = sticky;
       }
@@ -507,20 +509,20 @@ class ExecContext : public ::ExecContext
               ssim.LoadBitStream();
               break;
             case SS_MEM_PRT:
-              CHECK(args.size() == 5);
-              ssim.LoadMemoryToPort(args[0], args[1], args[2], args[3], args[4]);
+              CHECK(args.size() == 4);
+              ssim.LoadMemoryToPort(args[0], args[1], args[2], args[3]);
               break;
             case SS_PRT_MEM:
-              CHECK(args.size() == 5);
-              ssim.WritePortToMemory(args[0], args[1], args[2], args[3], args[4]);
+              CHECK(args.size() == 4);
+              ssim.WritePortToMemory(args[0], args[1], args[2], args[3]);
               break;
             case SS_WAIT: {
               ssim.InsertBarrier(args[0]);
               break;
             }
             case SS_CNS_PRT: {
-              CHECK(args.size() == 3);
-              ssim.ConstStream(args[0], args[1], args[2]);
+              CHECK(args.size() == 2);
+              ssim.ConstStream(args[0], args[1]);
               break;
             }
             case SS_IND_PRT: {

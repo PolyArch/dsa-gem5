@@ -78,7 +78,6 @@ void ssim_t::LoadBitStream() {
   }
 
   LOG(COMMAND) << "dsaURE(request): 0x" << std::hex << addr << " " << std::dec << size << "\n";
-  LOG(SCR_BARRIER) << "dsaURE(request): 0x" << std::hex << addr << " " << std::dec << size << "\n";
 
   SSMemReqInfoPtr sdInfo = new SSMemReqInfo(-4, context, CONFIG_STREAM);
 
@@ -104,24 +103,25 @@ void ssim_t::resetNonStickyState() {
   }
 }
 
-const std::function<LinearStream*(int signal, int word, bool is_mem, dsa::sim::ConfigState *rf)>
+const std::function<LinearStream*(int word, bool is_mem, dsa::sim::ConfigState *rf)>
 CONSTRUCT_LINEAR_STREAM[] = {
-  [](int signal, int word, bool is_mem, dsa::sim::ConfigState *rf) -> LinearStream* {
+  [](int word, bool is_mem, dsa::sim::ConfigState *rf) -> LinearStream* {
     rf += DSARF::SAR;
-    return new Linear1D(signal, word, rf[0].value, rf[1].value, is_mem);
+    return new Linear1D(word, rf[0].value, rf[1].value, rf[2].value, is_mem);
   },
-  [](int signal, int word, bool is_mem, dsa::sim::ConfigState *rf) -> LinearStream* {
+  [](int word, bool is_mem, dsa::sim::ConfigState *rf) -> LinearStream* {
     rf += DSARF::SAR;
-    return new Linear2D(signal, word,
-                        rf[0].value, rf[1].value, rf[2].value, rf[3].value, rf[4].value,
+    return new Linear2D(word,
+                        rf[0].value, rf[1].value, rf[2].value,
+                        rf[3].value, rf[4].value, rf[5].value,
                         is_mem);
   },
-  [](int signal, int word, bool is_mem, dsa::sim::ConfigState *rf) -> LinearStream* {
+  [](int word, bool is_mem, dsa::sim::ConfigState *rf) -> LinearStream* {
     rf += DSARF::SAR;
-    return new Linear3D(signal, word,
+    return new Linear3D(word,
                         rf[0].value, rf[1].value, rf[2].value, rf[3].value, rf[4].value,
                         rf[5].value, rf[6].value, rf[7].value, rf[8].value, rf[9].value,
-                        rf[10].value, is_mem);
+                        rf[10].value, rf[11].value, is_mem);
   }
 };
 
@@ -136,11 +136,11 @@ BuffetEntry *FindBuffetEntry(int begin, int end, std::vector<BuffetEntry> &bes) 
   return &(*iter);
 }
 
-void ssim_t::LoadMemoryToPort(int port, int signal, int source, int dim, int padding) {
+void ssim_t::LoadMemoryToPort(int port, int source, int dim, int padding) {
   std::vector<PortExecState> pes = gatherBroadcastPorts(port);
   assert(dim < 3);
   auto addressable = (1 << (rf[DSARF::CSR].value & 3)) * spec.memory_addressable;
-  LinearStream *ls = CONSTRUCT_LINEAR_STREAM[dim](signal, addressable, true, rf);
+  LinearStream *ls = CONSTRUCT_LINEAR_STREAM[dim](addressable, true, rf);
   auto* s = new LinearReadStream(source == 0 ? LOC::DMA : LOC::SCR, ls, pes, padding);
   if (rf[DSARF::BR].value != -1) {
     int begin = rf[DSARF::BR].value & 65535, end = (rf[DSARF::BR].value >> 16) & 65535;
@@ -151,10 +151,10 @@ void ssim_t::LoadMemoryToPort(int port, int signal, int source, int dim, int pad
   add_bitmask_stream(s);
 }
 
-void ssim_t::WritePortToMemory(int port, int signal, int operation, int dst, int dim) {
+void ssim_t::WritePortToMemory(int port, int operation, int dst, int dim) {
   assert(dim < 3);
   auto addressable = (1 << (rf[DSARF::CSR].value & 3)) * spec.memory_addressable;
-  LinearStream *ls = CONSTRUCT_LINEAR_STREAM[dim](signal, addressable, true, rf);
+  LinearStream *ls = CONSTRUCT_LINEAR_STREAM[dim](addressable, true, rf);
   auto unit = (dst == 0) ? LOC::DMA : LOC::SCR;
   if (operation != 1) {
     CHECK(unit == LOC::SCR) << "Only scratch pad supports in-situ computing!";
@@ -169,15 +169,17 @@ void ssim_t::WritePortToMemory(int port, int signal, int operation, int dst, int
   add_bitmask_stream(s);
 }
 
-void ssim_t::ConstStream(int port, int signal, int dim) {
+
+void ssim_t::ConstStream(int port, int dim) {
   CHECK(dim < 3);
   auto addressable = (1 << (rf[DSARF::CSR].value & 3)) * spec.memory_addressable;
   auto dtype = (1 << ((rf[DSARF::CSR].value >> 2) & 3)) * spec.memory_addressable;
-  LinearStream *ls = CONSTRUCT_LINEAR_STREAM[dim](signal, addressable, false, rf);
+  LinearStream *ls = CONSTRUCT_LINEAR_STREAM[dim](addressable, false, rf);
   auto s = new ConstPortStream(gatherBroadcastPorts(port), ls);
   s->set_data_width(dtype);
   add_bitmask_stream(s);
 }
+
 
 void ssim_t::IndirectMemoryToPort(int port, int source, int ind, int lin) {
   // TODO(@were): Use the linear and indirect flags!
@@ -211,7 +213,7 @@ void ssim_t::Reroute(int oport, int iport) {
   auto ips = gatherBroadcastPorts(iport);
   int dtype = (1 << (rf[DSARF::CSR].value & 3)) * spec.memory_addressable;
   auto n = rf[DSARF::L1D].value;
-  auto pps = new PortPortStream(dtype, oport, ips, n);
+  auto pps = new RecurrentStream(dtype, oport, ips, n);
   add_bitmask_stream(pps);
 }
 
@@ -291,7 +293,7 @@ void ssim_t::print_stats() {
 
    out << "\n*** ROI STATISTICS for CORE ID: " << _lsq->getCpuId() << " ***\n";
    out << "Simulator Time: " << ((double)elpased_time_in_roi())
-                                    /1000000000 << " sec\n";
+                                    / 1000000000 << " sec\n";
 
    out << "Cycles: " << roi_cycles() << "\n";
    out << "Number of coalesced SPU requests: " << accel_arr[0]->_stat_num_spu_req_coalesced << "\n";

@@ -29,12 +29,13 @@ enum class STR_PAT {
 struct base_stream_t;
 struct IPortStream;
 struct OPortStream;
+struct PortPortStream;
 struct LinearReadStream;
 struct LinearWriteStream;
 struct Barrier;
 struct ConstPortStream;
 struct IndirectReadStream;
-struct PortPortStream;
+struct RecurrentStream;
 
 /*!
  * \brief Bookkeeping information of Buffet streams.
@@ -119,12 +120,13 @@ struct Functor {
   virtual void Visit(base_stream_t *);
   virtual void Visit(IPortStream *);
   virtual void Visit(OPortStream *);
+  virtual void Visit(PortPortStream *);
   virtual void Visit(LinearReadStream *);
   virtual void Visit(LinearWriteStream *);
   virtual void Visit(Barrier *);
   virtual void Visit(ConstPortStream *);
   virtual void Visit(IndirectReadStream *);
-  virtual void Visit(PortPortStream *);
+  virtual void Visit(RecurrentStream *);
 };
 
 BarrierFlag Loc2BarrierFlag(LOC loc);
@@ -140,11 +142,6 @@ struct base_stream_t {
   int on_the_fly{0};
 
   virtual bool stream_active() = 0;
-  bool empty() {return _empty;} //This must be set by controller itself
-
-  void reset() {
-    _empty=true;
-  }
 
   /*! \brief The entrance of the visitor pattern. */
   virtual void Accept(dsa::sim::stream::Functor *f) {
@@ -168,29 +165,10 @@ struct base_stream_t {
 
   static std::string loc_name(LOC loc) {
     return LOC_NAME[loc];
-    // if(loc==LOC::NONE)                    return "???";
-    // if((loc&LOC::DMA)!=LOC::NONE)         {sep(a); a+="dma";}
-    // if((loc&LOC::SCR)!=LOC::NONE)         {sep(a); a+="scr";}
-    // if((loc&LOC::PORT)!=LOC::NONE)        {sep(a); a+="port";}
-    // if((loc&LOC::CONST)!=LOC::NONE)       {sep(a); a+="const";}
-    // if((loc&LOC::REMOTE_PORT)!=LOC::NONE) {sep(a); a+="rem_port";}
-    // if((loc&LOC::REMOTE_SCR)!=LOC::NONE)  {sep(a); a+="rem_scr";}
-    // if((loc&LOC::REC_BUS)!=LOC::NONE)     {sep(a); a+="rec_bus";}
-    // return a;
   }
 
   static std::string loc_short_name(LOC loc) {
     return loc_name(loc);
-    // std::string a;
-    // if(loc==LOC::NONE) return "?";
-    // if((loc&LOC::DMA)!=LOC::NONE)         {sep(a); return a+="D";}
-    // if((loc&LOC::SCR)!=LOC::NONE)         {sep(a); return a+="S";}
-    // if((loc&LOC::PORT)!=LOC::NONE)        {sep(a); return a+="P";}
-    // if((loc&LOC::CONST)!=LOC::NONE)       {sep(a); return a+="C";}
-    // if((loc&LOC::REMOTE_PORT)!=LOC::NONE) {sep(a); return a+="R";}
-    // if((loc&LOC::REMOTE_SCR)!=LOC::NONE)  {sep(a); return a+="Q";}
-    // if((loc&LOC::REC_BUS)!=LOC::NONE)     {sep(a); return a+="B";}
-    // assert(0);
   }
 
 
@@ -209,14 +187,14 @@ struct base_stream_t {
 
   virtual ~base_stream_t() { }
   void print_empty() {
-    if(stream_active())  std::cout << "               ACTIVE";
-    else                 std::cout << "             INACTIVE";
-
-    if(empty())          std::cout << "EMPTY!\n";
-    else                 std::cout << "\n";
+    if(stream_active()) {
+      std::cout << "               ACTIVE";
+    } else {
+      std::cout << "             INACTIVE";
+    }
   }
   virtual void print_status() {
-    print_empty();
+    std::cout << short_name() << " " << toString() << std::endl;
   }
 
   int id() { return _id; }
@@ -394,6 +372,9 @@ using dsa::sim::stream::Linear2D;
 using dsa::sim::stream::Linear3D;
 using dsa::sim::rt::PortExecState;
 
+/*!
+ * \brief Stream that only involves input ports.
+ */
 struct IPortStream : base_stream_t {
   /*! \brief The status of the ports involved by this input stream. */
   std::vector<PortExecState> pes;
@@ -416,6 +397,9 @@ struct IPortStream : base_stream_t {
     base_stream_t(unit, barrier_flag | (1 << DBF_ReadStreams)), pes(pes_) {}
 };
 
+/*!
+ * \brief Stream that only involves output ports.
+ */
 struct OPortStream : base_stream_t {
   /*!
    * \brief The output port.
@@ -431,6 +415,37 @@ struct OPortStream : base_stream_t {
 
   OPortStream(LOC unit, uint64_t barrier_flag, int port_) :
     base_stream_t(unit, barrier_flag | (1 << DBF_WriteStreams)), port(port_) {}
+
+  /*! \brief The entrance of the visitor pattern. */
+  virtual void Accept(dsa::sim::stream::Functor *f) override {
+    f->Visit(this);
+  }
+
+};
+
+/*!
+ * \brief Stream that only involves both input and output ports.
+ */
+struct PortPortStream : base_stream_t {
+  /*!
+   * \brief The output port.
+   */
+  std::vector<int> oports;
+  /*!
+   * \brief The status of the ports involved by this input stream.
+   */
+  std::vector<PortExecState> pes;
+
+  LOC src() override { return LOC::PORT; }
+
+  /*!
+   * \brief Deep copy this object.
+   */
+  virtual PortPortStream *clone() { CHECK(false); return nullptr; }
+
+  PortPortStream(LOC unit, uint64_t barrier_flag,
+                 const std::vector<PortExecState> &pes_, const std::vector<int> &oports_) :
+    base_stream_t(unit, barrier_flag), oports(oports_), pes(pes_) {}
 
   /*! \brief The entrance of the visitor pattern. */
   virtual void Accept(dsa::sim::stream::Functor *f) override {
@@ -602,9 +617,17 @@ struct ConstPortStream : public IPortStream {
     return new ConstPortStream(*this);
   }
 
+  std::string toString() override {
+    std::ostringstream oss;
+    oss << short_name() << " data width: " << data_width() << " " << ls->toString();
+    for (auto &elem : pes) {
+      oss << " " << elem.toString();
+    }
+    return oss.str();
+  }
+
   void print_status() override {
-    std::cout << "[const stream] data width: " << data_width() << " " << ls->toString();
-    IPortStream::print_status();
+    std::cout << toString() << std::endl;
   }
 
   /*! \brief The entrance of the visitor pattern. */
@@ -617,40 +640,8 @@ struct ConstPortStream : public IPortStream {
 
 };
 
-struct PortOrConst {
-  /*!
-   * \brief The number of values from this port.
-   *        If -1, this is a const.
-   */
-  int64_t n;
-  /*!
-   * \brief The progress of this stream.
-   */
-  int64_t i{0};
-  /*!
-   * \brief The value of this stream.
-   */
-  uint64_t value;
-  /*!
-   * \brief If this port is done.
-   */
-  bool empty() {
-    if (n == -1) {
-      return false;
-    }
-    return i < n;
-  }
-  /*!
-   * \brief Get the value.
-   */
-  uint64_t poll(accel_t *);
-};
 
-struct IndirectReadStream : public IPortStream {
-  /*!
-   * \brief The port of index source.
-   */
-  int idx_port;
+struct IndirectReadStream : public PortPortStream {
   /*!
    * \brief The base address of the indirect array.
    */
@@ -678,36 +669,39 @@ struct IndirectReadStream : public IPortStream {
   /*!
    * \brief Deep copy this object.
    */
-  virtual IPortStream *clone() {
+  virtual PortPortStream *clone() {
     return new IndirectReadStream(*this);
+  }
+
+  int idx_port() {
+    return oports[0];
+  }
+
+  std::string toString() override {
+    std::ostringstream oss;
+    oss << "array:" << start << " "  << "idx_port:" << idx_port();
+    for (auto &elem : pes) {
+      oss << " " << elem.toString();
+    }
+    oss << " " << i << "/" << len;
+    return oss.str();
   }
 
   IndirectReadStream(LOC unit, const std::vector<PortExecState> &pes,
                      int idx_port_, uint64_t start_, uint64_t len_) :
-                     IPortStream(unit, 1 << dsa::sim::stream::Loc2BarrierFlag(unit),  pes),
-                     idx_port(idx_port_), start(start_), len(len_) {}
+                     PortPortStream(unit, 1 << dsa::sim::stream::Loc2BarrierFlag(unit), pes, {idx_port_}),
+                     start(start_), len(len_) {}
 };
 
 
 /*!
  * \brief Port to port stream struct
  */
-// This stream is both an input and output stream.
-// This may break the current type system because of multi-inherence.
-// I decide not to put it in neither of I/O.
-struct PortPortStream : base_stream_t {
+struct RecurrentStream : PortPortStream {
   /*!
    * \brief The "word" size.
    */
   int dtype;
-  /*!
-   * \brief The output port, data source of this stream.
-   */
-  int oport;
-  /*!
-   * \brief The input port, data destination of this stream.
-   */
-  std::vector<PortExecState> iports;
   /*!
    * \brief The current state.
    */
@@ -722,58 +716,29 @@ struct PortPortStream : base_stream_t {
     f->Visit(this);
   }
 
-  PortPortStream(int dtype_, int oport_, const std::vector<PortExecState> &iports_, uint64_t n_) :
-    base_stream_t(LOC::PORT, 1 << DBF_RecurStreams),
-    dtype(dtype_), oport(oport_), iports(iports_), n(n_) {}
+  RecurrentStream(int dtype_, int oport_, const std::vector<PortExecState> &iports_, uint64_t n_) :
+    PortPortStream(LOC::PORT, 1 << DBF_RecurStreams, iports_, {oport_}),
+    dtype(dtype_), n(n_) {}
 
   bool stream_active() override {
     return i < n;
   }
 
+  std::string toString() override {
+    std::ostringstream oss;
+    oss << oports[0] << " -> " << pes[0].port << " " << i << "/" << n;
+    return oss.str();
+  }
+
   void print_status() override {
-    std::cout << oport << " -> " << iports[0].port << " " << i << "/" << n << std::endl;
+    std::cout << toString() << std::endl;
   }
 
   PortPortStream *clone() {
-    return new PortPortStream(*this);
+    return new RecurrentStream(*this);
   }
 
 };
-
-
-struct BuffetStream : public LinearReadStream {
-  // Buffet is used to reuse a stream of data under in an allocated buffer.
-  // [start, bytes)
-  int start, buffer_size;
-  // The source of the data stream.
-  int src_port;
-  uint64_t total;
-  // The runtime status of buffet, which portion of the data stream is in the buffer.
-  int shadow, shadow_dtype;
-  int inport_dtype;
-
-  // State machine
-  uint64_t front{0}, end{0};
-  int dont_pop_shadow;
-
-  BuffetStream(int start_, int buffer_size_, int src_port_, int total_,
-               LOC unit, const std::vector<uint64_t> &dims, const std::vector<int> &in_ports,
-               int repeat_in, int repeat_str, int shadow_, int shadow_dtype_, int inport_dtype_) :
-    LinearReadStream(unit, nullptr, {}, 0), start(start_),
-    buffer_size(buffer_size_), src_port(src_port_), total(total_), shadow(shadow_),
-    shadow_dtype(shadow_dtype_), inport_dtype(inport_dtype_) {}
-
-  bool stream_active() override {
-    return total || LinearReadStream::stream_active();
-  }
-
-  void print_status() override {
-    std::cout << "[buffet stream] [" << start << ", " << start + buffer_size << ") source: "
-              << src_port << ", total: " << total << "bytes ";
-    LinearReadStream::print_status();
-  }
-};
-
 
 // struct remote_port_stream_t : public port_port_stream_t {
 //   remote_port_stream_t() {

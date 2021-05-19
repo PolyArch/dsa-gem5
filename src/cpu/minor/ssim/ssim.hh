@@ -52,23 +52,21 @@ public:
   /*!
    * \brief Load memory to port.
    * \param port The port this stream forwards to.
-   * \param signal The signal of the stream word.
    * \param source 0: DMA, 1: SPAD.
    * \param dim (dim+1)=dimensions of the stream.
    * \param padding 0: No padding; 1: post-stride zero; 2: pre-stride zero;
    *                3: post-stride predication off; 4: pre-stride predication off.
    */
-  void LoadMemoryToPort(int port, int signal, int source, int dim, int padding);
+  void LoadMemoryToPort(int port, int source, int dim, int padding);
 
   /*!
    * \brief Write port stream to memory.
    * \param port The source of the value.
-   * \param signal The signal of the stream word.
    * \param operation The operation, can be write or near storage atomic operations.
    * \param dst 0: DMA, 1: SPAD
    * \param dim (dim+1)=dimensions of the stream.
    */
-  void WritePortToMemory(int port, int signal, int operation, int dst, int dim);
+  void WritePortToMemory(int port, int operation, int dst, int dim);
 
   /*!
    * \brief Read indirect memory to port.
@@ -93,10 +91,9 @@ public:
   /*!
    * \brief Instantiate a const stream.
    * \param port The destination port.
-   * \param signal The signal of the stream.
    * \param dimension The dimension of the stream.
    */
-  void ConstStream(int port, int signal, int dim);
+  void ConstStream(int port, int dim);
 
   /*!
    * \brief Gather all the ports involved in broadcasting.

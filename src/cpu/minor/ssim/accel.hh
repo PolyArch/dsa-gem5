@@ -168,26 +168,6 @@ public:
     }
   }
 
-  // Fill in remaining values in a vector port, if mode is appropriate
-  // This should only be called at the begining/end of a stream's data
-  void fill(uint32_t mode) {
-    if(mode == NO_FILL) {
-      return; //do nothing
-    } else { //zero fill to width
-      bool valid_flag = (mode!=STRIDE_DISCARD_FILL);
-
-      unsigned width = port_cgra_elem();
-      unsigned remainder = _mem_data.size() % width;
-      if(remainder != 0) {
-        std::vector<uint8_t> dummy_val(_port_width, 0);
-        unsigned extra = width - remainder;
-        for(int i = 0; i < extra; ++i) {
-          push_data(dummy_val, valid_flag);
-        }
-      }
-    }
-  }
-
   //utility functions
   template <typename T>
   std::vector<uint8_t> get_byte_vector(T val, int len){
@@ -810,7 +790,6 @@ class scratch_write_controller_t : public data_controller_t {
   void push_atomic_inc(int tid, std::vector<uint8_t> inc, int repeat_times);
 
   void reset_stream_engines() {
-    _port_scr_streams.clear();
     _atomic_scr_streams.clear();
     _ind_wr_streams.clear();
     _write_streams.clear();
@@ -839,17 +818,13 @@ class scratch_write_controller_t : public data_controller_t {
   bool schedule_atomic_scr_op(atomic_scr_stream_t& s);
   bool schedule_indirect_wr(indirect_wr_stream_t& s);
   bool schedule_network_stream(remote_core_net_stream_t& s);
-  bool schedule_buffet(BuffetStream *);
 
   void print_status();
   void cycle_status();
 
   bool atomic_scr_streams_active();
   bool atomic_scr_issued_requests_active();
-  bool port_scr_streams_active();
 
-  base_stream_t *schedule_port_scr(LinearWriteStream& s);
-  
   bool release_df_barrier(){
     assert(_df_count!=-1);
     printf("df_count: %ld current_writes: %ld\n",_df_count,_remote_scr_writes);
@@ -938,10 +913,8 @@ class scratch_write_controller_t : public data_controller_t {
   int64_t _df_count=-1; // only 1 active at a time
   std::vector<base_stream_t*> _write_streams;
 
-  std::vector<LinearWriteStream*> _port_scr_streams;
   std::vector<atomic_scr_stream_t*> _atomic_scr_streams;
   std::vector<indirect_wr_stream_t*> _ind_wr_streams;
-  std::vector<BuffetStream> buffets;
 
   // TODO: fix the size of these queues
   // std::queue<struct ind_write_req> _remote_scr_w_buf;

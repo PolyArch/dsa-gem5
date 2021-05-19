@@ -291,4 +291,5 @@ if options.wait_gdb:
         cpu.wait_for_remote_gdb = True
 
 root = Root(full_system = False, system = system)
-Simulation.run(options, root, system, FutureClass)
+code = Simulation.run(options, root, system, FutureClass)
+quit(code)

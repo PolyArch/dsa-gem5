@@ -76,14 +76,13 @@ struct Linear1D : LinearStream {
 
   /*!
    * \brief Construct a new 1d linear stream object.
-   * \param word_ For memory stream, this represents the size of a word in number of addressable memory.
-   *              For const stream, this represents the stride of data delta.
+   * \param word_ The coefficient multiplier of the stride and stretch.
    * \param start_ The starting value of generation.
    * \param length_ The trip count of the accumulation.
    * \param is_mem If this is a memory stream.
    */
-  Linear1D(int signal_, int64_t word_, int64_t start_, int64_t length_, bool is_mem) :
-    LinearStream(word_ * length_, is_mem), signal(signal_), word(word_), start(start_), length(length_) {
+  Linear1D(int64_t word_, int64_t start_, int64_t stride_, int64_t length_, bool is_mem) :
+    LinearStream(word_ * length_, is_mem), word(word_), start(start_), stride(stride_), length(length_) {
     if (is_mem) {
       CHECK(word) << "word should not be zero!";
       CHECK(start % word == 0) << start << " " << std::dec << word;
@@ -101,7 +100,7 @@ struct Linear1D : LinearStream {
    */
   int64_t poll(bool next=true) override {
     assert(hasNext());
-    auto res = i * word * signal + start;
+    auto res = i * stride + start;
     if (next) {
       ++i;
     }
@@ -118,7 +117,7 @@ struct Linear1D : LinearStream {
     bool first = i == 0;
     std::vector<bool> mask(bandwidth, 0);
     assert(bandwidth == (bandwidth & -bandwidth));
-    int64_t head = start + i * word;
+    int64_t head = poll(false);
     int64_t base = ~(bandwidth - 1) & head;
     int64_t cnt = 0;
     int64_t current = -1;
@@ -147,6 +146,7 @@ struct Linear1D : LinearStream {
       auto &l1d = *this;
       std::ostringstream oss;
       oss << "start:" << l1d.start
+          << " stride1d:" << l1d.stride
           << " word:" << l1d.word
           << " cnt:" << l1d.i << "/" << l1d.length;
       if (hasNext()) {
@@ -164,21 +164,21 @@ struct Linear1D : LinearStream {
     return word;
   }
 
-  int signal;
   int64_t word;
   int64_t start;
+  int64_t stride;
   int64_t length;
 };
 
 
 struct Linear2D : LinearStream {
-  Linear2D(int signal_, int64_t word_, int64_t start_, int64_t lin,
-           int64_t stretch_,  int64_t stride_, int64_t lout,
+  Linear2D(int64_t word_, int64_t start_, int64_t stride1d, int64_t lin,
+           int64_t stretch_,  int64_t stride2d, int64_t lout,
            bool is_mem_) :
     LinearStream((lin + (stretch_ * (lout - 1) + lin)) * lout / 2 * word_, is_mem_),
-    stretch(stretch_), stride(stride_), length(lout),
-    exec(signal_, word_, start_, lin, is_mem),
-    init(signal_, word_, start_, lin, is_mem) {}
+    stretch(stretch_), stride(stride2d), length(lout),
+    exec(word_, start_, stride1d, lin, is_mem),
+    init(word_, start_, stride1d, lin, is_mem) {}
 
   bool hasNext() override {
     if (i < length) {
@@ -188,8 +188,9 @@ struct Linear2D : LinearStream {
       if (++i == length) {
         return false;
       }
-      exec = Linear1D(init.signal, init.word,
+      exec = Linear1D(init.word,
                       init.start + stride * init.word,
+                      init.stride,
                       init.length + stretch,
                       is_mem);
       init = exec;
@@ -239,8 +240,8 @@ struct Linear2D : LinearStream {
 };
 
 struct Linear3D : LinearStream {
-  Linear3D(int signal_, int64_t word_, int64_t start_, int64_t l1d,
-           int64_t stretch_2d_, int64_t stride_2d_, int64_t l2d,
+  Linear3D(int64_t word_, int64_t start_, int64_t stride1d_,
+           int64_t l1d, int64_t stretch_2d_, int64_t stride_2d_, int64_t l2d,
            int64_t delta_stretch_2d_, int64_t delta_stride_2d_,
            int64_t delta_length_1d_, int64_t delta_length_2d_,
            int64_t stride_3d_, int64_t l3d, bool is_mem_) :
@@ -251,8 +252,8 @@ struct Linear3D : LinearStream {
     delta_length_2d(delta_length_2d_),
     stride_3d(stride_3d_),
     length(l3d),
-    init(signal_, word_, start_, l1d, stretch_2d_, stride_2d_, l2d, is_mem),
-    exec(signal_, word_, start_, l1d, stretch_2d_, stride_2d_, l2d, is_mem) {}
+    init(word_, start_, stride1d_, l1d, stretch_2d_, stride_2d_, l2d, is_mem),
+    exec(word_, start_, stride1d_, l1d, stretch_2d_, stride_2d_, l2d, is_mem) {}
   
   bool hasNext() {
     if (i < length) {
@@ -263,8 +264,9 @@ struct Linear3D : LinearStream {
         return false;
       }
       exec = Linear2D(
-        init.init.signal, init.init.word,
-        init.init.start + stride_3d * word_bytes(), init.init.length + delta_length_1d,
+        init.init.word,
+        init.init.start + stride_3d * word_bytes(),
+        init.init.stride, init.init.length + delta_length_1d,
         init.stretch + delta_stretch_2d, init.stride + delta_stride_2d,
         init.length + delta_length_2d, is_mem);
       init = exec;

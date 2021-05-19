@@ -172,6 +172,10 @@ void Functor::Visit(OPortStream *os) {
   Visit(static_cast<base_stream_t*>(os));
 }
 
+void Functor::Visit(PortPortStream *os) {
+  Visit(static_cast<base_stream_t*>(os));
+}
+
 void Functor::Visit(LinearReadStream *ars) {
   Visit(static_cast<IPortStream*>(ars));
 }
@@ -189,11 +193,11 @@ void Functor::Visit(Barrier *bar) {
 }
 
 void Functor::Visit(IndirectReadStream *irs) {
-  Visit(static_cast<IPortStream*>(irs));
+  Visit(static_cast<PortPortStream*>(irs));
 }
 
-void Functor::Visit(PortPortStream *irs) {
-  Visit(static_cast<base_stream_t*>(irs));
+void Functor::Visit(RecurrentStream *rs) {
+  Visit(static_cast<PortPortStream*>(rs));
 }
 
 BarrierFlag Loc2BarrierFlag(LOC loc) {
@@ -202,13 +206,4 @@ BarrierFlag Loc2BarrierFlag(LOC loc) {
 
 }
 }
-}
-
-uint64_t PortOrConst::poll(accel_t *accel) {
-  if (n == -1) {
-    auto &vi = accel->port_interf().in_port(value);
-    CHECK(vi.mem_size());
-    return vi.peek_out_data();
-  }
-  return value;
 }

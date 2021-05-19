@@ -364,4 +364,22 @@ class ExecContext {
 
 };
 
+
+namespace dsa {
+namespace utils {
+
+inline std::vector<int64_t> SliceBits(int64_t v, const std::vector<int> &bits) {
+  std::vector<int64_t> res(bits.size(), 0);
+  for (int i = 0, n = bits.size(); i < n; ++i) {
+    int64_t mask = (1 << bits[i]) - 1;
+    res[i] = v & mask;
+    v >>= bits[i];
+  }
+  return res;
+}
+
+}
+}
+
+
 #endif // __CPU_EXEC_CONTEXT_HH__

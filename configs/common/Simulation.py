@@ -734,3 +734,5 @@ def run(options, root, testsys, cpu_class):
 
     if exit_event.getCode() != 0:
         print("Simulated exit code not 0! Exit code is", exit_event.getCode())
+        return 1
+    return 0
