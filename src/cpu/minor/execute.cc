@@ -668,11 +668,6 @@ Execute::issue(ThreadID thread_id)
                 " there are too many in flight\n", *inst);
             issued = false;
         } else {
-            /*
-            if(inst->staticInst!=NULL && inst->staticInst->isSS() && ssim.is_in_config()) {
-               issued=false;
-            }
-            */
 
             /* Try and issue an instruction into an FU, assume we didn't and
              * fix that in the loop */
@@ -887,15 +882,10 @@ Execute::issue(ThreadID thread_id)
             } else if (!inst->isBubble()) {
                 num_insts_issued++;
                 ssim.issued_inst();
-                //if(ssim.in_roi()) {
-                //  DPRINTF(SS, "Issued inst: %s\n", *inst);
-                //}
-
                 if (num_insts_issued == issueLimit)
                     DPRINTF(MinorExecute, "Reached inst issue limit\n");
-            } else {
-                // ssim.issued_bubble_inst();
             }
+            ssim.statistics.countHostInst(inst->staticInst, discarded);
 
             thread.inputIndex++;
             DPRINTF(MinorExecute, "Stepping to next inst inputIndex: %d\n",
@@ -1085,7 +1075,7 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
         DPRINTF(SS, "Could Not Recv: %s\n", *inst);
         completed_inst = false;
         timeout_check(false, inst);
-    } else if (inst->staticInst->isSS() &&  ssim.is_in_config()) {
+    } else if (inst->staticInst->isSS() && ssim.is_in_config()) {
         completed_inst = false;
         ssim.wait_config();
         timeout_check(false, inst);
@@ -1101,22 +1091,20 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
         // ExecContext context(cpu, *cpu.threads[0], *this, inst);
 
         //break down by type
-        if ( (inst->staticInst->isSSStream()  ||
-              (inst->staticInst->isSSWait() &&
-                  (ssim_t::stall_core(inst->staticInst->get_imm()))) )
-              && !ssim.can_add_stream()) {
+        if ((inst->staticInst->isSSStream()  ||
+             (inst->staticInst->isSSWait() &&
+                 (ssim_t::stall_core(inst->staticInst->get_imm()))))
+              && !ssim.StreamBufferAvailable()) {
 
             should_commit = false;
-            //DPRINTF(SS,"Can't issue stream b/c buffer is full");
+            DPRINTF(SS,"Can't issue stream b/c buffer is full");
             //continue;
         } else if(inst->staticInst->isSSWait() &&
                   ssim_t::stall_core(inst->staticInst->get_imm())) {
-          if(!ssim.done(false,inst->staticInst->get_imm()) ) {
+          if(!ssim.done(false, inst->staticInst->get_imm())) {
             should_commit = false;
             ssim.wait_inst(inst->staticInst->get_imm()); //track stats
-
-            //DPRINTF(SS,"Wait blocked, mask: %x\n",inst->staticInst->get_imm());
-            //continue;
+            DPRINTF(SS,"Wait blocked, mask: %x\n",inst->staticInst->get_imm());
           } else {
             DPRINTF(SS,"Wait complete, mask: %x\n",inst->staticInst->get_imm());
             if(SS_DEBUG::COMMAND || SS_DEBUG::WAIT) {

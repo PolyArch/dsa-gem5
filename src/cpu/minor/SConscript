@@ -65,6 +65,7 @@ if 'MinorCPU' in env['CPU_MODELS']:
     Source('ssim/arbiter.cc')
     Source('ssim/spad.cc')
     Source('ssim/request.cc')
+    Source('ssim/statistics.cc')
 
     env.Append(CPPPATH=Dir(os.environ['RISCV']+'/include/'))
     env.Append(CPPPATH=Dir(os.environ['SS_TOOLS']+'/include/'))

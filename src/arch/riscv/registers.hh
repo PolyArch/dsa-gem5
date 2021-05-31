@@ -57,7 +57,6 @@
 #include "arch/isa_traits.hh"
 #include "arch/riscv/generated/max_inst_regs.hh"
 #include "base/types.hh"
-#include "cpu/ss_regs.hh"
 
 namespace RiscvISA {
 

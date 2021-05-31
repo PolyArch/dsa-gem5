@@ -9,13 +9,13 @@
 
 #include "ssim.hh"
 #include "../cpu.hh"
+#include "../exec_context.hh"
 
 using namespace std;
 
 // Vector-Stream Commands (all of these are context-dependent)
 
-ssim_t::ssim_t(Minor::LSQ* lsq) :
-  NUM_ACCEL(getenv("LANES") ? std::stoi(getenv("LANES")) : 8), _lsq(lsq) {
+ssim_t::ssim_t(Minor::LSQ *lsq_) : lsq_(lsq_), statistics(*this) {
 
   const char *req_core_id_str = std::getenv("DBG_CORE_ID");
   if (req_core_id_str != nullptr) {
@@ -24,22 +24,14 @@ ssim_t::ssim_t(Minor::LSQ* lsq) :
 
   SS_DEBUG::check_env(debug_pred());
 
-  accel_arr.resize(NUM_ACCEL_TOTAL);
-  for(int i = 0; i < NUM_ACCEL_TOTAL; ++i) {
-    accel_arr[i] = new accel_t(i, this);
+  lanes.resize(spec.num_of_lanes + 1);
+  for(int i = 0; i < (int) lanes.size(); ++i) {
+    lanes[i] = new accel_t(i, this);
   }
-  //accel_arr[SHARED_SP] = new accel_t(lsq, SHARED_SP, this);
-  //TODO: inform accel_arr
+  //lanes[SHARED_SP] = new accel_t(lsq, SHARED_SP, this);
+  //TODO: inform lanes
 
   // set indirect ports to be 1-byte by default
-  for(int i=START_IND_PORTS; i<STOP_IND_PORTS; ++i) {
-    port_data_t& cur_out_port = accel_arr[0]->_port_interf.out_port(i);
-    cur_out_port.set_port_width(8);
-
-    port_data_t& cur_in_port = accel_arr[0]->_port_interf.in_port(i);
-    cur_in_port.set_port_width(8);
-  }
-
   for (int i = 0; i < DSARF::TOTAL_REG; ++i) {
     rf[i].value = REG_DEFAULT[i];
     rf[i].sticky = REG_STICKY[i];
@@ -47,7 +39,7 @@ ssim_t::ssim_t(Minor::LSQ* lsq) :
 
 }
 
-void ssim_t::LoadBitStream() {
+void ssim_t::LoadBitstream() {
   auto context = rf[DSARF::TBC].value;
   auto addr = rf[DSARF::CSA].value;
   auto size = rf[DSARF::CFS].value;
@@ -58,30 +50,30 @@ void ssim_t::LoadBitStream() {
     if (size == 0) {
       LOG(COMMAND_I) << "Complete reset request issued";
       //This is the reset_data case!
-      accel_arr[0]->request_reset_data();
+      lanes[0]->request_reset_data();
       return;
     }
     if(size == 1) {
       LOG(COMMAND_I) << "RESET stream request triggered";
-      accel_arr[0]->switch_stream_cleanup_mode_on();
+      lanes[0]->switch_stream_cleanup_mode_on();
       return;
     }
   }
 
-  set_in_use();  //lets get going then..
+  set_in_use();  //lets get going then.
 
-  for (int i = 0; i < NUM_ACCEL_TOTAL; ++i) {
+  for (int i = 0; i < (int) lanes.size(); ++i) {
     if ((context >> i) & 1) {
-      CHECK(!accel_arr[i]->_in_config);
-      accel_arr[i]->set_in_config();
+      CHECK(lanes[i]->statistics.blame != dsa::stat::Accelerator::CONFIGURE) << i;
+      lanes[i]->statistics.blame = dsa::stat::Accelerator::CONFIGURE;
     }
   }
 
-  LOG(COMMAND) << "dsaURE(request): 0x" << std::hex << addr << " " << std::dec << size << "\n";
+  LOG(COMMAND) << "Request 0x" << std::hex << addr << ", " << std::dec << size << " to configure";
 
   SSMemReqInfoPtr sdInfo = new SSMemReqInfo(-4, context, CONFIG_STREAM);
 
-  _lsq->pushRequest(cur_minst(), true /*isLoad*/, NULL /*data*/,
+  lsq()->pushRequest(inst, true /*isLoad*/, NULL /*data*/,
                     size * 8 /*cache line*/, addr, 0 /*flags*/, 0 /*res*/,
                     nullptr /*atom op*/, std::vector<bool>() /*byte enable*/,
                     sdInfo);
@@ -89,7 +81,7 @@ void ssim_t::LoadBitStream() {
 }
 
 Minor::LSQ *ssim_t::lsq() {
-  return _lsq;
+  return lsq_;
 }
 
 void ssim_t::resetNonStickyState() {
@@ -101,6 +93,7 @@ void ssim_t::resetNonStickyState() {
   for (int i = 0; i < DSA_MAX_IN_PORTS; ++i) {
     vps[i] = dsa::sim::IVPState();
   }
+  ++statistics.ctrl_intrinsics;
 }
 
 const std::function<LinearStream*(int word, bool is_mem, dsa::sim::ConfigState *rf)>
@@ -139,56 +132,70 @@ BuffetEntry *FindBuffetEntry(int begin, int end, std::vector<BuffetEntry> &bes) 
 void ssim_t::LoadMemoryToPort(int port, int source, int dim, int padding) {
   std::vector<PortExecState> pes = gatherBroadcastPorts(port);
   assert(dim < 3);
-  auto addressable = (1 << (rf[DSARF::CSR].value & 3)) * spec.memory_addressable;
+  auto addressable = 1 << (rf[DSARF::CSR].value & 3);
   LinearStream *ls = CONSTRUCT_LINEAR_STREAM[dim](addressable, true, rf);
-  auto* s = new LinearReadStream(source == 0 ? LOC::DMA : LOC::SCR, ls, pes, padding);
+  auto* s = new LinearReadStream(source == 0 ? LOC::DMA : LOC::SCR, rf[DSARF::TBC].value, ls, pes, padding);
+  s->dtype = s->ls->word_bytes();
+  s->inst = inst;
   if (rf[DSARF::BR].value != -1) {
     int begin = rf[DSARF::BR].value & 65535, end = (rf[DSARF::BR].value >> 16) & 65535;
     s->be = FindBuffetEntry(begin, end, bes);
     s->be->use = s;
-    LOG(BUFFET) << "Allocate Buffet: " << s->be->toString();
+    LOG(COMMAND) << "Allocate Buffet: " << s->be->toString();
   }
-  add_bitmask_stream(s);
+  LOG(COMMAND) << "Linear Read Stream: " << s->toString();
+  cmd_queue.push_back(s);
+  // BroadcastStream(s);
 }
 
 void ssim_t::WritePortToMemory(int port, int operation, int dst, int dim) {
   assert(dim < 3);
-  auto addressable = (1 << (rf[DSARF::CSR].value & 3)) * spec.memory_addressable;
+  auto addressable = (1 << (rf[DSARF::CSR].value & 3));
   LinearStream *ls = CONSTRUCT_LINEAR_STREAM[dim](addressable, true, rf);
   auto unit = (dst == 0) ? LOC::DMA : LOC::SCR;
   if (operation != 1) {
     CHECK(unit == LOC::SCR) << "Only scratch pad supports in-situ computing!";
   }
-  auto* s = new LinearWriteStream(unit, ls, port, operation);
+  auto* s = new LinearWriteStream(unit, rf[DSARF::TBC].value, ls, port, operation);
+  s->dtype = s->ls->word_bytes();
+  s->inst = inst;
   if (rf[DSARF::BR].value != -1) {
     int begin = rf[DSARF::BR].value & 65535, end = (rf[DSARF::BR].value >> 16) & 65535;
     s->be = FindBuffetEntry(begin, end, bes);
     s->be->load = s;
-    LOG(BUFFET) << "Allocate Buffet: " << s->be->toString();
+    LOG(COMMAND) << "Allocate Buffet: " << s->be->toString();
   }
-  add_bitmask_stream(s);
+  LOG(COMMAND) << "Linear Write Stream: " << s->toString();
+  cmd_queue.push_back(s);
+  // BroadcastStream(s);
 }
 
 
 void ssim_t::ConstStream(int port, int dim) {
   CHECK(dim < 3);
-  auto addressable = (1 << (rf[DSARF::CSR].value & 3)) * spec.memory_addressable;
-  auto dtype = (1 << ((rf[DSARF::CSR].value >> 2) & 3)) * spec.memory_addressable;
+  auto addressable = (1 << (rf[DSARF::CSR].value & 3));
+  auto dtype = (1 << ((rf[DSARF::CSR].value >> 2) & 3));
   LinearStream *ls = CONSTRUCT_LINEAR_STREAM[dim](addressable, false, rf);
-  auto s = new ConstPortStream(gatherBroadcastPorts(port), ls);
-  s->set_data_width(dtype);
-  add_bitmask_stream(s);
+  auto s = new ConstPortStream(rf[DSARF::TBC].value, gatherBroadcastPorts(port), ls);
+  s->dtype = dtype;
+  s->inst = inst;
+  LOG(COMMAND) << "Const Stream: " << s->toString();
+  cmd_queue.push_back(s);
+  // BroadcastStream(s);
 }
 
 
 void ssim_t::IndirectMemoryToPort(int port, int source, int ind, int lin) {
   // TODO(@were): Use the linear and indirect flags!
   auto irs =
-    new IndirectReadStream(source == 0 ? LOC::DMA : LOC::SCR,
+    new IndirectReadStream(source == 0 ? LOC::DMA : LOC::SCR, rf[DSARF::TBC].value,
                            gatherBroadcastPorts(port), rf[DSARF::INDP].value & 127,
                            rf[DSARF::SAR].value, rf[DSARF::L1D].value);
-  irs->set_data_width(1 << ((rf[DSARF::CSR].value >> 4) & 3));
-  add_bitmask_stream(irs);
+  irs->dtype = (1 << ((rf[DSARF::CSR].value >> 4) & 3));
+  irs->inst = inst;
+  cmd_queue.push_back(irs);
+  LOG(COMMAND) << "Indirect Read Stream: " << irs->toString();
+  // BroadcastStream(irs);
 }
 
 std::vector<PortExecState> ssim_t::gatherBroadcastPorts(int port) {
@@ -206,68 +213,298 @@ int64_t ssim_t::CurrentCycle() {
   return now() - _orig_stat_start_cycle;
 }
 
+void ssim_t::DispatchStream() {
+
+  struct DispatchChecker : dsa::sim::stream::Functor {
+    DispatchChecker(accel_t *accel_) : accel(accel_) {}
+
+    /*!
+     * \brief Check the avaiability of the ports of this stream.
+     * \param is The input stream to be scheduled.
+     */
+    bool IVPAvailable(const std::vector<PortExecState> &pes) {
+      for (auto &elem : pes) {
+        auto &in = accel->port_interf().in_port(elem.port);
+        if (in.stream) {
+          return false;
+        }
+        if (std::find(iports.begin(), iports.end(), elem.port) != iports.end()) {
+          return false;
+        }
+        if (in.mem_size() || in.num_ready()) {
+          return false;
+          // FIXME(@were): This can be more aggressive, but what should I do?
+          // if (elem.repeat != in.pes.repeat ||
+          //     elem.period != in.pes.period ||
+          //     elem.stretch != in.pes.stretch) {
+          //   return false;
+          // }
+        }
+      }
+      return true;
+    }
+
+    /*!
+     * \brief Enforce the barrier.
+     */
+    void Visit(Barrier *bar) override {
+      // Add the bits to be blocked.
+      barrier_mask |= bar->_mask;
+      // A barrier indicates to enforce the order of execution of streams
+      // (before, after, and bar itself) that have bit masks in common.
+      // If there are streams (either active or wait in FIFO) before
+      // this barrier are seperated by this barrier, this barrier should not retire.
+      if (bar->_mask & barred) {
+        LOG(BAR) << "Cannot retire because of prior streams.";
+        return;
+      }
+      // If there are active stream affected by this barrier,
+      // this barrier should not retire.
+      for (auto i : accel->_soft_config.in_ports_active) {
+        auto &in = accel->port_interf().in_port(i);
+        if (in.stream && (in.stream->barrier_mask() & bar->_mask)) {
+          LOG(BAR) << "Cannot retire because of active streams.";
+          return;
+        }
+      }
+      for (auto i : accel->_soft_config.out_ports_active) {
+        auto &out = accel->port_interf().out_port(i);
+        if (out.stream && (out.stream->barrier_mask() & bar->_mask)) {
+          LOG(BAR) << "Cannot retire because of active streams.";
+          return;
+        }
+      }
+      // If no stream is affected by this barrier, retire.
+      retire = true;
+    }
+
+    /*!
+     * \brief Schedule the read stream.
+     */
+    void Visit(IPortStream *ips) override {
+      barred |= ips->barrier_mask();
+      if (!(ips->barrier_mask() & barrier_mask)) {
+        if (IVPAvailable(ips->pes)) {
+          retire = true;
+        }
+      }
+      std::for_each(ips->pes.begin(), ips->pes.end(),
+                    [this] (const PortExecState &pes) { iports.push_back(pes.port); });
+    }
+
+    /*!
+     * \brief Schedule the write stream.
+     */
+    void Visit(OPortStream *ops) override {
+      barred |= ops->barrier_mask();
+      if (!(ops->barrier_mask() & barrier_mask)) {
+        int port = ops->port;
+        auto &out = accel->port_interf().out_port(port);
+        if (out.stream == nullptr &&
+            std::find(oports.begin(), oports.end(), port) == oports.end()) {
+          retire = true;
+        }
+      }
+      oports.push_back(ops->port);
+    }
+
+    /*!
+     * \brief Schedule a port to port stream.
+     */
+    void Visit(PortPortStream *pps) override {
+      barred |= pps->barrier_mask();
+      if (!(pps->barrier_mask() & barrier_mask)) {
+        int port = pps->oports[0];
+        auto &out = accel->port_interf().out_port(port);
+        if (out.stream == nullptr && IVPAvailable(pps->pes) &&
+            std::find(oports.begin(), oports.end(), port) == oports.end()) {
+          retire = true;
+        }
+      }
+      std::for_each(pps->pes.begin(), pps->pes.end(),
+                    [this] (const PortExecState &pes) { iports.push_back(pes.port); });
+      oports.insert(oports.end(), pps->oports.begin(), pps->oports.end());
+    }
+
+    /*!
+     * \brief Reset the status after each scheduling.
+     */
+    void Reset() {
+      retire = false;
+    }
+
+    /*!
+     * \brief The mask of blocking.
+     */
+    uint64_t barrier_mask{0};
+    /*!
+     * \brief This accelerator.
+     */
+    accel_t *accel;
+    /*!
+     * \brief If this scheduled instruction should be removed from the FIFO.
+     */
+    bool retire{false};
+    /*!
+     * \brief The barrier scoreboard.
+     */
+    uint64_t barred{0};
+    /*!
+     * \brief The ports occupied by prior streams. For example, both indirect streams
+              and port-port streams involve both input and output ports. These stream
+              can only be scheduled when both input and output ports are available.
+              Partial avaiability may affect the port-enforced stream order.
+     */
+    std::vector<int> iports, oports;
+  };
+
+  struct StreamDispatcher : dsa::sim::stream::Functor {
+    StreamDispatcher(accel_t *accel_) : accel(accel_) {}
+
+    /*!
+     * \brief Update the status of ports involved by the scheduled stream.
+     * \param is The scheduled stream.
+     */
+    void BindStreamToPorts(const vector<PortExecState> &pes, base_stream_t *stream) {
+      for (auto &elem : pes) {
+        accel->port_interf().in_port(elem.port).bindStream(stream);
+      }
+    }
+
+    /*!
+     * \brief Enforce the barrier.
+     */
+    void Visit(Barrier *bar) override {
+    }
+
+    /*!
+     * \brief Schedule the read stream.
+     */
+    void Visit(IPortStream *ips) override {
+      auto cloned = ips->clone();
+      BindStreamToPorts(cloned->pes, cloned);
+    }
+
+    /*!
+     * \brief Schedule the write stream.
+     */
+    void Visit(OPortStream *ops) override {
+      int port = ops->port;
+      auto &out = accel->port_interf().out_port(port);
+      out.bindStream(ops->clone());
+    }
+
+    /*!
+     * \brief Schedule a port to port stream.
+     */
+    void Visit(PortPortStream *pps) override {
+      int port = pps->oports[0];
+      auto cloned = pps->clone();
+      BindStreamToPorts(pps->pes, cloned);
+      auto &out = accel->port_interf().out_port(port);
+      out.bindStream(cloned);
+    }
+
+    /*!
+     * \brief This accelerator.
+     */
+    accel_t *accel;
+  };
+
+  std::vector<DispatchChecker> dc;
+  std::vector<StreamDispatcher> sd;
+
+  for (int i = 0; i < lanes.size(); ++i) {
+    dc.emplace_back(lanes[i]);
+    sd.emplace_back(lanes[i]);
+  }
+
+  for (int i = 0; i < (int) cmd_queue.size(); ++i) {
+    bool retire = true;
+    for (int j = 0; j < (int) lanes.size(); ++j) {
+      if (cmd_queue[i]->context >> j & 1) {
+        cmd_queue[i]->Accept(&dc[j]);
+        retire = retire && dc[j].retire;
+        if (!retire) {
+          LOG(COMMAND) << "Cannot Issue Stream: " << cmd_queue[i]->toString();
+          break;
+        }
+      }
+    }
+    if (retire) {
+      LOG(COMMAND) << "Issue Stream: " << cmd_queue[i]->toString();
+      for (int j = 0; j < (int) lanes.size(); ++j) {
+        if (cmd_queue[i]->context >> j & 1) {
+          cmd_queue[i]->Accept(&sd[j]);
+        }
+      }
+    }
+    for (int j = 0; j < (int) lanes.size(); ++j) {
+      if (cmd_queue[i]->context >> j & 1) {
+        dc[j].Reset();
+      }
+    }
+    if (retire) {
+      cmd_queue.erase(cmd_queue.begin() + i);
+    }
+  }
+  
+}
+
 //The reroute function handles either local recurrence, or remote data transfer
 void ssim_t::Reroute(int oport, int iport) {
   // TODO(@were): Strided padding.
   // TODO(@were): Inter-lane rerouting.
   auto ips = gatherBroadcastPorts(iport);
-  int dtype = (1 << (rf[DSARF::CSR].value & 3)) * spec.memory_addressable;
+  int dtype = (1 << (rf[DSARF::CSR].value & 3));
   auto n = rf[DSARF::L1D].value;
-  auto pps = new RecurrentStream(dtype, oport, ips, n);
-  add_bitmask_stream(pps);
+  auto pps = new RecurrentStream(rf[DSARF::TBC].value, oport, ips, n);
+  pps->dtype = dtype;
+  cmd_queue.push_back(pps);
+  // BroadcastStream(pps);
 }
 
 // receive network message at the given input port id
 void ssim_t::push_in_accel_port(int accel_id, int8_t* val, int num_bytes, int in_port) {
-  assert(accel_id<NUM_ACCEL_TOTAL);
-  accel_arr[accel_id]->receive_message(val, num_bytes, in_port);
+  assert(accel_id < lanes.size() && accel_id >= 0);
+  lanes[accel_id]->receive_message(val, num_bytes, in_port);
 }
 
 // SPU has only 1 DGRA in a core
 void ssim_t::push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int out_bytes, uint64_t inc) {
-  accel_arr[0]->push_atomic_update_req(scr_addr, opcode, val_bytes, out_bytes, inc);
+  lanes[0]->push_atomic_update_req(scr_addr, opcode, val_bytes, out_bytes, inc);
 }
 
 void ssim_t::push_ind_rem_read_req(bool is_remote, int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry) {
-    accel_arr[0]->push_ind_rem_read_req(is_remote, req_core, request_ptr, addr, data_bytes, reorder_entry);
+    lanes[0]->push_ind_rem_read_req(is_remote, req_core, request_ptr, addr, data_bytes, reorder_entry);
 }
 
 void ssim_t::push_ind_rem_read_data(int8_t* data, int request_ptr, int addr, int data_bytes, int reorder_entry) {
-    accel_arr[0]->push_ind_rem_read_data(data, request_ptr, addr, data_bytes, reorder_entry);
+    lanes[0]->push_ind_rem_read_data(data, request_ptr, addr, data_bytes, reorder_entry);
 }
 
-bool ssim_t::can_add_stream() {
-  auto context = rf[DSARF::TBC].value;
-  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i,b<<=1) {
-    if(context & b) {
-      if(!accel_arr[i]->can_add_stream()) {
-        return false;
-      }
-    }
-  }
-  return true;
+bool ssim_t::StreamBufferAvailable() {
+  return cmd_queue.size() < spec.cmd_queue_size;
 }
 
 bool ssim_t::done(bool show, int mask) {
   bool is_done=true;
   auto context = rf[DSARF::TBC].value;
-  for(int i = 0; i < NUM_ACCEL_TOTAL; ++i) {
+  for(int i = 0; i < (int) lanes.size(); ++i) {
     if(context >> i & 1) {
-      is_done &= accel_arr[i]->done(show, mask);
+      is_done &= lanes[i]->done(show, mask);
     }
   }
   return is_done;
 }
 
 bool ssim_t::is_in_config() {
-  bool in_config=true;
-  auto context = rf[DSARF::TBC].value;
-  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
-    if(context & b) {
-      in_config &= accel_arr[i]->is_in_config();
+  for(int i = 0; i < (int) lanes.size(); ++i) {
+    if (lanes[i]->statistics.blame == dsa::stat::Accelerator::CONFIGURE) {
+      return true;
     }
   }
-  return in_config;
+  return false;
 }
 
 void ssim_t::cycle_shared_busses() {
@@ -278,12 +515,13 @@ void ssim_t::step() {
     return;
   }
   cycle_shared_busses();
-  for(uint64_t i=0,b=1; i < NUM_ACCEL; ++i, b<<=1) {
-    if(_ever_used_bitmask & b) {
-      accel_arr[i]->tick();
+  DispatchStream();
+  for(int i = 0; i < (int) (lanes.size() - 1); ++i) {
+    if(_ever_used_bitmask >> i & 1) {
+      lanes[i]->tick();
     }
   }
-  shared_acc()->tick();
+  // shared_acc()->tick();
 }
 
 void ssim_t::print_stats() {
@@ -291,14 +529,15 @@ void ssim_t::print_stats() {
    out.precision(4);
    out << dec;
 
-   out << "\n*** ROI STATISTICS for CORE ID: " << _lsq->getCpuId() << " ***\n";
-   out << "Simulator Time: " << ((double)elpased_time_in_roi())
-                                    / 1000000000 << " sec\n";
+   out << "\n*** ROI STATISTICS for CORE ID: " << lsq()->getCpuId() << " ***\n";
+   out << "Simulator Time: " << statistics.timeElapsed() << " seconds" << std::endl;
 
-   out << "Cycles: " << roi_cycles() << "\n";
-   out << "Number of coalesced SPU requests: " << accel_arr[0]->_stat_num_spu_req_coalesced << "\n";
-   out << "Control Core Insts Issued: " << control_core_insts() << "\n";
-   out << "Control Core Discarded Insts Issued: " << control_core_discarded_insts() << "\n";
+   out << "Cycles: " << statistics.cycleElapsed() << "\n";
+   out << "Number of coalesced SPU requests: " << lanes[0]->_stat_num_spu_req_coalesced << "\n";
+   out << "Control Core Insts Issued: " << statistics.insts_issued << "\n";
+   out << "Control Core Discarded Insts Issued: " << statistics.insts_discarded << "\n";
+   out << "Control Core Intrinsics/Instruction Issued: " << statistics.ctrl_intrinsics << "/" << statistics.ctrl_instructions << "\n";
+
    out << "Control Core Discarded Inst Stalls: " << ((double)control_core_discarded_insts()/(double)control_core_insts()) << "\n";
    // out << "Control Core Bubble Insts Issued: " << control_core_bubble_insts() << "\n";
    out << "Control Core Config Stalls: "
@@ -327,10 +566,10 @@ void ssim_t::print_stats() {
    out << "\n";
 
   int cores_used=0;
-  for (int i = 0; i < NUM_ACCEL_TOTAL; ++i) {
+  for (int i = 0; i < (int) lanes.size(); ++i) {
     if (_ever_used_bitmask >> i & 1) {
-      accel_arr[i]->print_stats();
-      if(i != NUM_ACCEL_TOTAL) {
+      lanes[i]->print_stats();
+      if(i != (int) lanes.size()) {
         cores_used++;
       }
     }
@@ -341,16 +580,16 @@ void ssim_t::print_stats() {
 
   uint64_t total_mem_accesses=0;
   uint64_t max_comp_instances=0;
-  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
-    if(_ever_used_bitmask & b) {
+  for(int i = 0; i < lanes.size(); ++i) {
+    if(_ever_used_bitmask >> i & 1) {
       total_mem_accesses+=
-        accel_arr[i]->_bw_map[make_pair(LOC::DMA,LOC::TOTAL)].first;
+        lanes[i]->_bw_map[make_pair(LOC::DMA,LOC::TOTAL)].first;
       max_comp_instances=std::max(max_comp_instances,
-         accel_arr[i]->_stat_comp_instances);
+         lanes[i]->_stat_comp_instances);
     }
   }
 
-  std::cout << "Total atomic updates: " << accel_arr[0]->_stat_tot_updates << std::endl;
+  std::cout << "Total atomic updates: " << lanes[0]->_stat_tot_updates << std::endl;
 
   std::cout << "Total Memory Activity: " << (double) total_mem_accesses / roi_cycles() << std::endl;
 
@@ -381,9 +620,9 @@ void ssim_t::print_stats() {
 
 uint64_t ssim_t::forward_progress_cycle() {
   uint64_t r = _global_progress_cycle;
-  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
-    if(_ever_used_bitmask & b) {
-      r = std::max(accel_arr[i]->forward_progress_cycle(),r);
+  for(int i = 0; i < (int) lanes.size(); ++i) {
+    if(_ever_used_bitmask >> i & 1) {
+      r = std::max(lanes[i]->forward_progress_cycle(),r);
     }
   }
   return r;
@@ -404,52 +643,46 @@ void ssim_t::set_memory_map_config(base_stream_t* s, uint64_t partition_size, ui
   }
 }
 
-void ssim_t::add_bitmask_stream(base_stream_t* s, uint64_t ctx) {
-  //patch with implicit stuff
-  s->set_context_offset(_context_offset);
-  s->set_mem_map_config();
-
-  //Check if not active!
-  if(debug && (SS_DEBUG::COMMAND)) {
-    timestamp_context();
-    std::cout << "id:" << s->id() << " ";
-    s->print_status();
-  }
-
-  if(!s->stream_active()) {
-    if(debug && (SS_DEBUG::COMMAND)  ) {
-      timestamp_context();
-      std::cout << " ---    and this stream is being deleted for being inactive!\n";
-    }
-    delete s;
-    return;
-  }
-
-  shared_ptr<base_stream_t> s_shr(s);
-
-  for(uint64_t i = 0; i < NUM_ACCEL_TOTAL; ++i) {
-    if(ctx >> i & 1) {
-      if(auto is = dynamic_cast<IPortStream*>(s)) {
-        CHECK(!is->pes.empty());
-        auto& in_vp = accel_arr[i]->port_interf().in_port(is->pes[0].port);
-        s->set_data_width(in_vp.get_port_width()); // added for dgra
-      } else if (s->out_port() != -1) {
-        auto& out_vp = accel_arr[i]->port_interf().out_port(s->out_port());
-        s->set_data_width(out_vp.get_port_width()); // added for dgra
-      } else {
-        s->set_data_width(8);
-      }
-      accel_arr[i]->add_stream(s_shr);
-    }
-  }
-
-}
-
-void ssim_t::add_bitmask_stream(base_stream_t* s) {
-  auto context = rf[DSARF::TBC].value;
-  add_bitmask_stream(s, context);
-}
-
+// void ssim_t::BroadcastStream(base_stream_t* s) {
+//   auto ctx = rf[DSARF::TBC].value;
+//   //patch with implicit stuff
+//   s->set_mem_map_config();
+// 
+//   //Check if not active!
+//   if(SS_DEBUG::COMMAND) {
+//     timestamp_context();
+//     std::cout << "id:" << s->id() << " ";
+//     s->print_status();
+//   }
+// 
+//   if(!s->stream_active()) {
+//     if(SS_DEBUG::COMMAND) {
+//       timestamp_context();
+//       std::cout << " ---    and this stream is being deleted for being inactive!\n";
+//     }
+//     delete s;
+//     return;
+//   }
+// 
+//   shared_ptr<base_stream_t> s_shr(s);
+// 
+//   for(int i = 0; i < (int) lanes.size(); ++i) {
+//     if(ctx >> i & 1) {
+//       if(auto is = dynamic_cast<IPortStream*>(s)) {
+//         CHECK(!is->pes.empty());
+//         auto& in_vp = lanes[i]->port_interf().in_port(is->pes[0].port);
+//         s->set_data_width(in_vp.get_port_width()); // added for dgra
+//       } else if (s->out_port() != -1) {
+//         auto& out_vp = lanes[i]->port_interf().out_port(s->out_port());
+//         s->set_data_width(out_vp.get_port_width()); // added for dgra
+//       } else {
+//         s->set_data_width(8);
+//       }
+//       lanes[i]->add_stream(s_shr);
+//     }
+//   }
+// 
+// }
 
 // ------------------------Time Stuffs-------------------------------------
 void ssim_t::timestamp() {
@@ -466,40 +699,30 @@ void ssim_t::timestamp_context() {
   auto context = rf[DSARF::TBC].value;
 
   std::cout << "context ";
-  for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
-    if(context & b) {
+  for(int i = 0; i < (int) lanes.size(); ++i) {
+    if(context >> i & 1) {
       std::cout << i <<" ";
     }
   }
   std::cout << "\t";
 }
 
-// ----------------------- STREAM COMMANDS ------------------------------------
-void ssim_t::set_context(uint64_t context, uint64_t offset) {
-  if(debug && (SS_DEBUG::CONTEXT)  ) {
-    std::cout << "Set Context: " << std::hex << context << std::dec << "\n";
-  }
-
-  _context_offset = offset;
-  _ever_used_bitmask |= context;
-}
-
 // it is not a stream; just a linear write (just push data into buf?)
 void ssim_t::write_remote_banked_scratchpad(uint8_t* val, int num_bytes, uint16_t scr_addr) {
   // TODO: add a check for full buffer to apply backpressure to network
-  accel_arr[0]->push_scratch_remote_buf(val, num_bytes, scr_addr); // hopefully, we use single accel per CC
+  lanes[0]->push_scratch_remote_buf(val, num_bytes, scr_addr); // hopefully, we use single accel per CC
 }
 
 void ssim_t::atomic_update_hardware_config(int addr_port, int val_port, int out_port) {
 
     // set up the associated stream here
-  accel_arr[0]->_scr_w_c.set_atomic_cgra_addr_port(addr_port);
-  accel_arr[0]->_scr_w_c.set_atomic_cgra_val_port(val_port);
-  accel_arr[0]->_scr_w_c.set_atomic_cgra_out_port(out_port);
-  accel_arr[0]->_scr_w_c.set_atomic_addr_bytes(2); // get_bytes_from_type(addr_type));
+  lanes[0]->_scr_w_c.set_atomic_cgra_addr_port(addr_port);
+  lanes[0]->_scr_w_c.set_atomic_cgra_val_port(val_port);
+  lanes[0]->_scr_w_c.set_atomic_cgra_out_port(out_port);
+  lanes[0]->_scr_w_c.set_atomic_addr_bytes(2); // get_bytes_from_type(addr_type));
 
-  port_data_t& value_port = accel_arr[0]->_port_interf.in_port(val_port);
-  accel_arr[0]->_scr_w_c.set_atomic_val_bytes(value_port.get_port_width());
+  port_data_t& value_port = lanes[0]->port_interf().in_port(val_port);
+  lanes[0]->_scr_w_c.set_atomic_val_bytes(value_port.get_port_width());
   // std::cout << " Addr port: " << addr_port << " val port: " << val_port << " out port: " << out_port << "\n";
 
 }
@@ -535,7 +758,7 @@ void ssim_t::atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_
     s->set_orig();
 
     set_memory_map_config(s, partition_size, active_core_bitvector, mapping_type);
-    add_bitmask_stream(s);
+    // BroadcastStream(s);
 
 }
 
@@ -555,99 +778,28 @@ void ssim_t::multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_por
         printf("Remote stream initialized");
         s->print_status();
       }
-       add_bitmask_stream(s);
-      } else {
-        if(rem_port!=0) { // I hope it can never be 0
-          remote_scr_stream_t* s = new remote_scr_stream_t();
-          s->_num_elements = num_elem;
-          s->_core_mask = -1;
-          s->_out_port = out_port;
-          s->_remote_port = -1;
-          s->_addr_port = rem_port;
-          s->_remote_scr_base_addr = mask; // this would now be scratch_base_addr
-          s->_scr_type = spad_type;
-          s->set_orig();
-          add_bitmask_stream(s);
-        } else { // inherited by the affine_base_stream
-          direct_remote_scr_stream_t* s = new direct_remote_scr_stream_t(mask, access_size, stride);
-          s->_scr_type = 0; // spad_type; // this should not be required now?
-          s->_num_elements = num_elem; // this is num_strides
-          s->_out_port = out_port;
-          s->set_orig();
-          add_bitmask_stream(s);
-        }
+       // BroadcastStream(s);
+    } else {
+      if(rem_port!=0) { // I hope it can never be 0
+        remote_scr_stream_t* s = new remote_scr_stream_t();
+        s->_num_elements = num_elem;
+        s->_core_mask = -1;
+        s->_out_port = out_port;
+        s->_remote_port = -1;
+        s->_addr_port = rem_port;
+        s->_remote_scr_base_addr = mask; // this would now be scratch_base_addr
+        s->_scr_type = spad_type;
+        s->set_orig();
+        // BroadcastStream(s);
+      } else { // inherited by the affine_base_stream
+        direct_remote_scr_stream_t* s = new direct_remote_scr_stream_t(mask, access_size, stride);
+        s->_scr_type = 0; // spad_type; // this should not be required now?
+        s->_num_elements = num_elem; // this is num_strides
+        s->_out_port = out_port;
+        s->set_orig();
+        // BroadcastStream(s);
+      }
     }
-}
-
-// Configure an indirect stream with params
-// void ssim_t::indirect(
-//     int ind_port, int ind_type, int in_port, addr_t index_addr,
-//     uint64_t num_elem, int repeat, int repeat_str, uint64_t offset_list,
-//     int dtype, uint64_t ind_mult, bool scratch, bool is_2d_stream, int sstride, int sacc_size, int sn_port, int val_num, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type) {
-//   indirect_stream_t* s = new indirect_stream_t();
-//   s->_ind_port=ind_port;
-//   s->_ind_type=ind_type;
-//   s->add_in_port(in_port);
-//   s->_index_addr=index_addr; // so this is the offset
-//   s->_num_elements=num_elem;
-//   s->_repeat_in=repeat;
-//   s->_repeat_str=repeat_str;
-//   s->_offset_list=offset_list;
-//   s->_dtype=dtype;
-//   s->_ind_mult=ind_mult;
-//   s->_is_2d_stream=is_2d_stream;
-//   s->_val_num=val_num;
-//   s->_ind_mult *= val_num; // for wide accesses (real mult requires more bits)
-//   if(is_2d_stream) { // set sub-stream parameters here (read from ss_stride)
-//     s->_sstride = sstride;
-//     s->_sacc_size = sacc_size;
-//     s->_sn_port = sn_port;
-//   }
-// 
-//   // std::cout << "Came here for part size: " << partition_size << " bitvector: " << active_core_bitvector << " mapping type: " << mapping_type << "\n";
-// 
-//   if(scratch) s->_unit=LOC::SCR;
-//   else s->_unit=LOC::DMA;
-//   s->set_orig();
-// 
-//   set_memory_map_config(s, partition_size, active_core_bitvector, mapping_type);
-//   add_bitmask_stream(s);
-// 
-// }
-
-//Configure an indirect stream with params
-void ssim_t::indirect_write(int ind_port, int ind_type, int out_port,
-    addr_t index_addr, uint64_t num_elem, uint64_t offset_list,
-    int dtype, uint64_t ind_mult, bool scratch, bool is_2d_stream, int sstride, int sacc_size, int sn_port, int val_num) {
-
-
-  if(SS_DEBUG::MEM_WR || SS_DEBUG::SCR_ACC) {
-    std::cout << "Identified an indirect write stream, scratch? " << scratch << " 2d: " << is_2d_stream << " num_elem port: " << sn_port << " stride: " << sstride << " access size: " << sacc_size << "\n";
-  }
-
-  indirect_wr_stream_t* s = new indirect_wr_stream_t();
-  s->_ind_port=ind_port;
-  s->_ind_type=ind_type;
-  s->_out_port=out_port; //comes from sb_dma_addr
-  s->_index_addr=index_addr;
-  s->_num_elements=num_elem;
-  s->_dtype=dtype;
-  s->_ind_mult=ind_mult;
-
-  s->_is_2d_stream=is_2d_stream;
-  s->_val_num=val_num;
-  s->_ind_mult *= val_num; // for wide accesses (real mult requires more bits)
-  if(is_2d_stream) { // set sub-stream parameters here (read from ss_stride)
-    s->_sstride = sstride;
-    s->_sacc_size = sacc_size;
-    s->_sn_port = sn_port;
-  }
-
-  if(scratch) s->_unit=LOC::SCR;
-  else s->_unit=LOC::DMA;
-  s->set_orig();
-
-  add_bitmask_stream(s);
 }
 
 // -------------------------------------------------------------------------------
@@ -667,9 +819,9 @@ bool ssim_t::CanReceive(int port, int dtype) {
   CHECK((context & -context) == context)
     << "More than one accelerator to receive!";
   CHECK(context) << "No accelerator to receive";
-  for(int i = 0; i < NUM_ACCEL_TOTAL; ++i) {
+  for(int i = 0; i < (int) lanes.size(); ++i) {
     if(context >> i & 1) {
-      auto &ovp = accel_arr[i]->port_interf().out_port(port);
+      auto &ovp = lanes[i]->port_interf().out_port(port);
       CHECK(dtype % ovp.get_port_width() == 0);
       if (ovp.stream) {
         return false;
@@ -685,9 +837,9 @@ uint64_t ssim_t::Receive(int port, int dtype) {
   CHECK((context & -context) == context)
     << "More than one accelerator to receive!";
   CHECK(context) << "No accelerator to receive";
-  for (int i = 0; i < NUM_ACCEL_TOTAL; ++i) {
+  for (int i = 0; i < (int) lanes.size(); ++i) {
     if(context >> i & 1) {
-      port_data_t &out_vp = accel_arr[i]->port_interf().out_port(port);
+      port_data_t &out_vp = lanes[i]->port_interf().out_port(port);
       CHECK(dtype % out_vp.get_port_width() == 0);
       std::vector<uint8_t> raw;
       for (int i = 0; i < dtype; i += out_vp.get_port_width()) {
@@ -710,22 +862,21 @@ uint64_t ssim_t::Receive(int port, int dtype) {
 
 
 void ssim_t::InsertBarrier(uint64_t mask) {
-  Barrier* s = new Barrier();
-  s->_mask = mask;
+  Barrier* s = new Barrier(rf[DSARF::TBC].value, mask);
   s->set_orig();
-  add_bitmask_stream(s);
+  // BroadcastStream(s);
 }
 
 // TODO:FIXME: see if we need new mask
 void ssim_t::insert_df_barrier(int64_t num_scr_wr, bool spad_type) {
-  Barrier* s = new Barrier();
+  Barrier* s = new Barrier(0, 0);
   s->_mask = 64;
   // s->_num_remote_writes = num_scr_wr;
   s->_scr_type = spad_type; // TODO: Where to use this?
   s->set_orig();
   // printf("df count read from register is: %ld\n",num_scr_wr);
-  accel_arr[0]->_scr_w_c.set_df_count(num_scr_wr);
-  add_bitmask_stream(s);
+  lanes[0]->_scr_w_c.set_df_count(num_scr_wr);
+  // BroadcastStream(s);
 }
 
 uint64_t ssim_t::now() {
@@ -741,22 +892,10 @@ void ssim_t::update_stat_cycle() {
   }
 }
 
-void ssim_t::setup_stat_cycle() {
-  _stat_start_cycle = ~0ull;
-  _roi_enter_cycle = now();
-}
-
-void ssim_t::cleanup_stat_cycle() {
-  if (_stat_start_cycle == ~0ull) {
-    _stat_start_cycle = _roi_enter_cycle;
-    _stat_stop_cycle = now();
-  }
-}
-
 // ------------------------- TIMING ---------------------------------
 void ssim_t::roi_entry(bool enter) {
   if(enter) {
-    if(debug && (SS_DEBUG::COMMAND || SS_DEBUG::ROI)  ) {
+    if(SS_DEBUG::COMMAND || SS_DEBUG::ROI) {
       timestamp();
       cout << "Entering ROI ------------\n";
     }
@@ -764,16 +903,11 @@ void ssim_t::roi_entry(bool enter) {
     if(_orig_stat_start_cycle == 0) {
       _orig_stat_start_cycle = now();
     }
-    setup_stat_cycle();
-    clock_gettime(CLOCK_REALTIME,&_start_ts);
     _in_roi=true;
     _times_roi_entered+=1;
   } else {
-    clock_gettime(CLOCK_REALTIME,&_stop_ts);
-    _elapsed_time_in_roi += 1000000000 * (_stop_ts.tv_sec - _start_ts.tv_sec) +
-                                          _stop_ts.tv_nsec - _start_ts.tv_nsec;
 
-    if(debug && (SS_DEBUG::COMMAND || SS_DEBUG::ROI)) {
+    if(SS_DEBUG::COMMAND || SS_DEBUG::ROI) {
       timestamp();
       std::cout << "Exiting ROI ------------";
       std::cout << "(" << _stat_start_cycle << "to" << _stat_stop_cycle << ")\n";
@@ -782,51 +916,6 @@ void ssim_t::roi_entry(bool enter) {
     _roi_cycles += _stat_stop_cycle - _stat_start_cycle;
     _in_roi=false;
   }
-}
-
-void ssim_t::instantiate_buffet(int repeat, int repeat_str) {
-  // int start = (stream_stack[0] >> 32) & 0xFFFFFFFF;
-  // int buffer_size = stream_stack[0] & 0xFFFFFFFF;
-  // uint64_t total = stream_stack[1];
-  // int src_port = stream_stack[2];
-
-  // stream_stack.erase(stream_stack.begin(), stream_stack.begin() + 3);
-
-  // int shadow_port = stream_stack[stream_stack.size() - 3] & 31;
-  // int shadow_dtype = stream_stack[stream_stack.size() - 3] >> 5 & 7;
-  // if(shadow_dtype) {
-  //   //case 0: width=8;
-  //   //case 1: width=4;
-  //   //case 2: width=2;
-  //   //case 3: width=1;
-  //   shadow_dtype = 1 << (3 - (shadow_dtype - 1));
-  // } else { // assume the width of the corresponding input port
-  //   port_data_t& cur_out_port = accel_arr[0]->_port_interf.out_port(shadow_port);
-  //   shadow_dtype = cur_out_port.get_port_width();
-  // }
-
-  // int in_port = stream_stack[stream_stack.size() - 1];
-  // int inport_dtype = stream_stack[stream_stack.size() - 3] >> 8 & 7;
-  // if(inport_dtype) {
-  //   //case 0: width=8;
-  //   //case 1: width=4;
-  //   //case 2: width=2;
-  //   //case 3: width=1;
-  //   inport_dtype = 1 << (3 - (inport_dtype - 1));
-  //   port_data_t& cur_out_port = accel_arr[0]->_port_interf.in_port(in_port);
-  //   assert(inport_dtype % cur_out_port.get_port_width() == 0);
-  // } else { // assume the width of the corresponding input port
-  //   port_data_t& cur_out_port = accel_arr[0]->_port_interf.in_port(in_port);
-  //   inport_dtype = cur_out_port.get_port_width();
-  // }
-
-  // stream_stack[stream_stack.size() - 3] = 0;
-  // BuffetStream *buffet = new BuffetStream(start, buffer_size, src_port, total, LOC::SCR,
-  //                                         stream_stack, {in_port}, repeat, repeat_str,
-  //                                         shadow_port, shadow_dtype, inport_dtype);
-
-  // add_bitmask_stream(buffet);
-  // stream_stack.clear();
 }
 
 int ssim_t::get_bytes_from_type(int t) {

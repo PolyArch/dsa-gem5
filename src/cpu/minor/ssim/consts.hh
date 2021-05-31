@@ -21,12 +21,6 @@ typedef uint64_t addr_t;
 #define DEFAULT_IND_ROB_SIZE 8
 
 
-//#define NUM_ACCEL 8
-#define NUM_ACCEL_TOTAL (NUM_ACCEL+1)
-#define SHARED_SP (NUM_ACCEL)
-#define ACCEL_MASK ((1 << NUM_ACCEL) - 1)
-#define SHARED_MASK (ACCEL_MASK+1)
-
 #define SD_TRANSFERS_ALLOWED 22
 
 #define MEM_WIDTH (64)
@@ -43,10 +37,6 @@ typedef uint64_t addr_t;
 
 #define NUM_IN_PORTS  (32)
 #define NUM_OUT_PORTS (32)
-
-#define START_IND_PORTS (23)
-// #define START_IND_PORTS (21)
-#define STOP_IND_PORTS  (32)
 
 #define NET_ADDR_PORT (21)
 #define NET_VAL_PORT (22)

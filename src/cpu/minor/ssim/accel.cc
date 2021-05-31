@@ -16,6 +16,12 @@
 
 using namespace std;
 
+const char *BLAME_NAME[] = {
+#define MACRO(x) #x,
+#include "./blame.def"
+#undef MACRO
+};
+
 std::vector<uint8_t> apply_mask(const uint8_t *raw_data, vector<bool> mask) {
   std::vector<uint8_t> res;
   for (int i = 0; i < mask.size(); ++i) {
@@ -80,14 +86,12 @@ void port_data_t::freeStream() {
   stream = nullptr;
 }
 
-Minor::MinorDynInstPtr accel_t::cur_minst() { return _ssim->cur_minst(); }
-
 void accel_t::sanity_check_stream(base_stream_t *s) {
   // sanity check -- please don't read/write a stream that's not configured!
   if (auto is = dynamic_cast<IPortStream*>(s)) {
     for (auto &port : is->pes) {
       int in_port = port.port;
-      if (in_port != -1 && in_port < START_IND_PORTS) {
+      if (in_port != -1) {
         vector<int>::iterator it =
             std::find(_soft_config.in_ports_active.begin(),
                       _soft_config.in_ports_active.end(), in_port);
@@ -101,7 +105,7 @@ void accel_t::sanity_check_stream(base_stream_t *s) {
     }
   }
 
-  if (s->out_port() != -1 && s->out_port() < START_IND_PORTS) {
+  if (s->out_port() != -1) {
     vector<int>::iterator it =
         std::find(_soft_config.out_ports_active.begin(),
                   _soft_config.out_ports_active.end(), s->out_port());
@@ -181,7 +185,6 @@ void accel_t::request_reset_streams() {
   }
 
   _dma_c.reset_data();
-  _scr_r_c.reset_data();
   _scr_w_c.reset_data();
   _net_c.reset_data();
 
@@ -222,7 +225,6 @@ void accel_t::reset_data() {
   }
 
   _dma_c.reset_data();
-  _scr_r_c.reset_data();
   _scr_w_c.reset_data();
   _net_c.reset_data();
 
@@ -498,7 +500,8 @@ Minor::LSQ *accel_t::lsq() {
 }
 
 accel_t::accel_t(int i, ssim_t *ssim)
-    : NUM_ACCEL(ssim->NUM_ACCEL), arbiter(new dsa::sim::RoundRobin()),
+    : arbiter(new dsa::sim::RoundRobin()),
+      statistics(*this),
       _ssim(ssim), _accel_index(i), _accel_mask(1 << i),
       _dma_c(this, &_scr_r_c, &_scr_w_c, &_net_c), _scr_r_c(this, &_dma_c),
       _scr_w_c(this, &_dma_c), _net_c(this, &_dma_c) {
@@ -565,18 +568,6 @@ accel_t::accel_t(int i, ssim_t *ssim)
 
   const char *ssconfig_file = std::getenv("SBCONFIG");
  
-  if (SS_DEBUG::SUPRESS_STATS==0) {
-    // static bool printed_this_before = false;
-    if (!_ssim->printed_this_before()) {
-      std::cout << "Loading SS Config (env SBCONFIG): \"" << ssconfig_file
-                << "\"\n";
-      std::cout << "FU_FIFO_LEN:" << _fu_fifo_len << "\n";
-      std::cout << "IND_ROB_SIZE:" << _ind_rob_size << "\n";
-      _ssim->set_printed_this_before(true);
-      // printed_this_before=true;
-    }
-  }
-
   const char *back_cgra_str = std::getenv("BACKCGRA");
   if (back_cgra_str != NULL) {
     _back_cgra = true;
@@ -630,7 +621,7 @@ void accel_t::timestamp() {
 
 bool accel_t::in_use() { return _ssim->in_use(); }
 
-bool accel_t::can_add_stream() {
+bool accel_t::StreamBufferAvailable() {
   _ssim->set_in_use();
   return _cmd_queue.size() < _queue_size;
 }
@@ -784,13 +775,9 @@ pipeline_stats_t::PIPE_STATUS accel_t::whos_to_blame(int group) {
 void accel_t::whos_to_blame(
     std::vector<pipeline_stats_t::PIPE_STATUS> &blame_vec,
     std::vector<pipeline_stats_t::PIPE_STATUS> &group_vec) {
+  return;
   if (_soft_config.in_ports_active.size() == 0) {
     blame_vec.push_back(pipeline_stats_t::NOT_IN_USE);
-    return;
-  }
-
-  if (_in_config) {
-    blame_vec.push_back(pipeline_stats_t::CONFIG);
     return;
   }
 
@@ -891,7 +878,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       LOG(CONST) << stream.toString();
       pushed += stream.data_width();
     }
-    accel->add_bw(stream.src(), stream.dest(), 1, pushed);
+    accel->statistics.countDataTraffic(true, cps->src(), pushed);
     if (!stream.stream_active()) {
       accel->process_stream_stats(stream);
       for (auto &elem : stream.pes) {
@@ -917,7 +904,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
                  << oss.str() << " " << ops->toString();
 
     // make store request
-    accel->lsq()->pushRequest(ops->minst(), false /*isLoad*/, data.data(),
+    accel->lsq()->pushRequest(ops->inst, false /*isLoad*/, data.data(),
                               bytes, info.start, 0 /*flags*/, 0 /*res*/,
                               nullptr/*atomic op*/,
                               std::vector<bool>(), sdInfo);
@@ -932,33 +919,31 @@ struct StreamExecutor : dsa::sim::stream::Functor {
 
   }
 
-  void requestDMARead(int sid, int padding,
+  void requestDMARead(base_stream_t *s, int padding,
                       const std::vector<int> &ports,
                       const dsa::sim::stream::LinearStream::LineInfo &info) {
 
     int cacheline = accel->get_ssim()->spec.cache_line;
-    SSMemReqInfoPtr sdInfo = new SSMemReqInfo(sid, accel->accel_index(), ports,
+    SSMemReqInfoPtr sdInfo = new SSMemReqInfo(s->id(), accel->accel_index(), ports,
                                               info.mask, accel->get_cur_cycle(),
                                               padding, info.stride_first,
                                               info.stride_last, info.stream_last);
     accel->lsq()->sd_transfers[ports[0]].reserve();
     // make request
-    accel->lsq()->pushRequest(accel->cur_minst(), true /*isLoad*/, NULL /*data*/,
+    accel->lsq()->pushRequest(s->inst, true /*isLoad*/, NULL /*data*/,
                               cacheline /*cache line*/, info.linebase, 0 /*flags*/,
                               0 /*res*/, nullptr /*atomic op*/,
                               std::vector<bool>() /*byte enable*/,
                               sdInfo);
 
     std::ostringstream oss;
-    int bytes_read = 0;
     oss << " ";
     for (int i = 0, n = info.mask.size(); i < n; ++i) {
       oss << ((int) info.mask[i]);
-      bytes_read += info.mask[i];
     }
     LOG(MEM_REQ) << accel->get_ssim()->CurrentCycle() << "\t"
                  << "request for " << info.linebase << " for "
-                 << bytes_read;
+                 << info.bytes_read();
 
   }
 
@@ -989,48 +974,30 @@ struct StreamExecutor : dsa::sim::stream::Functor {
         }
       }
 
-      {
-        int cacheline = accel->get_ssim()->spec.cache_line;
-        int available = cacheline;
-        if (stream.be) {
-          available = std::min(stream.be->occupied, available);
-        }
-        auto info = stream.ls->cacheline(cacheline, available);
-        info.padding = stream.padding;
-        int bytes_read = 0;
-        std::vector<bool> bm = info.mask;
-        std::vector<int> ports;
-        for (auto &elem : stream.pes) {
-          ports.push_back(elem.port);
-        }
-        if (stream.src() == LOC::DMA) {
-          if (accel->get_ssim()->in_roi()) {
-            accel->add_bw(stream.src(), stream.dest(), 1, bytes_read);
-            accel->_stat_tot_mem_fetched += bytes_read;
-            accel->_stat_tot_loads += 1;
-          }
-          if (!stream.stream_active()) {
-            accel->process_stream_stats(stream);
-          }
-          requestDMARead(stream.id(), stream.padding, ports, info);
-        } else {
-          if (accel->get_ssim()->in_roi()) {
-            accel->add_bw(stream.src(), stream.dest(), 1, bytes_read);
-            accel->_stat_tot_mem_fetched += bytes_read;
-            accel->_stat_tot_loads += 1;
-          }
-          if (!stream.stream_active()) {
-            accel->process_stream_stats(stream);
-          }
-          if (stream.be) {
-            info.start = stream.be->Translate(info.start, false);
-            info.linebase = stream.be->Translate(info.linebase, true);
-          }
-          accel->spads[0].rb->Decode(ports[0], dsa::sim::Request::Operation::read, info, {});
-        }
-        LOG(MEM_REQ) << "read request: " << info.linebase << ", " << info.start
-                     << " for " << stream.toString();
+      int cacheline = accel->get_ssim()->spec.cache_line;
+      int available = cacheline;
+      if (stream.be) {
+        available = std::min(stream.be->occupied, available);
       }
+      auto info = stream.ls->cacheline(cacheline, available);
+      info.padding = stream.padding;
+      std::vector<bool> bm = info.mask;
+      std::vector<int> ports;
+      for (auto &elem : stream.pes) {
+        ports.push_back(elem.port);
+      }
+      if (stream.src() == LOC::DMA) {
+        requestDMARead(&stream, stream.padding, ports, info);
+      } else {
+        if (stream.be) {
+          info.start = stream.be->Translate(info.start, false);
+          info.linebase = stream.be->Translate(info.linebase, true);
+        }
+        accel->spads[0].rb->Decode(ports[0], dsa::sim::Request::Operation::read, info, {});
+      }
+      accel->statistics.countDataTraffic(true, stream.unit(), info.bytes_read());
+      LOG(MEM_REQ) << "read request: " << info.linebase << ", " << info.start
+                   << " for " << stream.toString();
     }
   }
 
@@ -1063,11 +1030,9 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       }
       dsa::sim::stream::LinearStream::LineInfo info(linebase, addr, bm);
       ++irs->i;
-      if (!irs->stream_active()) {
-        accel->process_stream_stats(*irs);
-        info.stream_last = true;
-      }
-      requestDMARead(irs->id(), 0, ports, info);
+      info.stream_last = !irs->stream_active();
+      requestDMARead(irs, 0, ports, info);
+      accel->statistics.countDataTraffic(true, irs->unit(), info.bytes_read());
     } else {
       CHECK(false) << "Not supported yet!";
     }
@@ -1106,16 +1071,13 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       // Prepare the data according to the port data availability and memory bandwidth
       int memory_bw = accel->get_ssim()->spec.cache_line;
       auto &ovp = out_port;
-      int addressable = accel->get_ssim()->spec.memory_addressable;
       int port_available = ovp.mem_size() * ovp.get_port_width();
       // Make sure the value requested does not exceed the buffet buffer.
       if (lws->be) {
-        port_available =
-          std::min(lws->be->SpaceAvailable(), port_available);
+        port_available = std::min(lws->be->SpaceAvailable(), port_available);
       }
       auto info = stream.ls->cacheline(memory_bw, std::min(memory_bw, port_available));
       int to_pop = std::accumulate(info.mask.begin(), info.mask.end(), (int) 0, std::plus<int>());
-      to_pop *= addressable;
       CHECK(to_pop % ovp.get_port_width() == 0);
       std::vector<uint8_t> data;
       for (int i = 0; i < to_pop / ovp.get_port_width(); ++i) {
@@ -1143,14 +1105,14 @@ struct StreamExecutor : dsa::sim::stream::Functor {
         CHECK(data.size() == info.mask.size());
         accel->spads[0].rb->Decode(stream.port, dsa::sim::Request::Operation::write, info, data);
       }
+      accel->statistics.countDataTraffic(false, stream.unit(), info.bytes_read());
       if (!stream.stream_active()) {
-        accel->process_stream_stats(stream);
-        LOG(VP_SCORE2) << "SOURCE: PORT->DMA " << out_port.port();
+        LOG(STREAM) << stream.toString() << " freed!";
         out_port.freeStream();
       }
       LOG(MEM_REQ)
         << "write request: " << info.linebase << ", " << info.start
-        << " for " << stream.toString();
+        << " for " << stream.toString() << " " << stream.stream_active();
     }
   }
 
@@ -1173,13 +1135,13 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       ivp.push_data(data);
     }
     if (!pps->stream_active()) {
-      accel->process_stream_stats(*pps);
-      LOG(VP_SCORE2) << "SOURCE: PORT->DMA";
+      LOG(STREAM) << pps->toString() << " freed!";
       ovp.freeStream();
       for (auto &elem : pps->pes) {
         accel->port_interf().in_port(elem.port).freeStream();
       }
     }
+    accel->statistics.countDataTraffic(false, pps->unit(), data.size());
   }
 
   StreamExecutor(accel_t *accel_) : accel(accel_) {}
@@ -1188,6 +1150,9 @@ struct StreamExecutor : dsa::sim::stream::Functor {
 };
 
 void accel_t::tick() {
+  if (statistics.blame != dsa::stat::Accelerator::Blame::CONFIGURE) {
+    statistics.blame = dsa::stat::Accelerator::Blame::UNKNOWN;
+  }
 
   _cgra_issued = 0; // for statistics reasons
   _dedicated_cgra_issued = 0;
@@ -1267,18 +1232,12 @@ void accel_t::tick() {
 
   if (_scr_ctrl_turn == 0) {
     _scr_w_c.cycle(true, performed_atomic_scr);
-    if (!performed_atomic_scr) {
-      _scr_r_c.cycle(performed_read);
-    }
   }
   if (_scr_ctrl_turn == 1) {
-    _scr_r_c.cycle(performed_read);
     _scr_w_c.cycle(!performed_read, performed_atomic_scr);
   }
   _scr_ctrl_turn = (_scr_ctrl_turn + 1) % 2;
   // TODO: remove this after removing the above logic
-  _scr_r_c.linear_scratch_cycle();
-  _scr_w_c.linear_scratch_write_cycle();
 
   _net_c.cycle();
 
@@ -1351,31 +1310,23 @@ void accel_t::tick() {
 
   _dma_c.finish_cycle();
   _scr_w_c.finish_cycle();
-  _scr_r_c.finish_cycle();
   _net_c.finish_cycle();
 
   if(_stream_cleanup_mode) {
     request_reset_streams();
   }
 
+  statistics.blameCycle();
+  // if (statistics.roi()) {
+  //   DSA_INFO << get_ssim()->now() << ": " << BLAME_NAME[statistics.blame];
+  // }
 }
+
+bool accel_t::is_shared() { return _accel_index == get_ssim()->lanes.size() - 1; }
 
 // forward from indirect inputs to indirect outputs -- this makes the protocol
 // simpler than it used to be
 void accel_t::cycle_indirect_interf() {
-  for (unsigned i = START_IND_PORTS; i < STOP_IND_PORTS; ++i) { // ind read ports
-    if(_ssim->num_active_threads()>1) {
-      if(i==ATOMIC_ADDR_PORT || i==ATOMIC_BYTES_PORT) continue; //dedicated ports
-    }
-    auto &ind_in_port = _port_interf.in_port(i);
-    auto &ind_out_port = _port_interf.out_port(i);
-    
-    // we only allow 8 words in the output vector port, since there's already
-    // buffering in the input vector port, so it would be kind of cheating
-    while (ind_in_port.mem_size() && ind_out_port.mem_size() < 64) {
-      ind_out_port.push_data(ind_in_port.pop_in_custom_data<uint8_t>());
-    }
-  }
 }
 
 void accel_t::cycle_in_interf() {
@@ -1497,6 +1448,9 @@ void accel_t::cycle_cgra_backpressure() {
 
   // calling with the default parameters for now
   num_computed = _dfg->forward(_back_cgra);
+  if (num_computed) {
+    statistics.blame = dsa::stat::Accelerator::Blame::COMPUTING;
+  }
 
   _cgra_issued += _dfg->total_dyn_insts(0) + _dfg->total_dyn_insts(1);
   _dedicated_cgra_issued += _dfg->total_dyn_insts(0);
@@ -1509,8 +1463,6 @@ void accel_t::cycle_cgra_backpressure() {
 
   // pop the ready outputs
   auto &active_out_ports = _soft_config.out_ports_active;
-  vector<SBDT> data;
-  vector<bool> data_valid;
 
   for (int i = 0; i < active_out_ports.size(); ++i) {
     int port_index = active_out_ports[i];
@@ -1531,8 +1483,8 @@ void accel_t::cycle_cgra_backpressure() {
     int len = ceil(cur_out_port.port_vec_elem()*cur_out_port.get_port_width()/float(8));
     if (vec_output->can_pop()) {
       forward_progress();
-      data.clear();       // make sure it is empty here
-      data_valid.clear(); // make sure it is empty here
+      vector<SBDT> data;
+      vector<bool> data_valid;
       vec_output->pop(data, data_valid);
 
       if(SS_DEBUG::COMP) {
@@ -1595,7 +1547,7 @@ void accel_t::cycle_cgra() {
     _stat_cgra_busy_cycles += (_cgra_issued > 0);
   }
 
-  // printf("ACCEL ID: %d\n", _lsq->getCpuId());
+  // printf("ACEL ID: %d\n", _lsq->getCpuId());
   if (_cgra_issued > 0 && SS_DEBUG::COMP && SS_DEBUG::NET_REQ) {
     printf("ACCEL ID: %d\n", lsq()->getCpuId());
   }
@@ -1624,7 +1576,7 @@ void accel_t::cycle_status() {
              << "," << _port_interf.in_port(cur_p).num_ready();
         auto &in_port = _port_interf.in_port(active_ports[i]);
         if (in_port.in_use()) {
-          cout << base_stream_t::loc_short_name(in_port.loc());
+          cout << LOC_NAME[in_port.loc()];
           if (in_port.completed()) {
             cout << "#";
           }
@@ -1634,12 +1586,6 @@ void accel_t::cycle_status() {
     }
   }
 
-  // for(unsigned i = START_IND_PORTS; i < STOP_IND_PORTS; ++i ) {  //ind read ports
-  //  unsigned cur_p = i;
-  //  cout << " " << cur_p << ": "
-  //            << _port_interf.in_port(cur_p).mem_size()  << ","
-  //            << _port_interf.in_port(cur_p).num_ready() <<" ";
-  //}
   cout << "\t";
   for (int group = 0; group < NUM_GROUPS; ++group) {
     auto &active_ports = _soft_config.out_ports_active_group[group];
@@ -1651,7 +1597,7 @@ void accel_t::cycle_status() {
         cout << "o" << cur_p << ":" << out_port.num_in_flight() << "-"
              << out_port.num_ready() << "," << out_port.mem_size();
         if (out_port.in_use()) {
-          cout << base_stream_t::loc_short_name(out_port.loc());
+          cout << LOC_NAME[out_port.loc()];
         }
         cout << " ";
       }
@@ -1704,7 +1650,7 @@ void accel_t::cycle_status_backcgra() {
            << "," << _port_interf.in_port(cur_p).num_ready();
       auto &in_port = _port_interf.in_port(active_in_ports[i]);
       if (in_port.in_use()) {
-        cout << base_stream_t::loc_short_name(in_port.loc());
+        cout << LOC_NAME[in_port.loc()];
         if (in_port.completed()) {
           cout << "#";
         }
@@ -1713,13 +1659,6 @@ void accel_t::cycle_status_backcgra() {
     }
   }
 
-  // for(unsigned i = START_IND_PORTS; i < STOP_IND_PORTS; ++i ) {  //ind read
-  // ports
-  //  unsigned cur_p = i;
-  //  cout << " " << cur_p << ": "
-  //            << _port_interf.in_port(cur_p).mem_size()  << ","
-  //            << _port_interf.in_port(cur_p).num_ready() <<" ";
-  //}
   cout << "\t";
   auto &active_out_ports = _soft_config.out_ports_active;
   if (active_out_ports.size()) {
@@ -1730,7 +1669,7 @@ void accel_t::cycle_status_backcgra() {
       cout << "o" << cur_p << ":" << out_port.num_in_flight() << "-"
            << out_port.num_ready() << "," << out_port.mem_size();
       if (out_port.in_use()) {
-        cout << base_stream_t::loc_short_name(out_port.loc());
+        cout << LOC_NAME[out_port.loc()];
       }
       cout << " ";
     }
@@ -1857,15 +1796,6 @@ void accel_t::print_status() {
               << "\n";
   }
 
-  for (unsigned i = START_IND_PORTS; i < STOP_IND_PORTS; ++i) { // ind read
-                                                                // ports
-    unsigned cur_p = i;
-    std::cout << "Ind In Port " << cur_p << ": ";
-    std::cout << "  Mem Size: " << _port_interf.in_port(cur_p).mem_size() << "";
-    std::cout << "  Num Ready: " << _port_interf.in_port(cur_p).num_ready()
-              << " Rem writes: " << _port_interf.in_port(cur_p).get_rem_wr() // remove this!
-              << "\n";
-  }
 
   for (unsigned i = 0; i < _soft_config.out_ports_active.size(); ++i) {
     unsigned cur_p = _soft_config.out_ports_active[i];
@@ -1945,7 +1875,7 @@ void accel_t::print_statistics(std::ostream &out) {
   // out << "Stop  Cycle: " << _stat_stop_cycle << "\n\n";
   // out << "BYTES READ AT PORT 5: " << _bytes_rd5 << "\n";
 
-  out << "Commands Issued: " << _stat_commands_issued << "\n";
+  out << "Commands Issued: " << statistics.commands_issued << "\n";
   out << "CGRA Instances: " << _stat_comp_instances << " -- Activity Ratio: "
       << ((double)_stat_cgra_busy_cycles) / ((double)roi_cycles())
       << ", DFGs / Cycle: "
@@ -2001,99 +1931,32 @@ void accel_t::print_statistics(std::ostream &out) {
   // }
   // out << "\n";
 
-  out << "Cycle Breakdown: ";
-  _pipe_stats.print_histo(out, roi_cycles());
-  out << "\n";
+  auto cycles = this->get_ssim()->statistics.cycleElapsed();
+  out << "Cycle Breakdown:\n";
+  for (int i = 0; i < dsa::stat::Accelerator::Blame::UNKNOWN; ++i) {
+    out << BLAME_NAME[i] << ":\t" << (statistics.blame_count[i] / cycles) * 100
+        << "%(" << statistics.blame_count[i] << ")" << std::endl;
+  }
 
-  /*
-   * Depricated
-  out << "\n";
-  out << "Avg. Scratch Read Port Req Size:  "
-    << ((double)_stat_scratch_read_bytes)/((double)_stat_scratch_reads) << "\n";
-  out << "Avg. Scratch Write Port Req Size: "
-    << ((double)_stat_scratch_write_bytes)/((double)_stat_scratch_writes) <<
-  "\n";
-
-  out << "Scratch reads per cycle:  " <<
-  ((double)_stat_scratch_reads)/((double)roi_cycles()) << "\n"; out << "Scratch
-  writes per cycle: " << ((double)_stat_scratch_writes)/((double)roi_cycles())
-  << "\n"; out << "\n";
-
-
-  out << "Avg. Mem Load Port Req Size:  "
-    << ((double)_stat_tot_mem_fetched)/((double)_stat_tot_loads) << "\n";
-  out << "Avg. Mem Store Port Req Size: "
-    << ((double)_stat_tot_mem_stored)/((double)_stat_tot_stores) << "\n";
-
-  out << "Mem loads per cycle:    " <<
-  ((double)_stat_tot_loads)/((double)roi_cycles()) << "\n"; out << "Mem stores
-  per cycle:   " << ((double)_stat_tot_stores)/((double)roi_cycles()) << "\n";
-  out << "\n";
-*/
-
-  /*
-   // TODO: FIXME: This is useful info -- figure out how to git it
-  out << "Mem load misses per cycle:  " <<
-  ((double)_stat_tot_mem_load_acc)/((double)roi_cycles()) << "\n"; out << "Mem
-  store misses per cycle: " <<
-  ((double)_stat_tot_mem_store_acc)/((double)roi_cycles()) << "\n"; out << "\n";
-*/
-
-  // const std::vector<LOC> alocs {LOC::DMA, LOC::SCR};
-  static const std::vector<LOC> locs{LOC::NONE, LOC::DMA, LOC::SCR, LOC::PORT,
-                                     LOC::CONST};
-
-  auto print_bwm = [&](LOC l1, LOC l2) {
-    auto &p = _bw_map[make_pair(l1, l2)];
-    if (p.second == 0)
-      out << "(0 B/c, 0 B/r) ";
-    else {
-      out.precision(3);
-      out << ((double)p.first / (double)roi_cycles());
-      out << "(" << ((double)p.second / (double)roi_cycles()) << "B/c";
-      out << ", " << ((double)p.second / (double)p.first) << "B/r) ";
-    }
-  };
-  auto print_src = [&](string name, LOC l1) {
-    out << name;
-    print_bwm(l1, LOC::TOTAL);
-    out << " -- ";
-    for (auto l2 : locs) {
-      if (l2 == LOC::TOTAL)
-        continue;
-      auto &p = _bw_map[make_pair(l1, l2)];
-      if (p.first > 0) {
-        out << base_stream_t::loc_name(l2) << ":";
-        print_bwm(l1, l2);
-      }
-    }
-    out << "\n";
-  };
-
-  auto print_dest = [&](string name, LOC l2) {
-    out << name;
-    print_bwm(LOC::TOTAL, l2);
-    out << " -- ";
-    for (auto l1 : locs) {
-      if (l1 == LOC::TOTAL)
-        continue;
-      auto &p = _bw_map[make_pair(l1, l2)];
-      if (p.first > 0) {
-        out << base_stream_t::loc_name(l1) << ":";
-        print_bwm(l1, l2);
-      }
-    }
-    out << "\n";
+  auto print_component = [this, &out, &cycles](const std::string &name, int x, int y) {
+    CHECK(x >= 0 && x < 2);
+    CHECK(y >= 0 && y < LOC::TOTAL);
+    auto &traffic = this->statistics.traffic[x][y];
+    auto dpc = traffic.traffic / cycles;
+    auto dpr = (double) traffic.traffic / traffic.num_requests;
+    out << name << ":\t" << traffic.traffic << " B"
+        << " (" << dpc << " B/c" << ", "
+        <<  dpr << " B/r" << ")" << std::endl;
   };
 
   out << "Bandwidth Table: (B/c=Bytes/cycle, B/r=Bytes/request) -- Breakdown "
          "(sources/destinatinos): \n";
-  print_src("SP_READ:\t", LOC::SCR);
-  print_dest("SP_WRITE:\t", LOC::SCR);
-  print_src("DMA_LOAD:\t", LOC::DMA);
-  print_dest("DMA_STORE:\t", LOC::DMA);
-  print_dest("REC_BUS_READ:\t", LOC::REC_BUS);
-  print_dest("NETWORK:\t", LOC::NETWORK);
+  print_component("Read SPAD", true, LOC::SCR);
+  print_component("Write SPAD", false, LOC::SCR);
+  print_component("Read DMA", true, LOC::DMA);
+  print_component("Write DMA", false, LOC::DMA);
+  print_component("Recur Bus", false, LOC::REC_BUS);
+  
 }
 
 // wait and print stats
@@ -2116,7 +1979,8 @@ void accel_t::print_stats() {
 
 // pushed implicit stream in cmd queue -- I guess not being issued
 void accel_t::push_net_in_cmd_queue(base_stream_t *s) {
-  _ssim->add_bitmask_stream(s);
+  // _ssim->BroadcastStream(s);
+  _ssim->cmd_queue.push_back(s);
 }
 
 // --------------------------SCHEDULE STREAMS ONTO
@@ -2286,16 +2150,17 @@ void accel_t::schedule_streams() {
   if(_cleanup_mode) return;
 
   int str_width = _ssconfig->dispatch_width();
-  int str_issued = 0;
+  int stream_issued = 0;
 
   StreamScheduler functor(this);
   // schedule for ports (these need to go in program order per-vp)
-  for (auto i = _cmd_queue.begin(); i != _cmd_queue.end() && str_issued < str_width;) {
+  for (auto i = _cmd_queue.begin(); i != _cmd_queue.end() && stream_issued < str_width;) {
     i->get()->Accept(&functor);
     if (functor.retire) {
       LOG(COMMAND) << i->get()->id() << " scheduled";
       i = _cmd_queue.erase(i);
-      ++str_issued;
+      ++stream_issued;
+      statistics.commands_issued++;
     } else {
       ++i;
       if (_ssconfig->dispatch_inorder()) {
@@ -2462,34 +2327,6 @@ bool data_controller_t::is_shared() { return _accel->is_shared(); }
 
 void data_controller_t::timestamp() { _accel->timestamp(); }
 
-bool dma_controller_t::schedule_indirect(indirect_stream_t &new_s) {
-  auto *s = new indirect_stream_t(new_s);
-  _indirect_streams.push_back(s);
-  _read_streams.push_back(s);
-  return true;
-}
-
-bool dma_controller_t::schedule_indirect_wr(indirect_wr_stream_t &new_s) {
-  auto *s = new indirect_wr_stream_t(new_s);
-  _indirect_wr_streams.push_back(s);
-  _write_streams.push_back(s);
-  return true;
-}
-
-// bool scratch_read_controller_t::schedule_scr_scr(scr_scr_stream_t& new_s) {
-//  for(auto& s : _scr_scr_streams) {
-//    if(s.empty()) {
-//      s=new_s; //copy the values
-//      //cout << s._remote_stream << " became " << &s << "\n";
-//
-//      s._remote_stream->_remote_stream = &s;//update pointer to remote
-//      //cout << "hooked up writer to stable reader\n";
-//      return true;
-//    }
-//  }
-//  return false;
-//}
-
 // For port->remote port multicast affine stream
 bool network_controller_t::schedule_remote_port_multicast(
     remote_port_multicast_stream_t &new_s) {
@@ -2524,14 +2361,6 @@ bool scratch_write_controller_t::schedule_network_stream(
   return true;
 }
 
-bool scratch_write_controller_t::schedule_indirect_wr(
-    indirect_wr_stream_t &new_s) {
-  auto *s = new indirect_wr_stream_t(new_s);
-  _ind_wr_streams.push_back(s);
-  _write_streams.push_back(s);
-  return true;
-}
-
 // Atomic stream update: only 1 stream is allowed to be doing this at a time!
 bool scratch_write_controller_t::schedule_atomic_scr_op(
     atomic_scr_stream_t &new_s) {
@@ -2554,7 +2383,7 @@ void apply_map(uint8_t *raw_data, const vector<int> &imap,
 void dma_controller_t::port_resp(unsigned cur_port) {
   if (Minor::LSQ::LSQRequestPtr response =
           _accel->lsq()->findResponse(cur_port)) {
-  
+
     // First check if we haven't discared the memory request
     // this will only be the case if reqs are equal to zero
     if (_accel->_cleanup_mode) {
@@ -2622,7 +2451,7 @@ void dma_controller_t::port_resp(unsigned cur_port) {
                         response->sdInfo->stride_last,
                         static_cast<Padding>(response->sdInfo->fill_mode));
           if (last) {
-            LOG(VP_SCORE2) << "SOURCE: DMA->PORT2 (port:" << cur_port << ")";
+            LOG(STREAM) << in_vp.stream->toString() << " freed!";
             if (auto irs = dynamic_cast<IndirectReadStream*>(in_vp.stream)) {
               auto &out_vp = pi.out_port(irs->oports[0]);
               out_vp.freeStream();
@@ -2667,12 +2496,12 @@ void dma_controller_t::cycle() {
           _accel->lsq()->findResponse(CONFIG_STREAM)) {
     PacketPtr packet = response->packet;
     uint64_t context = response->sdInfo->which_accel;
-    int NUM_ACCEL = _accel->NUM_ACCEL;
-    for (uint64_t i = 0, b = 1; i < NUM_ACCEL_TOTAL; ++i, b <<= 1) {
-      if (context & b) {
-        _accel->_ssim->accel_arr[i]->configure(packet->getAddr(),
+    for (int i = 0; i < (int) _accel->get_ssim()->lanes.size(); ++i) {
+      if (context >> i & 1) {
+        _accel->_ssim->lanes[i]->configure(packet->getAddr(),
                                                packet->getSize() / 8,
                                                packet->getPtr<uint64_t>());
+        _accel->statistics.blame = dsa::stat::Accelerator::UNKNOWN;
       }
     }
     _accel->lsq()->popResponse(CONFIG_STREAM);
@@ -2683,13 +2512,7 @@ void dma_controller_t::cycle() {
     int cur_port = _accel->_soft_config.in_ports_active[i];
     port_resp(cur_port);
   }
-  for (unsigned i = START_IND_PORTS; i < STOP_IND_PORTS; ++i) { // ind read
-                                                                // ports
-    port_resp(i);
-  }
 
-  make_read_request();  // read request
-  make_write_request(); // write request
 }
 
 void dma_controller_t::print_status() {
@@ -2712,19 +2535,6 @@ void delete_stream_internal(int i, T *s, std::vector<T *> &vec,
   vec.erase(std::remove(vec.begin(), vec.end(), s), vec.end());
 }
 
-void dma_controller_t::delete_stream(int i, indirect_stream_t *s) {
-  delete_stream_internal(i, s, _indirect_streams, _read_streams);
-}
-void dma_controller_t::delete_stream(int i, indirect_wr_stream_t *s) {
-  delete_stream_internal(i, s, _indirect_wr_streams, _write_streams);
-}
-
-void scratch_read_controller_t::delete_stream(int i, LinearReadStream *s) {
-  delete_stream_internal(i, s, _scr_port_streams, _read_streams);
-}
-void scratch_read_controller_t::delete_stream(int i, indirect_stream_t *s) {
-  delete_stream_internal(i, s, _ind_port_streams, _read_streams);
-}
 
 void network_controller_t::delete_stream(int i,
                                          remote_port_multicast_stream_t *s) {
@@ -2740,157 +2550,9 @@ void network_controller_t::delete_stream(int i, direct_remote_scr_stream_t *s) {
 void scratch_write_controller_t::delete_stream(int i, atomic_scr_stream_t *s) {
   delete_stream_internal(i, s, _atomic_scr_streams, _write_streams);
 }
-void scratch_write_controller_t::delete_stream(int i, indirect_wr_stream_t *s) {
-  delete_stream_internal(i, s, _ind_wr_streams, _write_streams);
-}
-
-void dma_controller_t::make_write_request() {
-  for (unsigned i = 0; i < _write_streams.size(); ++i) {
-    _which_wr = (_which_wr + 1) >= _write_streams.size() ? 0 : _which_wr + 1;
-    base_stream_t *s = _write_streams[_which_wr];
-
-    if (auto *sp = dynamic_cast<indirect_wr_stream_t *>(s)) {
-      auto &stream = *sp;
-      if (stream.stream_active() && _accel->lsq()->canRequest() &&
-          _accel->lsq()->sd_transfers[MEM_WR_STREAM].canReserve()) {
-
-        port_data_t &out_port =
-            _accel->port_interf().out_port(stream._out_port);
-        port_data_t &ind_port =
-            _accel->port_interf().out_port(stream._ind_port);
-        auto &subsize_vp = _accel->port_interf().out_port(stream._sn_port);
-        
-        if (out_port.mem_size() >= stream._data_bytes/out_port.get_port_width() && ind_port.mem_size() >= stream._index_bytes && 
-           (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes/subsize_vp.get_port_width())) ) {
-          // _accel->lsq()->sd_transfers[MEM_WR_STREAM].reserve();
-          ind_write_req(stream);
-
-          if (!stream.stream_active()) {
-            delete_stream(_which_wr, sp);
-          }
-
-          return;
-        }
-      }
-    } else {
-      assert(0 && "invalid type");
-    }
-  }
-}
 
 #define MAX_PORT_READY 100000
 
-// FIXME: if this is 0? (somehow arbitrate among cores in that case)
-void dma_controller_t::make_read_request() {
-  //--------------------------
-  float min_port_ready = -2;
-  int max_reqs=-1;
-  int num_cores = _accel->_ssim->num_active_threads();
-  if(num_cores>1) {
-    assert(num_cores<64 && "currently we support max 64 threads");
-    if(_accel->lsq()->getCpuId()==0) num_cores=1;
-    max_reqs=SD_TRANSFERS_ALLOWED/num_cores; // 22/16=1
-    // if(max_reqs==0) if(_accel->get_cur_cycle()%2) max_reqs=1;
-    if(mem_reqs()>=max_reqs) return; // may be in worse case
-  }
-  //----------------------------
-
-  auto to_sort = _read_streams;
-
-  //auto to_key = [this](base_stream_t *s) {
-  //  int ready = 0, on_the_fly;
-  //  for (auto &port : s->in_ports())
-  //    ready += _accel->port_interf().in_port(port).mem_size();
-  //  on_the_fly = s->on_the_fly;
-  //  return std::pair<int, int>(ready, on_the_fly);
-  //};
-
-  //std::sort(to_sort.begin(), to_sort.end(), [to_key](base_stream_t *a, base_stream_t *b) {
-  //  return to_key(a) < to_key(b);
-  //});
-
-  _which_rd += 1;
-
-  for (unsigned i = 0, n = to_sort.size(); i < n; ++i) {
-    _which_rd = (_which_rd + i) % to_sort.size();
-
-    base_stream_t *s = _read_streams[_which_rd];
-
-    if (auto *sp = dynamic_cast<indirect_stream_t *>(s)) {
-      indirect_stream_t &stream = *sp;
-
-      auto &ind_vp = _accel->port_interf().out_port(stream._ind_port);
-      auto &subsize_vp = _accel->port_interf().out_port(stream._sn_port);
-      // TODO(@were): Implement indirect stream!
-      int in_port = 0; // stream.first_in_port();
-
-      if (stream.stream_active()) {
-
-        //-----------------------------
-        bool skip_check = SS_DEBUG::UNREAL_INPUTS;
-
-        if (min_port_ready == -2) {
-          min_port_ready = calc_min_port_ready();
-        }
-        if (!skip_check && min_port_ready >= MAX_PORT_READY)
-          continue;
-
-
-        auto &in_vp = _accel->port_interf().in_port(in_port);
-        // if 0 space is left, then this... (include both ready and mem_size)
-        // bool no_space = in_vp.can_push_bytes_vp(1); // in_vp.num_ready() * in_vp.port_vec_elem() + in_vp.mem_size() > CGRA_FIFO_LEN;
-
-        bool no_space = (in_vp.num_ready() * in_vp.port_vec_elem() + (in_vp.mem_size())*8/in_vp.get_port_width()) > CGRA_FIFO_LEN;
-        if(no_space) continue;
-
-        if(num_cores>1) {
-          if(in_vp.get_bytes_waiting()>MEM_WIDTH*max_reqs) continue; 
-        }
-
-        //--------------------------------
-        // cout << "memory in ind_vp: " << ind_vp.mem_size() << "\n";  // 0
-        // cout << "susize mem: " << subsize_vp.mem_size() << "\n"; // 0
-        // cout << "lsq sd transfer: " <<  _accel->lsq()->sd_transfers[in_port].unreservedRemainingSpace() << endl;
-        // cout << "cal lsq request: " << _accel->lsq()->canRequest() << endl;
-
-        // if (ind_vp.mem_size() >= stream._index_bytes && 
-        //   (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes)) && 
-          if (ind_vp.mem_size() >= stream._index_bytes/ind_vp.get_port_width() && 
-           (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes/subsize_vp.get_port_width())) && 
-     
-            _accel->lsq()->sd_transfers[in_port].unreservedRemainingSpace() >
-                0 && _accel->lsq()->canRequest()) {
-
-          auto &in_vp = _accel->port_interf().in_port(in_port);
-          if (in_vp.num_can_push() > 8) { // FIXME:CHECKME: make sure vp isn't full
-            ind_read_req(stream);
-
-            if (!stream.stream_active()) {
-              // destination ivp
-              if (SS_DEBUG::VP_SCORE2) {
-                cout << "SOURCE: Indirect DMA->PORT \n";
-              }
-              /*if(in_vp.in_use()) { // not sure why is it required..
-                in_vp.set_status(port_data_t::STATUS::COMPLETE, LOC::DMA);
-              }*/
-
-              // out_ind_vp is where we keep track of the resource
-              if (SS_DEBUG::VP_SCORE2) {
-                cout << "SOURCE: Indirect DMA->PORT \n";
-              }
-              ind_vp.freeStream();
-              delete_stream(_which_rd, sp);
-            }
-
-            return;
-          }
-        }
-      }
-    } else {
-      assert(0 && "invalid type");
-    }
-  }
-}
 
 // It works for both direct/indirect network streams
 void scratch_write_controller_t::write_scratch_remote_ind(
@@ -2942,203 +2604,6 @@ void scratch_write_controller_t::write_scratch_remote_ind(
   _accel->_stat_scratch_write_bytes += bytes_written;
 }
 
-void scratch_write_controller_t::write_scratch_ind(
-    indirect_wr_stream_t &stream) {
-  port_data_t &out_vp = _accel->port_interf().out_port(stream._out_port);
-  port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
-
-  int bytes_written = 0;
-
-  while (ind_vp.mem_size() >= stream._index_bytes && out_vp.mem_size() && stream.stream_active() &&
-         bytes_written < 64) {
-    
-    uint64_t ind=0;
-    // FIXME: need to fix according to ind mem
-    // This work for ind_vp being lower data width than indirect value config
-    // (And also 8?)
-    /*for(int i=0; i<stream._index_bytes; ++i) {
-      uint8_t temp = ind_vp.peek_out_data(i);
-      ind = ind | (temp << i*8);
-    }*/
-    if(stream._index_bytes > ind_vp.get_port_width()) {
-      for(int i=0; i<stream._index_bytes/ind_vp.get_port_width(); ++i) {
-        SBDT temp = ind_vp.peek_out_data(i);
-        ind = ind | (temp << i*8*ind_vp.get_port_width());
-      }
-    } else {
-      SBDT temp_val = ind_vp.peek_out_data();
-      for(int i=0; i<stream._index_bytes; ++i) {
-        uint8_t temp = (temp_val >> i*8) & 255;
-        ind = ind | (temp << i*8);
-      }
-    }
-
-    addr_t addr = stream.cur_addr(ind);
-    // addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
-
-    bool pop_ind_vp = stream.pop_elem();
-    if (pop_ind_vp) { // this is for sub-word granularity reads
-      for(int i=0; i<stream._index_bytes; ++i) {
-        ind_vp.pop_out_data();
-      }
-      // ind_vp.pop_out_data();
-    }
-
-    uint64_t val = stream.cur_value(out_vp.peek_out_data());
-
-    // push the entry into the write bank queues
-    _accel->write_scratchpad(addr, &val, stream._data_bytes, stream.id());
-
-    bytes_written += stream._data_bytes;
-    stream._ind_bytes_complete += stream._data_bytes;
-
-    if (stream._ind_bytes_complete == 8) {
-      out_vp.pop_out_data();
-      stream._ind_bytes_complete = 0;
-    }
-  }
-
-  bool is_empty = stream.check_set_empty();
-  if (is_empty) {
-    _accel->process_stream_stats(stream);
-
-    if (SS_DEBUG::VP_SCORE2) {
-      cout << "SOURCE: INDIRECT PORT -> SCR\n";
-    }
-    out_vp.freeStream();
-    ind_vp.freeStream();
-  }
-
-  // have the same bank queues thing here
-  if (_accel->_ssim->in_roi()) {
-    add_bw(LOC::PORT, LOC::SCR, 1, bytes_written);
-    _accel->_stat_scratch_writes++;
-  }
-
-  _accel->_stat_scr_bytes_wr += bytes_written;
-  _accel->_stat_scratch_write_bytes += bytes_written;
-}
-
-void scratch_read_controller_t::read_linear_scratch_ind(
-    indirect_stream_t &stream,
-    uint64_t scr_addr /*if scr is dest, also todo*/) {
-
-  port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
-  auto &subsize_vp = _accel->port_interf().out_port(stream._sn_port);
-  if(!stream._is_2d_stream) { 
-    assert(stream._sn_port==1);
-  }
-
-  bool first = true;
-  addr_t base_addr = 0;
-  addr_t max_addr = 0;
-
-  // vector<int> imap;
-  int bytes_read=0;
-
-  while (ind_vp.mem_size() >= stream._index_bytes && stream.stream_active()
-     && (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes))) {
-
-
-    if(stream._is_2d_stream && stream._first_ss_access) {
-      uint64_t ind2=0;
-      /*for(int i=0; i<stream._index_bytes; ++i) {
-        uint8_t temp = subsize_vp.peek_out_data(i);
-        ind2 = ind2 | (temp << i*8);
-      }*/
-      if(stream._index_bytes > subsize_vp.get_port_width()) {
-        for(int i=0; i<stream._index_bytes/subsize_vp.get_port_width(); ++i) {
-          SBDT temp = subsize_vp.peek_out_data(i);
-          ind2 = ind2 | (temp << i*8*subsize_vp.get_port_width());
-        }
-      } else {
-        SBDT temp_val = subsize_vp.peek_out_data();
-        for(int i=0; i<stream._index_bytes; ++i) {
-          uint8_t temp = (temp_val >> i*8) & 255;
-          ind2 = ind2 | (temp << i*8);
-        }
-      }
-      
-      stream._sstream_size = ind2; // should be done only in the first size
-      stream._first_ss_access=false;
-    }
-
-
-
-    uint64_t ind=0;
-    /*for(int i=0; i<stream._index_bytes; ++i) {
-      uint8_t temp = ind_vp.peek_out_data(i);
-      ind = ind | (temp << i*8); // FIXME: check the endianness
-    }*/
-    if(stream._index_bytes > ind_vp.get_port_width()) {
-      for(int i=0; i<stream._index_bytes/ind_vp.get_port_width(); ++i) {
-        SBDT temp = ind_vp.peek_out_data(i);
-        ind = ind | (temp << i*8*ind_vp.get_port_width());
-      }
-    } else {
-      SBDT temp_val = ind_vp.peek_out_data();
-      for(int i=0; i<stream._index_bytes; ++i) {
-        uint8_t temp = (temp_val >> i*8) & 255;
-        ind = ind | (temp << i*8);
-      }
-    }
-    addr_t addr = stream.cur_addr(ind);
-    // addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
-
-    // cout << "idx:" << idx << "\taddr:" << hex << addr << dec << "\n";
-    if (first) {
-      first = false;
-      base_addr = addr & SCR_MASK;
-      max_addr = base_addr + SCR_WIDTH;
-    } else { // not first
-      if (addr >= max_addr || addr < base_addr) {
-        break;
-      }
-    }
-
-    int data_bytes = stream._data_bytes;
-    SBDT val=0;
-
-    // TODO: if address is remote, then send request to read from addr and
-    // data_bytes width (need a request queue?) -- or just indirect addr, and
-    // bytes to the default stream
-
-    _accel->read_scratchpad(&val, addr, data_bytes, stream.id());
-    // TODO(@were): Implement this!
-    // for (int in_port : stream.in_ports()) {
-    //   // cout << "PUSHING DATA TO THE INPUT PORTS: " << data_bytes << " bytes\n";
-    //   port_data_t &in_vp = _accel->port_interf().in_port(in_port);
-    //   in_vp.push_data(in_vp.get_byte_vector(val,data_bytes));
-    // }
-
-    if (SS_DEBUG::SCR_ACC) {
-      _accel->timestamp();
-      cout << "linear scr indirect read for " << std::hex << base_addr << std::dec
-           << " for " << data_bytes << " needed bytes"
-           << " and size of stream: " << stream._num_elements
-           << "\n";
-    }
-
-    bool pop_ind_vp = stream.pop_elem();
-    if (pop_ind_vp) {
-      stream._first_ss_access=true;
-      for(int i=0; i<stream._index_bytes; ++i) {
-        ind_vp.pop_out_data();
-        if(stream._is_2d_stream) subsize_vp.pop_out_data();
-      }
-      // ind_vp.pop_out_data();
-    }
-
-    bytes_read += data_bytes;
-  }
-
-  if (bytes_read!=0 && _accel->_ssim->in_roi()) {
-    add_bw(stream.src(), stream.dest(), 1, bytes_read);
-    _accel->_stat_scr_bytes_rd += bytes_read;
-    _accel->_stat_scratch_read_bytes += bytes_read;
-    _accel->_stat_scratch_reads++;
-  }
-}
 
 void scratch_read_controller_t::push_ind_rem_read_req(bool is_remote, int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry) {
   if(SS_DEBUG::NET_REQ) {
@@ -3276,173 +2741,6 @@ void scratch_read_controller_t::serve_ind_read_banks() {
   }
 }
 
-void scratch_read_controller_t::read_scratch_ind(
-    indirect_stream_t &stream,
-    uint64_t scr_addr /*if scr is dest, also todo*/) {
-
-//  port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
-//  int ind_vp_slices = stream._index_bytes/ind_vp.get_port_width();
-//
-//  // STAGE 1: Push the requests to ports
-//  if (stream.stream_active() && ind_vp.mem_size() >= ind_vp_slices &&
-//      _ind_ROB.size() < _accel->_ind_rob_size) {
-//
-//    int reqd = stream._data_bytes*stream._val_num/NUM_SCRATCH_BANKS; // required bytes / maximum allowed at a time...can be split at network controller
-//    int num_irob_entries_reqd = std::max(1, reqd);
-//    if(_ind_ROB.size() + num_irob_entries_reqd > _accel->_ind_rob_size) return;
-//
-//   // cout << "Came in with slices: " << ind_vp_slices << " irob: " << num_irob_entries_reqd << endl;
-//    int serve_width=stream._data_bytes;
-//    // FIXME: current limitation, either data width or multiple of
-//    // scratch banks
-//    if(stream._val_num!=1) serve_width = NUM_SCRATCH_BANKS; 
-//
-//    uint64_t ind=0;
-//    addr_t addr=0;
-//    // TODO: accumulate all remote requests here (check for local and remote),
-//    // and then send (allowed for sequential memory location, addr, 64*C bytes)
-//    int acc_remote_bytes=0; addr_t init_addr=-1;
-//    int init_data_ptr=-1; int init_irob_ptr=-1;
-//    int last_dest_core=-1; bool is_remote = false;
-//
-//    bool last_remote=false;
-//    bool wrap_up=false;
-//    for(int req=0; req<num_irob_entries_reqd; ++req) {
-//      assert(_ind_ROB.size() <= _accel->_ind_rob_size && "overflow of indirect rob");
-//
-//      _cur_irob_ptr = (_cur_irob_ptr + 1)%(_accel->_ind_rob_size);
-//      if(init_irob_ptr==-1) init_irob_ptr=_cur_irob_ptr;
-//      ind_reorder_entry_t *reorder_entry = new ind_reorder_entry_t();
-//
-//      assert(_reorder_entry_id.find(_cur_irob_ptr)==_reorder_entry_id.end() && "allocated location should be empty in reorder buffer");
-//      _reorder_entry_id.insert(make_pair(_cur_irob_ptr, reorder_entry));
-//
-//      reorder_entry->id = _cur_irob_ptr;
-//
-//      _ind_ROB.push(reorder_entry);
-//      reorder_entry->stream = &stream;
-//      reorder_entry->data_bytes = serve_width; // stream._data_bytes*stream._val_num;
-//      reorder_entry->size = 0; // paranoia
-//      reorder_entry->last = false;
-//
-//
-//      // just distribute the elements to the queues
-//      while ((req>0 || (ind_vp.mem_size() >= ind_vp_slices && stream.stream_active())) && reorder_entry->size < NUM_SCRATCH_BANKS) {
-//        wrap_up=false;
-//
-//        if(req==0) { // should only be done to get the base address
-//          ind = ind_vp.peek_out_data(0, stream._index_bytes);
-//          addr = stream.cur_addr(ind);
-//          // cout << "peeked out addr using indirect port: " << addr << endl;
-//
-//          bool pop_ind_vp = stream.pop_elem();
-//          // cout << "Read new index, pop value: " << pop_ind_vp << " earlier mem size: " << ind_vp.mem_size();
-//          if (pop_ind_vp) { // this is for sub-word granularity reads
-//            ind_vp.pop_out_data(stream._index_bytes); // pop port_width data
-//          }
-//          // cout << " new mem size: " << ind_vp.mem_size() << endl;
-//        }
-//
-//        indirect_scr_read_req request;
-//        request.data_ptr = reorder_entry->size; // <64
-//        request.addr = addr + req*serve_width;
-//        assert(request.addr < (SCRATCH_SIZE)*_accel->_ssim->num_active_threads() && "addr crossed the address space of 8 cores");
-//        
-//        if(init_data_ptr==-1) {
-//          init_data_ptr=request.data_ptr;
-//          init_addr = addr;
-//          // cout << "init data ptr: " << init_data_ptr << " serve_width: " << serve_width << endl;
-//        }
-//
-//        request.bytes = serve_width;
-//        request.irob_entry_id = _cur_irob_ptr;
-//
-//        reorder_entry->size += serve_width;
-//
-//        // dest_core_id for this local cache line
-//        int dest_core_id = stream.get_core_id(request.addr); // request.addr/SCRATCH_SIZE;
-//        is_remote = dest_core_id!=(_accel->lsq()->getCpuId()-1);
-//        if(_accel->_ssim->num_active_threads()==1) is_remote=false;
-//        // cout << " Is request remote: " << is_remote << endl;
-//
-//        if(is_remote && SS_DEBUG::NET_REQ) {
-//            std::cout << "Sending remote scr read request for reorder x loc: " << request.data_ptr << " y loc: " << _cur_irob_ptr << " addr in scratch: " << request.addr << " and bytes to be read: " << request.bytes << endl;
-//            std::cout << "Cur core: " << _accel->lsq()->getCpuId() << " cur data ptr: " << init_data_ptr << " irob: " << init_irob_ptr << " addr: " << init_addr << " remote bytes: " << acc_remote_bytes << endl;
-//        }
-//        if(!is_remote) { // if current request is local
-//          wrap_up=true;
-//          if(last_remote) { // send the last request
-//            assert(init_data_ptr!=-1 && "current local, last remote");
-//            _accel->lsq()->push_rem_read_req(last_dest_core, init_data_ptr, init_addr, acc_remote_bytes, init_irob_ptr);
-//            // acc_remote_bytes=0;
-//            // init_data_ptr=-1; init_irob_ptr=-1;
-//          }
-//          // for the current one
-//          // cout << "Sending local request with x loc: " << request.data_ptr << " bytes: " << request.bytes << " y loc: " << _cur_irob_ptr << endl;
-//          _accel->lsq()->push_rem_read_req(dest_core_id, request.data_ptr, request.addr, request.bytes, _cur_irob_ptr);
-//          // assert(acc_remote_bytes==0 && "no prev rem bytes should be left");
-//          // init_data_ptr=-1; init_irob_ptr=-1;
-//        } else {
-//          acc_remote_bytes += request.bytes;
-//
-//          if((last_dest_core!=-1 && last_dest_core!=dest_core_id) || acc_remote_bytes>=7*NUM_SCRATCH_BANKS) { // if core switched
-//            assert(init_data_ptr!=-1 && "current remote, reached thresh or switched core");
-//            // cout << "serving because it crossed the threshold of requests\n";
-//            _accel->lsq()->push_rem_read_req(last_dest_core, init_data_ptr, init_addr, acc_remote_bytes, init_irob_ptr);
-//            wrap_up=true;
-//            // acc_remote_bytes=0;
-//            // init_data_ptr=-1; init_irob_ptr=-1;
-//          } else {
-//            _accel->_stat_num_spu_req_coalesced++;
-//          }
-//        }
-//        last_remote = is_remote;
-//        last_dest_core = dest_core_id;
-//        // _accel->lsq()->push_rem_read_req(request.data_ptr, request.addr, request.bytes, _cur_irob_ptr);
-//        
-//
-//        if(wrap_up) {
-//          acc_remote_bytes=0; init_data_ptr=-1; 
-//          if(reorder_entry->size==NUM_SCRATCH_BANKS) init_irob_ptr=-1;
-//        }
-//      }
-//
-//
-//      // cout << "Reorder entry size in the end: " << reorder_entry->size << endl;
-//      assert(reorder_entry->size > 0 && reorder_entry->size <= NUM_SCRATCH_BANKS && "it should have went in the loop");
-//
-//      if(req==num_irob_entries_reqd-1) {
-//
-//        if (!stream.stream_active()) { // vps -> complete state
-//        // if (stream.check_set_empty()) { // vps -> complete state
-//          reorder_entry->last = true;
-//          _accel->process_stream_stats(stream);
-//          if (SS_DEBUG::VP_SCORE2) {
-//            std::cout << "SOURCE: Indirect SCR->PORT (queue)\n";
-//          }
-//
-//          // the in_vp isn't really full yet because we have to wait until
-//          // the conflict-free data arrives
-//          for (int in_port : stream.in_ports()) {
-//            port_data_t &in_vp = _accel->port_interf().in_port(in_port);
-//            in_vp.set_status(port_data_t::STATUS::COMPLETE, LOC::SCR);
-//          }
-//
-//          if (SS_DEBUG::VP_SCORE2) {
-//            std::cout << "SOURCE: Indirect SCR->PORT queue)\n";
-//          }
-//          ind_vp.set_status(port_data_t::STATUS::FREE);
-//        }
-//      }
-//    }
-//    // send all pending remote requests (not -1 if pending)
-//    if(last_remote && init_data_ptr!=-1) {
-//       assert(init_addr!=-1 && acc_remote_bytes!=0 && "outside the loop");
-//       assert(init_irob_ptr!=-1 && "irob should have an allocated entry");
-//      _accel->lsq()->push_rem_read_req(last_dest_core, init_data_ptr, init_addr, acc_remote_bytes, init_irob_ptr);
-//    }
-//  }
-}
 
 // This function does two things:
 // 1. Check the reorder buffer if the top entry is ready to complete
@@ -3456,312 +2754,7 @@ int scratch_read_controller_t::cycle_read_queue() {
   return bytes_pushed;
 }
 
-void dma_controller_t::ind_read_req(indirect_stream_t &stream) {
-  // port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
-  // auto &subsize_vp = _accel->port_interf().out_port(stream._sn_port);
-  // if(!stream._is_2d_stream) { 
-  //   assert(stream._sn_port==1);
-  // }
 
-  // bool first = true;
-  // addr_t base_addr = stream.cur_base_addr;
-  // addr_t max_addr = 0;
-
-  // vector<int> imap;
-  // // bool first_ss_access=true; // used for 2d stream
-  
-  // if (stream.straddle_bytes()>0) { 
-  //   first=false; 
-  //   for (int i = 0; i < stream.straddle_bytes(); ++i) {
-  //     imap.push_back(i);
-  //   }
-  //   stream.set_straddle_bytes(0);
-  // }
-  // else { stream.cur_base_addr = 0; }
-
-  // while (ind_vp.mem_size() >= stream._index_bytes / ind_vp.get_port_width() &&
-  //        stream.stream_active() && (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes/subsize_vp.get_port_width()))) {
-
-  //   if(stream._is_2d_stream && stream._first_ss_access) {
-  //     uint64_t ind2=0;
-
-  //     // this works when subsize_vp width <= stream index bytes
-  //     for(int i=0; i<stream._index_bytes/subsize_vp.get_port_width(); ++i) {
-  //       SBDT ssize = subsize_vp.peek_out_data(i);
-  //       // cout << "8 bytes output: " << ssize << endl;
-  //       ind2 = ind2 | (ssize << i*8*subsize_vp.get_port_width());
-  //       // ind2 = (ind2 << i*8*subsize_vp.get_port_width()) | ssize;
-  //     }
-
-  //     stream._sstream_size = ind2; // should be done only in the first size
-  //     if(SS_DEBUG::SCR_ACC || SS_DEBUG::MEM_RD) {
-  //       cout << "Current ssize: " << ind2 << endl;
-  //     }
-  //     
-  //     // If sub-stream size is 0, then pop the corresponding element from ind
-  //     // port, also again set first ss access
-  //     if(ind2==0) {
-  //       // Oh, this is required to reduce the total num of elements in atomic
-  //       // scr
-  //       stream._sstream_size = 1; // hack, assume 1 element done so we could pop this element from stream
-  //       stream.pop_elem();
-  //       // assert(stream.pop_elem() && "Stream already at end, should allow");
-  //       ind_vp.pop_out_data(stream._index_bytes);
-  //       subsize_vp.pop_out_data(stream._index_bytes);
-  //       /*for(int i=0; i<stream._index_bytes/ind_vp.get_port_width(); ++i) {
-  //         ind_vp.pop_out_data();
-  //       }
-  //       for(int i=0; i<stream._index_bytes/subsize_vp.get_port_width(); ++i) {
-  //         subsize_vp.pop_out_data();
-  //       }*/
-  //       continue;
-  //     } else {
-  //       // stream._sstream_size = ind2; // should be done only in the first size
-  //       // cout << "SIZE PORT NUMBER: " << stream._sn_port << " config bytes: " << stream._index_bytes << endl;
-  //       // cout << "UPDATED SSTREAM SIZE TO: " << stream._sstream_size << endl;
-  //       stream._first_ss_access=false;
-  //     }
-  //   }
-
-  //   uint64_t ind=0;
-
-  //   for(int i=0; i<stream._index_bytes/ind_vp.get_port_width(); ++i) {
-  //     SBDT temp = ind_vp.peek_out_data(i);
-  //     // cout << "8-bit value from ind port: " << temp << endl;
-  //     // ind = (ind << i*8*ind_vp.get_port_width()) | temp;
-  //     // FIXME:IMP: lower one works for the simple outer product
-  //     ind = ind | (temp << i*8*ind_vp.get_port_width());
-  //   }
-  //   addr_t addr = stream.cur_addr(ind);
-  //   // cout << "Current indirect address sent is: " << std::hex << addr << endl;
-  //   // addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
-
-  //   if (first) {
-  //     first = false;
-  //     base_addr = addr & MEM_MASK;
-  //     max_addr = base_addr + MEM_WIDTH;
-  //   } else { // not first
-  //     if (addr >= max_addr || addr < base_addr) {
-  //       break;
-  //     }
-  //   }
-
-  //   int index = addr - base_addr;
-
-  //   int data_bytes = stream._data_bytes;
-
-  //   // if index+i>64, then what? (send 2 cache line requests)
-  //   // cout << "Max map in the cache line: " << index+data_bytes;
-  //   if(index + data_bytes > 64) { 
-  //     cout << "STRADDLING CACHE LINES\n";
-  //     stream.set_straddle_bytes(index+data_bytes-64);
-  //     stream.cur_base_addr=max_addr; 
-  //   }
- 
-  //   for (int i = 0; i < data_bytes && (index+i < 64); ++i) {
-  //     imap.push_back(index + i);
-  //   }
-
-  //   bool pop_ind_vp = stream.pop_elem();
-  //   if (pop_ind_vp) {
-  //     stream._first_ss_access=true;
-  //     // need to consider data width of indirect port as well
-  //     for(int i=0; i<stream._index_bytes/ind_vp.get_port_width(); ++i) {
-  //       ind_vp.pop_out_data();
-  //     }
-  //     if(stream._is_2d_stream) {
-  //       for(int i=0; i<stream._index_bytes/subsize_vp.get_port_width(); ++i) {
-  //         subsize_vp.pop_out_data();
-  //       }
-  //     }
-  //   }
-
-  //   // if(stream._is_2d_stream) stream.print_status();
-  // }
-  // bool last = stream.check_set_empty();
-  // int in_port = stream.first_in_port();
-  // port_data_t &in_vp = _accel->port_interf().in_port(in_port);
-
-  // if (last) {
-  //   in_vp.set_is_bytes_waiting_final();
-  //   _accel->process_stream_stats(stream);
-  // }
-
-  // if(imap.size()==0) return; // case when data-dependent sub-stream size was 0
-
-  // _accel->lsq()->sd_transfers[in_port].reserve();
-
-  // in_vp.inc_bytes_waiting(imap.size());
-
-  // if (SS_DEBUG::MEM_REQ) {
-  //   _accel->timestamp();
-  //   cout << "indirect request for " << std::hex << base_addr << std::dec
-  //        << " for " << imap.size() << " needed bytes"
-  //        << "\n";
-  // }
-
-  // SSMemReqInfoPtr sdInfo = NULL;
-  // sdInfo = new SSMemReqInfo(stream.id(), _accel->_accel_index,
-  //                           stream.in_ports(), imap, _accel->get_cur_cycle(),
-  //                           stream.fill_mode(), );
-  //                           // stream.in_ports(), imap, _accel->_ssim->now(), last, stream.fill_mode());
-
-  // // make request
-  // _accel->lsq()->pushRequest(stream.minst(), true /*isLoad*/, NULL /*data*/,
-  //                           MEM_WIDTH /*cache line*/, base_addr, 0 /*flags*/,
-  //                           0 /*res*/, nullptr /*atomic op*/,
-  //                           std::vector<bool>() /*byte enable*/, sdInfo);
-
-  // if (_accel->_ssim->in_roi()) {
-  //   add_bw(stream.src(), stream.dest(), 1, imap.size());
-  //   _accel->_stat_tot_mem_fetched += imap.size();
-  //   _accel->_stat_tot_loads += 1;
-  // }
-  // // imap.clear();
-
-  // _mem_read_reqs++;
-}
-
-void dma_controller_t::ind_write_req(indirect_wr_stream_t &stream) {
-  // port_data_t &out_vp = _accel->port_interf().out_port(stream._out_port);
-  // port_data_t &subsize_vp = _accel->port_interf().out_port(stream._sn_port);
-  // port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
-  // if(!stream._is_2d_stream) { 
-  //   assert(stream._sn_port==1);
-  // }
-
-  // bool first = true;
-  // addr_t init_addr = 0;
-  // addr_t prev_addr = 0;
-
-  // unsigned bytes_written = 0;
-
-  // std::vector<uint8_t> data;
-  // data.resize(MEM_WIDTH);
-  // uint8_t *data8 = (uint8_t *)data.data();
-  // // uint16_t* data16 = (uint16_t*)data8;
-  // uint64_t *data64 = (uint64_t *)data8;
-
-  // // FIXME: The size of the indirect stream should be made configurable!
-  // // int stream_size = stream._data_bytes;
-  // int stream_size = 8;
-
-  // int index = 0;
-  // while (out_vp.mem_size() && ind_vp.mem_size() >= stream._index_bytes && stream.stream_active() && (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes/subsize_vp.get_port_width()))) {
-
-  //   // load the substream data size
-  //   if(stream._is_2d_stream && stream._first_ss_access) {
-  //     // uint64_t ind2=0;
-
-  //     // this works when subsize_vp width <= stream index bytes
-  //     uint64_t ind2 = subsize_vp.peek_out_data(0, stream._index_bytes);
-  //     /* for(int i=0; i<stream._index_bytes/subsize_vp.get_port_width(); ++i) {
-  //       SBDT ssize = subsize_vp.peek_out_data(i);
-  //       // cout << "8 bytes output: " << ssize << endl;
-  //       ind2 = ind2 | (ssize << i*8*subsize_vp.get_port_width());
-  //       // ind2 = (ind2 << i*8*subsize_vp.get_port_width()) | ssize;
-  //     }*/
-
-  //     stream._sstream_size = ind2; // should be done only in the first size
-  //     if(SS_DEBUG::SCR_ACC || SS_DEBUG::MEM_WR) {
-  //       cout << "Current ssize: " << ind2 << endl;
-  //     }
-  //     
-  //     // If sub-stream size is 0, then pop the corresponding element from ind
-  //     // port, also again set first ss access
-  //     if(ind2==0) {
-  //       stream._sstream_size = 1; // hack, assume 1 element done so we could pop this element from stream
-  //       stream.pop_elem();
-  //       ind_vp.pop_out_data(stream._index_bytes);
-  //       subsize_vp.pop_out_data(stream._index_bytes);
-  //       continue;
-  //     } else {
-  //       stream._first_ss_access=false;
-  //     }
-  //   }
-
-
-  //   uint64_t ind=0;
-  //   for(int i=0; i<stream._index_bytes; ++i) {
-  //     uint8_t temp = ind_vp.peek_out_data(i);
-  //     ind = ind | (temp << i*8);
-  //   }
-  //   addr_t addr = stream.cur_addr(ind);
-  //   // addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
- 
-  //   if (first) {
-  //     first = false;
-  //     // base_addr = addr & MEM_MASK;
-  //     init_addr = addr;
-  //   } else { // not first
-  //     if (prev_addr + stream_size !=
-  //         addr) { // addr > max_addr || addr < base_addr) {
-  //       // cout <<"prev:" << prev_addr << " new:" << addr << "\n";
-  //       break;
-  //     }
-  //   }
-
-  //   SBDT val = out_vp.peek_out_data();
-
-  //   prev_addr = addr;
-  //   data64[index++] = val;
-
-  //   out_vp.pop_out_data();
-  //   bytes_written += stream._data_bytes; // sizeof(SBDT);
-
-  //   bool pop_ind_vp = stream.pop_elem();
-  //   if (pop_ind_vp) {
-  //     stream._first_ss_access=true;
-  //     ind_vp.pop_out_data(stream._index_bytes);
-  //     /*for(int i=0; i<stream._index_bytes; ++i) {
-  //       ind_vp.pop_out_data();
-  //     }*/
-  //     if(stream._is_2d_stream) {
-  //       subsize_vp.pop_out_data(stream._index_bytes);
-  //       /*for(int i=0; i<stream._index_bytes/subsize_vp.get_port_width(); ++i) {
-  //         subsize_vp.pop_out_data();
-  //       }*/
-  //     }
-  //   }
-  // }
-
-  // if(bytes_written==0) return;
-
-  // _accel->lsq()->sd_transfers[MEM_WR_STREAM].reserve();
-
-  // SSMemReqInfoPtr sdInfo =
-  //     new SSMemReqInfo(stream.id(), _accel->_accel_index, MEM_WR_STREAM);
-  
-  // // make store request
-  // _accel->lsq()->pushRequest(stream.minst(), false /*isLoad*/, data8,
-  //                           bytes_written, init_addr, 0 /*flags*/, 0 /*res*/,
-  //                           nullptr /*atomic op*/,
-  //                           std::vector<bool>() /*byte enable*/, sdInfo);
-
-  // if(SS_DEBUG::MEM_WR) {
-  //   cout << "bytes written: " << bytes_written << "addr: " << std::hex <<
-  //   init_addr
-  //   << std::dec << " first elem: " << *data64 << "\n";
-  // }
-
-  // if (_accel->_ssim->in_roi()) {
-  //   add_bw(stream.src(), stream.dest(), 1, bytes_written);
-
-  //   _accel->_stat_mem_bytes_wr += bytes_written;
-  //   _accel->_stat_tot_stores++;
-  // }
-
-  // bool is_empty = stream.check_set_empty();
-  // if (is_empty) {
-  //   _accel->process_stream_stats(stream);
-
-  //   if (SS_DEBUG::VP_SCORE2) {
-  //     cout << "SOURCE: INDIRECT PORT -> DMA\n";
-  //   }
-  //   out_vp.set_status(port_data_t::STATUS::FREE);
-  //   ind_vp.set_status(port_data_t::STATUS::FREE);
-  // }
-}
 
 // static bool addr_valid_dir(int64_t acc_size, uint64_t addr, uint64_t prev_addr,
 //                            uint64_t base_addr, uint64_t max_addr) {
@@ -3772,175 +2765,6 @@ void dma_controller_t::ind_write_req(indirect_wr_stream_t &stream) {
 //   }
 // }
 
-// serve only when it comes from the requested location, is_banked used only in
-// assert
-// TODO: add support for mapping schemes here
-vector<uint8_t> scratch_read_controller_t::read_scratch(LinearReadStream &stream, bool is_banked) {
-  return {};
-//  vector<uint8_t> res;
-//  addr_t prev_addr = SCRATCH_SIZE;
-//  addr_t addr = stream.cur_addr(); // this is scratch addr
-//  addr_t base_addr = addr & SCR_MASK;
-//  addr_t max_addr = base_addr + SCR_WIDTH;
-//
-//  if (SS_DEBUG::SCR_BARRIER) {
-//    _accel->timestamp();
-//    cout << "scr_rd " << hex << addr << " -> " << max_addr << "\n";
-//  }
-//  int data_width = stream.data_width(); // should be 2 for my case
-//
-//  std::fill(mask.begin(), mask.end(), 0);
-//
-//  uint8_t val[8]; // maximum value that data width can be
-//  for (int i = 0; i < 8; ++i) {
-//    val[i] = 0;
-//  }
-//
-//  // cout << "CAME FROM BANKED PARTITION? " << is_banked
-//  //      << " Is the address linear? " << _accel->isLinearSpad(addr)
-//  //      << " data_width: " << stream.data_width()
-//  //      << " addr is: " << addr << "\n";
-//
-//  // go while stream and port does not run out
-//  while (stream.stream_active() &&
-//         // (!_accel->_linear_spad || (is_banked ^ _accel->isLinearSpad(addr))) &&
-//         addr_valid_dir(stream.access_size(), addr, prev_addr, base_addr,
-//                        max_addr)) {
-//    for (int i = 0; i < data_width; ++i) {
-//      val[i] = 0;
-//    }
-//    if (is_banked) {
-//      assert(addr + data_width <= SCRATCH_SIZE);
-//    } else {
-//      if(!(addr + data_width >= SCRATCH_SIZE &&
-//             addr + data_width <= SCRATCH_SIZE + LSCRATCH_SIZE)) {
-//        // cout << "Addr: " << addr << " data_width: " << data_width << endl;
-//      }
-//      assert(addr + data_width >= SCRATCH_SIZE &&
-//             addr + data_width <= SCRATCH_SIZE + LSCRATCH_SIZE);
-//    }
-//
-//    SBDT check_value=0;
-//    _accel->read_scratchpad(&check_value, addr, data_width, stream.id());
-//    // check_value = check_value & ((1<<8*data_width)-1);
-//    // cout << "COrrected value read from scratchpad at addr: " << addr << " with data_width: " << data_width << " is: " << check_value << endl;
-//    _accel->read_scratchpad(&val[0], addr, data_width, stream.id());
-//
-//
-//    // _accel->read_scratchpad(&check_value, scr_addr, request._output_bytes, 0);
-//
-//    if (SS_DEBUG::SCR_ACC) {
-//      // assume 16-bit to debug just for now
-//      cout << "scr_addr:" << hex << addr << " read " << (val[1] << 8 | val[0])
-//           << " to port " << stream.first_in_port()
-//           << " with input port width: " << data_width << "\n";
-//    }
-//    for (int i = 0; i < data_width; ++i) {
-//      data.push_back(val[i]);
-//    }
-//    prev_addr = addr;
-//    for (int i = 0; i < data_width; ++i) {
-//      mask[addr - base_addr + i] = 1;
-//    }
-//
-//    addr = stream.pop_addr();
-//
-//    if (stream.stride_fill() && stream.stride_hit()) {
-//      break;
-//    }
-//  }
-//  if (SS_DEBUG::VERIF_SCR) {
-//    _accel->scr_rd_verif << hex << setw(8) << setfill('0') << base_addr << " ";
-//    for (uint64_t i = base_addr; i < max_addr; ++i) {
-//      _accel->scr_rd_verif << setw(2) << setfill('0')
-//                           << (unsigned)_accel->scratchpad[i];
-//    }
-//    _accel->scr_rd_verif << " ";
-//    for (unsigned i = 0; i < SCR_WIDTH / data_width; ++i) {
-//      _accel->scr_rd_verif << setw(1) << setfill('0') << (unsigned)mask[i];
-//    }
-//    _accel->scr_rd_verif << "\n";
-//  }
-//
-//  _accel->_stat_scr_bytes_rd += data.size() * data_width;
-//  _accel->_stat_scratch_read_bytes += data.size() * data_width;
-//
-//  if (_accel->_ssim->in_roi()) {
-//    add_bw(stream.src(), stream.dest(), 1, data.size() * data_width);
-//    _accel->_stat_scratch_reads++;
-//  }
-//  return res;
-}
-
-// Figure out which port is the most needy
-// this has linear read streams as well!
-float scratch_read_controller_t::calc_min_port_ready(bool is_banked) {
-  float min_port_ready = MAX_PORT_READY;
-  for (int i = 0; i < _scr_port_streams.size(); ++i) {
-    auto &stream = *_scr_port_streams[i];
-    auto is = dynamic_cast<IPortStream*>(&stream);
-    if (!is) {
-      continue;
-    }
-    if (stream.stream_active() && (is_banked ^ checkLinearSpadStream(stream))) {
-      auto &in_vp = _accel->port_interf().in_port(is->pes[0].port);
-      int data_width = stream.data_width();
-      if (in_vp.can_push_vp(SCR_WIDTH / data_width)) {
-        float num_ready = in_vp.instances_ready();
-        if (num_ready < min_port_ready) {
-          min_port_ready = num_ready;
-        }
-      }
-    }
-  }
-  return min_port_ready;
-}
-
-// considering ind banked read streams
-float scratch_read_controller_t::calc_min_ind_port_ready() {
-  float min_port_ready = MAX_PORT_READY;
-  for (int i = 0; i < _ind_port_streams.size(); ++i) {
-    auto &stream = *_ind_port_streams[i];
-    port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
-    auto is = dynamic_cast<IPortStream*>(&stream);
-    if (!is) {
-      continue;
-    }
-    if ((ind_vp.mem_size() && stream.stream_active() && !checkLinearSpadStream(stream)) || indirect_scr_read_requests_active()) {
-      auto &in_vp = _accel->port_interf().in_port(is->pes[0].port);
-      int data_width = stream.data_width();
-      if (in_vp.can_push_vp(SCR_WIDTH / data_width)) {
-        float num_ready = in_vp.instances_ready();
-        if (num_ready < min_port_ready) {
-          min_port_ready = num_ready;
-        }
-      }
-    }
-  }
-  return min_port_ready;
-}
-
-float dma_controller_t::calc_min_port_ready() {
-  float min_port_ready = MAX_PORT_READY;
-  for (int i = 0; i < _read_streams.size(); ++i) {
-    auto &stream = *_read_streams[i];
-    auto is = dynamic_cast<IPortStream*>(&stream);
-    if (!is) {
-      continue;
-    }
-    if (stream.stream_active()) {
-      auto &in_vp = _accel->port_interf().in_port(is->pes[0].port);
-      int data_width = stream.data_width();
-      if (in_vp.can_push_vp(SCR_WIDTH / data_width)) {
-        float num_ready = in_vp.instances_ready();
-        if (num_ready < min_port_ready) {
-          min_port_ready = num_ready;
-        }
-      }
-    }
-  }
-  return min_port_ready;
-}
 
 // FIXME: test when the input and output port is 1-byte
 void network_controller_t::multicast_data(
@@ -4231,272 +3055,6 @@ void network_controller_t::print_status() {
   }
 }
 
-bool scratch_read_controller_t::checkLinearSpadStream(indirect_stream_t& stream) {
-  if(!_accel->_linear_spad) return false; // could be a remote address
-  port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
-  addr_t addr = stream.cur_addr(ind_vp.peek_out_data());
-  return _accel->isLinearSpad(addr);
-}
-
-bool scratch_read_controller_t::checkLinearSpadStream(LinearReadStream& stream) {
-  // TODO(@were): fit this
-  // addr_t addr = stream.cur_addr(); // this is scratch addr
-  return _accel->isLinearSpad(0);
-}
-
-void scratch_read_controller_t::cycle(bool &performed_read) {
-//  float min_port_ready = -2;
-//  float min_ind_port_ready = -2;
-//
-//  cycle_read_queue();
-//  serve_ind_read_banks();
-//
-//  int i = 0;
-//  // FOR BANKED SCRATCHPAD
-//  for (i = 0; i < _read_streams.size(); ++i) {
-//    _which_rd = (_which_rd + 1) >= _read_streams.size() ? 0 : _which_rd + 1;
-//    base_stream_t *s = _read_streams[_which_rd];
-//
-//    if (auto *sp = dynamic_cast<LinearReadStream *>(s)) {
-//      auto &stream = *sp;
-//
-//      if (stream.stream_active()) {
-//        int data_width = stream.data_width();
-//        bool skip_check = SS_DEBUG::UNREAL_INPUTS;
-//
-//        if (min_port_ready == -2) {
-//          min_port_ready = calc_min_port_ready(true);
-//        }
-//        if (!skip_check && min_port_ready >= MAX_PORT_READY)
-//          continue;
-//
-//        auto &first_in_vp =
-//            _accel->port_interf().in_port(stream.first_in_port());
-//        float num_ready = first_in_vp.instances_ready();
-//
-//        // if(skip_check || (first_in_vp.can_push_vp(SCR_WIDTH/DATA_WIDTH)
-//        if ((skip_check || (first_in_vp.can_push_vp(SCR_WIDTH / data_width) &&
-//                           num_ready == min_port_ready)) && !checkLinearSpadStream(stream)) {
-//          // vector<SBDT> data = read_scratch(stream, true); // true means it is
-//          // banked
-//          vector<uint8_t> data = read_scratch(stream, true);
-//
-//          for (int in_port : stream.in_ports()) {
-//            auto &in_vp = _accel->port_interf().in_port(in_port);
-//            // data is a vector of bytes
-//            in_vp.push_data(data); // just push in the vector
-//            /*for(auto d : data) {
-//              in_vp.push_data_byte(d);
-//            }*/
-//
-//            if (stream.stride_fill() && stream.stride_hit()) {
-//              in_vp.fill(true);
-//            }
-//          }
-//
-//          bool is_empty = stream.check_set_empty();
-//          if (is_empty) {
-//            _accel->process_stream_stats(stream);
-//
-//            if (SS_DEBUG::VP_SCORE2) {
-//              cout << "SOURCE: SCR->PORT\n";
-//            }
-//            for (int in_port : stream.in_ports()) {
-//              auto &in_vp = _accel->port_interf().in_port(in_port);
-//              in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE,
-//                               stream.fill_mode());
-//            }
-//            delete_stream(_which_rd, sp);
-//          }
-//          break;
-//        }
-//      }
-//
-//    } else if (auto *sp = dynamic_cast<indirect_stream_t *>(s)) {
-//      auto &stream = *sp;
-//
-//      if (stream.empty()) { // delete when all ports are free
-//        delete_stream(_which_rd, sp);
-//        continue;
-//      }
-//
-//      port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
-//
-//      // bool x1 = (ind_vp.mem_size() >= stream._index_bytes/ind_vp.get_port_width());
-//      // bool x2 = (stream.stream_active());
-//      // bool x3 = x1 && x2 && (checkLinearSpadStream(stream));
-//      // cout << "Reason for ind scratch stall: mem size? " << x1 << 
-//      //   " stream active? " << x2 << " is linear spad?: " << x3 << " space in irob? " << (_ind_ROB.size() < _accel->_ind_rob_size) << " num elem: " << stream._num_elements << " total size: " << ind_vp.mem_size() << endl;
-//
-//      if ((stream.stream_active() && ind_vp.mem_size() >= stream._index_bytes/ind_vp.get_port_width()  && !checkLinearSpadStream(stream)) && _ind_ROB.size() < _accel->_ind_rob_size) {
-//        
-//        bool skip_check = SS_DEBUG::UNREAL_INPUTS;
-//
-//        if (min_ind_port_ready == -2) {
-//          min_ind_port_ready = calc_min_ind_port_ready();
-//        }
-//        if (!skip_check && min_ind_port_ready >= MAX_PORT_READY)
-//          continue;
-//
-//        // if(checkLinearSpadStream(stream)) continue;
-//        read_scratch_ind(stream, -1 /*scratch*/);
-//        /*if (stream.empty()) {
-//          delete_stream(_which_rd, sp);
-//        }*/
-//        break;
-//      }
-//    }
-//    } else if(auto* sp = dynamic_cast<scr_scr_stream_t*>(s)) {
-//      auto& stream = *sp;
-//      if(stream.stream_active()) {
-//        if(is_shared()) { //destination is remote write buf
-//          if(get_ssim()->can_push_shs_buf(8,stream._scratch_addr,
-//                                          stream._remote_bitmask)) {
-//            //get data, push it to all scratchpads
-//            vector<SBDT> data = read_scratch(stream);
-//
-//            for(uint64_t i=0,b=1; i < NUM_ACCEL_TOTAL; ++i, b<<=1) {
-//              if(stream._remote_bitmask & b) {
-//                auto& buf = get_ssim()->get_acc(i)->scr_w_c()->_buf_shs_write;
-//                buf.push_data(stream._scratch_addr, data);
-//                buf.set_last_stream_id(stream.id());
-//              }
-//            }
-//
-//            bool is_empty = stream.check_set_empty();
-//            if(is_empty) {
-//              _accel->process_stream_stats(stream);
-//              stream._remote_stream->reset(); //free for later
-//            }
-//    
-//            stream._scratch_addr+=data.size()*DATA_WIDTH;
-//            break;
-//          }
-//        } else { //destination is local read buf
-//          if(stream.stream_active() && _buf_shs_read.can_push_addr(8,
-//                                                    stream._scratch_addr)) {
-//            bool last =
-//            xfer_stream_buf(stream,_buf_shs_read,stream._scratch_addr);
-//            if(last) {
-//              stream._remote_stream->reset(); //free for later
-//            }
-//            break;
-//          }
-//        }
-//      }
-//    }
-//  }
-//  if (i < _read_streams.size()) {
-//    // performed_read = false;
-//    performed_read = true;
-//  } else {
-//    // performed_read = true;
-//    performed_read = false;
-//  }
-}
-
-// FIXME: have to do this because of weird atomic scr logic, TODO: combine scratch
-// read and write controllers
-void scratch_read_controller_t::linear_scratch_cycle() {
-  // FOR LINEAR SCRATCHPAD
-//  if (_accel->_linear_spad) {
-//    float min_port_ready=-2;
-//    for (int i = 0; i < _read_streams.size(); ++i) {
-//      _which_rd = (_which_rd + 1) >= _read_streams.size() ? 0 : _which_rd + 1;
-//      // _which_rd=(_which_rd+1)>=_scr_port_streams.size() ? 0:_which_rd+1;
-//      base_stream_t *s = _read_streams[_which_rd];
-//
-//      if (auto *sp = dynamic_cast<LinearReadStream *>(s)) {
-//        auto &stream = *sp;
-//
-//        if (stream.stream_active()) {
-//          bool skip_check = SS_DEBUG::UNREAL_INPUTS;
-//
-//          if (min_port_ready == -2) {
-//            min_port_ready = calc_min_port_ready(false);
-//          }
-//          if (!skip_check && min_port_ready >= MAX_PORT_READY)
-//            continue;
-//
-//          auto &first_in_vp =
-//              _accel->port_interf().in_port(stream.first_in_port());
-//          float num_ready = first_in_vp.instances_ready();
-//          int data_width = first_in_vp.get_port_width();
-//
-//          if ((skip_check || (first_in_vp.can_push_vp(SCR_WIDTH / data_width) &&
-//                             num_ready == min_port_ready)) && checkLinearSpadStream(stream)) {
-//            vector<uint8_t> data = read_scratch(stream, false);
-//
-//            for (int in_port : stream.in_ports()) {
-//              auto &in_vp = _accel->port_interf().in_port(in_port);
-//              in_vp.push_data(data);
-//              if (stream.stride_fill() && stream.stride_hit()) {
-//                in_vp.fill(true);
-//              }
-//            }
-//
-//            bool is_empty = stream.check_set_empty();
-//            if (is_empty) {
-//              _accel->process_stream_stats(stream);
-//
-//              if (SS_DEBUG::VP_SCORE2) {
-//                cout << "SOURCE: LINEAR SCR->PORT\n";
-//              }
-//              for (int in_port : stream.in_ports()) {
-//                auto &in_vp = _accel->port_interf().in_port(in_port);
-//                in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE,
-//                                 stream.fill_mode());
-//              }
-//              delete_stream(_which_rd, sp);
-//            }
-//            break;
-//          }
-//        }
-//      } else if (auto *sp = dynamic_cast<indirect_stream_t *>(s)) {
-//        auto &stream = *sp;
-//        port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
-//        auto &subsize_vp = _accel->port_interf().out_port(stream._sn_port);
-//
-//        if (ind_vp.mem_size() && stream.stream_active() && checkLinearSpadStream(stream)
-//     && (!stream._is_2d_stream || (stream._is_2d_stream && subsize_vp.mem_size() >= stream._index_bytes))) {
-//          // || indirect_scr_read_requests_active()) {
-//          // TODO: check the address belongs to the linear spad
-//          // if(!checkLinearSpadStream(stream)) continue;
-//          // cout << "Detected as a linear scratchpad\n";
-//          read_linear_scratch_ind(stream, -1 /*scratch*/);
-//
-//          bool is_empty = stream.check_set_empty();
-//          if (is_empty) {
-//            _accel->process_stream_stats(stream);
-//
-//            if (SS_DEBUG::VP_SCORE2) {
-//              cout << "SOURCE: INDIRECT LINEAR SCR->PORT\n";
-//            }
-//      
-//            // free ind port
-//            port_data_t &ind_vp = _accel->port_interf().out_port(stream._ind_port);
-//            ind_vp.set_status(port_data_t::STATUS::FREE);
-//            // free input ports
-//            for (int in_port : stream.in_ports()) {
-//              auto &in_vp = _accel->port_interf().in_port(in_port);
-//              in_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE,
-//                               stream.fill_mode());
-//            }
-//            delete_stream(_which_rd, sp);
-//          }
-//          /*
-//          if (stream.empty()) {
-//            delete_stream(_which_rd, sp);
-//          }
-//          */
-//          break;
-//        }
-//      }
-//    }
-//  }
-}
-
-void scratch_read_controller_t::finish_cycle() {}
 
 void scratch_read_controller_t::print_status() {
   for (auto &i : _read_streams) {
@@ -4512,30 +3070,6 @@ bool scratch_write_controller_t::crossbar_backpressureOn() {
   return false;
 }
 
-// TODO: Do it in a neater way!
-void scratch_write_controller_t::scr_write(addr_t addr,
-                                           LinearWriteStream &stream,
-                                           port_data_t &out_vp) {
-//  int data_width = out_vp.get_port_width();
-//  if (data_width == 1) {
-//    uint8_t val =
-//        out_vp.pop_out_custom_data<uint8_t>(); // this is te SBDT form of data
-//    // cout << "data to be written to scratch: " << (unsigned)(val) << " at addr: " << addr << endl;
-//    _accel->write_scratchpad(addr, &val, data_width, stream.id());
-//  } else if (data_width == 2) {
-//    uint16_t val =
-//        out_vp.pop_out_custom_data<uint16_t>(); // this is te SBDT form of data
-//    _accel->write_scratchpad(addr, &val, data_width, stream.id());
-//  } else if (data_width == 4) {
-//    uint32_t val =
-//        out_vp.pop_out_custom_data<uint32_t>(); // this is te SBDT form of data
-//    _accel->write_scratchpad(addr, &val, data_width, stream.id());
-//  } else {
-//    uint64_t val =
-//        out_vp.pop_out_custom_data<uint64_t>(); // this is te SBDT form of data
-//    _accel->write_scratchpad(addr, &val, data_width, stream.id());
-//  }
-}
 
 bool scratch_write_controller_t::is_conflict(addr_t scr_addr, int num_bytes) {
    // return false;
@@ -4593,7 +3127,6 @@ void scratch_write_controller_t::serve_atomic_requests(bool &performed_atomic_sc
     // cout << "Received addr: " << scr_addr << " and num bytes: " << num_bytes << endl;
     // update check_conflict here
     // FIXME: should push 1 vector lane in a cycle
-    // if(!is_conflict(scr_addr, num_bytes) && !_atom_val_store.empty() && (can_push_addr && can_push_val)) {
     if(check && can_push_addr && can_push_val && !is_conflict(scr_addr, num_bytes)) {
       // TODO: pop if repeat times is 0
       reorder_buffer[_cur_drob_pop_ptr].second.first--;
@@ -5029,7 +3562,6 @@ void scratch_write_controller_t::atomic_scratch_update_local(atomic_scr_stream_t
   port_data_t &out_val = _accel->port_interf().out_port(stream._val_port);
 
   // strides left in the stream or requests left in the queue
-  // if(stream.stream_active() || atomic_scr_issued_requests_active()) {
   if (stream.stream_active()) {
     logical_banks = NUM_SCRATCH_BANKS / stream._value_bytes;
 
@@ -5077,7 +3609,6 @@ void scratch_write_controller_t::atomic_scratch_update_local(atomic_scr_stream_t
       while (scr_addr < max_addr && stream._num_strides > 0 &&
              out_addr.mem_size() && out_val.mem_size() &&
              num_val_pops < 64/stream._value_bytes && remote_update_this_cycle<1) {
-             // num_val_pops < 64) {
         if (SS_DEBUG::COMP) {
           std::cout << "\tupdate at index location: " << loc
                     << " and scr_addr: " << scr_addr
@@ -5213,79 +3744,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
     _which_wr = (_which_wr + 1) >= _write_streams.size() ? 0 : _which_wr + 1;
     base_stream_t *s = _write_streams[_which_wr];
 
-    if (auto *sp = dynamic_cast<LinearWriteStream *>(s)) { // write from
-      (void) sp;
-//      auto &stream = *sp;
-//
-//      if (stream.stream_active()) {
-//        port_data_t &out_vp = _accel->port_interf().out_port(stream._out_port);
-//
-//        if (out_vp.mem_size() > 0) {
-//          addr_t addr = stream.cur_addr();
-//          addr_t base_addr = addr & SCR_MASK;
-//          addr_t max_addr = base_addr + SCR_WIDTH;
-//
-//          // go while stream and port does not run out
-//          uint64_t bytes_written = 0;
-//          while (!_accel->isLinearSpad(addr) && addr < max_addr &&
-//                 stream.stream_active()
-//                 && out_vp.mem_size()) { // enough in source
-//
-//            int data_width = out_vp.get_port_width();
-//            assert(((int)addr >= 0) && (addr + data_width <= SCRATCH_SIZE));
-//            scr_write(addr, stream, out_vp);
-//
-//            if (SS_DEBUG::SCR_ACC) {
-//              timestamp();
-//              cout << "POPPED b/c port->scratch WRITE: " << out_vp.port() << " "
-//                   << out_vp.mem_size() << "\n";
-//            }
-//
-//            // _accel->write_scratchpad(addr, &val, data_width, stream.id());
-//
-//            addr = stream.pop_addr();
-//
-//            bytes_written += data_width;
-//            _accel->_stat_scr_bytes_wr += data_width;
-//            _accel->_stat_scratch_write_bytes += data_width;
-//          }
-//          if (_accel->_ssim->in_roi()) {
-//            add_bw(stream.src(), stream.dest(), 1, bytes_written);
-//            _accel->_stat_scratch_writes += 1;
-//          }
-//
-//          bool is_empty = stream.check_set_empty();
-//          if (is_empty) {
-//            _accel->process_stream_stats(stream);
-//            if (SS_DEBUG::VP_SCORE2) {
-//              cout << "SOURCE: PORT->SCR\n";
-//            }
-//            // to debug
-//            // _accel->print_spad_addr(0,16);
-//            out_vp.set_status(port_data_t::STATUS::FREE);
-//            delete_stream(_which_wr, sp);
-//          }
-//          break;
-//        }
-//      }
-
-    } else if (auto *sp = dynamic_cast<indirect_wr_stream_t *>(s)) {
-      auto &stream = *sp;
-      if (stream.stream_active()) {
-        port_data_t &out_port =
-            _accel->port_interf().out_port(stream._out_port);
-        port_data_t &ind_port =
-            _accel->port_interf().out_port(stream._ind_port);
-
-        if (out_port.mem_size() > 0 && ind_port.mem_size() >= stream._index_bytes) {
-          write_scratch_ind(stream);
-          if (!stream.stream_active()) {
-            delete_stream(_which_wr, sp);
-          }
-          break;
-        }
-      }
-    } else if (auto *sp = dynamic_cast<atomic_scr_stream_t *>(s)) {
+    if (auto *sp = dynamic_cast<atomic_scr_stream_t *>(s)) {
       auto &stream = *sp;
       port_data_t &out_addr = _accel->port_interf().out_port(stream._out_port);
       port_data_t &out_val = _accel->port_interf().out_port(stream._val_port);
@@ -5381,210 +3840,10 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
     }
   }
 
-  // for (int j = 0; j < (int) buffets.size(); ) {
-  //   int i = (j + which_buffet) % buffets.size();
-  //   auto &elem = buffets[i];
-  //   auto &out_vp = _accel->port_interf().out_port(elem.src_port);
-  //   std::vector<uint8_t> to_write;
-  //   int start = elem.end - (elem.end & 63);
-  //   int end = start + 64;
-  //   //std::cout << "[" << start << ", " << end << ") afterwriting: " << elem.end - elem.front + to_write.size()
-  //   //          << ", buffersize: " << elem.buffer_size << std::endl;
-  //   while (start + to_write.size() < end && elem.total > to_write.size() &&
-  //          elem.end + to_write.size() - elem.front < elem.buffer_size &&
-  //          out_vp.mem_size()) {
-  //     //std::cout << elem.src_port << " pops, mem_size: " << out_vp.mem_size() << ", total"
-  //     //          << elem.total << std::endl;
-  //     auto val = out_vp.pop_out_data();
-  //     for (int i = 0; i < out_vp.get_port_width(); ++i) {
-  //       to_write.push_back(val & 255);
-  //       val >>= 8;
-  //     }
-  //   }
-  //   if (!to_write.empty()) {
-  //     _accel->write_scratchpad(elem.end % elem.buffer_size, &to_write[0], to_write.size(), elem.id());
-  //     assert(to_write.size() <= elem.total);
-  //     elem.total -= to_write.size();
-  //     elem.end += to_write.size();
-  //     //std::cout << "write: " << to_write.size() << "bytes, [" << elem.front << ", "
-  //     //          << elem.end << ") " << out_vp.mem_size() << std::endl;
-  //   }
-  //   if (!can_perform_atomic_scr) {
-  //     continue;
-  //   }
-  //   auto &shadow_vp = _accel->port_interf().out_port(elem.shadow);
-  //   auto &input_vp = _accel->port_interf().in_port(elem.in_ports()[0]);
-  //   std::vector<uint8_t> to_read;
-  //   start = elem.cur_addr();
-  //   start = start - (start & 63);
-  //   end = start + 64;
-  //   //std::cout << "next: " << elem.cur_addr() << ", line end: " << end << ", buffered end: "
-  //   //          << elem.end << ", shadow: " << shadow_vp.mem_size() << std::endl;
-  //   while (can_perform_atomic_scr && elem.affine_base_stream_t::stream_active() &&
-  //          elem.cur_addr() < end && elem.cur_addr() >= elem.front &&
-  //          elem.cur_addr() < elem.end && shadow_vp.mem_size()) {
-  //     int append_idx = to_read.size();
-  //     //std::cout << "read: " << elem.cur_addr() << " " << shadow_vp.peek_out_data()
-  //     //          << "(" << shadow_vp.mem_size() << ")" << std::endl;
-  //     to_read.resize(to_read.size() + input_vp.get_port_width());
-  //     _accel->read_scratchpad(&to_read[append_idx], elem.cur_addr() % elem.buffer_size,
-  //                             input_vp.get_port_width(), elem.id());
-  //     elem.pop_addr();
-  //     elem.dont_pop_shadow += input_vp.get_port_width();
-  //     elem.dont_pop_shadow %= elem.inport_dtype;
-  //     //std::cout << "dont pop: " << elem.dont_pop_shadow << " +" << input_vp.get_port_width()
-  //     //          << " %" << elem.inport_dtype << std::endl;
-  //     if (!elem.dont_pop_shadow) {
-  //       elem.front += shadow_vp.pop_out_data(elem.shadow_dtype);
-  //     }
-  //   }
-  //   // TODO: Support stride padding
-  //   if (!to_read.empty()) {
-  //     input_vp.push_data(to_read);
-  //     //std::cout << "in vp" << elem.in_ports()[0] << ": "<< input_vp.mem_size() << std::endl;
-  //   }
-  //   if (!elem.stream_active()) {
-  //     buffets.erase(buffets.begin() + i);
-  //     shadow_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE);
-  //     out_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE);
-  //     input_vp.set_status(port_data_t::STATUS::FREE, LOC::NONE);
-  //     //std::cout << "retired" << std::endl;
-  //   } else {
-  //     ++j;
-  //   }
-  //   if (!to_write.empty()) {
-  //     return;
-  //   }
-  //   if (!to_read.empty()) {
-  //     can_perform_atomic_scr = false;
-  //   }
-  // }
-  // which_buffet++;
-
-
-
   // FOR LINEAR WR STREAMS ON THE LINEAR SCRATCHPAD (issues only if the address
   // belongs to linear spad)
   // if((!issued_linear_on_banked_scr) || (issued_linear_on_banked_scr &&
   // !is_linear_addr_banked)) {
-}
-
-void scratch_write_controller_t::linear_scratch_write_cycle() {
-  // if(!_accel->_linear_spad) return;
-  // if (_accel->_linear_spad) {
-  //   // for(unsigned i = 0; i < (_port_scr_streams.size()); ++i) {
-  //   for (unsigned i = 0; i < (_write_streams.size()); ++i) {
-  //     // _which_linear_wr=(_which_linear_wr+1)>=(_port_scr_streams.size())?0:_which_linear_wr+1;
-  //     _which_linear_wr = (_which_linear_wr + 1) >= (_write_streams.size()) ? 0 : _which_linear_wr + 1;
-
-  //     base_stream_t *s = _write_streams[_which_linear_wr];
-  //     if (auto *sp = dynamic_cast<LinearWriteStream *>(s)) {
-
-  //       auto &stream = *sp;
-
-  //       if (stream.stream_active()) {
-  //         port_data_t &out_vp = _accel->port_interf().out_port(stream._out_port);
-
-  //         if (out_vp.mem_size() > 0) {
-  //           addr_t addr = stream.cur_addr();
-  //           addr_t base_addr = addr & SCR_MASK;
-  //           addr_t max_addr = base_addr + SCR_WIDTH;
-
-  //           // go while stream and port does not run out
-  //           uint64_t bytes_written = 0;
-  //           while (_accel->isLinearSpad(addr) && addr < max_addr &&
-  //                  stream.stream_active()  // enough in dest
-  //                  && out_vp.mem_size()) { // enough in source
-
-  //             int data_width = stream.data_width();
-  //             // cout << "LINEAR ADDR: " << addr << " is_linear: " << _accel->isLinearSpad(addr) << endl;
-  //             assert(((int)addr >= 0) && (addr + data_width >= SCRATCH_SIZE) &&
-  //                    (addr + data_width <= SCRATCH_SIZE + LSCRATCH_SIZE));
-  //             scr_write(addr, stream, out_vp);
-
-  //             if (SS_DEBUG::SCR_ACC) {
-  //               timestamp();
-  //               cout << "POPPED b/c port->linear scratch WRITE: "
-  //                    << stream.port
-  //                    << " with width: " << stream.data_width()
-  //                    << " strides left: " << stream.num_strides() << " "
-  //                    << out_vp.mem_size() << "\n";
-  //             }
-
-  //             addr = stream.pop_addr();
-
-  //             bytes_written += data_width;
-  //             _accel->_stat_scr_bytes_wr += data_width;
-  //             _accel->_stat_scratch_write_bytes += data_width;
-  //           }
-  //           if (_accel->_ssim->in_roi()) {
-  //             add_bw(stream.src(), stream.dest(), 1, bytes_written);
-  //             _accel->_stat_scratch_writes += 1;
-  //           }
-
-  //           bool is_empty = stream.check_set_empty();
-  //           if (is_empty) {
-  //             _accel->process_stream_stats(stream);
-  //             if (SS_DEBUG::VP_SCORE2) {
-  //               cout << "SOURCE: PORT->SCR\n";
-  //             }
-  //             // _accel->print_spad_addr(SCRATCH_SIZE, SCRATCH_SIZE+16);
-  //             out_vp.set_status(port_data_t::STATUS::FREE);
-  //             delete_stream(_which_wr, sp);
-  //           }
-  //           break;
-  //         }
-  //       }
-  //     } else if (auto *sp = dynamic_cast<const_scr_stream_t *>(s)) {
-
-  //       auto &stream = *sp;
-
-  //       if (stream.stream_active()) {
-  //         int const_width = stream._const_width;
-  //         // uint64_t total_pushed=0;
-  //         addr_t addr = stream._scratch_addr;
-  //         addr_t base_addr = addr & SCR_MASK;
-  //         addr_t max_addr = base_addr + SCR_WIDTH;
-  //         if(!_accel->isLinearSpad(addr)) continue;
-  //         // cout << "IDENTIFIED AS LINEAR SCRATCHPAD STREAM\n";
-
-  //         uint64_t bytes_written = 0;
-  //         while (addr < max_addr && stream._iters_left > 0 &&
-  //                bytes_written < SCR_WIDTH) {
-  //           SBDT val = stream._constant;
-
-  //           assert(addr + const_width >= SCRATCH_SIZE);
-  //           assert(addr + const_width <= SCRATCH_SIZE+LSCRATCH_SIZE);
-  //           _accel->write_scratchpad(addr, &val, sizeof(const_width), stream.id());
-
-  //           bytes_written += const_width;
-  //           _accel->_stat_scr_bytes_wr += const_width;
-  //           _accel->_stat_scratch_write_bytes += const_width;
-  //           stream._iters_left--;
-  //           // total_pushed++;
-  //           addr += sizeof(const_width);
-  //         }
-  //         // }
-  //         // add_bw(stream.src(), stream.dest(), 1, total_pushed*DATA_WIDTH);
-
-  //         if (_accel->_ssim->in_roi()) {
-  //           add_bw(stream.src(), stream.dest(), 1, bytes_written);
-  //           _accel->_stat_scratch_writes += 1;
-  //         }
-
-  //         bool is_empty = stream.check_set_empty();
-  //         if (is_empty) {
-  //           _accel->process_stream_stats(stream);
-  //           if (SS_DEBUG::VP_SCORE2) {
-  //             cout << "SOURCE: CONST->SCR\n";
-  //           }
-  //           delete_stream(_which_wr, sp);
-  //         }
-  //         break;
-  //       }
-  //     }
-  //   }
-  // }
 }
 
 void scratch_write_controller_t::push_remote_wr_req(uint8_t *val, int num_bytes,
@@ -5813,8 +4072,7 @@ bool accel_t::done(bool show, int mask) {
 bool accel_t::done_concurrent(bool show, int mask) {
   bool done = true;
 
-  if (!_dma_c.done(show, mask) || !_scr_r_c.done(show, mask) ||
-      !_scr_w_c.done(show, mask) || !_net_c.done(show, mask)) {
+  if (!_dma_c.done(show, mask) || !_scr_w_c.done(show, mask) || !_net_c.done(show, mask)) {
     done = false;
   }
 
@@ -5872,13 +4130,6 @@ bool network_controller_t::remote_scr_requests_active() {
 }
 bool network_controller_t::direct_remote_scr_requests_active() {
   return _direct_remote_scr_streams.size();
-}
-
-bool dma_controller_t::indirect_streams_active() {
-  return _indirect_streams.size();
-}
-bool dma_controller_t::indirect_wr_streams_active() {
-  return _indirect_wr_streams.size();
 }
 
 bool dma_controller_t::done(bool show, int mask) {
@@ -6013,30 +4264,6 @@ bool scratch_write_controller_t::done(bool show, int mask) {
   return true;
 }
 
-bool scratch_read_controller_t::scr_port_streams_active() {
-  return _scr_port_streams.size();
-}
-
-bool scratch_read_controller_t::done(bool show, int mask) {
-//  if (mask == 0 || mask & WAIT_CMP || mask & WAIT_SCR_RD || mask == STREAM_WAIT) {
-//    if (scr_port_streams_active()) {
-//      if (show)
-//        cout << "SCR -> PORT Streams Not Empty\n";
-//      return false;
-//    }
-//    if (indirect_scr_read_requests_active()) {
-//      if (show)
-//        cout << "Banked scratchpad queues Not Empty\n";
-//      return false;
-//    }
-//    if(!_ind_ROB.empty()) {
-//      if (show)
-//        cout << "Indirect ROB still waiting for requests\n";
-//      return false;
-//    }
-//  }
-  return true;
-}
 
 bool network_controller_t::done(bool show, int mask) {
 //  if (mask == 0 || mask & WAIT_CMP || mask == STREAM_WAIT) {
@@ -6118,9 +4345,6 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
   // size - num of 64bit slices
 
   LOG(MEM_REQ) << "dsaURE(response): " << "0x" << std::hex << addr << " " << std::dec << size << "\n";
-
-  assert(_in_config);
-  _in_config = false;
 
   // std::cout << "before reset\n";
   // for (int i = 0; i < NUM_IN_PORTS; ++i) {
@@ -6268,10 +4492,6 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
   _soft_config.in_ports_active_plus = _soft_config.in_ports_active;
   _soft_config.out_ports_active_plus = _soft_config.out_ports_active;
   // indirect
-  for (unsigned i = START_IND_PORTS; i < STOP_IND_PORTS; ++i) {
-    _soft_config.in_ports_active_plus.push_back(i);
-    _soft_config.out_ports_active_plus.push_back(i);
-  }
 
   // compute the in ports active for backcgra
   _soft_config.in_ports_active_backcgra = _soft_config.in_ports_active;

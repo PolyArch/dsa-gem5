@@ -15,9 +15,9 @@ namespace dsa {
 
 struct Specification {
   /*!
-   * \brief The granularity of memory address. By default, it is byte addressable.
+   * \brief The number of spatial lanes.
    */
-  int memory_addressable{1};
+  int num_of_lanes{8};
   /*!
    * \brief Cacheline width in bytes.
    */
@@ -36,7 +36,21 @@ struct Specification {
   /*!
    * \brief The number of concurrent buffet streams.
    */
-  int dsa_buffet_slots;
+  int dsa_buffet_slots{4};
+
+  // TODO(@were): If it is a good idea that all the accelerators have the same number for this?
+  /*!
+   * \brief The size of the dsa commands that can be buffered.
+   */
+  int cmd_queue_size{16};
+  /*!
+   * \brief The width of issue window.
+   */
+  int cmd_issue_width{4};
+  /*!
+   * \brief If the issue is out of order.
+   */
+  bool cmd_issue_ooo{true};
 };
 
 }

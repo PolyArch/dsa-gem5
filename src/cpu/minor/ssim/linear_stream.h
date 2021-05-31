@@ -37,6 +37,8 @@ struct LinearStream {
       linebase(linebase_), start(start_), mask(mask_), shrink(shrink_),
       stride_first(stride_first_), stride_last(stride_last_),
       stream_last(stream_last_), padding(padding_) {}
+
+    int bytes_read() const;
   };
 
   /*! \brief If this linear stream has next element. */
@@ -253,7 +255,9 @@ struct Linear3D : LinearStream {
     stride_3d(stride_3d_),
     length(l3d),
     init(word_, start_, stride1d_, l1d, stretch_2d_, stride_2d_, l2d, is_mem),
-    exec(word_, start_, stride1d_, l1d, stretch_2d_, stride_2d_, l2d, is_mem) {}
+    exec(word_, start_, stride1d_, l1d, stretch_2d_, stride_2d_, l2d, is_mem) {
+      volume += init.volume;
+    }
   
   bool hasNext() {
     if (i < length) {
@@ -270,6 +274,7 @@ struct Linear3D : LinearStream {
         init.stretch + delta_stretch_2d, init.stride + delta_stride_2d,
         init.length + delta_length_2d, is_mem);
       init = exec;
+      volume += init.volume;
       return exec.hasNext();
     }
     return false;

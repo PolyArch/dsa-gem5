@@ -1,3 +1,6 @@
+#include <numeric>
+#include <functional>
+
 #include "accel.hh"
 #include "stream.hh"
 #include "sim-debug.hh"
@@ -9,21 +12,6 @@ const char *LOC_NAME[] = {
 };
 
 int base_stream_t::ID_SOURCE = 0;
-
-void base_stream_t::set_empty(bool b) {
-  assert(b && "only goes one way for now");
-  assert(!_empty && "can only empty once");
-
-  if(SS_DEBUG::COMMAND_O) {
-    if(b == true) {
-      // timestamp();
-      std::cout << "COMPLETED: "; 
-    } 
-    print_status();
-  }
-
-  _empty=b;
-}
 
 int BuffetEntry::Translate(int64_t addr, bool linebase) {
   CHECK(linebase || InRange(addr))
@@ -161,6 +149,10 @@ std::string base_stream_t::soft_port_name(int x, bool is_input) {
 namespace dsa {
 namespace sim {
 namespace stream {
+
+int LinearStream::LineInfo::bytes_read() const {
+  return std::accumulate(mask.begin(), mask.end(), 0, std::plus<int>());
+}
 
 void Functor::Visit(base_stream_t *) {}
 

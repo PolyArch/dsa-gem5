@@ -1,3 +1,5 @@
+# Process compile_commands.json
+
 import os
 import sys
 import subprocess

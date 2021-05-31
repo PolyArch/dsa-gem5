@@ -1,13 +1,12 @@
-#ifndef __ACCEL_H__
-#define __ACCEL_H__
+#pragma once
 
 #include <vector>
 #include <deque>
 #include <map>
-#include <math.h>
+#include <cmath>
 #include <unordered_map>
 
-#include <stdio.h>
+#include <cstdio>
 #include <iostream>
 #include <cstdlib>
 #include <cstdint>
@@ -24,13 +23,15 @@
 
 #include "dsa/arch/model.h"
 #include "dsa/mapper/schedule.h"
-#include "./spad.h"
 
-#include "sim-debug.hh"
 #include "cpu/minor/dyn_inst.hh"
 #include "cpu/minor/lsq.hh"
+
+#include "sim-debug.hh"
 #include "stream.hh"
 #include "consts.hh"
+#include "statistics.h"
+#include "./spad.h"
 
 namespace dsa {
 namespace sim {
@@ -577,8 +578,6 @@ class dma_controller_t : public data_controller_t {
   void reset_stream_engines() {
     _read_streams.clear();
     _write_streams.clear();
-    _indirect_streams.clear();
-    _indirect_wr_streams.clear();
   }
 
   void reset_data() {
@@ -593,9 +592,6 @@ class dma_controller_t : public data_controller_t {
   void finish_cycle();
   bool done(bool show, int mask);
 
-  void ind_read_req(indirect_stream_t& stream);
-  void ind_write_req(indirect_wr_stream_t& stream);
-
   void make_read_request();
   void make_write_request();
 
@@ -608,9 +604,6 @@ class dma_controller_t : public data_controller_t {
 
   bool indirect_streams_active();
   bool indirect_wr_streams_active();
-
-  bool schedule_indirect(indirect_stream_t&s);
-  bool schedule_indirect_wr(indirect_wr_stream_t&s);
 
   //----------------------
   float calc_min_port_ready();
@@ -636,19 +629,12 @@ class dma_controller_t : public data_controller_t {
   std::vector<base_stream_t*> _read_streams;
   std::vector<base_stream_t*> _write_streams;
 
-  std::vector<indirect_stream_t*> _indirect_streams; //indirect reads
-  std::vector<indirect_wr_stream_t*> _indirect_wr_streams; //indirect writes
-
-  void delete_stream(int i, indirect_stream_t* s);
-  void delete_stream(int i, indirect_wr_stream_t* s);
-
   //address to stream -> [stream_index, data]
   uint64_t _mem_read_reqs=0, _mem_write_reqs=0;
   std::vector<uint64_t> _prev_port_cycle;
   uint64_t _prev_scr_cycle=0;
   int _fake_scratch_reqs=0;
 
-  //std::unordered_map<uint64_t, uint64_t> port_youngest_data;
 };
 
 class scratch_read_controller_t : public data_controller_t {
@@ -660,23 +646,10 @@ class scratch_read_controller_t : public data_controller_t {
     _dma_c=d; //save this for later
     mask.resize(SCR_WIDTH);
     _indirect_scr_read_requests.resize(NUM_SCRATCH_BANKS);
-    reset_stream_engines();
-  }
-
-  void reset_stream_engines() {
-    _ind_port_streams.clear();
-    _scr_port_streams.clear();
-  }
-
-  void reset_data() {
-    reset_stream_engines();
   }
 
   // std::vector<SBDT> read_scratch(LinearReadStream& stream);
   std::vector<uint8_t> read_scratch(LinearReadStream& stream, bool is_banked);
-  void read_scratch_ind(indirect_stream_t& stream, uint64_t scr_addr);
-  void read_linear_scratch_ind(indirect_stream_t& stream, uint64_t scr_addr);
-  bool checkLinearSpadStream(indirect_stream_t& stream);
   bool checkLinearSpadStream(LinearReadStream& stream);
 
   // float calc_min_port_ready();
@@ -692,12 +665,10 @@ class scratch_read_controller_t : public data_controller_t {
   int cycle_read_queue();
 
   void finish_cycle();
-  bool done(bool,int);
 
   void print_status();
   void cycle_status();
 
-  bool scr_port_streams_active();
   void push_ind_rem_read_req(bool is_remote, int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry);
   void push_ind_rem_read_data(int8_t* data, int request_ptr, int addr, int data_bytes, int reorder_entry);
 
@@ -734,12 +705,6 @@ class scratch_read_controller_t : public data_controller_t {
 
   std::vector<base_stream_t*> _read_streams;
 
-  void delete_stream(int i, LinearReadStream* s);
-  void delete_stream(int i, indirect_stream_t* s);
-
-  std::vector<LinearReadStream*> _scr_port_streams;
-  std::vector<indirect_stream_t*> _ind_port_streams;
-
   std::vector<std::queue<indirect_scr_read_req>> _indirect_scr_read_requests;
   std::queue<ind_reorder_entry_t*> _ind_ROB;
 
@@ -772,8 +737,6 @@ class scratch_write_controller_t : public data_controller_t {
     //}
   }
 
-  void write_scratch_ind(indirect_wr_stream_t& stream);
-  void write_linear_scratch_ind(indirect_wr_stream_t& stream);
   void write_scratch_remote_ind(remote_core_net_stream_t& stream);
   void write_scratch_remote_direct(direct_remote_scr_stream_t& stream);
   void atomic_scratch_update(atomic_scr_stream_t& stream);
@@ -791,7 +754,6 @@ class scratch_write_controller_t : public data_controller_t {
 
   void reset_stream_engines() {
     _atomic_scr_streams.clear();
-    _ind_wr_streams.clear();
     _write_streams.clear();
     // while(!_remote_scr_w_buf.empty()) { _remote_scr_w_buf.pop(); }
   }
@@ -816,7 +778,6 @@ class scratch_write_controller_t : public data_controller_t {
   bool done(bool,int);
 
   bool schedule_atomic_scr_op(atomic_scr_stream_t& s);
-  bool schedule_indirect_wr(indirect_wr_stream_t& s);
   bool schedule_network_stream(remote_core_net_stream_t& s);
 
   void print_status();
@@ -906,7 +867,6 @@ class scratch_write_controller_t : public data_controller_t {
 
   void delete_stream(int i, LinearWriteStream* s);
   void delete_stream(int i, atomic_scr_stream_t* s);
-  void delete_stream(int i, indirect_wr_stream_t* s);
 
   int _logical_banks = NUM_SCRATCH_BANKS;
   int64_t _remote_scr_writes=0;
@@ -914,7 +874,6 @@ class scratch_write_controller_t : public data_controller_t {
   std::vector<base_stream_t*> _write_streams;
 
   std::vector<atomic_scr_stream_t*> _atomic_scr_streams;
-  std::vector<indirect_wr_stream_t*> _ind_wr_streams;
 
   // TODO: fix the size of these queues
   // std::queue<struct ind_write_req> _remote_scr_w_buf;
@@ -1045,8 +1004,8 @@ struct stream_stats_histo_t {
     out << std::setprecision(2);
     out << " by orig->dest:\n";
     for(auto i : vol_by_source) {
-      out << base_stream_t::loc_name((LOC)(i.first.first)) << "->"
-          << base_stream_t::loc_name((LOC)(i.first.second)) << ": ";
+      out << LOC_NAME[i.first.first] << "->"
+          << LOC_NAME[i.first.second] << ": ";
       out << ((double)i.second)/total_vol << "\n";
     }
 
@@ -1160,8 +1119,15 @@ class accel_t {
 
 public:
 
-  const int NUM_ACCEL;
+  /*!
+   * \brief The stream scheduler.
+   */
   sim::StreamArbiter *arbiter{nullptr};
+
+  /*!
+   * \brief The statistics of the accelerator.
+   */
+  stat::Accelerator statistics;
 
   accel_t(int i, ssim_t* ssim);
 
@@ -1193,23 +1159,13 @@ public:
 
   bool done(bool show = false, int mask = 0);
 
-  bool set_in_config() {return _in_config = true;}
-  bool is_in_config() {return _in_config;}
-  bool can_add_stream();
-
-  void add_stream(std::shared_ptr<base_stream_t> s) {
-    add_port_based_stream(s);
-  }
+  bool StreamBufferAvailable();
 
   uint64_t forward_progress_cycle() { return _forward_progress_cycle; }
 
-  Minor::MinorDynInstPtr cur_minst();
-
   void process_stream_stats(base_stream_t& s) {
     uint64_t    vol  = s.data_volume();
-    uint64_t    reqs = s.requests();
-    STR_PAT     t  = s.stream_pattern();
-    _stream_stats.add(t,s.src(),s.dest(),vol,reqs);
+    _stream_stats.add((STR_PAT) 0,s.src(),s.dest(),vol,0);
   }
 
   void configure(addr_t addr, int size, uint64_t* bits);
@@ -1250,7 +1206,7 @@ public:
   }
 
   ssim_t* get_ssim() {return _ssim;}
-  bool is_shared() {return _accel_index==SHARED_SP;}
+  bool is_shared();
   int accel_index() {return _accel_index;}
   int get_cur_cycle();
 
@@ -1323,20 +1279,6 @@ private:
   }
 
   void sanity_check_stream(base_stream_t* s);
-
-  void add_port_based_stream(std::shared_ptr<base_stream_t> s) {
-    sanity_check_stream(s.get());
-    s->set_soft_config(&_soft_config);
-
-    assert(cur_minst());
-    s->set_minst(cur_minst());
-    _cmd_queue.push_back(s);
-    //timestamp(); std::cerr << "ENQUEUE "; s->print_status();
-    forward_progress();
-    // forward progress later? this was also giving seg fault
-    // printf("stream pushed into the command queue\n");
-    verif_cmd(s.get());
-  }
 
   void do_cgra();
 
@@ -1441,33 +1383,32 @@ private:
       _scr_r_c.push_ind_rem_read_data(data, request_ptr, addr, data_bytes, reorder_entry);
   }
 
-bool isLinearSpad(addr_t addr){
-  if(!_linear_spad) return false;
-  // int spad_offset_bits = log2(SCRATCH_SIZE+LSCRATCH_SIZE);
-  // could be remote location
-  // assert(addr < (SCRATCH_SIZE+LSCRATCH_SIZE));
-  int spad_offset_bits = log2(SCRATCH_SIZE);
-  int spad_type = (addr >> spad_offset_bits) & 1;
-  return spad_type; // for 1, it is linear
-}
-
-// to debug
-void print_spad_addr(int start, int end){
-  uint16_t val = 0;
-  for(int i=start; i<end; i+=2){
-    memcpy(&val, &scratchpad[i], 2);
-    std::cout << "value is: " << val << "\n";
+  bool isLinearSpad(addr_t addr){
+    if(!_linear_spad) return false;
+    // int spad_offset_bits = log2(SCRATCH_SIZE+LSCRATCH_SIZE);
+    // could be remote location
+    // assert(addr < (SCRATCH_SIZE+LSCRATCH_SIZE));
+    int spad_offset_bits = log2(SCRATCH_SIZE);
+    int spad_type = (addr >> spad_offset_bits) & 1;
+    return spad_type; // for 1, it is linear
   }
 
-}
+  // to debug
+  void print_spad_addr(int start, int end){
+    uint16_t val = 0;
+    for(int i=start; i<end; i+=2){
+      memcpy(&val, &scratchpad[i], 2);
+      std::cout << "value is: " << val << "\n";
+    }
 
-void push_net_in_cmd_queue(base_stream_t* s);
+  }
+
+  void push_net_in_cmd_queue(base_stream_t* s);
 
 
   //members------------------------
   port_interf_t _port_interf;
 
-  bool _in_config=false;
 
   SSModel* _ssconfig = NULL;
   Schedule* _sched   = NULL;
@@ -1482,7 +1423,6 @@ void push_net_in_cmd_queue(base_stream_t* s);
 
   unsigned scratch_line_size = 16;                //16B line
   unsigned fifo_depth = 32;
-  bool debug;
   unsigned _queue_size=16;
 
   uint64_t _accel_index = 0;
@@ -1529,8 +1469,6 @@ void push_net_in_cmd_queue(base_stream_t* s);
   double _stat_bank_conflicts=0.0;
   uint64_t _stat_cycles_atomic_scr_pushed=0;
   uint64_t _stat_cycles_atomic_scr_executed=0;
-
-  uint64_t _stat_commands_issued = 0;
 
   uint64_t _stat_tot_mem_fetched=0;
   uint64_t _stat_tot_mem_stored=0;
@@ -1596,6 +1534,3 @@ void push_net_in_cmd_queue(base_stream_t* s);
   std::vector<int> scratchpad_readers;
 
 };
-
-
-#endif
