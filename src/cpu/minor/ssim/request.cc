@@ -20,12 +20,16 @@ const char *STATUS[] = {
 };
 
 std::ostream &operator<<(std::ostream &os, const Request &req) {
-  return os << "[Request] addr: " << req.addr << ", " << " dtype: " << req.data_size
-            << ", operand: " << "[" << req.operand.size() << "]"
-            << ", op: " << (int) (req.op);
+  os << "[Request] addr: " << req.addr << ", " << " dtype: " << req.data_size
+     << ", operand: " << "[" << req.operand.size() << "]";
+  if (req.operand.size() <= 8 && !req.operand.empty()) {
+    os << " " << *reinterpret_cast<const uint64_t*>(req.operand.data());
+  }
+  os << ", op: " << (int) (req.op);
+  return os;
 }
 
-void RequestBuffer::Decode(int port, Request::Operation op,
+void RequestBuffer::Decode(int port, MemoryOperation op,
                            const stream::LinearStream::LineInfo &request,
                            const std::vector<uint8_t> &operands) {
   CHECK(Available()) << "No available slot in the reorder buffer!";
@@ -43,7 +47,7 @@ void RequestBuffer::Decode(int port, Request::Operation op,
   tail = (tail + 1) % scoreboard.size();
 }
 
-void RequestBuffer::Decode(const std::vector<Request> &requests) {
+void RequestBuffer::Decode(const std::vector<Request> &requests, const stream::LinearStream::LineInfo &meta) {
   const int num_bytes = parent->num_bytes;
   const int bank_width = parent->bank_width;
   const int num_banks = parent->num_banks;
@@ -67,6 +71,7 @@ void RequestBuffer::Decode(const std::vector<Request> &requests) {
     }
 
     LOG(XBAR) << "Process " << elem;
+    scoreboard[tail].emplace_back(parent, elem);
     // FIXME(@were): Confirm the details of coalescing requests with @Sihao
     // auto operand = elem.operand;
     // uint64_t master;
@@ -83,6 +88,7 @@ void RequestBuffer::Decode(const std::vector<Request> &requests) {
     //   LOG(MASTER) << entries.back().id << " <-> " << entries[0].id;
     // }
   }
+  info[tail] = meta;
   /* Register the entry on the scoreboard, or maybe we should call it ROB. */
   tail = (tail + 1) % scoreboard.size();
 }
@@ -140,7 +146,7 @@ Response RequestBuffer::Commit() {
   std::vector<uint8_t> res;
   stream::LinearStream::LineInfo meta;
   int port = -1;
-  Request::Operation op = Request::Operation::unknown;
+  MemoryOperation op = MemoryOperation::DMO_Unkown;
   if (!scoreboard[front].empty()) {
     port = scoreboard[front][0].request.port;
     op = scoreboard[front][0].request.op;

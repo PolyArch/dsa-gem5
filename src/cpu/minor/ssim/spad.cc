@@ -1,4 +1,5 @@
 #include "dsa/debug.h"
+#include "dsa/rf.h"
 #include "./spad.h"
 #include "./request.h"
 
@@ -56,7 +57,7 @@ void Bank::AccessData() {
     ++stat.compute_backlog;
     return;
   }
-  if (read->request.op != Request::Operation::read &&
+  if (read->request.op != MemoryOperation::DMO_Read &&
       (write && write->request.addr == read->request.addr)) {
     LOG(READ) << " [Read] " << bankno << ": Pending write, block to guarantee the atomicity";
     ++stat.atomic_backlog;
@@ -71,6 +72,7 @@ void Bank::AccessData() {
 }
 
 void Bank::InsituCompute() {
+
   if (!compute) {
     LOG(COMPUTE) << " [Compute] " << bankno << ": No compute instance";
     ++stat.compute_idle;
@@ -82,16 +84,63 @@ void Bank::InsituCompute() {
     return;
   }
 
-  if (compute->request.op == Request::Operation::read) {
-    auto l = data.begin() + compute->cacheline();
-    auto r = l + parent->bank_width;
-    compute->result = std::vector<uint8_t>(l, r);
-  } else if (compute->request.op == Request::Operation::write) {
-    compute->result = compute->request.operand;
-    CHECK(compute->result.size() == parent->bank_width);
-  } else {
-    CHECK(false) << "not supported yet!";
+  auto l = data.begin() + compute->cacheline();
+  // auto r = l + parent->bank_width;
+  if (compute->request.op != MemoryOperation::DMO_Read) {
+    auto f = [](int64_t a, int64_t b, MemoryOperation op) -> int64_t {
+      switch(op) {
+        case MemoryOperation::DMO_Add:
+          return a + b;
+        case MemoryOperation::DMO_Sub:
+          return a - b;
+        case MemoryOperation::DMO_Mul:
+          return a * b;
+        case MemoryOperation::DMO_Max:
+          return std::max(a, b);
+        case MemoryOperation::DMO_Min:
+          return std::min(a, b);
+        case MemoryOperation::DMO_Write:
+          return b;
+        default:
+          CHECK(false) << (int) op << " is not a operation";
+      }
+      return -1;
+    };
+    for (int i = 0; i < parent->bank_width; i += compute->request.data_size) {
+      for (int j = 1; j < compute->request.data_size; ++j) {
+        CHECK(compute->request.mask[i] == compute->request.mask[i + j])
+          << i << ", " << j
+          << " Data operation should not be in sub-dtype granularity!";
+      }
+      std::vector<uint8_t> a(l + i, l + i + compute->request.data_size);
+      std::vector<uint8_t> b(compute->request.operand.begin() + i,
+                             compute->request.operand.begin() + i + compute->request.data_size);
+      int64_t res;
+      switch (compute->request.data_size * 8) {
+      #define BW_IMPL(bw)                                    \
+        case bw:                                             \
+          CHECK(a.size() == bw / 8);                         \
+          CHECK(b.size() == bw / 8);                         \
+          res = f(*reinterpret_cast<int##bw##_t*>(a.data()), \
+                  *reinterpret_cast<int##bw##_t*>(b.data()), \
+                  compute->request.op);                      \
+          break;
+        BW_IMPL(8)
+        BW_IMPL(16)
+        BW_IMPL(32)
+        BW_IMPL(64)
+      #undef BW_IMPL
+        default:
+          CHECK(false) << compute->request.data_size << " is not a power of 2!";
+      }
+      std::vector<uint8_t> c((uint8_t*)(&res), (uint8_t*)(&res) + 8);
+      for (int j = 0; j < compute->request.data_size; ++j) {
+        compute->result[i + j] = c[j];
+      }
+    }
   }
+  CHECK(compute->result.size() == parent->bank_width)
+    << compute->result.size() << " == " << parent->bank_width;
   write = compute;
   compute = nullptr;
 }
@@ -100,11 +149,12 @@ void Bank::WriteBack() {
   if (write) {
     auto addr = write->cacheline();
     LOG(ADDR)
-      << "[" << bankno << "] (" << write->request.port << ")"
-      << write->request.addr << " " << write->cacheline() << " + "
-      << ": [" << write->result.size() << "]bytes";
+      << "bank: " << bankno << ", port: " << write->request.port
+      << ", addr: " << write->request.addr
+      << ", " << write->result.size() << "-byte:"
+      << *reinterpret_cast<uint64_t*>(write->result.data());
     CHECK(addr < data.size()) << addr;
-    if (write->request.op != Request::Operation::read) {
+    if (write->request.op != MemoryOperation::DMO_Read) {
       for (int i = 0; i < parent->bank_width; ++i) {
         if (write->request.mask[i]) {
           data[addr + i] = write->result[i];

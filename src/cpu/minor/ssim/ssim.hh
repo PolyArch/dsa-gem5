@@ -100,9 +100,19 @@ public:
    * \param port The destination port.
    * \param source 0: DMA, 1: SPAD
    * \param ind The indirect memory flag.
-   * \param lin The linear memory stream flag.
+   * \param dim 0: 1-d stream; 2-d stream.
    */
-  void IndirectMemoryToPort(int port, int source, int ind, int lin);
+  void IndirectMemoryToPort(int port, int source, int ind, int dim);
+
+  /*!
+   * \brief Atomic memory operation on memory.
+   * \param port The data operand port.
+   * \param mem 0: DMA, 1: SPAD
+   * \param operation The memory operation.
+   * \param ind The indirect memory flag.
+   * \param dim 0: 1-d stream; 2-d stream.
+   */
+  void AtomicMemoryOperation(int port, int mem, int operation, int ind, int dim);
 
   /*!
    * \brief Dump the current cycle info as prefix of debugging.
@@ -280,8 +290,7 @@ public:
 
   static bool stall_core(uint64_t mask) {
     return (mask >> DBF_DMAStreams & 1) || (mask >> DBF_WriteStreams & 1) ||
-           (mask >> DBF_AtomicStreams & 1) || (mask >> DBF_ComputStreams & 1) ||
-           (mask >> DBF_AtomicStreams & 1);
+           (mask >> DBF_AtomicStreams & 1) || (mask >> DBF_ComputStreams & 1);
 
   }
 

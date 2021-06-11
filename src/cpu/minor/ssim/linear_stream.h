@@ -10,6 +10,8 @@
 
 #include "spec.h"
 
+struct BuffetEntry;
+
 namespace dsa {
 namespace sim {
 namespace stream {
@@ -29,11 +31,11 @@ struct LinearStream {
     bool stride_last;
     bool stream_last;
     int padding;
-    LineInfo(int64_t linebase_ = 0, int64_t start_ = 0,
-             const std::vector<bool> &mask_ = {},
-             int64_t shrink_ = 0, bool stride_first_ = false,
-             bool stride_last_ = false, bool stream_last_ = false,
-             int padding_ = 0) :
+    explicit LineInfo(int64_t linebase_ = 0, int64_t start_ = 0,
+                      const std::vector<bool> &mask_ = {},
+                      int64_t shrink_ = 0, bool stride_first_ = false,
+                      bool stride_last_ = false, bool stream_last_ = false,
+                      int padding_ = 0) :
       linebase(linebase_), start(start_), mask(mask_), shrink(shrink_),
       stride_first(stride_first_), stride_last(stride_last_),
       stream_last(stream_last_), padding(padding_) {}
@@ -56,7 +58,7 @@ struct LinearStream {
    * \param available When it comes to a write stream, it is the number of elements
    *                  avaiable in the port FIFO.
    */
-  virtual LineInfo cacheline(int bandwidth, int available) = 0;
+  virtual LineInfo cacheline(int bandwidth, int available, BuffetEntry *be) = 0;
 
   /*!
    * \brief The text format of this stream for the purpose of debugging.
@@ -114,31 +116,7 @@ struct Linear1D : LinearStream {
    * \param bandwidth The width of the cacheline in bytes.
    * \param at_most The the number of bits at most in the bitmask.
    */
-  LineInfo cacheline(int bandwidth, int at_most) override {
-    assert(hasNext());
-    bool first = i == 0;
-    std::vector<bool> mask(bandwidth, 0);
-    assert(bandwidth == (bandwidth & -bandwidth));
-    int64_t head = poll(false);
-    int64_t base = ~(bandwidth - 1) & head;
-    int64_t cnt = 0;
-    int64_t current = -1;
-    while (cnt < at_most && hasNext()) {
-      current = poll(false);
-      CHECK(current >= base);
-      if (current < base + bandwidth) {
-        for (int j = 0, n = abs(word); j < n; ++j) {
-          mask[(current - base) + j] = true;
-          ++cnt;
-        }
-        head = std::min(head, current);
-        poll(true); // pop the current one
-      } else {
-        break;
-      }
-    }
-    return LineInfo(base, head, mask, current + word, first, !hasNext(), !hasNext());
-  }
+  LineInfo cacheline(int bandwidth, int at_most, BuffetEntry *be);
 
   /*!
    * \brief The text format for the purpose of debugging.
@@ -206,8 +184,8 @@ struct Linear2D : LinearStream {
     return exec.poll(next);
   }
 
-  LineInfo cacheline(int bandwidth, int available) override {
-    auto res = exec.cacheline(bandwidth, available);
+  LineInfo cacheline(int bandwidth, int available, BuffetEntry *be) override {
+    auto res = exec.cacheline(bandwidth, available, be);
     res.stream_last = false;
     res.stream_last = !hasNext();
     if (hasNext()) {
@@ -285,8 +263,8 @@ struct Linear3D : LinearStream {
     return exec.poll(next);
   }
 
-  LineInfo cacheline(int bandwidth, int available) override {
-    auto res = exec.cacheline(bandwidth, available);
+  LineInfo cacheline(int bandwidth, int available, BuffetEntry *be) override {
+    auto res = exec.cacheline(bandwidth, available, be);
     res.stream_last = false;
     res.stream_last = !hasNext();
     if (hasNext()) {

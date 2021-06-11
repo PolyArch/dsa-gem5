@@ -13,18 +13,6 @@ const char *LOC_NAME[] = {
 
 int base_stream_t::ID_SOURCE = 0;
 
-int BuffetEntry::Translate(int64_t addr, bool linebase) {
-  CHECK(linebase || InRange(addr))
-    << "Address out of range: " << addr << " not in ["
-    << address << ", " << addr + occupied << ")";
-  addr -= address;
-  addr += front;
-  if (addr >= end) {
-    addr = begin + addr - end;
-  }
-  return addr;
-}
-
 #define CQ_PTR(x, delta)               \
   do {                                 \
     x += (delta);                      \
@@ -33,6 +21,24 @@ int BuffetEntry::Translate(int64_t addr, bool linebase) {
       CHECK(x >= begin && x <= end);   \
     }                                  \
   } while (false)
+
+bool BuffetEntry::EnforceReadWrite(int64_t addr, int word) {
+  if (mo == MemoryOperation::DMO_Read) {
+    return InRange(addr);
+  } else if (mo == MemoryOperation::DMO_Write) {
+    return addr >= address && addr < address + Size();
+  }
+  CHECK(false) << "Not supported yet!";
+  return false;
+}
+
+int64_t BuffetEntry::Translate(int64_t addr) {
+  CHECK(InRange(addr))
+    << "Address out of range: " << addr << " not in ["
+    << address << ", " << address + occupied << ")";
+  CQ_PTR(addr, front - address);
+  return addr;
+}
 
 void BuffetEntry::Append(int bytes) {
   CHECK(occupied + bytes <= Size())
@@ -73,12 +79,6 @@ void base_stream_t::set_mem_map_config() {
 
 }
 
-void IPortStream::print_in_ports() {
-  for(int i = 0; i < pes.size();++i) {
-    std::cout << soft_port_name(pes[i].port, true) << " ";
-  }
-}
-
 std::string BuffetEntry::toString() {
   std::ostringstream oss;
   oss << "Alloc: [" << begin << ", " << end << "), Buffered: ["
@@ -86,7 +86,6 @@ std::string BuffetEntry::toString() {
       << ", Address: " << address;
   return oss.str();
 }
-
 
 // based on memory mapping, extract these two information
 uint64_t base_stream_t::get_core_id(addr_t logical_addr) {
@@ -136,15 +135,6 @@ addr_t base_stream_t::memory_map(addr_t logical_addr, addr_t cur_scr_offset) {
 
 }
 
-std::string base_stream_t::soft_port_name(int x, bool is_input) {
-  std::ostringstream oss;
-  oss << x;
-  auto &vec = is_input ? _soft_config->in_ports_name : _soft_config->out_ports_name;
-  if (_soft_config && x < vec.size()) {
-    oss << "(" << vec[x] << ")";
-  }
-  return oss.str();
-}
 
 namespace dsa {
 namespace sim {
@@ -152,6 +142,44 @@ namespace stream {
 
 int LinearStream::LineInfo::bytes_read() const {
   return std::accumulate(mask.begin(), mask.end(), 0, std::plus<int>());
+}
+
+LinearStream::LineInfo Linear1D::cacheline(int bandwidth, int at_most, BuffetEntry *be) {
+  CHECK(hasNext());
+  bool first = i == 0;
+  std::vector<bool> mask(bandwidth, 0);
+  CHECK(bandwidth == (bandwidth & -bandwidth));
+  int64_t head = poll(false);
+  int64_t base = ~(bandwidth - 1) & head;
+  int64_t cnt = 0;
+  int64_t current = -1;
+  while (cnt < at_most && hasNext()) {
+    current = poll(false);
+    if (be && !be->EnforceReadWrite(current, word)) {
+      break;
+    }
+    CHECK(current >= base);
+    if (current < base + bandwidth) {
+      if (be) {
+        if (be->mo == DMO_Write) {
+          be->Append(word);
+        }
+        current = be->Translate(current);
+      }
+      for (int j = 0, n = abs(word); j < n; ++j) {
+        CHECK(current - base + j >= 0 && current - base + j < mask.size())
+          << current << " - " << base << " + " << j << " = "
+          << current - base + j << " not in [0, " << mask.size() << ")";
+        mask[(current - base) + j] = true;
+        ++cnt;
+      }
+      head = std::min(head, current);
+      poll(true); // pop the current one
+    } else {
+      break;
+    }
+  }
+  return LineInfo(base, head, mask, current + word, first, !hasNext(), !hasNext());
 }
 
 void Functor::Visit(base_stream_t *) {}
@@ -190,6 +218,10 @@ void Functor::Visit(IndirectReadStream *irs) {
 
 void Functor::Visit(RecurrentStream *rs) {
   Visit(static_cast<PortPortStream*>(rs));
+}
+
+void Functor::Visit(IndirectAtomicStream *rs) {
+  Visit(static_cast<OPortStream*>(rs));
 }
 
 BarrierFlag Loc2BarrierFlag(LOC loc) {

@@ -82,8 +82,8 @@ void Accelerator::blameCycle() {
     };
     int io_cnt[2] = {0, 0};
     for (int is_input = 0; is_input < 2; ++is_input) {
-      for (auto port : parent._soft_config.active_ports(is_input)) {
-        auto &pi = parent.port_interf().ports(is_input)[port];
+      for (auto &port : parent.bsw.ports[is_input]) {
+        auto &pi = parent.port_interf().ports(is_input)[port.port];
         if (pi.stream) {
          ++io_cnt[is_input];
           if (blame_map.count(pi.stream->unit())) {

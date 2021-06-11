@@ -2,7 +2,9 @@
 #include <climits>
 #include <vector>
 
-#include "linear_stream.h"
+#include "dsa/rf.h"
+
+#include "./linear_stream.h"
 
 namespace dsa {
 namespace sim {
@@ -35,13 +37,12 @@ struct Request {
    * \brief The operands of atomic operation.
    */
   std::vector<uint8_t> operand;
-  enum class Operation { read, write, add, mul, sub, min, max, unknown };
   /*!
    * \brief The operator of operation.
    */
-  Operation op{Operation::unknown};
+  MemoryOperation op{MemoryOperation::DMO_Unkown};
 
-  Request(int port_, uint64_t addr_, int data_size_, Operation op_) :
+  Request(int port_, uint64_t addr_, int data_size_, MemoryOperation op_) :
     port(port_), addr(addr_), data_size(data_size_), op(op_) {}
 };
 
@@ -91,11 +92,11 @@ struct Entry {
 
 struct Response {
   uint64_t id;
-  Request::Operation op;
+  MemoryOperation op;
   std::vector<uint8_t> raw;
   stream::LinearStream::LineInfo info;
 
-  Response(uint64_t id_ = -1, Request::Operation op_ = Request::Operation::unknown,
+  Response(uint64_t id_ = -1, MemoryOperation op_ = MemoryOperation::DMO_Unkown,
            const std::vector<uint8_t> &raw_ = {},
            const stream::LinearStream::LineInfo &info_ = stream::LinearStream::LineInfo()) :
     id(id_), op(op_), raw(raw_), info(info_) {}
@@ -121,10 +122,10 @@ struct RequestBuffer {
   bool Available();
 
   /* \brief Breaks all the indirect scalar requests to bank micro codes. */
-  void Decode(const std::vector<Request> &requests);
+  void Decode(const std::vector<Request> &requests, const stream::LinearStream::LineInfo &meta);
 
   /* \brief Breaks a cacheline request to bank micro codes. */
-  void Decode(int port, Request::Operation op,
+  void Decode(int port, MemoryOperation op,
               const stream::LinearStream::LineInfo &request,
               const std::vector<uint8_t> &operands);
 

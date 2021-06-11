@@ -6,10 +6,11 @@
 #include "loc.hh"
 
 class port_interf_t;
-class soft_config_t;
 
 namespace dsa {
 namespace sim {
+
+class BitstreamWrapper;
 
 /*!
  * \brief The base class of determining which streams to be executed.
@@ -18,7 +19,7 @@ struct StreamArbiter {
   /*!
    * \brief Determine the streams to be executed according to the state of each port.
    */
-  virtual std::vector<base_stream_t*> Arbit(soft_config_t &sc, port_interf_t &pi) = 0;
+  virtual std::vector<base_stream_t*> Arbit(BitstreamWrapper &sc, port_interf_t &pi) = 0;
 };
 
 struct RoundRobin : StreamArbiter {
@@ -29,7 +30,7 @@ struct RoundRobin : StreamArbiter {
 
   RoundRobin() : last_executed(2, std::vector<int>(LOC::TOTAL, 0)) {}
 
-  std::vector<base_stream_t*> Arbit(soft_config_t &sc, port_interf_t &pi) override;
+  std::vector<base_stream_t*> Arbit(BitstreamWrapper &sc, port_interf_t &pi) override;
 };
 
 }

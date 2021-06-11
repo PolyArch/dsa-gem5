@@ -21,6 +21,7 @@
 #include <iomanip>
 #include <memory>
 
+#include "dsa/debug.h"
 #include "dsa/arch/model.h"
 #include "dsa/mapper/schedule.h"
 
@@ -58,54 +59,65 @@ struct pair_hash {
 class ssim_t;
 class accel_t;
 
-//configuration
-class soft_config_t {
-public:
-  uint64_t cur_config_addr;
-
-  std::vector<std::string> in_ports_name;
-  std::vector<std::string> out_ports_name;
-
-  std::vector<int> in_ports_active;
-  std::vector<int> in_ports_active_backcgra; // which inputs triggered by backcgra
-
-  std::vector<int> out_ports_active;
-
-  //In ports active by group
-  std::vector<std::vector<int>> in_ports_active_group;
-  std::vector<std::vector<int>> out_ports_active_group;
-
-  std::vector<std::pair<int,int>> group_thr;
-
-  std::vector<int> in_ports_active_plus; //includes indirect ports as well
-  std::vector<int> out_ports_active_plus;
-
-  std::vector<int> in_port_delay; //delay ports -- no longer used
-
-  std::vector<int> out_ports_lat;
-
-  std::vector<bool> cgra_in_ports_active;
-
-  std::map<dsa::OpCode, int> inst_histo;
-
-  std::vector<int> &active_ports(bool is_input) {
-    return is_input ? in_ports_active : out_ports_active;
-  }
-
-  void reset();
-};
-
 // -------------- Vector Ports ------------------------
+
+
+// "Wide" or interface port (AKA Vector Ports)
 
 // "Wide" or interface port (AKA Vector Ports)
 class port_data_t {
 public:
+
+  /*!
+   * \brief The size of the buffer.
+   */
+  int buffer_size;
+
+  /*!
+   * \brief The size of the data buffer.
+   */
+  std::queue<uint8_t> buffer;
+
+  /*!
+   * \brief The data in the buffer of the crossbar is ready to fire to the spatial arch.
+   */
+  std::vector<uint64_t> xbar;
+
+  /*!
+   * \brief The stream this port currently executes.
+   */
+  base_stream_t *stream{nullptr};
+
+  /*!
+   * \brief A stream can be broadcast to multiple ports.
+   *        This stores port repeat information of "this" port.
+   */
+  dsa::sim::rt::PortExecState pes;
+
+  port_data_t(int size) : buffer_size(size), pes(dsa::sim::IVPState(), -1) {}
+
+  port_data_t() : pes(dsa::sim::IVPState(), -1) {}
+
+  /*!
+   * \brief Move on the state this port.
+   */
+  void tick();
+
+  /*!
+   * \brief If we still have space in the FIFO.
+   */
+  bool bufferAvailable();
+
+  /*!
+   * \brief The accelerator this port belongs to.
+   */
+  accel_t *parent;
+
+
   enum class STATUS {FREE, COMPLETE, BUSY};
 
   void initialize(SSModel* ssconfig, int port, bool isInput);
   void reset(); //reset if configuration happens
-
-  port_data_t() : pes(dsa::sim::IVPState(), -1) {}
 
   //This function is similar to port_vec_elem, but...
   //For now, the *only* cases where we don't return vector length is
@@ -445,15 +457,6 @@ public:
     return _bytes_waiting;
   }
 
-  /*!
-   * \brief The stream this port currently executes.
-   */
-  base_stream_t *stream{nullptr};
-  /*!
-   * \brief A stream can be broadcast to multiple ports.
-   *        This stores port repeat information of "this" port.
-   */
-  dsa::sim::rt::PortExecState pes;
 private:
 
   dsa::dfg::VectorPort *_dfg_vec{nullptr}; // null by default
@@ -1129,6 +1132,11 @@ public:
    */
   stat::Accelerator statistics;
 
+  /*!
+   * \brief The information of soft configuration.
+   */
+  dsa::sim::BitstreamWrapper bsw;
+
   accel_t(int i, ssim_t* ssim);
 
   Minor::LSQ *lsq();
@@ -1158,8 +1166,6 @@ public:
 
 
   bool done(bool show = false, int mask = 0);
-
-  bool StreamBufferAvailable();
 
   uint64_t forward_progress_cycle() { return _forward_progress_cycle; }
 
@@ -1239,8 +1245,8 @@ private:
 
   bool cgra_done(bool, int mask);
   bool cgra_input_active() {
-    for(unsigned i = 0; i < _soft_config.in_ports_active_plus.size(); ++i) {
-      int cur_port = _soft_config.in_ports_active_plus[i];
+    for (int i = 0; i < bsw.ports[1].size(); ++i) {
+      int cur_port = bsw.ports[1][i].port;
       auto& in_vp = _port_interf.in_port(cur_port);
       if(in_vp.in_use() || in_vp.num_ready() || in_vp.mem_size()) {
         return true;
@@ -1250,19 +1256,19 @@ private:
   }
 
   bool cgra_compute_active() {
-    for(unsigned i = 0; i < _soft_config.out_ports_active.size(); ++i) {
-      int cur_port = _soft_config.out_ports_active[i];
+    for(int i = 0; i < bsw.ports[0].size(); ++i) {
+      int cur_port = bsw.ports[0][i].port;
       auto& out_vp = _port_interf.out_port(cur_port);
-        if(out_vp.num_in_flight()) {
-          return true;
-        }
+      if(out_vp.num_in_flight()) {
+        return true;
+      }
     }
     return false;
   }
 
   bool cgra_output_active() {
-    for(unsigned i = 0; i < _soft_config.out_ports_active_plus.size(); ++i) {
-      int cur_port = _soft_config.out_ports_active_plus[i];
+    for(int i = 0; i < bsw.ports[0].size(); ++i) {
+      int cur_port = bsw.ports[0][i].port;
       auto& out_vp = _port_interf.out_port(cur_port);
       if(out_vp.in_use() || out_vp.num_ready() || out_vp.mem_size()) {
         return true;
@@ -1409,17 +1415,13 @@ private:
   //members------------------------
   port_interf_t _port_interf;
 
-
-  SSModel* _ssconfig = NULL;
-  Schedule* _sched   = NULL;
-  SSDfg*    _dfg     = NULL;
+  SSModel *_ssconfig{nullptr};
 
   int _fu_fifo_len=DEFAULT_FIFO_LEN;
   int _ind_rob_size=DEFAULT_IND_ROB_SIZE;
 
 
   std::vector<uint8_t> scratchpad;
-  std::bitset<SCRATCH_SIZE/SCR_WIDTH> scratch_ready; //TODO: use this
 
   unsigned scratch_line_size = 16;                //16B line
   unsigned fifo_depth = 32;
@@ -1434,8 +1436,6 @@ private:
   scratch_write_controller_t _scr_w_c;
   network_controller_t _net_c;
 
-  std::list<std::shared_ptr<base_stream_t>> _cmd_queue;
-
   std::map<uint64_t,std::vector<int>> _cgra_output_ready;
 
   //Stuff for tracking stats
@@ -1443,7 +1443,6 @@ private:
   uint64_t _forward_progress_cycle=0;
 
  public:
-  soft_config_t _soft_config;
   std::vector<dsa::sim::ScratchMemory> spads;
   //* running variables
   bool _cgra_issued_group[NUM_GROUPS];

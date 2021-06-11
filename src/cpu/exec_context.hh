@@ -51,6 +51,7 @@
 #include "cpu/static_inst_fwd.hh"
 #include "cpu/translation.hh"
 #include "mem/request.hh"
+#include "dsa/debug.h"
 
 /**
  * The ExecContext is an abstract base class the provides the

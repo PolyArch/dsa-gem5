@@ -143,9 +143,8 @@ void ssim_t::LoadMemoryToPort(int port, int source, int dim, int padding) {
     s->be->use = s;
     LOG(COMMAND) << "Allocate Buffet: " << s->be->toString();
   }
-  LOG(COMMAND) << "Linear Read Stream: " << s->toString();
+  LOG(COMMAND) << "Linear Read Stream: " << s->toString(nullptr);
   cmd_queue.push_back(s);
-  // BroadcastStream(s);
 }
 
 void ssim_t::WritePortToMemory(int port, int operation, int dst, int dim) {
@@ -165,9 +164,8 @@ void ssim_t::WritePortToMemory(int port, int operation, int dst, int dim) {
     s->be->load = s;
     LOG(COMMAND) << "Allocate Buffet: " << s->be->toString();
   }
-  LOG(COMMAND) << "Linear Write Stream: " << s->toString();
+  LOG(COMMAND) << "Linear Write Stream: " << s->toString(nullptr);
   cmd_queue.push_back(s);
-  // BroadcastStream(s);
 }
 
 
@@ -179,14 +177,13 @@ void ssim_t::ConstStream(int port, int dim) {
   auto s = new ConstPortStream(rf[DSARF::TBC].value, gatherBroadcastPorts(port), ls);
   s->dtype = dtype;
   s->inst = inst;
-  LOG(COMMAND) << "Const Stream: " << s->toString();
+  LOG(COMMAND) << "Const Stream: " << s->toString(nullptr);
   cmd_queue.push_back(s);
-  // BroadcastStream(s);
 }
 
 
-void ssim_t::IndirectMemoryToPort(int port, int source, int ind, int lin) {
-  // TODO(@were): Use the linear and indirect flags!
+void ssim_t::IndirectMemoryToPort(int port, int source, int ind, int dim) {
+  // TODO(@were): Use the ind and dim!
   auto irs =
     new IndirectReadStream(source == 0 ? LOC::DMA : LOC::SCR, rf[DSARF::TBC].value,
                            gatherBroadcastPorts(port), rf[DSARF::INDP].value & 127,
@@ -194,8 +191,19 @@ void ssim_t::IndirectMemoryToPort(int port, int source, int ind, int lin) {
   irs->dtype = (1 << ((rf[DSARF::CSR].value >> 4) & 3));
   irs->inst = inst;
   cmd_queue.push_back(irs);
-  LOG(COMMAND) << "Indirect Read Stream: " << irs->toString();
-  // BroadcastStream(irs);
+  LOG(COMMAND) << "Indirect Read Stream: " << irs->toString(nullptr);
+}
+
+void ssim_t::AtomicMemoryOperation(int port, int mem, int operation, int ind, int dim) {
+  auto ias =
+    new IndirectAtomicStream(mem == 0 ? LOC::DMA : LOC::SCR, rf[DSARF::TBC].value,
+                             port, rf[DSARF::INDP].value & 127,
+                             rf[DSARF::SAR].value, rf[DSARF::L1D].value);
+  ias->dtype = (1 << ((rf[DSARF::CSR].value >> 4) & 3));
+  ias->inst = inst;
+  ias->mo = (MemoryOperation) operation;
+  cmd_queue.push_back(ias);
+  LOG(COMMAND) << "Indirect Write Stream: " << ias->toString(nullptr);
 }
 
 std::vector<PortExecState> ssim_t::gatherBroadcastPorts(int port) {
@@ -260,15 +268,15 @@ void ssim_t::DispatchStream() {
       }
       // If there are active stream affected by this barrier,
       // this barrier should not retire.
-      for (auto i : accel->_soft_config.in_ports_active) {
-        auto &in = accel->port_interf().in_port(i);
+      for (auto &i : accel->bsw.iports()) {
+        auto &in = accel->port_interf().in_port(i.port);
         if (in.stream && (in.stream->barrier_mask() & bar->_mask)) {
           LOG(BAR) << "Cannot retire because of active streams.";
           return;
         }
       }
-      for (auto i : accel->_soft_config.out_ports_active) {
-        auto &out = accel->port_interf().out_port(i);
+      for (auto &i : accel->bsw.oports()) {
+        auto &out = accel->port_interf().out_port(i.port);
         if (out.stream && (out.stream->barrier_mask() & bar->_mask)) {
           LOG(BAR) << "Cannot retire because of active streams.";
           return;
@@ -298,14 +306,15 @@ void ssim_t::DispatchStream() {
     void Visit(OPortStream *ops) override {
       barred |= ops->barrier_mask();
       if (!(ops->barrier_mask() & barrier_mask)) {
-        int port = ops->port;
-        auto &out = accel->port_interf().out_port(port);
-        if (out.stream == nullptr &&
-            std::find(oports.begin(), oports.end(), port) == oports.end()) {
-          retire = true;
+        for (auto port : ops->oports()) {
+          auto &out = accel->port_interf().out_port(port);
+          if (out.stream == nullptr &&
+              std::find(oports.begin(), oports.end(), port) == oports.end()) {
+            retire = true;
+          }
         }
       }
-      oports.push_back(ops->port);
+      oports.insert(oports.end(), ops->oports().begin(), ops->oports().end());
     }
 
     /*!
@@ -367,7 +376,14 @@ void ssim_t::DispatchStream() {
      */
     void BindStreamToPorts(const vector<PortExecState> &pes, base_stream_t *stream) {
       for (auto &elem : pes) {
-        accel->port_interf().in_port(elem.port).bindStream(stream);
+        auto &ivp = accel->port_interf().in_port(elem.port);
+        ivp.bindStream(stream);
+        ivp.pes = elem;
+      }
+    }
+    void BindStreamToPorts(const vector<int> &ports, base_stream_t *stream) {
+      for (auto &elem : ports) {
+        accel->port_interf().out_port(elem).bindStream(stream);
       }
     }
 
@@ -389,9 +405,7 @@ void ssim_t::DispatchStream() {
      * \brief Schedule the write stream.
      */
     void Visit(OPortStream *ops) override {
-      int port = ops->port;
-      auto &out = accel->port_interf().out_port(port);
-      out.bindStream(ops->clone());
+      BindStreamToPorts(ops->oports(), ops->clone());
     }
 
     /*!
@@ -426,16 +440,17 @@ void ssim_t::DispatchStream() {
         cmd_queue[i]->Accept(&dc[j]);
         retire = retire && dc[j].retire;
         if (!retire) {
-          LOG(COMMAND) << "Cannot Issue Stream: " << cmd_queue[i]->toString();
+          LOG(COMMAND) << "Cannot Issue Stream: " << cmd_queue[i]->toString(nullptr);
           break;
         }
       }
     }
     if (retire) {
-      LOG(COMMAND) << "Issue Stream: " << cmd_queue[i]->toString();
       for (int j = 0; j < (int) lanes.size(); ++j) {
         if (cmd_queue[i]->context >> j & 1) {
           cmd_queue[i]->Accept(&sd[j]);
+          LOG(COMMAND) << "Issue to Accel" << j << ": "
+                       << cmd_queue[i]->toString(&sd[j].accel->bsw);
         }
       }
     }
@@ -461,7 +476,6 @@ void ssim_t::Reroute(int oport, int iport) {
   auto pps = new RecurrentStream(rf[DSARF::TBC].value, oport, ips, n);
   pps->dtype = dtype;
   cmd_queue.push_back(pps);
-  // BroadcastStream(pps);
 }
 
 // receive network message at the given input port id

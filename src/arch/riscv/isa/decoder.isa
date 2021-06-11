@@ -994,19 +994,24 @@ decode QUADRANT default Unknown::unknown() {
             0x2: SOp::ss_ind_strm({{
                 // TODO (@were): Implement other multi-dimension pattern.
                 auto value = Rs1;
+                int port = value & 127;
+                value >>= 7;
+                int operation = value & 7;
+                value >>= 3;
                 int mem = value & 1;
                 value >>= 1;
-                int op = value & 7;
-                value >>= 3;
                 int ind_mode = value & 7;
                 value >>= 3;
-                int lin_mode = value & 7;
-                value >>= 3;
-                int in_port = value & 127;
-                if (op == 0) {
-                    xc->callSSFunc(SS_IND_PRT, {in_port, mem, ind_mode, lin_mode});
+                int dimension = value & 1;
+                if (operation == MemoryOperation::DMO_Read) {
+                    xc->callSSFunc(SS_IND_PRT, {port, mem, ind_mode, dimension});
                 } else {
-                    assert(false && "not supported yet!");
+                    if (operation == MemoryOperation::DMO_Write) {
+                        xc->callSSFunc(SS_ATOMIC_SCR_OP, {port, mem, operation, ind_mode, dimension});
+                    } else {
+                        CHECK(mem == MemoryType::DMT_SPAD) << "Atomic operation can only be on spad";
+                        xc->callSSFunc(SS_ATOMIC_SCR_OP, {port, mem, operation, ind_mode, dimension});
+                    }
                 }
             }}, IsSSStream, IsNonSpeculative);
             // 0x1: SSOp::ss_wr_scr({{

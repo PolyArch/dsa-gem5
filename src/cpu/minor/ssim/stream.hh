@@ -11,8 +11,9 @@
 #include "loc.hh"
 #include "sim-debug.hh"
 #include "state.h"
+#include "./bitstream.h"
+#include "./linear_stream.h"
 
-class soft_config_t;
 class accel_t;
 
 //This is a hierarchical classification of access types
@@ -38,6 +39,7 @@ struct LinearWriteStream;
 struct Barrier;
 struct ConstPortStream;
 struct IndirectReadStream;
+struct IndirectAtomicStream;
 struct RecurrentStream;
 
 /*!
@@ -96,7 +98,7 @@ struct BuffetEntry {
   /*!
    * \brief Translate the requested absolute address to relative address in buffet.
    */
-  int Translate(int64_t addr, bool linebase);
+  int64_t Translate(int64_t addr);
 
   /*!
    * \brief Append bytes of data to the Buffet FIFO.
@@ -110,10 +112,25 @@ struct BuffetEntry {
    */
   void Shrink(int bytes);
 
+  /*!
+   * \brief The current memory address on this buffet.
+   */
+  MemoryOperation mo{MemoryOperation::DMO_Unkown};
+
+  /*!
+   * \brief Enforce if the current address can be read/write.
+   * \param addr 
+   * \param word 
+   */
+  bool EnforceReadWrite(int64_t addr, int word);
+
 };
 
 namespace dsa {
 namespace sim {
+
+struct BitstreamWrapper;
+
 namespace stream {
 
 /*!
@@ -129,6 +146,7 @@ struct Functor {
   virtual void Visit(Barrier *);
   virtual void Visit(ConstPortStream *);
   virtual void Visit(IndirectReadStream *);
+  virtual void Visit(IndirectAtomicStream *);
   virtual void Visit(RecurrentStream *);
 };
 
@@ -151,7 +169,7 @@ struct base_stream_t {
   /*!
    * \brief Dump this stream to debug string.
    */
-  virtual std::string toString() { return ""; }
+  virtual std::string toString(dsa::sim::BitstreamWrapper *bsw) { return ""; }
 
   /*!
    * \brief The data source of this stream.
@@ -167,8 +185,6 @@ struct base_stream_t {
    * \brief A convinient helper of the data side.
    */
   LOC side(bool is_source) { return is_source ? src() : dest(); }
-
-  std::string soft_port_name(int x, bool is_input);
 
   std::string short_name() {
     return std::string(LOC_NAME[src()]) + "->" + LOC_NAME[dest()];
@@ -189,10 +205,6 @@ struct base_stream_t {
     } else {
       std::cout << "             INACTIVE";
     }
-  }
-
-  virtual void print_status() {
-    std::cout << short_name() << " " << toString() << std::endl;
   }
 
   int id() { return _id; }
@@ -233,8 +245,7 @@ struct base_stream_t {
 
   virtual void set_orig() {}
 
-  void set_soft_config(soft_config_t* s) {_soft_config=s;}
-  LOC unit() {return _unit;}
+  LOC unit() { return _unit; }
 
   virtual void set_data_width(int d) {dtype=d;}
   virtual void set_part_size(uint64_t d) {_part_size=d;}
@@ -272,7 +283,6 @@ struct base_stream_t {
    *                     Barrier commands actually do not need this.
    */
   int dtype{DATA_WIDTH};
-
   /*!
    * \brief The dynamic instruction in the minor pipeline.
    */
@@ -292,7 +302,6 @@ protected:
   int _wait_cycles=0; // cycles to wait to get whole cache line at ports for write streams 
   bool _empty=false; //presumably, when we create this, it won't be empty
   uint64_t _ctx_offset=0;
-  soft_config_t* _soft_config=NULL;
 };
 
 
@@ -370,8 +379,6 @@ struct Barrier : public base_stream_t {
 
 };
 
-#include "./linear_stream.h"
-
 using dsa::sim::stream::LinearStream;
 using dsa::sim::stream::Linear1D;
 using dsa::sim::stream::Linear2D;
@@ -384,8 +391,6 @@ using dsa::sim::rt::PortExecState;
 struct IPortStream : base_stream_t {
   /*! \brief The status of the ports involved by this input stream. */
   std::vector<PortExecState> pes;
-
-  void print_in_ports();
 
   LOC dest() override { return LOC::PORT; }
 
@@ -409,25 +414,31 @@ struct IPortStream : base_stream_t {
  * \brief Stream that only involves output ports.
  */
 struct OPortStream : base_stream_t {
-  /*!
-   * \brief The output port.
-   */
-  int port;
 
   LOC src() override { return LOC::PORT; }
+
+  int port() { return ports[0]; }
+
+  const std::vector<int> &oports() { return ports; }
 
   /*!
    * \brief Deep copy this object.
    */
   virtual OPortStream *clone() { CHECK(false); return nullptr; }
 
-  OPortStream(LOC unit, uint64_t ctx, uint64_t barrier_flag, int port_) :
-    base_stream_t(unit, ctx, barrier_flag | (1 << DBF_WriteStreams)), port(port_) {}
+  OPortStream(LOC unit, uint64_t ctx, uint64_t barrier_flag, const std::vector<int> ports_) :
+    base_stream_t(unit, ctx, barrier_flag | (1 << DBF_WriteStreams)), ports(ports_) {}
 
   /*! \brief The entrance of the visitor pattern. */
   virtual void Accept(dsa::sim::stream::Functor *f) override {
     f->Visit(this);
   }
+
+ protected:
+  /*!
+   * \brief The output ports.
+   */
+  std::vector<int> ports;
 
 };
 
@@ -504,15 +515,14 @@ struct LinearReadStream : public IPortStream {
 
   LOC src() override { return unit(); }
 
-  void print_status() override {
-    std::cout << toString() << std::endl;
-  }
-
-  virtual std::string toString()  {
+  virtual std::string toString(dsa::sim::BitstreamWrapper *bsw) override {
     std::ostringstream oss;
     oss << short_name() << "\t" << ls->toString();
     for (auto &elem : pes) {
       oss << " " << elem.toString();
+      if (bsw) {
+        oss << "(" << bsw->name(true, elem.port) << ")";
+      }
     }
     return oss.str();
   }
@@ -530,7 +540,7 @@ struct LinearWriteStream : public OPortStream {
   BuffetEntry *be{nullptr};
 
   LinearWriteStream(LOC unit, uint64_t ctx, LinearStream *ls_, int port_, int operation_) :
-    OPortStream(unit, ctx, 1 << DBF_WriteStreams, port_),
+    OPortStream(unit, ctx, 1 << DBF_WriteStreams, {port_}),
     ls(ls_), operation(operation_) {
   }
 
@@ -561,18 +571,19 @@ struct LinearWriteStream : public OPortStream {
   LOC src() override { return LOC::PORT; }
   LOC dest() override { return unit(); }
 
-  virtual std::string toString() {
+  virtual std::string toString(dsa::sim::BitstreamWrapper *bsw) {
     std::ostringstream oss;
-    oss << short_name() << "\t" << ls->toString() << " out_port=" << soft_port_name(port, false);
+    oss << short_name() << "\t" << ls->toString() << " out_port="
+        << port();
+    if (bsw) {
+      oss << "(" << bsw->name(false, port()) << ")";
+    }
     if (garbage()) {
       oss << " garbage";
     }
     return oss.str();
   }
 
-  virtual void print_status() {
-    std::cout << toString() << std::endl;
-  }
 
   bool stream_active() override {
     return ls->hasNext();
@@ -599,7 +610,7 @@ struct ConstPortStream : public IPortStream {
     return new ConstPortStream(*this);
   }
 
-  std::string toString() override {
+  std::string toString(dsa::sim::BitstreamWrapper *bsw) override {
     std::ostringstream oss;
     oss << short_name() << " dtype: " << dtype << " " << ls->toString();
     for (auto &elem : pes) {
@@ -608,9 +619,6 @@ struct ConstPortStream : public IPortStream {
     return oss.str();
   }
 
-  void print_status() override {
-    std::cout << toString() << std::endl;
-  }
 
   /*! \brief The entrance of the visitor pattern. */
   void Accept(dsa::sim::stream::Functor *f) override {
@@ -642,6 +650,8 @@ struct IndirectReadStream : public PortPortStream {
   }
 
   LOC src() override { return unit(); }
+  
+  LOC dest() override { return LOC::PORT; }
 
   /*! \brief The entrance of the visitor pattern. */
   virtual void Accept(dsa::sim::stream::Functor *f) override {
@@ -659,11 +669,17 @@ struct IndirectReadStream : public PortPortStream {
     return oports[0];
   }
 
-  std::string toString() override {
+  std::string toString(dsa::sim::BitstreamWrapper *bsw) override {
     std::ostringstream oss;
-    oss << "array:" << start << " "  << "idx_port:" << idx_port();
+    oss << short_name() << " array:" << start << " "  << "idx_port:" << idx_port();
+    if (bsw) {
+      oss << "(" << bsw->name(false, idx_port()) << ")";
+    }
     for (auto &elem : pes) {
       oss << " " << elem.toString();
+      if (bsw) {
+        oss << "(" << bsw->name(true, elem.port) << ")";
+      }
     }
     oss << " " << i << "/" << len;
     return oss.str();
@@ -673,6 +689,76 @@ struct IndirectReadStream : public PortPortStream {
                      int idx_port_, uint64_t start_, uint64_t len_) :
                      PortPortStream(unit, ctx, 1 << dsa::sim::stream::Loc2BarrierFlag(unit), pes, {idx_port_}),
                      start(start_), len(len_) {}
+};
+
+
+struct IndirectAtomicStream : public OPortStream {
+  /*!
+   * \brief The base address of the indirect array.
+   */
+  uint64_t start;
+  /*!
+   * \brief The number of elements from the index port.
+   */
+  uint64_t len;
+  /*!
+   * \brief The progress of this stream.
+   */
+  uint64_t i{0};
+  /*!
+   * \brief Atomic operation applied on memory.
+   */
+  MemoryOperation mo;
+  /*!
+   * \brief The stream of index.
+   */
+  int idx_port() {
+    return ports[1];
+  }
+  /*!
+   * \brief The stream of operand.
+   */
+  int operand_port() {
+    return ports[0];
+  }
+
+  bool stream_active() {
+    return i < len;
+  }
+
+  /*! \brief The entrance of the visitor pattern. */
+  virtual void Accept(dsa::sim::stream::Functor *f) override {
+    f->Visit(this);
+  }
+
+  /*!
+   * \brief Deep copy this object.
+   */
+  virtual OPortStream *clone() {
+    return new IndirectAtomicStream(*this);
+  }
+
+  std::string toString(dsa::sim::BitstreamWrapper *bsw) override {
+    std::ostringstream oss;
+    oss << short_name() << " array:" << start << " "  << "idx_port:" << idx_port();
+    if (bsw) {
+      oss << "(" << bsw->name(false, idx_port()) << ")";
+    }
+    oss << " operand_port:" << operand_port();
+    if (bsw) {
+      oss << "(" << bsw->name(false, operand_port()) << ")";
+    }
+    oss << " memory op: " << mo << " " << i << "/" << len;
+    return oss.str();
+  }
+
+  LOC src() override { return PORT; }
+  LOC dest() override { return unit(); }
+
+  IndirectAtomicStream(LOC unit, uint64_t ctx, int oport, int idx_port_, uint64_t start_, uint64_t len_) :
+                       OPortStream(unit, ctx, (1 << dsa::sim::stream::Loc2BarrierFlag(unit)) | (1 << DBF_AtomicStreams),
+                                   {oport, idx_port_}),
+                       start(start_), len(len_) {}
 };
 
 
@@ -701,15 +787,12 @@ struct RecurrentStream : PortPortStream {
     return i < n;
   }
 
-  std::string toString() override {
+  std::string toString(dsa::sim::BitstreamWrapper *bsw) override {
     std::ostringstream oss;
     oss << oports[0] << " -> " << pes[0].port << " " << i << "/" << n;
     return oss.str();
   }
 
-  void print_status() override {
-    std::cout << toString() << std::endl;
-  }
 
   PortPortStream *clone() {
     return new RecurrentStream(*this);
@@ -823,8 +906,6 @@ remote_port_multicast_stream_t(int out_port, int remote_in_port, uint64_t num_el
     // print_in_ports();
     std::cout << "\tremote_in_port=" << _remote_port;
     std::cout << "\tmask:" << _core_mask << "\telem_left=" << _num_elements;
-
-    base_stream_t::print_status();
   }
 
   // virtual LOC src() {return LOC::PORT;}
@@ -964,14 +1045,13 @@ struct direct_remote_scr_stream_t : public remote_scr_stream_t {
   }
 
   // port
-  virtual void print_status() override {
+  virtual void print_status() {
     std::cout << "direct port->remote scratch";
-    std::cout << "\tval_port=" << _out_port << "(" << soft_port_name(_out_port, false) << ")";
+    std::cout << "\tval_port=" << _out_port << ")";
     // std::cout << "\tremote_scratch_base_addr:" << _mem_addr << "\telem_left=" << _num_elements;
     std::cout << "\telem_left=" << _num_elements;
     std::cout << "\tdata_width=" << dtype;
 
-    base_stream_t::print_status(); // configuration may not have been done yet!
   }
 
   virtual LOC src() override {return LOC::PORT;}

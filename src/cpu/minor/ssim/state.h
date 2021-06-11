@@ -13,6 +13,9 @@
 #include <cstdint>
 #include <sstream>
 
+#include "dsa/spec.h"
+
+
 namespace dsa {
 namespace sim {
 
@@ -47,25 +50,27 @@ struct IVPState {
    * \brief The change of the repeat time.
    */
   int64_t stretch;
+
+  IVPState(int64_t repeat_ = 1 << DSA_REPEAT_DIGITAL_POINT,
+           int64_t stretch_ = 0) :
+    repeat(repeat_), stretch(stretch_) {}
+
   /*!
-   * \brief The period of changing the repeat time.
+   * \brief We adopt a fixed-point repeat port, so we need to calcuate the ceiling.
    */
-  int64_t period;
-
-  IVPState(int64_t repeat_ = 1, int64_t stretch_ = 0, int64_t period_ = INT64_MAX) :
-    repeat(repeat_), stretch(stretch_), period(period_) {}
-
+  int exec_repeat() {
+    auto base = (repeat >> DSA_REPEAT_DIGITAL_POINT);
+    auto mask = (1 << DSA_REPEAT_DIGITAL_POINT) - 1;
+    return base + ((repeat & mask) != 0);
+  }
 
   virtual std::string toString() {
     std::ostringstream oss;
-    if (repeat != 1) {
+    if (exec_repeat() != 1) {
       oss << "repeat=" << repeat;
     }
     if (stretch) {
       oss << ", stretch=" << stretch;
-    }
-    if (period != INT64_MAX) {
-      oss << ", period=" << period;
     }
     return oss.str().empty() ? "[default]" : oss.str();
   }
@@ -79,25 +84,22 @@ namespace rt {
 struct PortExecState : IVPState {
 
   PortExecState(const IVPState &vps, int port_) :
-    IVPState(vps.repeat, vps.stretch, vps.period), port(port_) {}
+    IVPState(vps.repeat, vps.stretch), port(port_) {}
 
   /*!
    * \brief Move forward the state machine.
    * \return If we should pop the head of the current FIFO.
    */
   bool tick() {
-    if (repeat) {
-      repeat_counter = (repeat_counter + 1) % repeat;
+    if (exec_repeat()) {
+      repeat_counter = (repeat_counter + 1) % exec_repeat();
     } else {
       // If it is zero, we should avoid dividen by zero,
       // and just pop the value.
       repeat_counter = 0;
     }
     if (repeat_counter == 0) {
-      stretch_counter = (stretch_counter + 1) % period;
-      if (stretch_counter == 0) {
-        repeat += stretch;
-      }
+      repeat += stretch;
       return true;
     }
     return false;
@@ -107,19 +109,16 @@ struct PortExecState : IVPState {
     std::ostringstream oss;
     oss << "port=" << port;
     if (repeat != 1) {
-      oss << ", repeat=" << repeat_counter << "/" << repeat;
+      oss << ", repeat=" << repeat_counter << "/" << exec_repeat()
+          << "(" << (double) repeat / (1 << DSA_REPEAT_DIGITAL_POINT) << ")";
     }
     if (stretch) {
-      oss << ", stretch=" << stretch;
-    }
-    if (period != INT64_MAX) {
-      oss << ", " << stretch_counter << "/" << period;
+      oss << ", stretch=" << stretch
+          << "(" << (double) repeat / (1 << DSA_REPEAT_DIGITAL_POINT) << ")";
     }
     return oss.str();
   }
 
-  /*! \brief The current state machine. */
-  int64_t stretch_counter{0};
   /*! \brief The number of times repeated. */
   int64_t repeat_counter{0};
   /*! \brief The port involved. */

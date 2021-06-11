@@ -56,8 +56,8 @@ struct SSMemReqInfo {
     int trans_idx{0};
     std::vector<int> ports;
     uint32_t fill_mode{0};
-    std::vector <bool> mask;
-    std::vector <int> map;
+    std::vector<bool> mask;
+    std::vector<int> map;
     bool stride_first{false};
     bool stride_last{false};
     bool last{false};

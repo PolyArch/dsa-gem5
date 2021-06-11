@@ -41,19 +41,23 @@ struct BuffetChecker : dsa::sim::stream::Functor {
     bool ok{true};
 };
 
-std::vector<base_stream_t*> RoundRobin::Arbit(soft_config_t &sc, port_interf_t &pi) {
+std::vector<base_stream_t*> RoundRobin::Arbit(BitstreamWrapper &bsw, port_interf_t &pi) {
   std::vector<base_stream_t*> res;
   for (int is_input = 0; is_input < 2; ++is_input) {
     for (int loc = 0; loc < LOC::TOTAL; ++loc) {
-      auto &ports = sc.active_ports(is_input);
+      auto &ports = bsw.ports[is_input];
       for (int j = 1; j <= (int) ports.size(); ++j) {
         int idx = (last_executed[is_input][loc] + j) % ports.size();
-        int port = ports[idx];
+        int port = ports[idx].port;
         if (auto stream = pi.ports(is_input)[port].stream) {
+          // LOG(SCHEDULE) << stream->toString(&bsw);
           if (!stream->stream_active()) {
             continue;
           }
           if (std::find(res.begin(), res.end(), stream) != res.end()) {
+            continue;
+          }
+          if (stream->side(is_input) != loc) {
             continue;
           }
           BuffetChecker bc;
@@ -61,12 +65,11 @@ std::vector<base_stream_t*> RoundRobin::Arbit(soft_config_t &sc, port_interf_t &
           if (!bc.ok) {
             continue;
           }
-          if (stream->side(is_input) == loc) {
-            last_executed[is_input][loc] = idx;
-            res.push_back(stream);
-            LOG(SCHEDULE) << "Execute Stream: " << stream->toString();
-            break;
-          }
+          last_executed[is_input][loc] = idx;
+          res.push_back(stream);
+          LOG(SCHEDULE) << "Execute Stream (" << is_input << ", " << loc << "): "
+                        << stream->toString(&bsw);
+          break;
         }
       }
     }
