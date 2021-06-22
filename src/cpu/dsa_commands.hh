@@ -4,7 +4,7 @@
 // ... someday I'll do the #macro trick to automate
 // Yes! The magic is applied!
 
-#include "dsa/rf.h"
+#include "dsa-ext/rf.h"
 
 enum SSCmdIdx {
 #define MACRO(x) SS_##x,

@@ -1,7 +1,7 @@
 #include <cstdint>
 #include <queue>
 
-#include "dsa/spec.h"
+#include "dsa-ext/spec.h"
 #include "stream.hh"
 #include "state.h"
 

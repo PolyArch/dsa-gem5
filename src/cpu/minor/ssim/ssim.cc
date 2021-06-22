@@ -10,6 +10,7 @@
 #include "ssim.hh"
 #include "../cpu.hh"
 #include "../exec_context.hh"
+#include "./ism.h"
 
 using namespace std;
 
@@ -143,7 +144,7 @@ void ssim_t::LoadMemoryToPort(int port, int source, int dim, int padding) {
     s->be->use = s;
     LOG(COMMAND) << "Allocate Buffet: " << s->be->toString();
   }
-  LOG(COMMAND) << "Linear Read Stream: " << s->toString(nullptr);
+  LOG(COMMAND) << "Linear Read Stream: " << s->toString();
   cmd_queue.push_back(s);
 }
 
@@ -164,7 +165,7 @@ void ssim_t::WritePortToMemory(int port, int operation, int dst, int dim) {
     s->be->load = s;
     LOG(COMMAND) << "Allocate Buffet: " << s->be->toString();
   }
-  LOG(COMMAND) << "Linear Write Stream: " << s->toString(nullptr);
+  LOG(COMMAND) << "Linear Write Stream: " << s->toString();
   cmd_queue.push_back(s);
 }
 
@@ -177,33 +178,74 @@ void ssim_t::ConstStream(int port, int dim) {
   auto s = new ConstPortStream(rf[DSARF::TBC].value, gatherBroadcastPorts(port), ls);
   s->dtype = dtype;
   s->inst = inst;
-  LOG(COMMAND) << "Const Stream: " << s->toString(nullptr);
+  LOG(COMMAND) << "Const Stream: " << s->toString();
   cmd_queue.push_back(s);
 }
 
+dsa::sim::stream::IndirectFSM
+initializeIndirectFSM(dsa::sim::ConfigState *rf, int ind, int dim,
+                      const std::vector<int> &PORT_SHIFT,
+                      const std::vector<int> &TYPE_SHIFT) {
+  CHECK(PORT_SHIFT.size() == TYPE_SHIFT.size());
+  auto ctx = rf[DSARF::TBC].value;
+  using Attr = dsa::sim::stream::IndirectFSM::FSMAttr;
+  dsa::sim::stream::IndirectFSM fsm(rf[DSARF::SAR].value, rf[DSARF::E2D].value,
+                                    rf[DSARF::I2D].value, rf[DSARF::I1D].value);
+  for (int i = 0; i < PORT_SHIFT.size(); ++i) {
+    fsm.attrs.emplace_back();
+    if ((ind >> i) & 1) {
+      fsm.attrs[i].port = (rf[DSARF::INDP].value >> PORT_SHIFT[i]) & 127;
+    }
+    fsm.attrs[i].dtype =  1 << ((rf[DSARF::CSR].value >> TYPE_SHIFT[i]) & 3);
+  }
+  // Make the inner-most stream a dummy and empty stream,
+  // which forces the outer dimensions to refresh.
+  fsm.idx().stream = new SentinelStream(false);
+
+  // If 2D, we use L2D. O.w, we use 1.
+  int64_t outer = dim == 1 ? rf[DSARF::L2D].value : (int64_t)1;
+  auto fPortOrConst = [ctx, outer, dim](Attr &attr, int64_t const_value) {
+    if (attr.port == -1) {
+      auto l1d = new Linear1D(attr.dtype, const_value, 0, outer, 0);
+      attr.stream = new ConstPortStream(ctx, {}, l1d);
+      attr.stream->dtype = attr.dtype;
+    } else {
+      CHECK(dim != 1) << "Only 2D stream can have inner dimension trip count from a port!";
+      attr.stream = new RecurrentStream(ctx, attr.port, {}, outer);
+    }
+  };
+  fPortOrConst(fsm.length(), rf[DSARF::L1D].value);
+  fPortOrConst(fsm.array(), 0);
+  return fsm;
+}
 
 void ssim_t::IndirectMemoryToPort(int port, int source, int ind, int dim) {
-  // TODO(@were): Use the ind and dim!
-  auto irs =
-    new IndirectReadStream(source == 0 ? LOC::DMA : LOC::SCR, rf[DSARF::TBC].value,
-                           gatherBroadcastPorts(port), rf[DSARF::INDP].value & 127,
-                           rf[DSARF::SAR].value, rf[DSARF::L1D].value);
-  irs->dtype = (1 << ((rf[DSARF::CSR].value >> 4) & 3));
+  auto ctx = rf[DSARF::TBC].value;
+  // INDP[0:7]: Index Port; INDP[14:20]: Start Address; INDP[21:27]: Length
+  //  CSR[4:5]: Index Port;    CSR[8:9]: Start Address;  CSR[10:11]: Length
+  auto fsm = initializeIndirectFSM(rf, ind, dim, {0, 14, 21}, {4, 8, 10});
+  fsm.attrs.emplace_back();
+  fsm.value().stream = new SentinelStream(false);
+  CHECK(fsm.attrs.size() == 4);
+  auto irs = new IndirectReadStream(source == 0 ? LOC::DMA : LOC::SCR, ctx,
+                                    gatherBroadcastPorts(port), fsm);
+  irs->dtype = (1 << ((rf[DSARF::CSR].value >> 0) & 3));
   irs->inst = inst;
   cmd_queue.push_back(irs);
-  LOG(COMMAND) << "Indirect Read Stream: " << irs->toString(nullptr);
+  LOG(COMMAND) << "Indirect Read Stream: " << irs->toString();
 }
 
 void ssim_t::AtomicMemoryOperation(int port, int mem, int operation, int ind, int dim) {
-  auto ias =
-    new IndirectAtomicStream(mem == 0 ? LOC::DMA : LOC::SCR, rf[DSARF::TBC].value,
-                             port, rf[DSARF::INDP].value & 127,
-                             rf[DSARF::SAR].value, rf[DSARF::L1D].value);
-  ias->dtype = (1 << ((rf[DSARF::CSR].value >> 4) & 3));
+  auto ctx = rf[DSARF::TBC].value;
+  // INDP[0:7]: Index Port; INDP[14:20]: Start Address; INDP[21:27]: Length; INDP[7:13]: Operand;
+  //  CSR[4:5]: Index Port;    CSR[8:9]: Start Address;  CSR[10:11]: Length;   CSR[0:1]: Operand;
+  auto fsm = initializeIndirectFSM(rf, ind | 8, dim, {0, 14, 21, 7}, {4, 8, 10, 0});
+  auto ias = new IndirectAtomicStream(mem == 0 ? LOC::DMA : LOC::SCR, ctx, fsm);
+  ias->dtype = (1 << ((rf[DSARF::CSR].value >> 0) & 3));
   ias->inst = inst;
   ias->mo = (MemoryOperation) operation;
   cmd_queue.push_back(ias);
-  LOG(COMMAND) << "Indirect Write Stream: " << ias->toString(nullptr);
+  LOG(COMMAND) << "Indirect Write Stream: " << ias->toString();
 }
 
 std::vector<PortExecState> ssim_t::gatherBroadcastPorts(int port) {
@@ -234,12 +276,15 @@ void ssim_t::DispatchStream() {
       for (auto &elem : pes) {
         auto &in = accel->port_interf().in_port(elem.port);
         if (in.stream) {
+          LOG(DISPATCH) << "ivp" << elem.port << " serving stream " << in.stream->toString();
           return false;
         }
         if (std::find(iports.begin(), iports.end(), elem.port) != iports.end()) {
+          LOG(DISPATCH) << "ivp" << elem.port << " is enforced by previous conflict port!";
           return false;
         }
         if (in.mem_size() || in.num_ready()) {
+          LOG(DISPATCH) << "ivp" << elem.port << " buffer not empty! " << in.mem_size() << ", " << in.num_ready();
           return false;
           // FIXME(@were): This can be more aggressive, but what should I do?
           // if (elem.repeat != in.pes.repeat ||
@@ -305,12 +350,20 @@ void ssim_t::DispatchStream() {
      */
     void Visit(OPortStream *ops) override {
       barred |= ops->barrier_mask();
+      // Assuming we can retire.
+      retire = true;
       if (!(ops->barrier_mask() & barrier_mask)) {
         for (auto port : ops->oports()) {
           auto &out = accel->port_interf().out_port(port);
-          if (out.stream == nullptr &&
-              std::find(oports.begin(), oports.end(), port) == oports.end()) {
-            retire = true;
+          if (out.stream) {
+            LOG(DISPATCH) << "ovp" << port << " is serving " << out.stream->toString();
+            retire = false;
+            break;
+          }
+          if (std::find(oports.begin(), oports.end(), port) != oports.end()) {
+            LOG(DISPATCH) << "ovp" << port << " is enforced by conflict streams!";
+            retire = false;
+            break;
           }
         }
       }
@@ -381,31 +434,33 @@ void ssim_t::DispatchStream() {
         ivp.pes = elem;
       }
     }
+  
     void BindStreamToPorts(const vector<int> &ports, base_stream_t *stream) {
       for (auto &elem : ports) {
         accel->port_interf().out_port(elem).bindStream(stream);
       }
     }
 
-    /*!
-     * \brief Enforce the barrier.
-     */
-    void Visit(Barrier *bar) override {
+    void debugLog(base_stream_t *s) {
+      LOG(DISPATCH) << "Issue to Accel" << accel->accel_index() << ": " << s->toString();
     }
 
     /*!
      * \brief Schedule the read stream.
      */
     void Visit(IPortStream *ips) override {
-      auto cloned = ips->clone();
+      auto cloned = ips->clone(accel);
       BindStreamToPorts(cloned->pes, cloned);
+      debugLog(ips);
     }
 
     /*!
      * \brief Schedule the write stream.
      */
     void Visit(OPortStream *ops) override {
-      BindStreamToPorts(ops->oports(), ops->clone());
+      auto cloned = ops->clone(accel);
+      BindStreamToPorts(ops->oports(), cloned);
+      debugLog(ops);
     }
 
     /*!
@@ -413,10 +468,11 @@ void ssim_t::DispatchStream() {
      */
     void Visit(PortPortStream *pps) override {
       int port = pps->oports[0];
-      auto cloned = pps->clone();
+      auto cloned = pps->clone(accel);
       BindStreamToPorts(pps->pes, cloned);
       auto &out = accel->port_interf().out_port(port);
       out.bindStream(cloned);
+      debugLog(pps);
     }
 
     /*!
@@ -440,7 +496,7 @@ void ssim_t::DispatchStream() {
         cmd_queue[i]->Accept(&dc[j]);
         retire = retire && dc[j].retire;
         if (!retire) {
-          LOG(COMMAND) << "Cannot Issue Stream: " << cmd_queue[i]->toString(nullptr);
+          LOG(DISPATCH) << "Cannot Issue Stream: " << cmd_queue[i]->toString();
           break;
         }
       }
@@ -449,8 +505,6 @@ void ssim_t::DispatchStream() {
       for (int j = 0; j < (int) lanes.size(); ++j) {
         if (cmd_queue[i]->context >> j & 1) {
           cmd_queue[i]->Accept(&sd[j]);
-          LOG(COMMAND) << "Issue to Accel" << j << ": "
-                       << cmd_queue[i]->toString(&sd[j].accel->bsw);
         }
       }
     }
@@ -463,7 +517,7 @@ void ssim_t::DispatchStream() {
       cmd_queue.erase(cmd_queue.begin() + i);
     }
   }
-  
+
 }
 
 //The reroute function handles either local recurrence, or remote data transfer
@@ -656,47 +710,6 @@ void ssim_t::set_memory_map_config(base_stream_t* s, uint64_t partition_size, ui
     s->set_dist_cores();
   }
 }
-
-// void ssim_t::BroadcastStream(base_stream_t* s) {
-//   auto ctx = rf[DSARF::TBC].value;
-//   //patch with implicit stuff
-//   s->set_mem_map_config();
-// 
-//   //Check if not active!
-//   if(SS_DEBUG::COMMAND) {
-//     timestamp_context();
-//     std::cout << "id:" << s->id() << " ";
-//     s->print_status();
-//   }
-// 
-//   if(!s->stream_active()) {
-//     if(SS_DEBUG::COMMAND) {
-//       timestamp_context();
-//       std::cout << " ---    and this stream is being deleted for being inactive!\n";
-//     }
-//     delete s;
-//     return;
-//   }
-// 
-//   shared_ptr<base_stream_t> s_shr(s);
-// 
-//   for(int i = 0; i < (int) lanes.size(); ++i) {
-//     if(ctx >> i & 1) {
-//       if(auto is = dynamic_cast<IPortStream*>(s)) {
-//         CHECK(!is->pes.empty());
-//         auto& in_vp = lanes[i]->port_interf().in_port(is->pes[0].port);
-//         s->set_data_width(in_vp.get_port_width()); // added for dgra
-//       } else if (s->out_port() != -1) {
-//         auto& out_vp = lanes[i]->port_interf().out_port(s->out_port());
-//         s->set_data_width(out_vp.get_port_width()); // added for dgra
-//       } else {
-//         s->set_data_width(8);
-//       }
-//       lanes[i]->add_stream(s_shr);
-//     }
-//   }
-// 
-// }
 
 // ------------------------Time Stuffs-------------------------------------
 void ssim_t::timestamp() {

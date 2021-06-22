@@ -2,7 +2,7 @@
 #include <climits>
 #include <vector>
 
-#include "dsa/rf.h"
+#include "dsa-ext/rf.h"
 
 #include "./linear_stream.h"
 

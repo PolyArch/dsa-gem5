@@ -66,9 +66,7 @@ struct Bank {
 
 /* \brief The dynamic memory simulation. */
 struct ScratchMemory : adg::ScratchMemory {
-  /*
-   * \brief The buffer for the pending requests.
-   */
+  /* \brief The buffer for the pending requests. */
   RequestBuffer *rb;
   /* \brief The data structure for each bank. */
   std::vector<Bank> banks;
@@ -77,6 +75,8 @@ struct ScratchMemory : adg::ScratchMemory {
 
   /* \brief Simulate the memory system. */
   Response Step();
+
+  int bandwidth() { return bank_width * num_banks; }
 
 };
 

@@ -13,7 +13,7 @@
 #include <cstdint>
 #include <sstream>
 
-#include "dsa/spec.h"
+#include "dsa-ext/spec.h"
 
 
 namespace dsa {
@@ -109,12 +109,12 @@ struct PortExecState : IVPState {
     std::ostringstream oss;
     oss << "port=" << port;
     if (repeat != 1) {
-      oss << ", repeat=" << repeat_counter << "/" << exec_repeat()
+      oss << ", repeat=" << repeat_counter << "/" << repeat
           << "(" << (double) repeat / (1 << DSA_REPEAT_DIGITAL_POINT) << ")";
     }
     if (stretch) {
       oss << ", stretch=" << stretch
-          << "(" << (double) repeat / (1 << DSA_REPEAT_DIGITAL_POINT) << ")";
+          << "(" << (double) stretch / (1 << DSA_REPEAT_DIGITAL_POINT) << ")";
     }
     return oss.str();
   }

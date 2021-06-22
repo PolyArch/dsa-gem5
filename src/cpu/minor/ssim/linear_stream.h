@@ -122,22 +122,18 @@ struct Linear1D : LinearStream {
    * \brief The text format for the purpose of debugging.
    */
   std::string toString() override {
+    auto &l1d = *this;
+    std::ostringstream oss;
+    oss << "start:" << l1d.start
+        << " stride1d:" << l1d.stride
+        << " word:" << l1d.word
+        << " cnt:" << l1d.i << "/" << l1d.length;
     if (hasNext()) {
-      auto &l1d = *this;
-      std::ostringstream oss;
-      oss << "start:" << l1d.start
-          << " stride1d:" << l1d.stride
-          << " word:" << l1d.word
-          << " cnt:" << l1d.i << "/" << l1d.length;
-      if (hasNext()) {
-        oss << " next: " << l1d.poll(false);
-      } else {
-        oss << " [end]";
-      }
-      return oss.str();
+      oss << " next: " << l1d.poll(false);
     } else {
-      return "[1-d stream to retire]";
+      oss << " [end]";
     }
+    return oss.str();
   }
 
   int word_bytes() override {

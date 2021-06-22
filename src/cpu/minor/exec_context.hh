@@ -59,7 +59,7 @@
 #include "mem/request.hh"
 #include "cpu/dsa_commands.hh"
 #include "dsa/debug.h"
-#include "dsa/rf.h"
+#include "dsa-ext/rf.h"
 
 namespace Minor
 {

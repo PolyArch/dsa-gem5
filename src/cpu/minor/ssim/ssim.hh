@@ -7,7 +7,7 @@
 #include "accel.hh"
 #include "state.h"
 #include "statistics.h"
-#include "dsa/spec.h"
+#include "dsa-ext/spec.h"
 #include "spec.h"
 
 namespace Minor {
@@ -170,11 +170,6 @@ public:
    * \brief If we have space in the buffer of the command queue of all the accelerators related.
    */
   bool StreamBufferAvailable();
-
-  /*!
-   * \brief Broadcast the stream instruction accroding to the context register.
-   */
-  // void BroadcastStream(base_stream_t* s);
 
   /*!
    * \brief Dispatch streams to accelerator lanes.
