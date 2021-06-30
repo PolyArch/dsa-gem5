@@ -23,8 +23,6 @@ ssim_t::ssim_t(Minor::LSQ *lsq_) : lsq_(lsq_), statistics(*this) {
     _req_core_id = atoi(req_core_id_str);
   }
 
-  SS_DEBUG::check_env(debug_pred());
-
   lanes.resize(spec.num_of_lanes + 1);
   for(int i = 0; i < (int) lanes.size(); ++i) {
     lanes[i] = new accel_t(i, this);
@@ -237,11 +235,16 @@ void ssim_t::IndirectMemoryToPort(int port, int source, int ind, int dim) {
 
 void ssim_t::AtomicMemoryOperation(int port, int mem, int operation, int ind, int dim) {
   auto ctx = rf[DSARF::TBC].value;
-  // INDP[0:7]: Index Port; INDP[14:20]: Start Address; INDP[21:27]: Length; INDP[7:13]: Operand;
-  //  CSR[4:5]: Index Port;    CSR[8:9]: Start Address;  CSR[10:11]: Length;   CSR[0:1]: Operand;
-  auto fsm = initializeIndirectFSM(rf, ind | 8, dim, {0, 14, 21, 7}, {4, 8, 10, 0});
+  // INDP[0:7]: Index Port; INDP[14:20]: Start Address; INDP[21:27]: Length;
+  //  CSR[4:5]: Index Port;    CSR[8:9]: Start Address;  CSR[10:11]: Length;
+  int dtype = 1 << ((rf[DSARF::CSR].value >> 0) & 3);
+  auto fsm = initializeIndirectFSM(rf, ind | 8, dim, {0, 14, 21}, {4, 8, 10});
+  fsm.attrs.emplace_back();
+  fsm.value().port = port;
+  fsm.value().stream = new SentinelStream(false);
+  fsm.value().dtype = dtype;
   auto ias = new IndirectAtomicStream(mem == 0 ? LOC::DMA : LOC::SCR, ctx, fsm);
-  ias->dtype = (1 << ((rf[DSARF::CSR].value >> 0) & 3));
+  ias->dtype = dtype;
   ias->inst = inst;
   ias->mo = (MemoryOperation) operation;
   cmd_queue.push_back(ias);
@@ -297,6 +300,21 @@ void ssim_t::DispatchStream() {
       return true;
     }
 
+    bool OVPAvailable(const std::vector<int> &ports) {
+      for (auto port : ports) {
+        auto &out = accel->port_interf().out_port(port);
+        if (out.stream) {
+          LOG(DISPATCH) << "ovp" << port << " is serving " << out.stream->toString();
+          return false;
+        }
+        if (std::find(oports.begin(), oports.end(), port) != oports.end()) {
+          LOG(DISPATCH) << "ovp" << port << " is enforced by conflict streams!";
+          return false;
+        }
+      }
+      return true;
+    }
+
     /*!
      * \brief Enforce the barrier.
      */
@@ -336,11 +354,8 @@ void ssim_t::DispatchStream() {
      */
     void Visit(IPortStream *ips) override {
       barred |= ips->barrier_mask();
-      if (!(ips->barrier_mask() & barrier_mask)) {
-        if (IVPAvailable(ips->pes)) {
-          retire = true;
-        }
-      }
+      // (not blocked by barrier) && (input ports available)
+      retire = !(ips->barrier_mask() & barrier_mask) && IVPAvailable(ips->pes);
       std::for_each(ips->pes.begin(), ips->pes.end(),
                     [this] (const PortExecState &pes) { iports.push_back(pes.port); });
     }
@@ -350,23 +365,8 @@ void ssim_t::DispatchStream() {
      */
     void Visit(OPortStream *ops) override {
       barred |= ops->barrier_mask();
-      // Assuming we can retire.
-      retire = true;
-      if (!(ops->barrier_mask() & barrier_mask)) {
-        for (auto port : ops->oports()) {
-          auto &out = accel->port_interf().out_port(port);
-          if (out.stream) {
-            LOG(DISPATCH) << "ovp" << port << " is serving " << out.stream->toString();
-            retire = false;
-            break;
-          }
-          if (std::find(oports.begin(), oports.end(), port) != oports.end()) {
-            LOG(DISPATCH) << "ovp" << port << " is enforced by conflict streams!";
-            retire = false;
-            break;
-          }
-        }
-      }
+      // (not blocked by barrier) && (output ports available)
+      retire = !(ops->barrier_mask() & barrier_mask) && OVPAvailable(ops->oports());
       oports.insert(oports.end(), ops->oports().begin(), ops->oports().end());
     }
 
@@ -375,14 +375,10 @@ void ssim_t::DispatchStream() {
      */
     void Visit(PortPortStream *pps) override {
       barred |= pps->barrier_mask();
-      if (!(pps->barrier_mask() & barrier_mask)) {
-        int port = pps->oports[0];
-        auto &out = accel->port_interf().out_port(port);
-        if (out.stream == nullptr && IVPAvailable(pps->pes) &&
-            std::find(oports.begin(), oports.end(), port) == oports.end()) {
-          retire = true;
-        }
-      }
+      // (not blocked by barrier) && (output ports available) && (input ports available)
+      retire = !(pps->barrier_mask() & barrier_mask) &&
+               OVPAvailable(pps->oports) &&
+               IVPAvailable(pps->pes);
       std::for_each(pps->pes.begin(), pps->pes.end(),
                     [this] (const PortExecState &pes) { iports.push_back(pes.port); });
       oports.insert(oports.end(), pps->oports.begin(), pps->oports.end());
@@ -801,11 +797,8 @@ void ssim_t::multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_por
       s->_remote_port = rem_port;
       // s->_unit=LOC::SCR; (probably add a flag for the destination to save a new opcode)
       s->set_orig();
-      if(SS_DEBUG::NET_REQ){
-        printf("Remote stream initialized");
-        s->print_status();
-      }
-       // BroadcastStream(s);
+      LOG(NET_REQ) << s->toString();
+      // BroadcastStream(s);
     } else {
       if(rem_port!=0) { // I hope it can never be 0
         remote_scr_stream_t* s = new remote_scr_stream_t();
@@ -922,24 +915,12 @@ void ssim_t::update_stat_cycle() {
 // ------------------------- TIMING ---------------------------------
 void ssim_t::roi_entry(bool enter) {
   if(enter) {
-    if(SS_DEBUG::COMMAND || SS_DEBUG::ROI) {
-      timestamp();
-      cout << "Entering ROI ------------\n";
-    }
-
     if(_orig_stat_start_cycle == 0) {
       _orig_stat_start_cycle = now();
     }
     _in_roi=true;
     _times_roi_entered+=1;
   } else {
-
-    if(SS_DEBUG::COMMAND || SS_DEBUG::ROI) {
-      timestamp();
-      std::cout << "Exiting ROI ------------";
-      std::cout << "(" << _stat_start_cycle << "to" << _stat_stop_cycle << ")\n";
-    }
-
     _roi_cycles += _stat_stop_cycle - _stat_start_cycle;
     _in_roi=false;
   }

@@ -120,9 +120,7 @@ addr_t base_stream_t::memory_map(addr_t logical_addr, addr_t cur_scr_offset) {
   // adding the importance of core
   mapped_local_scr_addr = SCRATCH_SIZE*_used_cores[core_id] + mapped_local_scr_addr;
 
-  if(SS_DEBUG::SHOW_CONFIG) {
-    std::cout << "original addr: " << logical_addr << " scr offset: " << cur_scr_offset << " extracted part_offset: " << part_offset << " part_id: " << part_id << " core_id: " << core_id << " mapped scr addr: " << mapped_local_scr_addr << "\n";
-  }
+  LOG(SHOW_CONFIG) << "original addr: " << logical_addr << " scr offset: " << cur_scr_offset << " extracted part_offset: " << part_offset << " part_id: " << part_id << " core_id: " << core_id << " mapped scr addr: " << mapped_local_scr_addr << "\n";
 
   // int core_id = logical_addr >> part_bits & (N_CORES-1) + start_core + core_dist;
   // int part_id = addr >> (part_bits+log(N_CORES);
@@ -223,7 +221,8 @@ int LinearStream::LineInfo::bytes_read() const {
   return std::accumulate(mask.begin(), mask.end(), 0, std::plus<int>());
 }
 
-LinearStream::LineInfo Linear1D::cacheline(int bandwidth, int at_most, BuffetEntry *be) {
+LinearStream::LineInfo Linear1D::cacheline(int bandwidth, int at_most, BuffetEntry *be,
+                                           MemoryOperation mo, LOC loc) {
   CHECK(hasNext());
   bool first = i == 0;
   std::vector<bool> mask(bandwidth, 0);
@@ -232,7 +231,9 @@ LinearStream::LineInfo Linear1D::cacheline(int bandwidth, int at_most, BuffetEnt
   int64_t base = ~(bandwidth - 1) & head;
   int64_t cnt = 0;
   int64_t current = -1;
+  int64_t prev = -1;
   while (cnt < at_most && hasNext()) {
+    prev = current;
     current = poll(false);
     if (be && !be->EnforceReadWrite(current, word)) {
       break;
@@ -243,7 +244,11 @@ LinearStream::LineInfo Linear1D::cacheline(int bandwidth, int at_most, BuffetEnt
         if (be->mo == DMO_Write) {
           be->Append(word);
         }
+        prev = current;
         current = be->Translate(current);
+      }
+      if (mo != DMO_Read && loc == LOC::DMA && (prev != -1 && current - prev != word)) {
+        break;
       }
       for (int j = 0, n = abs(word); j < n; ++j) {
         CHECK(current - base + j >= 0 && current - base + j < mask.size())

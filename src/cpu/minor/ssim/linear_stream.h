@@ -7,8 +7,9 @@
 #include <iostream>
 
 #include "dsa/debug.h"
+#include "dsa-ext/spec.h"
 
-#include "spec.h"
+#include "./loc.hh"
 
 struct BuffetEntry;
 
@@ -57,8 +58,12 @@ struct LinearStream {
    * \param bandwidth The memory bandwidth.
    * \param available When it comes to a write stream, it is the number of elements
    *                  avaiable in the port FIFO.
+   * \param be Buffet entry associated with this request.
+   * \param mo Memory operation to be applied.
+   * \param unit Is it either memory or spad.
    */
-  virtual LineInfo cacheline(int bandwidth, int available, BuffetEntry *be) = 0;
+  virtual LineInfo cacheline(int bandwidth, int available, BuffetEntry *be,
+                             MemoryOperation mo, LOC unit) = 0;
 
   /*!
    * \brief The text format of this stream for the purpose of debugging.
@@ -116,7 +121,7 @@ struct Linear1D : LinearStream {
    * \param bandwidth The width of the cacheline in bytes.
    * \param at_most The the number of bits at most in the bitmask.
    */
-  LineInfo cacheline(int bandwidth, int at_most, BuffetEntry *be);
+  LineInfo cacheline(int bandwidth, int at_most, BuffetEntry *be, MemoryOperation mo, LOC unit);
 
   /*!
    * \brief The text format for the purpose of debugging.
@@ -180,8 +185,8 @@ struct Linear2D : LinearStream {
     return exec.poll(next);
   }
 
-  LineInfo cacheline(int bandwidth, int available, BuffetEntry *be) override {
-    auto res = exec.cacheline(bandwidth, available, be);
+  LineInfo cacheline(int bandwidth, int available, BuffetEntry *be, MemoryOperation mo, LOC unit) override {
+    auto res = exec.cacheline(bandwidth, available, be, mo, unit);
     res.stream_last = false;
     res.stream_last = !hasNext();
     if (hasNext()) {
@@ -259,8 +264,8 @@ struct Linear3D : LinearStream {
     return exec.poll(next);
   }
 
-  LineInfo cacheline(int bandwidth, int available, BuffetEntry *be) override {
-    auto res = exec.cacheline(bandwidth, available, be);
+  LineInfo cacheline(int bandwidth, int available, BuffetEntry *be, MemoryOperation mo, LOC unit) override {
+    auto res = exec.cacheline(bandwidth, available, be, mo, unit);
     res.stream_last = false;
     res.stream_last = !hasNext();
     if (hasNext()) {

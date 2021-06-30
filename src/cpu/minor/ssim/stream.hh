@@ -1112,9 +1112,6 @@ struct atomic_scr_stream_t : public base_stream_t {
   }
   uint64_t cur_addr(uint64_t loc){
     addr_t addr = loc*_val_num*_value_bytes;
-    /*if(SS_DEBUG::SHOW_CONFIG) {
-      std::cout << "input loc: " << loc << " val num: " << _val_num << " value bytes: " << _value_bytes << " computd addr: " << addr << "\n";
-    }*/
     // addr += (_val_num-_sstream_left)*_addr_bytes;
     return memory_map(addr, 0);
   }

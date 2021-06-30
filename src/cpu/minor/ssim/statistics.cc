@@ -31,6 +31,7 @@ bool Host::roi(bool value) {
   roi_ = value;
   gettimeofday(sim_time + value, nullptr);
   sim_cycle[value] = curTick();
+  LOG(ROI) << (value ? "Enter" : "Exit") << " ROI @" << curTick();
   return roi_;
 }
 

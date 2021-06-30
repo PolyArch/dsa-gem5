@@ -1107,10 +1107,7 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
             DPRINTF(SS,"Wait blocked, mask: %x\n",inst->staticInst->get_imm());
           } else {
             DPRINTF(SS,"Wait complete, mask: %x\n",inst->staticInst->get_imm());
-            if(SS_DEBUG::COMMAND || SS_DEBUG::WAIT) {
-              std::cout << "Wait complete, mask:"
-                        << inst->staticInst->get_imm() << "\n";
-            }
+            LOG(COMMAND) << "Wait complete, mask:" << inst->staticInst->get_imm() << "\n";
           }
         }
 
@@ -1586,9 +1583,7 @@ void Execute::send_spu_scr_wr_req(int8_t* val, int num_bytes, uint64_t scr_offse
 
   addr_to_send = scr_offset | num_bytes << 16; // TODO: encode data_width
   dest_core_id += 1;
-  if(SS_DEBUG::NET_REQ){
-    printf("output destination core: %d\n",dest_core_id);
-  }
+  LOG(NET_REQ) << "output destination core: " << dest_core_id;
   mcast_dest[0] = dest_core_id;
   spu_req_info req(1, val, num_bytes, addr_to_send, mcast_dest, req_type);
   push_net_req(req);
@@ -1615,10 +1610,10 @@ void Execute::push_rem_read_return(int dst_core, int8_t data[64], int request_pt
   int src_core = cpu.cpuId();
   assert(src_core!=dst_core && "Same core should not have been remote");
 
-  if(SS_DEBUG::NET_REQ){
-     printf("Remote read return data src core: %d dest core: %d\n",src_core, dst_core);
-     std::cout << "Returning remote read data addr: " << addr << " and x dim: " << request_ptr << " y dim: " << reorder_entry << " and original data bytes: " << orig_data_bytes << std::endl;
-  }
+  LOG(NET_REQ) << "Remote read return data src core: " << src_core << " dest core: " << dst_core;
+  LOG(NET_REQ)
+      << "Returning remote read data addr: " << addr << " and x dim: "
+      << request_ptr << " y dim: " << reorder_entry << " and original data bytes: " << orig_data_bytes;
   mcast_dest[0] = dst_core;
 
   spu_req_info req(1, data, orig_data_bytes, addr_to_send, mcast_dest, req_type);
@@ -1645,10 +1640,7 @@ bool Execute::push_rem_read_req(int dest_core_id, int request_ptr, int addr, int
   addr = addr & (SCRATCH_SIZE-1);
 
   if((ssim.num_active_threads()==1) || (dest_core_id==req_core)) { // 0--host core when non-multi-threaded code
-  // if(1) {
-    if(SS_DEBUG::NET_REQ){
-      printf("LOCAL REQUEST destination core: %d\n",dest_core_id);
-    }
+    LOG(NET_REQ) << "LOCAL REQUEST destination core: " << dest_core_id;
     ssim.push_ind_rem_read_req(false, req_core, request_ptr, addr, data_bytes, reorder_entry);
     return false;
   }
@@ -1672,11 +1664,13 @@ bool Execute::push_rem_read_req(int dest_core_id, int request_ptr, int addr, int
 
   // TODO: could be more, move data bytes to the data arrat
   addr_to_send = addr | request_ptr << 16 | data_bytes << 22 | reorder_entry << 26; // | req_core << 29;
-  if(SS_DEBUG::NET_REQ){
-     printf("output destination core for scratchpad read: %d and requesting core: %d\n",dest_core_id, cpu.cpuId());
-
-    std::cout << "Remote read request, scr_addr: " << addr << " and local core(0-indexed): " << cpu.cpuId() <<" and addr to send: " << addr_to_send << " request ptr: " << request_ptr << " reorder entry: " << reorder_entry << std::endl; 
-  }
+  LOG(NET_REQ)
+    << "output destination core for scratchpad read: " << dest_core_id
+    << " and requesting core: " << cpu.cpuId();
+  LOG(NET_REQ)
+    << "Remote read request, scr_addr: " << addr << " and local core(0-indexed): "
+    << cpu.cpuId() <<" and addr to send: " << addr_to_send
+    << " request ptr: " << request_ptr << " reorder entry: " << reorder_entry; 
   mcast_dest[0] = dest_core_id;
 
   int8_t val[9];
@@ -1735,11 +1729,7 @@ void Execute::serve_pending_net_req() {
   // check if a control or data message
   if(!_pending_net_req.empty()) {
 
-    // std::cout << "num_dest: " << info.num_dest << " data start: " << signed(info.data[0]) << " num data bytes: " << info.num_data_bytes << "\n";
-
-    if(SS_DEBUG::NET_REQ) {
-      std::cout << "Issuing SPU network request from core: " << cpu.cpuId() << " at cycle: " << cpu.curCycle() << "\n";
-    }
+    LOG(NET_REQ) << "Issuing SPU network request from core: " << cpu.cpuId() << " at cycle: " << cpu.curCycle();
 
     ThreadContext *thread = cpu.getContext(0); // assume tid=0?
     for(int i=0; i<_pending_net_req.front().second; ++i) {
@@ -1766,12 +1756,9 @@ bool Execute::push_rem_atom_op_req(uint64_t val, std::vector<int> update_broadca
   int num_vals = update_coalesce_vals.size();
 
 
-  if(SS_DEBUG::NET_REQ) {
-    std::cout << "number of broacast: " << num_updates << "\n";
-    for(unsigned k=0; k<update_broadcast_dest.size(); ++k) {
-      std::cout << "broadcast addr: " << update_broadcast_dest[k] << " ";
-    }
-    std::cout << "\n";
+  LOG(NET_REQ) << "number of broacast: " << num_updates;
+  for(unsigned k=0; k<update_broadcast_dest.size(); ++k) {
+    LOG(NET_REQ) << "broadcast addr: " << update_broadcast_dest[k];
   }
 
   int req_type = 2;
@@ -1911,9 +1898,7 @@ bool Execute::push_scalar_rem_atom_op_req(uint64_t val, std::vector<int> update_
         // std::cout << "scr addr: " << local_scr_addr << " dest core id: " << dest_core_id << "\n";
 
         if(ssim.num_active_threads()==1 || dest_core_id==cpu.cpuId()) { // 0--host core when non-multi-threaded code
-          if(SS_DEBUG::NET_REQ){
-            printf("LOCAL REQUEST destination core: %d\n",dest_core_id);
-          }
+          LOG(NET_REQ) << "LOCAL REQUEST destination core: " << dest_core_id;
           ssim.push_atomic_update_req(local_scr_addr, opcode, val_bytes, out_bytes, val);
           continue;
          // return false;
@@ -2025,15 +2010,11 @@ void Execute::send_spu_req(int src_port_id, int dest_port_id, int8_t* val, int n
   for(int i=0; i<core_mask.size(); ++i){
     if(core_mask.test(i)){
       dest_core_id = i+1; // because of 1 offset with tid
-      if(SS_DEBUG::NET_REQ){
-        printf("output destinations: %d at core: %d\n",dest_core_id,cpu.cpuId());
-      }
+        LOG(NET_REQ) << "output destinations: " << dest_core_id << " at core: " << cpu.cpuId();
       if(dest_core_id==cpu.cpuId() && dest_port_id!=src_port_id) {
         // send val to the dest port id
         ssim.push_in_accel_port(0, val, num_bytes, dest_port_id);
-        if(SS_DEBUG::NET_REQ){
-            printf("Local write at port_id: %d\n", dest_port_id);
-        }
+        LOG(NET_REQ) << "Local write at port_id: " << dest_port_id;
       } else { // no flag reqd, each core only covered once
         mcast_dest.push_back(dest_core_id);
         num_dest++;

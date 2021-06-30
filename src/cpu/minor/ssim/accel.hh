@@ -743,9 +743,7 @@ class scratch_write_controller_t : public data_controller_t {
   void write_scratch_remote_ind(remote_core_net_stream_t& stream);
   void write_scratch_remote_direct(direct_remote_scr_stream_t& stream);
   void atomic_scratch_update(atomic_scr_stream_t& stream);
-  void atomic_scratch_update_local(atomic_scr_stream_t& stream);
   void serve_atomic_requests(bool &performed_atomic_scr);
-  void serve_atomic_requests_local(bool &performed_atomic_scr);
   void push_remote_wr_req(uint8_t *val, int num_bytes, addr_t scr_addr);
   void scr_write(addr_t addr, LinearWriteStream& stream, port_data_t& out_vp);
   // for remote atomic update
@@ -1222,12 +1220,8 @@ public:
 
 private:
   ssim_t* _ssim;
-  std::ofstream in_port_verif, out_port_verif, scr_wr_verif, scr_rd_verif, cmd_verif;
-  std::ofstream cgra_multi_verif;
   bool _cleanup_mode=false;
   bool _stream_cleanup_mode=false;
-
-  std::ostream* _cgra_dbg_stream=NULL;
 
   //***timing-related code***
   bool done_internal(bool show, int mask);
@@ -1279,10 +1273,7 @@ private:
 
   bool in_roi();
 
-  void verif_cmd(base_stream_t* s) {
-    if(SS_DEBUG::VERIF_CMD) {
-    }
-  }
+  void verif_cmd(base_stream_t* s) {}
 
   void sanity_check_stream(base_stream_t* s);
 
@@ -1304,17 +1295,16 @@ private:
 
     std::memcpy(dest, &scratchpad[scr_addr], count);
     // TODO: change this for linear spad case
-    if(SS_DEBUG::CHECK_SCR_ALIAS) { //TODO: make this check work for unaligned
-      for(int i = 0; i < count; i+=sizeof(SBDT)) {
-        uint64_t running_addr=  scr_addr+i;
-        if(scratchpad_writers[running_addr]) {
-          std::cout << "WARNING: scr_addr: " << running_addr
-                    << " constistency is potentially violated; "
-                    << " writer_id: " << scratchpad_writers[running_addr]
-                    << " reader_id: " << id << "\n";
-        }
-        scratchpad_readers[running_addr]=id;
+    for(int i = 0; i < count; i+=sizeof(SBDT)) {
+      uint64_t running_addr=  scr_addr+i;
+      if(scratchpad_writers[running_addr]) {
+        LOG(CHECK_SCR_ALIAS)
+          << "WARNING: scr_addr: " << running_addr
+          << " constistency is potentially violated; "
+          << " writer_id: " << scratchpad_writers[running_addr]
+          << " reader_id: " << id;
       }
+      scratchpad_readers[running_addr]=id;
     }
   }
 
@@ -1322,23 +1312,23 @@ private:
       std::size_t count, int id) {
     // std::cout << "NEW SCRATCHPAD SIZE: " << scratchpad.size() << "\n";
     std::memcpy(&scratchpad[scr_addr], src, count);
-    if(SS_DEBUG::CHECK_SCR_ALIAS) {
-      for(int i = 0; i < count; i+=sizeof(SBDT)) {
-        uint64_t running_addr = scr_addr+i;
-        if(scratchpad_writers[running_addr]) {
-          std::cout << "WARNING: scr_addr: " << running_addr
-                    << " constistency is potentially violated; "
-                    << " writer_id: " << scratchpad_writers[running_addr]
-                    << " writer_id: " << id << "\n";
-        }
-        if(scratchpad_readers[running_addr]) {
-          std::cout << "WARNING: scr_addr: " << running_addr
-                    << " constistency is potentially violated; "
-                    << " reader_id: " << scratchpad_readers[running_addr]
-                    << " writer_id: " << id << "\n";
-        }
-        scratchpad_writers[running_addr]=id;
+    for(int i = 0; i < count; i+=sizeof(SBDT)) {
+      uint64_t running_addr = scr_addr+i;
+      if(scratchpad_writers[running_addr]) {
+        LOG(CHECK_SCR_ALIAS)
+          << "WARNING: scr_addr: " << running_addr
+          << " constistency is potentially violated; "
+          << " writer_id: " << scratchpad_writers[running_addr]
+          << " writer_id: " << id;
       }
+      if(scratchpad_readers[running_addr]) {
+        LOG(CHECK_SCR_ALIAS)
+          << "WARNING: scr_addr: " << running_addr
+          << " constistency is potentially violated; "
+          << " reader_id: " << scratchpad_readers[running_addr]
+          << " writer_id: " << id;
+      }
+      scratchpad_writers[running_addr]=id;
     }
   }
 
@@ -1352,10 +1342,8 @@ private:
     for(int i=0; i<num_bytes; ++i){
       temp.push_back(data[i]);
     }
-    if(SS_DEBUG::NET_REQ) {
-        std::cout << "Received value: " << *reinterpret_cast<SBDT *>(&temp[0])
-                  << " at remote port: " << remote_in_port << "\n";
-    }
+    LOG(NET_REQ) << "Received value: " << *reinterpret_cast<SBDT *>(&temp[0])
+                 << " at remote port: " << remote_in_port;
     in_vp.push_data(temp);
     // inc remote values received at this port
     in_vp.inc_rem_wr(num_bytes/in_vp.get_port_width());

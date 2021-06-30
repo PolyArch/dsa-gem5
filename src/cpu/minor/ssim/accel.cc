@@ -177,10 +177,7 @@ void accel_t::switch_stream_cleanup_mode_on() {
 }
 
 void accel_t::reset_data() {
-  if (SS_DEBUG::COMMAND) {
-    timestamp();
-    std::cout << "RESET_DATA REQUEST INITIALIZED\n";
-  }
+  LOG(COMMAND) << curTick() << ": Reset data requested";
 
   for (int i = 0; i < 2; ++i) {
     for (auto &elem : bsw.ports[i]) {
@@ -304,10 +301,8 @@ SBDT port_data_t::pop_out_data(int bytes) {
     _valid_data.pop_front(); // TODO: for now we ignore invalid, hope that's okay?
     res |= val << (i * 8);
   }
-  if (SS_DEBUG::DATA_STATUS) {
-    std::cout << "bytes popped: " << bytes << ", value is " << res << " at port id: " << _port << std::endl;
-    std::cout << "remain " << _port_width * _mem_data.size() << " bytes" << std::endl;
-  }
+  LOG(DATA_STATUS) << "bytes popped: " << bytes << ", value is " << res << " at port id: " << _port;
+  LOG(DATA_STATUS) << "remain " << _port_width * _mem_data.size() << " bytes";
   return res;
 }
 
@@ -353,9 +348,7 @@ SBDT port_data_t::peek_out_data(int idx, int bytes) {
     res |= partial << (8 * i);
   }
 
-  if (SS_DEBUG::DATA_STATUS) {
-    std::cout << "peeked value is " << bytes << std::endl;
-  }
+  LOG(DATA_STATUS) << "peeked value is " << bytes;
 
   return res;
 }
@@ -452,52 +445,8 @@ accel_t::accel_t(int i, ssim_t *ssim)
       _scr_w_c(this, &_dma_c), _net_c(this, &_dma_c) {
   spads.emplace_back(8, 16, SCRATCH_SIZE, 1, new dsa::sim::InputBuffer(4, 16, 1));
 
-  int ugh = system("mkdir -p stats/");
-  ugh += system("mkdir -p viz/");
-
-  if (SS_DEBUG::VERIF_MEM || SS_DEBUG::VERIF_PORT || SS_DEBUG::VERIF_CGRA ||
-      SS_DEBUG::VERIF_SCR || SS_DEBUG::VERIF_CMD) {
-    ugh += system("mkdir -p verif/");
-    cout << "DUMPING VERIFICATION OUTPUTS (dir: verif/) ... SIMULATION WILL BE "
-            "SLOWER\n";
-    cout << "ALSO, MEMORY ACCESS STATISTICS MAY DIFFER\n";
-  }
-  if (SS_DEBUG::VERIF_PORT) {
-    in_port_verif.open(
-        ("verif/" + SS_DEBUG::verif_name + "in_port.txt").c_str(),
-        ofstream::trunc | ofstream::out);
-    assert(in_port_verif.is_open());
-    out_port_verif.open(
-        ("verif/" + SS_DEBUG::verif_name + "out_port.txt").c_str(),
-        ofstream::trunc | ofstream::out);
-    assert(out_port_verif.is_open());
-  }
-  if (SS_DEBUG::VERIF_SCR) {
-    scr_rd_verif.open(("verif/" + SS_DEBUG::verif_name + "scr_rd.txt").c_str(),
-                      ofstream::trunc | ofstream::out);
-    assert(scr_rd_verif.is_open() && scr_rd_verif.good());
-
-    scr_wr_verif.open(("verif/" + SS_DEBUG::verif_name + "scr_wr.txt").c_str(),
-                      ofstream::trunc | ofstream::out);
-    assert(scr_wr_verif.is_open());
-  }
-  if (SS_DEBUG::VERIF_CMD) {
-    cmd_verif.open(("verif/" + SS_DEBUG::verif_name + "core_trace.txt").c_str(),
-                   ofstream::trunc | ofstream::out);
-    assert(cmd_verif.is_open());
-  }
-
-  _cgra_dbg_stream = &std::cout;
-
-  if (SS_DEBUG::VERIF_CGRA) {
-    SS_DEBUG::COMP = 1;
-    cgra_multi_verif.open(("verif/" + SS_DEBUG::verif_name + "cgra_comp" +
-                           std::to_string(_accel_index) + ".txt")
-                              .c_str(),
-                          ofstream::trunc | ofstream::out);
-    assert(cgra_multi_verif.is_open());
-    _cgra_dbg_stream = &cgra_multi_verif;
-  }
+  ENFORCED_SYSTEM("mkdir -p stats/");
+  ENFORCED_SYSTEM("mkdir -p viz/");
 
   const char *fifo_len_str = std::getenv("FU_FIFO_LEN");
   if (fifo_len_str != nullptr) {
@@ -878,7 +827,8 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     LOG(MEM_REQ) << (read ? "Read" : "Write") << " request: " << info.linebase << ", " << info.start;
   }
 
-  void requestIndirect(int sid, int bw_cnt, dsa::sim::stream::IndirectFSM *ism, port_data_t *datap, MemoryOperation op) {
+  void requestIndirect(int sid, int bw_cnt, dsa::sim::stream::IndirectFSM *ism,
+                       port_data_t *datap, MemoryOperation op) {
   }
 
   void Visit(ConstPortStream *cps) override {
@@ -931,7 +881,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       available = std::min(stream.be->occupied, available);
       stream.be->mo = DMO_Read;
     }
-    auto info = stream.ls->cacheline(cacheline, available, stream.be);
+    auto info = stream.ls->cacheline(cacheline, available, stream.be, DMO_Read, stream.src());
     info.padding = stream.padding;
     std::vector<bool> bm = info.mask;
     std::vector<int> ports;
@@ -1084,7 +1034,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       while (stream.stream_active() && out_port.mem_size() > 0) {
         out_port.pop_out_data(); // get rid of data
         int cacheline = accel->get_ssim()->spec.cache_line;
-        stream.ls->cacheline(cacheline, out_port.get_port_width(), nullptr);
+        stream.ls->cacheline(cacheline, out_port.get_port_width(), nullptr, DMO_Write, stream.dest());
       }
       return;
     }
@@ -1101,7 +1051,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       port_available = std::min(lws->be->SpaceAvailable(), port_available);
       stream.be->mo = DMO_Write;
     }
-    auto info = stream.ls->cacheline(memory_bw, std::min(memory_bw, port_available), stream.be);
+    auto info = stream.ls->cacheline(memory_bw, std::min(memory_bw, port_available), stream.be, DMO_Write, stream.dest());
     int to_pop = std::accumulate(info.mask.begin(), info.mask.end(), (int) 0, std::plus<int>());
     CHECK(to_pop % ovp.get_port_width() == 0);
     std::vector<uint8_t> data;
@@ -1123,6 +1073,11 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     LOG(MEM_REQ)
       << "write request: " << info.linebase << ", " << info.start
       << " for " << stream.toString() << " " << stream.stream_active();
+    std::ostringstream oss;
+    for (int i = 0; i < data.size(); ++i) {
+      oss << " " << (int) data[i];
+    }
+    LOG(MEM_REQ) << oss.str();
   }
 
   void Visit(RecurrentStream *pps) override {
@@ -1288,18 +1243,6 @@ void accel_t::tick() {
 
   if (in_roi()) {
     get_ssim()->update_stat_cycle();
-
-    if (SS_DEBUG::CYC_STAT && _accel_index == SS_DEBUG::ACC_INDEX) {
-      if (_back_cgra) {
-        cycle_status_backcgra();
-      } else {
-        cycle_status();
-      }
-    }
-
-    std::vector<pipeline_stats_t::PIPE_STATUS> blame_vec;
-    std::vector<pipeline_stats_t::PIPE_STATUS> group_vec;
-
   }
 
   cycle_out_interf();
@@ -1464,22 +1407,20 @@ void accel_t::cycle_cgra_backpressure() {
       vector<bool> data_valid;
       vec_output->pop(data, data_valid);
 
-      if(SS_DEBUG::COMP) {
-        cerr << "outvec[" << vec_output->name() << "] allowed to pop output: ";
-        assert(data_valid.size() == data.size());
-        for (int j = 0, n = data.size(); j < n; ++j) {
-          std::cout << data[j] << "(" << data_valid[j] << ") ";
-        }
-        cerr << "\n";
+      LOG(COMP) << "outvec[" << vec_output->name() << "] allowed to pop output: ";
+      assert(data_valid.size() == data.size());
+      for (int j = 0, n = data.size(); j < n; ++j) {
+        LOG(COMP) << "pop: " << data[j] << "(" << data_valid[j] << ") ";
       }
       if (in_roi()) {
         _stat_comp_instances += 1;
       }
 
-      CHECK(data_valid.size() == len) << "port vec elem: " << cur_out_port.port_vec_elem()
-                                      << " port width: " << cur_out_port.get_port_width()
-                                      << " length of output required: " << len
-                                      << " and size: " << data_valid.size();
+      CHECK(data_valid.size() == len)
+        << "port vec elem: " << cur_out_port.port_vec_elem()
+        << " port width: " << cur_out_port.get_port_width()
+        << " length of output required: " << len
+        << " and size: " << data_valid.size();
 
       int j = 0, n_times=0;
       for (j = 0; j < len; ++j) {
@@ -1524,9 +1465,8 @@ void accel_t::cycle_cgra() {
     _stat_cgra_busy_cycles += (_cgra_issued > 0);
   }
 
-  // printf("ACEL ID: %d\n", _lsq->getCpuId());
-  if (_cgra_issued > 0 && SS_DEBUG::COMP && SS_DEBUG::NET_REQ) {
-    printf("ACCEL ID: %d\n", lsq()->getCpuId());
+  if (_cgra_issued > 0) {
+    LOG(NET_REQ) << "ACCEL ID: " << lsq()->getCpuId();
   }
 }
 
@@ -1812,24 +1752,6 @@ void accel_t::pedantic_statistics(std::ostream &out) {
 uint64_t accel_t::roi_cycles() { return _ssim->roi_cycles(); }
 
 void accel_t::print_statistics(std::ostream &out) {
-  if (SS_DEBUG::VERIF_PORT) { // flush all the log files
-    in_port_verif.flush();
-    out_port_verif.flush();
-  }
-  if (SS_DEBUG::VERIF_SCR) {
-    scr_rd_verif.flush();
-    scr_wr_verif.flush();
-  }
-  if (SS_DEBUG::VERIF_CMD) {
-    cmd_verif.flush();
-  }
-  if (SS_DEBUG::VERIF_CGRA) {
-    cgra_multi_verif.flush();
-  }
-
-  if (SS_DEBUG::SUPRESS_STATS) {
-    return; // If we don't want to print stats
-  }
 
   out << "\nACCEL " << _accel_index << " STATS ***\n";
   out.precision(4);
@@ -2011,26 +1933,6 @@ void accel_t::schedule_streams() {
     //   //          *rem_port_multicast_stream))) {
     //   //   // printf("Remote port stream is scheduled\n");
     //   //   out_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
-    //   // }
-    // } else if (auto ind_stream = dynamic_cast<indirect_wr_stream_t *>(ip)) {
-    //   // int ind_port = ind_stream->_ind_port; // grab output res
-    //   // int out_port = ind_stream->_out_port;
-    //   // auto *ind_vp = &_port_interf.out_port(ind_port); // indirect output port
-    //   // out_vp = &_port_interf.out_port(out_port);
-    //   // out_vp2 = ind_vp;
-
-    //   // if (out_vp->can_take(LOC::PORT) && ind_vp->can_take(LOC::PORT) &&
-    //   //     !blocked_ovp[out_port] && !blocked_ovp[ind_port]) {
-    //   //   bool succ = false;
-    //   //   if (ind_stream->scratch())
-    //   //     succ = _scr_w_c.schedule_indirect_wr(*ind_stream);
-    //   //   else
-    //   //     succ = _dma_c.schedule_indirect_wr(*ind_stream);
-    //   //   if (succ) {
-    //   //     scheduled = true;
-    //   //     out_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
-    //   //     ind_vp->set_status(port_data_t::STATUS::BUSY, LOC::PORT);
-    //   //   }
     //   // }
     // } else if (auto atomic_scr_stream =
     //                dynamic_cast<atomic_scr_stream_t *>(ip)) {
@@ -2343,17 +2245,12 @@ void scratch_write_controller_t::write_scratch_remote_ind(
     uint64_t meta_info = addr_vp.pop_out_data(); // no offset here
     // this addr should have both num_bytes and addr info
     addr_t addr = meta_info & 65535; // for 16-bits
-    if (SS_DEBUG::NET_REQ) {
-      cout << "addr is: " << addr << "\n";
-    }
+    LOG(NET_REQ) << "addr is: " << addr << "\n";
     int num_bytes = meta_info >> 16;
     assert(num_bytes <= 64);
     for (int j = 0; j < num_bytes / 8; ++j) {
       val[j] = val_vp.pop_out_data();
-      if (SS_DEBUG::NET_REQ) {
-        timestamp();
-        cout << "val being written to remote scratchpad: " << val[j] << "\n";
-      }
+      LOG(NET_REQ) << curTick() << " val being written to remote scratchpad: " << val[j];
     }
     _accel->write_scratchpad(addr, &val[0], num_bytes, stream.id());
     bytes_written += num_bytes;
@@ -2364,9 +2261,7 @@ void scratch_write_controller_t::write_scratch_remote_ind(
   if (is_empty) {
     _accel->process_stream_stats(stream);
 
-    if (SS_DEBUG::VP_SCORE2) {
-      cout << "SOURCE: INDIRECT PORT -> SCR\n";
-    }
+    LOG(VP_SCORE2) << "SOURCE: INDIRECT PORT -> SCR\n";
     addr_vp.freeStream();
     val_vp.freeStream();
   }
@@ -2382,9 +2277,10 @@ void scratch_write_controller_t::write_scratch_remote_ind(
 
 
 void scratch_read_controller_t::push_ind_rem_read_req(bool is_remote, int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry) {
-  if(SS_DEBUG::NET_REQ) {
-      cout << "Read request reached with requesting core: " << req_core << " x dim: " << request_ptr << " y dim: " << reorder_entry << " and addr: " << addr << " data bytes: " << data_bytes << endl;
-  }
+  LOG(NET_REQ)
+    << "Read request reached with requesting core: "
+    << req_core << " x dim: " << request_ptr << " y dim: "
+    << reorder_entry << " and addr: " << addr << " data bytes: " << data_bytes;
   int num_cache_line_reqs = std::max(1, data_bytes/NUM_SCRATCH_BANKS);
   int local_bytes = std::min(data_bytes, NUM_SCRATCH_BANKS);
   int logical_banks = NUM_SCRATCH_BANKS / local_bytes; // ->data_bytes;
@@ -2498,9 +2394,7 @@ void scratch_read_controller_t::serve_ind_read_banks() {
       // if this is the last reorder entry allocated in irob and no more
       // entries to allocated in stream
       if (reorder_entry->last && !stream.stream_active()) {
-        if (SS_DEBUG::VP_SCORE2) {
-          cout << "SOURCE: Indirect SCR->PORT \n";
-        } 
+        LOG(VP_SCORE2) << "SOURCE: Indirect SCR->PORT \n";
 
         // TODO(@were): Implement this.
         // for (int in_port : stream.in_ports()) {
@@ -2575,13 +2469,10 @@ void network_controller_t::multicast_data(
       remote_elem_sent+=1;
       stream._num_elements--;
 
-      if (SS_DEBUG::NET_REQ) {
-        timestamp();
-        cout << "POPPED b/c port->remote port WRITE: " << out_vp.port() << " "
-             << out_vp.mem_size() << " data: " << std::hex << data << "\n";
-        printf("After issue: ");
-        stream.print_status();
-      }
+      LOG(NET_REQ)
+        << curTick() << "POPPED b/c port->remote port WRITE: " << out_vp.port() << " "
+        << out_vp.mem_size() << " data: " << std::hex << data;
+      LOG(NET_REQ) << "After issue: " << stream.toString();
     }
     // cout << "Sending message of size: " << (remote_elem_sent*data_width) << endl;
     // if(stream._out_port==7) { cout << "Core id: " << _accel->get_core_id() << " REMOTE BYTES SENT: " << (remote_elem_sent*data_width) << endl; }
@@ -2597,57 +2488,55 @@ void network_controller_t::multicast_data(
 // indirect stream
 // TODO: incomplete
 void network_controller_t::write_remote_scr(remote_scr_stream_t &stream) {
-  /*
-  port_data_t& val_vp = _accel->port_interf().out_port(stream._out_port);
-  port_data_t& addr_vp = _accel->port_interf().out_port(stream._addr_port);
-  int64_t base_addr = stream._remote_scr_base_addr;
-  uint64_t bytes_written=0;
-  uint64_t remote_elem_sent=0;
-  while(stream.stream_active() //enough in dest
-            && val_vp.mem_size() && addr_vp.mem_size() && bytes_written<64) {
-  //enough in source (64-bytes)
-    // peek out and pop later if message buffer size was full?
-    SBDT val = val_vp.pop_out_data();
-    SBDT index = addr_vp.pop_out_data();
-
-          addr_t final_scr_addr = base_addr + index;
-          // TODO:FIXME: decide on addressing bits
-          // printf("val: %ld and addr: %ld\n",val,final_scr_addr);
-    // Total address bits = log((linear_spad_size*C),2)
-    int spad_offset_bits = 0;
-          uint64_t scr_offset=0;
-
-    spad_offset_bits = (int)log2(SCRATCH_SIZE+LSCRATCH_SIZE);
-          scr_offset = final_scr_addr & (SCRATCH_SIZE+LSCRATCH_SIZE-1);
-    // TODO: can i get num_cores info here somehow?
-    int cores = 64;
-        int dest_core_id = (final_scr_addr >> spad_offset_bits) & (cores-1); //
-  last bits? if(SS_DEBUG::NET_REQ){ std::cout << "dest_core_id: " <<
-  dest_core_id << "\n"; std::cout << "scr_offset: " << scr_offset << "\n";
-        }
-    // _accel->lsq()->push_spu_scr_wr_req(stream._scr_type, val, scr_offset,
-  dest_core_id, stream.id());
-    // _accel->lsq()->push_spu_scr_wr_req(stream._scr_type, val, scr_offset,
-  dest_core_id, stream.id());
-
-    bytes_written += DATA_WIDTH;
-    remote_elem_sent+=1;
-    stream._num_elements--;
-
-        if(SS_DEBUG::NET_REQ){
-      timestamp(); cout << "POPPED b/c port->remote scr WRITE: " <<
-  addr_vp.port() << " " << addr_vp.mem_size() << " and " << val_vp.port() << " "
-  << val_vp.mem_size() << "\n";
-
-          printf("After issue: ");
-          stream.print_status();
-    }
-  }
-  if(_accel->_ssim->in_roi()) {
-    // add_bw(stream.src(), stream.dest(), 1, bytes_written);
-    _accel->_stat_remote_scratch_writes+=remote_elem_sent;
-  }
-  */
+//   port_data_t& val_vp = _accel->port_interf().out_port(stream._out_port);
+//   port_data_t& addr_vp = _accel->port_interf().out_port(stream._addr_port);
+//   int64_t base_addr = stream._remote_scr_base_addr;
+//   uint64_t bytes_written=0;
+//   uint64_t remote_elem_sent=0;
+//   while(stream.stream_active() //enough in dest
+//             && val_vp.mem_size() && addr_vp.mem_size() && bytes_written<64) {
+//   //enough in source (64-bytes)
+//     // peek out and pop later if message buffer size was full?
+//     SBDT val = val_vp.pop_out_data();
+//     SBDT index = addr_vp.pop_out_data();
+// 
+//           addr_t final_scr_addr = base_addr + index;
+//           // TODO:FIXME: decide on addressing bits
+//           // printf("val: %ld and addr: %ld\n",val,final_scr_addr);
+//     // Total address bits = log((linear_spad_size*C),2)
+//     int spad_offset_bits = 0;
+//           uint64_t scr_offset=0;
+// 
+//     spad_offset_bits = (int)log2(SCRATCH_SIZE+LSCRATCH_SIZE);
+//           scr_offset = final_scr_addr & (SCRATCH_SIZE+LSCRATCH_SIZE-1);
+//     // TODO: can i get num_cores info here somehow?
+//     int cores = 64;
+//         int dest_core_id = (final_scr_addr >> spad_offset_bits) & (cores-1); //
+//   last bits? if(SS_DEBUG::NET_REQ){ std::cout << "dest_core_id: " <<
+//   dest_core_id << "\n"; std::cout << "scr_offset: " << scr_offset << "\n";
+//         }
+//     // _accel->lsq()->push_spu_scr_wr_req(stream._scr_type, val, scr_offset,
+//   dest_core_id, stream.id());
+//     // _accel->lsq()->push_spu_scr_wr_req(stream._scr_type, val, scr_offset,
+//   dest_core_id, stream.id());
+// 
+//     bytes_written += DATA_WIDTH;
+//     remote_elem_sent+=1;
+//     stream._num_elements--;
+// 
+//         if(SS_DEBUG::NET_REQ){
+//       timestamp(); cout << "POPPED b/c port->remote scr WRITE: " <<
+//   addr_vp.port() << " " << addr_vp.mem_size() << " and " << val_vp.port() << " "
+//   << val_vp.mem_size() << "\n";
+// 
+//           printf("After issue: ");
+//           stream.print_status();
+//     }
+//   }
+//   if(_accel->_ssim->in_roi()) {
+//     // add_bw(stream.src(), stream.dest(), 1, bytes_written);
+//     _accel->_stat_remote_scratch_writes+=remote_elem_sent;
+//   }
 }
 
 void network_controller_t::write_direct_remote_scr(
@@ -2671,10 +2560,8 @@ void network_controller_t::write_direct_remote_scr(
     spad_offset_bits = (int)log2(SCRATCH_SIZE+LSCRATCH_SIZE);
     int cores = _accel->_ssim->num_active_threads();
     int dest_core_id = (final_scr_addr >> spad_offset_bits) & (cores-1); // last bits?
-    if(SS_DEBUG::NET_REQ){
-      std::cout << "dest_core_id: " << dest_core_id << "\n";
-      std::cout << "scr_offset: " << scr_offset << "\n";
-    }
+    LOG(NET_REQ) << "dest_core_id: " << dest_core_id;
+    LOG(NET_REQ) << "scr_offset: " << scr_offset;
     while (final_scr_addr < max_addr && stream.stream_active() // enough in dest
            && val_vp.mem_size() &&
            bytes_written < 64) { // enough in source (64-bytes)
@@ -2692,13 +2579,10 @@ void network_controller_t::write_direct_remote_scr(
       remote_elem_sent+=1;
       // stream._num_elements--;
 
-      if (SS_DEBUG::NET_REQ) {
-        timestamp();
-        cout << "POPPED b/c direct port->remote scr WRITE: " << val_vp.port()
-             << " " << val_vp.mem_size() << "\n";
-        printf("After issue: ");
-        stream.print_status();
-      }
+      LOG(NET_REQ)
+        << curTick() << ": POPPED b/c direct port->remote scr WRITE: "
+        << val_vp.port() << " " << val_vp.mem_size();
+      LOG(NET_REQ) << "After issue: " << stream.toString();
     }
     // _accel->lsq()->push_spu_scr_wr_req(stream._scr_type, val, scr_offset, dest_core_id, stream.id());
     // num_bytes = remote_elem_sent*8
@@ -2741,12 +2625,8 @@ void network_controller_t::cycle() {
 
         if (!stream.stream_active()) {
           _accel->process_stream_stats(stream);
-          if (SS_DEBUG::VP_SCORE2) {
-            cout << "SOURCE: DIRECT PORT->REMOTE SCR\n";
-          }
-          if (SS_DEBUG::NET_REQ) {
-            printf("Direct remote scratchpad write stream empty\n");
-          }
+          LOG(VP_SCORE2) << "SOURCE: DIRECT PORT->REMOTE SCR";
+          LOG(NET_REQ) << "Direct remote scratchpad write stream empty";
           val_vp.freeStream();
           delete_stream(_which_remote, sp);
         }
@@ -2765,12 +2645,8 @@ void network_controller_t::cycle() {
 
         if (!stream.stream_active()) {
           _accel->process_stream_stats(stream);
-          if (SS_DEBUG::VP_SCORE2) {
-            cout << "SOURCE: INDIRECT PORT->REMOTE SCR\n";
-          }
-          if (SS_DEBUG::NET_REQ) {
-            printf("Indirect remote scratchpad write stream empty\n");
-          }
+          LOG(VP_SCORE2) << "SOURCE: INDIRECT PORT->REMOTE SCR";
+          LOG(NET_REQ) << "Indirect remote scratchpad write stream empty";
           val_vp.freeStream();
           addr_vp.freeStream();
           delete_stream(_which_remote, sp);
@@ -2947,9 +2823,9 @@ void scratch_write_controller_t::serve_atomic_requests(bool &performed_atomic_sc
 
     _accel->_stat_tot_updates+=data_bytes;
 
-    if(SS_DEBUG::COMP) {
-      cout << "Atomic update value being written back to scratchpad with updates: " << _accel->_stat_tot_updates << "\n";
-    }
+    LOG(COMP)
+      << "Atomic update value being written back to scratchpad with updates: "
+      << _accel->_stat_tot_updates;
     bytes_written += data_bytes;
     _accel->_stat_scratch_bank_requests_executed++;
     _accel->_stat_scr_bytes_wr += bytes_written;
@@ -2968,87 +2844,6 @@ void scratch_write_controller_t::serve_atomic_requests(bool &performed_atomic_sc
   }
   // to implement the functionality of common scratch controller
   // performed_atomic_scr = true;
-}
-
-void scratch_write_controller_t::serve_atomic_requests_local(bool &performed_atomic_scr) {
-  SBDT input_val=0;
-  addr_t scr_addr; 
-  int opcode = 0;
-  SBDT inc, bytes_written=0;
-  // int logical_banks = NUM_SCRATCH_BANKS / stream._value_bytes;
-  for (int i = 0; i < _logical_banks; ++i) {
-    if (!_atomic_scr_issued_requests[i].empty()) {
-      atomic_scr_op_req request = _atomic_scr_issued_requests[i].front();
-      input_val = 0; // reset
-      scr_addr = request._scr_addr;
-      inc = request._inc;
-      opcode = request._opcode;
-
-      // cout << "Initial input val of atomic scr: " << input_val << endl;
-      // _accel->read_scratchpad(&input_val+8-request._output_bytes, scr_addr, request._output_bytes, stream.id());
-      // FIXME: confirm if I can fix the ID of atomic scr
-      // _accel->read_scratchpad(&input_val+8-request._output_bytes, scr_addr, request._output_bytes, 0);
-      SBDT check_value=0;
-      _accel->read_scratchpad(&check_value, scr_addr, request._output_bytes, 0);
-      // cout << "ATOMIC SCR: addr it rd/writes to: " << scr_addr << " the value: " << input_val << " and inc: " << inc << endl;
-      // cout << "CHECKED CORRECT VALUE: " << check_value << endl;
-      input_val = check_value & ((1<<request._output_bytes*8)-1);
-
-      LOG(COMP) << "ACCEL ID: " <<  _accel->lsq()->getCpuId();
-      LOG(COMP)
-        << _accel->get_ssim()->CurrentCycle()
-        << " REAL EXECUTION, update at scr_addr: " << scr_addr
-        << " at bankid: " << i << " with inc value: " << inc
-        <<  " and old value: " << input_val;
-
-      switch (opcode) {
-        case 0: input_val += inc;
-                break;
-        case 1: input_val = std::max(input_val, inc);
-                break;
-        case 2: input_val = std::min(input_val, inc);
-                break;
-        case 3: input_val = inc; // update
-                break;
-        default: cout << "Invalid opcode\n";
-                 break;
-      }
-
-      _accel->_stat_tot_updates++;
-
-      uint16_t correct_val = input_val & ((1<<request._output_bytes*8)-1);
-
-      // cout << "FInal output of atomic scr: " << correct_val << endl;
-      /*
-      _accel->write_scratchpad(scr_addr,
-                               &input_val + 8 - request._output_bytes,
-                               request._output_bytes, 0);
-      */
-                               // request._output_bytes, stream.id());
-
-      _accel->write_scratchpad(scr_addr,
-                               &correct_val,
-                               request._output_bytes, 0);
-      
-      check_value=0;
-      _accel->read_scratchpad(&check_value, scr_addr, request._output_bytes, 0);
-      // cout << "Updated value at the address: " << scr_addr << " is: " << check_value << endl;
-      _accel->_stat_scratch_bank_requests_executed++;
-      bytes_written += request._value_bytes;
-      _accel->_stat_scr_bytes_wr += request._value_bytes;
-      _accel->_stat_scratch_write_bytes += request._value_bytes;
-      _atomic_scr_issued_requests[i].pop();
-    }
-  }
-
-  if (_accel->_ssim->in_roi()) {
-    // add_bw(stream.src(), stream.dest(), 1, bytes_written);
-    add_bw(LOC::PORT, LOC::SCR, 1, bytes_written);
-    _accel->_stat_scratch_writes += 1;
-    _accel->_stat_cycles_atomic_scr_executed++;
-  }
-  // to implement the functionality of common scratch controller
-  performed_atomic_scr = true;
 }
 
 void scratch_write_controller_t::push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int out_bytes, uint64_t inc) {
@@ -3135,10 +2930,8 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
       if(stream._val_sstream_left>0) {
         loc = out_addr.peek_out_data(0, stream._addr_bytes); // ;output_bytes);
         // cout << "value popped from port: " << loc << " ";
-        if (SS_DEBUG::COMP) {
-          std::cout << "1 cycle execution : " << std::endl;
-          std::cout << "64-bit value at the addr port is: " << loc;
-        }
+        LOG(COMP) << "1 cycle execution : ";
+        LOG(COMP) << "64-bit value at the addr port is: " << loc;
         loc = stream.cur_addr(loc);
         // cout << "cur addr index: " << stream._cur_addr_index << " addr bytes: " << stream._addr_bytes << endl;
 
@@ -3156,51 +2949,48 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
              stream._val_sstream_left!=-1) {
              // (stream._val_sstream_left>0 || stream._sstream_left>0)) {
              // num_val_pops < 64) {
-        if (SS_DEBUG::COMP) {
-          std::cout << "\tupdate at index location: " << loc
-                    << " and scr_addr: " << scr_addr
-                    << " and scr_size is: " << SCRATCH_SIZE
-                    << " input num strides left: " << stream._num_strides
-                    << endl;
-        }
+        LOG(COMP) << "\tupdate at index location: " << loc
+                  << " and scr_addr: " << scr_addr
+                  << " and scr_size is: " << SCRATCH_SIZE
+                  << " input num strides left: " << stream._num_strides;
 
-        /*struct atomic_scr_op_req temp_req;
-        SBDT cur_value = out_val.peek_out_data(0, stream._value_bytes);
-        if (SS_DEBUG::COMP) {
-          cout << "64-bit value popped from out_val port: " << cur_value << endl;
-        }
-        temp_req._scr_addr = scr_addr;
-        temp_req._inc = stream.cur_val(cur_value);
-        temp_req._opcode = stream._op_code;
-        temp_req._value_bytes = stream._value_bytes;
-        temp_req._output_bytes = stream._output_bytes;
+        // struct atomic_scr_op_req temp_req;
+        // SBDT cur_value = out_val.peek_out_data(0, stream._value_bytes);
+        // if (SS_DEBUG::COMP) {
+        //   cout << "64-bit value popped from out_val port: " << cur_value << endl;
+        // }
+        // temp_req._scr_addr = scr_addr;
+        // temp_req._inc = stream.cur_val(cur_value);
+        // temp_req._opcode = stream._op_code;
+        // temp_req._value_bytes = stream._value_bytes;
+        // temp_req._output_bytes = stream._output_bytes;
 
-        // by default is row interleaving for now
-        if (_accel->_banked_spad_mapping_strategy &&
-            (strcmp(_accel->_banked_spad_mapping_strategy, "COL") == 0)) {
-          bank_id = (scr_addr >> 5) & (logical_banks - 1); // log64 = 6 = log2(k)
-        } else {
-          bank_id = (scr_addr >> 1) & (logical_banks - 1);
-        }
+        // // by default is row interleaving for now
+        // if (_accel->_banked_spad_mapping_strategy &&
+        //     (strcmp(_accel->_banked_spad_mapping_strategy, "COL") == 0)) {
+        //   bank_id = (scr_addr >> 5) & (logical_banks - 1); // log64 = 6 = log2(k)
+        // } else {
+        //   bank_id = (scr_addr >> 1) & (logical_banks - 1);
+        // }
 
-        assert(bank_id < logical_banks);
+        // assert(bank_id < logical_banks);
 
-        int local_core_id = (scr_addr + stream._output_bytes)/SCRATCH_SIZE;
-        local_core_id = scr_addr >> 14;
-        if(SS_DEBUG::NET_REQ) {
-          timestamp();
-          cout << " Sending remote atomic update for scratch_addr: "
-               << scr_addr << " from own core id: " << _accel->_ssim->get_core_id()
-               << " to remote core id: " << local_core_id <<  endl; 
-        }
-        uint64_t x = temp_req._inc;
+        // int local_core_id = (scr_addr + stream._output_bytes)/SCRATCH_SIZE;
+        // local_core_id = scr_addr >> 14;
+        // if(SS_DEBUG::NET_REQ) {
+        //   timestamp();
+        //   cout << " Sending remote atomic update for scratch_addr: "
+        //        << scr_addr << " from own core id: " << _accel->_ssim->get_core_id()
+        //        << " to remote core id: " << local_core_id <<  endl; 
+        // }
+        // uint64_t x = temp_req._inc;
 
-        if (SS_DEBUG::COMP) {
-          std::cout << "\tvalues input: " << temp_req._inc << "\tbank_id: " << bank_id
-                    << "\n";
-          std::cout << "stream strides left are: " << stream._num_strides
-                    << "\n";
-        }*/
+        // if (SS_DEBUG::COMP) {
+        //   std::cout << "\tvalues input: " << temp_req._inc << "\tbank_id: " << bank_id
+        //             << "\n";
+        //   std::cout << "stream strides left are: " << stream._num_strides
+        //             << "\n";
+        // }
 
        // strides should reduce only when substream is done
         // cout << "strides after inc update: " << stream._num_strides << " and sstream left: " << stream._sstream_left << endl;
@@ -3228,9 +3018,7 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
           stream._cur_val_index = 0;
           num_val_pops++;
           // out_val.pop_out_data(stream._value_bytes);
-          if (SS_DEBUG::COMP) {
-            std::cout << "\tpopped data from val port";
-          }
+          LOG(COMP) << "\tpopped data from val port";
         }
         if (pop_addr) {
           _update_broadcast_dest.push_back(scr_addr);
@@ -3238,9 +3026,7 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
           // for bank conflicts calc purposes
           num_addr_pops++;
           out_addr.pop_out_data(stream._addr_bytes);
-          if (SS_DEBUG::COMP) {
-            std::cout << "\tpopped data from addr port";
-          }
+          LOG(COMP) << "\tpopped data from addr port";
         }
 
 
@@ -3302,190 +3088,6 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
   // break;
 }
 
-void scratch_write_controller_t::atomic_scratch_update_local(atomic_scr_stream_t &stream) {
-  SBDT loc;
-  addr_t scr_addr, max_addr;
-  int logical_banks = NUM_SCRATCH_BANKS;
-  int bank_id = 0;
-  // added to correct bank conflict calculation
-  int num_addr_pops = 0;
-  int num_val_pops = 0;
-
-  port_data_t &out_addr = _accel->port_interf().out_port(stream._out_port);
-  port_data_t &out_val = _accel->port_interf().out_port(stream._val_port);
-
-  // strides left in the stream or requests left in the queue
-  if (stream.stream_active()) {
-    logical_banks = NUM_SCRATCH_BANKS / stream._value_bytes;
-
-    addr_t base_addr = stream._mem_addr; // this is like offset
-    int n=0;
-
-    if (out_addr.mem_size() > 0 && out_val.mem_size() > 0 &&
-        stream._value_bytes*n < 64 && // number of pushes should be max
-        !crossbar_backpressureOn()) { // enough in src and dest
-      n++;
-
-      // hopefully it pushes data here
-      if (_accel->_ssim->in_roi()) {
-        _accel->_stat_cycles_atomic_scr_pushed++;
-      }
-
-      num_addr_pops = 0;
-      num_val_pops = 0;
-      loc = out_addr.peek_out_data(0, stream._output_bytes);
-      if (SS_DEBUG::COMP) {
-        std::cout << "1 cycle execution : " << std::endl;
-        std::cout << "64-bit value at the addr port is: " << loc;
-      }
-      loc = stream.cur_addr(loc);
-      //cout << "cur addr index: " << stream._cur_addr_index << " addr bytes: " << stream._addr_bytes << endl;
-      //std::cout << "updated loc: " << loc << "\n";
-
-      base_addr = stream.cur_offset() * stream._output_bytes;
-      scr_addr = base_addr + loc * stream._output_bytes;
-      max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
-
-
-      //cout << "SCR ADDR: " << scr_addr << " BASE ADDR: " << base_addr << "\n";
-
-      // FIXME: check if this correct
-      // max_addr = (scr_addr & stream._value_mask) + stream._value_bytes;
-
-      // go while stream and port does not run out
-      // number of iterations of this loop cannot be more than 8*64-bits
-      // => cannot pop more than 8 values from the port
-
-      // num_value_pops should be less than 64 bytes?
-      // Stage 1: push requests in scratch banks
-      int remote_update_this_cycle=0;
-      while (scr_addr < max_addr && stream._num_strides > 0 &&
-             out_addr.mem_size() && out_val.mem_size() &&
-             num_val_pops < 64/stream._value_bytes && remote_update_this_cycle<1) {
-        if (SS_DEBUG::COMP) {
-          std::cout << "\tupdate at index location: " << loc
-                    << " and scr_addr: " << scr_addr
-                    << " and scr_size is: " << SCRATCH_SIZE
-                    << " input num strides: " << stream._num_strides;
-        }
-
-        // TODO: instead of assert, if this condition holds true, send a remote
-        // request (for now let's send a complete packet -- I don't think we
-        // want to say about decomposable n/w but we can study that by
-        // increasing the network bandwidth)
-
-        // if(scr_addr + stream._output_bytes > SCRATCH_SIZE) { cout << "scratch_addr: " << scr_addr << endl; }
-        // assert(scr_addr + stream._output_bytes <= SCRATCH_SIZE);
-
-        struct atomic_scr_op_req temp_req;
-        SBDT cur_value = out_val.peek_out_data(0, stream._value_bytes);
-        if (SS_DEBUG::COMP) {
-          cout << "64-bit value popped from out_val port: " << cur_value << endl;
-        }
-        temp_req._scr_addr = scr_addr;
-        temp_req._inc = stream.cur_val(cur_value);
-        temp_req._opcode = stream._op_code;
-        temp_req._value_bytes = stream._value_bytes;
-        temp_req._output_bytes = stream._output_bytes;
-
-        // by default is row interleaving for now
-        if (_accel->_banked_spad_mapping_strategy &&
-            (strcmp(_accel->_banked_spad_mapping_strategy, "COL") == 0)) {
-          // bank_id = (scr_addr >> 9) & (logical_banks - 1);
-          // bank_id = (scr_addr >> 6) & (logical_banks - 1); // log64 = 6 = log2(k)
-          bank_id = (scr_addr >> 5) & (logical_banks - 1); // log64 = 6 = log2(k)
-        } else {
-          bank_id = (scr_addr >> 1) & (logical_banks - 1);
-        }
-
-        assert(bank_id < logical_banks);
-
-        int local_core_id = (scr_addr + stream._output_bytes)/SCRATCH_SIZE;
-        local_core_id = scr_addr >> 14;
-        if(SS_DEBUG::NET_REQ) {
-          timestamp();
-          cout << " Sending remote atomic update for scratch_addr: "
-               << scr_addr << " from own core id: " << _accel->_ssim->get_core_id()
-               << " to remote core id: " << local_core_id <<  endl;
-        }
-        int local_scr_addr = scr_addr;
-        uint64_t x = temp_req._inc;
-       
-        // FIXME: currently it does not send scalar atomic update requests
-        // TODO: need the network function to work for non-multicast scalar
-        // requests as well (currently it works only for 64-bytes)
-        push_atomic_update_req(local_scr_addr, temp_req._opcode,
-                                    temp_req._value_bytes, temp_req._output_bytes, x);
-        bool rem=false;
-        if(rem) ++remote_update_this_cycle;
-
-        _accel->_stat_scratch_bank_requests_pushed++;
-        stream._num_strides--;
-        // FIXME: this is to prevent garbage value
-        assert(stream._num_strides<1000000);
-        // assert(stream._num_strides>=0);
-
-        if (SS_DEBUG::COMP) {
-          std::cout << "\tvalues input: " << temp_req._inc << "\tbank_id: " << bank_id
-                    << "\n";
-          std::cout << "stream strides left are: " << stream._num_strides
-                    << "\n";
-        }
-
-        stream.inc_val_index();
-        stream.inc_addr_index();
-
-        // pop only if index in word is last?
-        if (stream.can_pop_val()) {
-          stream._cur_val_index = 0;
-          num_val_pops++;
-          out_val.pop_out_data(stream._value_bytes);
-          if (SS_DEBUG::COMP) {
-            std::cout << "\tpopped data from val port";
-          }
-        }
-        if (stream.can_pop_addr()) {
-          stream._cur_addr_index = 0;
-          // for bank conflicts calc purposes
-          num_addr_pops++;
-          out_addr.pop_out_data(stream._addr_bytes);
-          if (SS_DEBUG::COMP) {
-            std::cout << "\tpopped data from addr port";
-          }
-        }
-        if (SS_DEBUG::COMP) {
-          std::cout << "\n";
-        }
-        // should be decremented after every computation
-        // new loop added for vector ports
-        if (out_addr.mem_size() > 0 && out_val.mem_size() > 0) {
-          loc = out_addr.peek_out_data();
-          if (SS_DEBUG::COMP) {
-            std::cout << "64-bit value at the addr port is: " << loc;
-          }
-          loc = stream.cur_addr(loc);
-          // std::cout << "loc: " << loc << "\n";
-          // making offset also configurable (same configuration as the
-          // address)
-          base_addr = stream.cur_offset() * stream._value_bytes;
-
-          // scr_addr = base_addr + loc*stream._value_bytes;
-          scr_addr = base_addr + loc * stream._value_bytes;
-          // max_addr = (scr_addr & SCR_MASK)+SCR_WIDTH;
-          max_addr = (scr_addr & stream._value_mask) + stream._value_bytes;
-        }
-      }
-    }
-  }
-  if (_accel->_ssim->in_roi()) {
-    _accel->_num_cycles_issued++;
-  }
-  // this should be the case, right?
-  // break;
-}
-
-
-
 void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
                                        bool &performed_atomic_scr) {
 
@@ -3532,7 +3134,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
           }
         }
         if(_accel->_ssim->num_active_threads()==1) {
-          atomic_scratch_update_local(stream);
+          // atomic_scratch_update_local(stream);
         } else {
           atomic_scratch_update(stream);
         }
@@ -3588,7 +3190,7 @@ void scratch_write_controller_t::cycle(bool can_perform_atomic_scr,
       if(_accel->_ssim->num_active_threads()>1) {
         serve_atomic_requests(performed_atomic_scr);
       } else {
-        serve_atomic_requests_local(performed_atomic_scr);
+        // serve_atomic_requests_local(performed_atomic_scr);
       }
     }
   }
@@ -3746,14 +3348,6 @@ bool accel_t::done(bool show, int mask) {
   //   _cleanup_mode = false;
   // }
 
-  // if (SS_DEBUG::CHECK_SCR_ALIAS) {
-  //   if (mask == 0 && d) { // WAIT ALL is true
-  //     for (int i = 0; i < SCRATCH_SIZE; i += 1) {
-  //       scratchpad_readers[i] = 0;
-  //       scratchpad_writers[i] = 0;
-  //     }
-  //   }
-  // }
 
 
   // if (mask == GLOBAL_WAIT && d && (_ssim->num_active_threads()>1)) {
@@ -3833,19 +3427,6 @@ bool accel_t::done_concurrent(bool show, int mask) {
   if(check_cgra_done) {
     if (done && !cgra_done(show, mask)) {
       done = false;
-    }
-  }
-
-  if (SS_DEBUG::CHECK_SCR_ALIAS) {
-    if (mask & WAIT_SCR_RD && done) {
-      for (int i = 0; i < SCRATCH_SIZE; i += 1) {
-        scratchpad_readers[i] = 0;
-      }
-    }
-    if (mask & WAIT_SCR_WR && done) {
-      for (int i = 0; i < SCRATCH_SIZE; i += 1) {
-        scratchpad_writers[i] = 0;
-      }
     }
   }
 
