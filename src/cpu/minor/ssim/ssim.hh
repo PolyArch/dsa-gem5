@@ -36,9 +36,7 @@ public:
 
   uint64_t roi_enter_cycle() { return _roi_enter_cycle; }
 
-  /*!
-   * \brief The execute context to which this dsa belongs.
-   */
+  /*! \brief The execute context to which this dsa belongs. */
   Minor::LSQ *lsq_{nullptr};
 
   /*! \brief The register file of the CGRA status. */

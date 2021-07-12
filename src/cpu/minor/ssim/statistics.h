@@ -9,7 +9,7 @@
 
 class ssim_t;
 class accel_t;
-class base_stream_t;
+struct base_stream_t;
 
 namespace dsa {
 namespace stat {

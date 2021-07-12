@@ -324,7 +324,7 @@ struct remote_core_net_stream_t : public base_stream_t {
   }
 
   int addr_port() { return _addr_port; }
-  int64_t val_port() { return _val_port; }
+  int64_t val_port() override { return _val_port; }
 
   bool stream_active() override {
      return true;
@@ -351,7 +351,7 @@ struct Barrier : public base_stream_t {
   bool bar_scr_rd() {return _mask & WAIT_SCR_RD;}
   bool bar_scr_wr() {return _mask & WAIT_SCR_WR;}
 
-  bool stream_active() {
+  bool stream_active() override {
     return true;
   }
 
@@ -653,7 +653,7 @@ struct IndirectAtomicStream : public OPortStream {
    */
   MemoryOperation mo;
 
-  bool stream_active() {
+  bool stream_active() override {
     return fsm.hasNext(parent);
   }
 
@@ -665,7 +665,7 @@ struct IndirectAtomicStream : public OPortStream {
   /*!
    * \brief Deep copy this object.
    */
-  virtual OPortStream *clone(accel_t *accel) {
+  virtual OPortStream *clone(accel_t *accel) override {
     auto res = new IndirectAtomicStream(*this);
     res->parent = accel;
     return res;
@@ -980,7 +980,7 @@ struct direct_remote_scr_stream_t : public remote_scr_stream_t {
   }
 
   // port
-  virtual void print_status() {
+  virtual void print_status() override {
     std::cout << "direct port->remote scratch";
     std::cout << "\tval_port=" << _out_port << ")";
     // std::cout << "\tremote_scratch_base_addr:" << _mem_addr << "\telem_left=" << _num_elements;

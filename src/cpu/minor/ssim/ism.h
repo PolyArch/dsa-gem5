@@ -8,7 +8,7 @@
 // Indirect Stream State Machine
 
 class accel_t;
-class base_stream_t;
+struct base_stream_t;
 
 namespace dsa {
 namespace sim {

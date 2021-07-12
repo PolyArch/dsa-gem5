@@ -7,6 +7,9 @@
 #include <memory>
 #include <assert.h>
 
+#include "json/json.h"
+#include "dsa/core/utils.h"
+#include "json/value.h"
 #include "ssim.hh"
 #include "../cpu.hh"
 #include "../exec_context.hh"
@@ -34,6 +37,14 @@ ssim_t::ssim_t(Minor::LSQ *lsq_) : lsq_(lsq_), statistics(*this) {
   for (int i = 0; i < DSARF::TOTAL_REG; ++i) {
     rf[i].value = REG_DEFAULT[i];
     rf[i].sticky = REG_STICKY[i];
+  }
+
+  if (std::getenv("DSA_SPEC")) {
+    std::string dsa_spec(std::getenv("DSA_SPEC"));
+    Json::Value raw_json = dsa::core::utils::LoadJsonFromFile(dsa_spec);
+    #define SPEC_ATTR(TY, ID, VAL) if (raw_json.isMember(#ID)) { spec.ID = raw_json.as<TY>(); }
+    #include "dsa-ext/spec.attr"
+    #undef SPEC_ATTR
   }
 
 }

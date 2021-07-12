@@ -8,6 +8,7 @@
 
 #include "dsa/debug.h"
 #include "dsa-ext/spec.h"
+#include "dsa-ext/rf.h"
 
 #include "./loc.hh"
 
@@ -121,7 +122,7 @@ struct Linear1D : LinearStream {
    * \param bandwidth The width of the cacheline in bytes.
    * \param at_most The the number of bits at most in the bitmask.
    */
-  LineInfo cacheline(int bandwidth, int at_most, BuffetEntry *be, MemoryOperation mo, LOC unit);
+  LineInfo cacheline(int bandwidth, int at_most, BuffetEntry *be, MemoryOperation mo, LOC unit) override;
 
   /*!
    * \brief The text format for the purpose of debugging.
@@ -180,7 +181,7 @@ struct Linear2D : LinearStream {
     return false;
   }
 
-  int64_t poll(bool next=true) {
+  int64_t poll(bool next=true) override {
     assert(hasNext());
     return exec.poll(next);
   }
@@ -195,7 +196,7 @@ struct Linear2D : LinearStream {
     return res;
   }
 
-  std::string toString() {
+  std::string toString() override {
     if (hasNext()) {
       auto &l2d = *this;
       std::ostringstream oss;
@@ -238,7 +239,7 @@ struct Linear3D : LinearStream {
       volume += init.volume;
     }
   
-  bool hasNext() {
+  bool hasNext() override {
     if (i < length) {
       if (exec.hasNext()) {
         return true;
@@ -283,7 +284,7 @@ struct Linear3D : LinearStream {
   Linear2D init;
   Linear2D exec;
 
-  std::string toString() {
+  std::string toString() override {
     std::ostringstream oss;
     if (hasNext()) {
       oss << "delta 2d-stretch: " << delta_stretch_2d

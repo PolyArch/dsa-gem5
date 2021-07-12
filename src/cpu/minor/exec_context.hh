@@ -455,11 +455,11 @@ class ExecContext : public ::ExecContext
 
 #ifdef ISA_HAS_SS
 
-    void configAtomicHardware(uint64_t a, uint64_t b, uint64_t c) {
+    void configAtomicHardware(uint64_t a, uint64_t b, uint64_t c) override {
       execute.getSSIM().atomic_update_hardware_config(a,b,c);
     }
 
-    uint64_t receiveSS(int port, int dtype) {
+    uint64_t receiveSS(int port, int dtype) override {
       ssim_t& ssim = execute.getSSIM();
       return ssim.Receive(port, dtype);
     }

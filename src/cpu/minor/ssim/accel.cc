@@ -460,7 +460,7 @@ accel_t::accel_t(int i, ssim_t *ssim)
 
   assert(_ind_rob_size<64 && "ind rob size exceeded the bits allocated in SPU-net transaction");
 
-  const char *ssconfig_file = std::getenv("SBCONFIG");
+  std::string ssconfig_file = std::getenv("SBCONFIG");
  
   const char *back_cgra_str = std::getenv("BACKCGRA");
   if (back_cgra_str != NULL) {
@@ -473,7 +473,10 @@ accel_t::accel_t(int i, ssim_t *ssim)
   }
   _banked_spad_mapping_strategy = std::getenv("MAPPING");
 
-  _ssconfig = new SSModel(ssconfig_file);
+  if (!get_ssim()->spec.adg_file.empty()) {
+    ssconfig_file = get_ssim()->spec.adg_file;
+  }
+  _ssconfig = new SSModel(ssconfig_file.c_str());
   // cout << "Came here to create a new configuration for a new accel\n";
   _ssconfig->setMaxEdgeDelay(_fu_fifo_len);
   // TODO(@were): This is hacky.
@@ -778,7 +781,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     if (loc == LOC::DMA) {
       if (accel->lsq()->sd_transfers[port].unreservedRemainingSpace() &&
           accel->lsq()->canRequest()) {
-        return accel->get_ssim()->spec.cache_line;
+        return accel->get_ssim()->spec.dma_bandwidth;
       }
     } else {
       CHECK(loc == LOC::SCR);
@@ -835,7 +838,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     auto &stream = *cps;
     auto &pi = accel->port_interf();
     int pushed = 0;
-    while (stream.stream_active() && pushed < accel->get_ssim()->spec.cache_line) {
+    while (stream.stream_active() && pushed < accel->get_ssim()->spec.const_bandwidth) {
       for (auto &elem : stream.pes) {
         auto &in = pi.in_port(elem.port);
         in.push_data(in.get_byte_vector(stream.ls->poll(false), stream.data_width()));
@@ -915,7 +918,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       addrs.push_back(irs->fsm.poll(accel, true)[0]);
     }
     if (irs->src() == LOC::DMA) {
-      uint64_t cacheline = accel->get_ssim()->spec.cache_line;
+      uint64_t cacheline = accel->get_ssim()->spec.dma_bandwidth;
       std::vector<bool> bm(cacheline, false);
       auto addr = addrs[0];
       int linebase = addr & ~(cacheline - 1);
@@ -972,7 +975,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       data.push_back(buffer[1]);
     }
     if (ias->unit() == LOC::DMA) {
-      uint64_t cacheline = accel->get_ssim()->spec.cache_line;
+      uint64_t cacheline = accel->get_ssim()->spec.dma_bandwidth;
       std::vector<bool> bm(cacheline, false);
       auto addr = addrs[0];
       auto linebase = addr & ~(cacheline - 1);
@@ -1033,7 +1036,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     if (stream.garbage()) {
       while (stream.stream_active() && out_port.mem_size() > 0) {
         out_port.pop_out_data(); // get rid of data
-        int cacheline = accel->get_ssim()->spec.cache_line;
+        int cacheline = accel->get_ssim()->spec.dma_bandwidth;
         stream.ls->cacheline(cacheline, out_port.get_port_width(), nullptr, DMO_Write, stream.dest());
       }
       return;
@@ -1143,11 +1146,11 @@ struct SPADResponser : dsa::sim::stream::Functor {
     }
   }
 
-  void Visit(IPortStream *ips) {
+  void Visit(IPortStream *ips) override {
     VisitImpl<IPortStream>(ips);
   }
 
-  void Visit(IndirectReadStream *ips) {
+  void Visit(IndirectReadStream *ips) override {
     VisitImpl<IndirectReadStream>(ips);
     if (response.info.stream_last) {
       auto &idxp = accel->port_interf().out_port(ips->idx_port());
@@ -2082,9 +2085,8 @@ void dma_controller_t::port_resp(unsigned cur_port) {
       auto &pi = _accel->port_interf();
 
       PacketPtr packet = response->packet;
-      if (packet->getSize() != MEM_WIDTH) {
-        assert(0 && "weird memory response size");
-      }
+      CHECK(packet->getSize() == get_ssim()->spec.dma_bandwidth)
+        << packet->getSize() << " " << get_ssim()->spec.dma_bandwidth;
 
       vector<uint8_t> data;
       bool indirect=false;
