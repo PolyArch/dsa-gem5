@@ -306,7 +306,7 @@ protected:
 
 
 //return -1 if x == 0
-static inline int ilog2(const uint64_t x) {
+inline int ilog2(const uint64_t x) {
   if(x==0) return -1;
   uint64_t y;
   asm ("\tbsr %1, %0\n" : "=r"(y) : "r" (x));
@@ -381,8 +381,8 @@ struct Barrier : public base_stream_t {
 
 using dsa::sim::stream::LinearStream;
 using dsa::sim::stream::Linear1D;
-using dsa::sim::stream::Linear2D;
-using dsa::sim::stream::Linear3D;
+using dsa::sim::stream::Linear2D; // NOLINT
+using dsa::sim::stream::Linear3D; // NOLINT
 using dsa::sim::rt::PortExecState;
 
 /*!

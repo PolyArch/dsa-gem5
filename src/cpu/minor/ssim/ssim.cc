@@ -537,6 +537,7 @@ void ssim_t::Reroute(int oport, int iport) {
   auto pps = new RecurrentStream(rf[DSARF::TBC].value, oport, ips, n);
   pps->dtype = dtype;
   cmd_queue.push_back(pps);
+  LOG(COMMAND) << pps->toString();
 }
 
 // receive network message at the given input port id

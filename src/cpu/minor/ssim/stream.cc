@@ -145,6 +145,7 @@ std::string LinearReadStream::toString() {
       oss << "(" << bsw->name(true, elem.port) << ")";
     }
   }
+  oss << ", pad: " << padding;
   return oss.str();
 }
 
@@ -375,7 +376,7 @@ int IndirectFSM::hasNext(accel_t *accel) {
     }
     return 1;
   };
-  auto renewStream = [accel, ctx] (int port, int n, int dtype) -> base_stream_t * {
+  auto renewStream = [ctx] (int port, int n, int dtype) -> base_stream_t * {
     base_stream_t *res;
     if (port == -1) {
       auto l1d = new Linear1D(dtype, 0, 1, n, 0);
