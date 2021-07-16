@@ -76,16 +76,12 @@ struct Entry {
   /*!
    * \brief Bank number.
    */
-  uint64_t bankno() {
-    return (request.addr / parent->bank_width) % parent->num_banks;
-  }
+  uint64_t bankno();
 
   /*!
    * \brief The cacheline number in a bank.
    */
-  uint64_t cacheline() {
-    return request.addr / parent->bank_width / parent->num_banks * parent->bank_width;
-  }
+  uint64_t cacheline();
 
   Entry(ScratchMemory *parent_, const Request &request_);
 };

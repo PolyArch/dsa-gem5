@@ -43,7 +43,7 @@ double Host::timeElapsed() {
 }
 
 double Host::cycleElapsed() {
-  return (sim_cycle[0] - sim_cycle[1]) / 500;
+  return (sim_cycle[0] - sim_cycle[1]) / 500.0;
 }
 
 const char *Accelerator::BlameStr[] = {
@@ -86,8 +86,8 @@ void Accelerator::blameCycle() {
       for (auto &port : parent.bsw.ports[is_input]) {
         auto &pi = parent.port_interf().ports(is_input)[port.port];
         if (pi.stream) {
-         ++io_cnt[is_input];
-          if (blame_map.count(pi.stream->unit())) {
+          ++io_cnt[is_input];
+          if (!pi.any_data() && blame_map.count(pi.stream->unit())) {
             auto to_blame = blame_map[pi.stream->unit()];
             blame = std::min(blame, to_blame);
           }

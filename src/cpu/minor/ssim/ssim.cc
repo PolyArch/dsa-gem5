@@ -608,7 +608,7 @@ void ssim_t::print_stats() {
    out << "\n*** ROI STATISTICS for CORE ID: " << lsq()->getCpuId() << " ***\n";
    out << "Simulator Time: " << statistics.timeElapsed() << " seconds" << std::endl;
 
-   out << "Cycles: " << statistics.cycleElapsed() << "\n";
+   out << "Cycles: " << (int) statistics.cycleElapsed() << "\n";
    out << "Number of coalesced SPU requests: " << lanes[0]->_stat_num_spu_req_coalesced << "\n";
    out << "Control Core Insts Issued: " << statistics.insts_issued << "\n";
    out << "Control Core Discarded Insts Issued: " << statistics.insts_discarded << "\n";

@@ -231,5 +231,15 @@ LinkBuffer::LinkBuffer(int sb_size, int bank_size)
    : RequestBuffer(sb_size), grid(bank_size, std::vector<Entry*>(sb_size, nullptr)) {}
 
 
+uint64_t Entry::bankno() {
+  return (request.addr / parent->bank_width) % parent->num_banks;
+}
+
+
+uint64_t Entry::cacheline() {
+  return request.addr / parent->bank_width / parent->num_banks * parent->bank_width;
+}
+
+
 }
 }

@@ -1834,7 +1834,7 @@ void accel_t::print_statistics(std::ostream &out) {
     auto dpr = (double) traffic.traffic / traffic.num_requests;
     out << name << ":\t" << traffic.traffic << " B"
         << " (" << dpc << " B/c" << ", "
-        <<  dpr << " B/r" << ")" << std::endl;
+        <<  dpr << " B/r" << ") " << traffic.num_requests << std::endl;
   };
 
   out << "Bandwidth Table: (B/c=Bytes/cycle, B/r=Bytes/request) -- Breakdown "
