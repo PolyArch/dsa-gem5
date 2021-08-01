@@ -44,20 +44,25 @@ void port_data_t::bindStream(base_stream_t *exec_stream) {
   stream = exec_stream;
 }
 
+template<typename T>
+void find_and_erase(std::vector<T> &a, T ky) {
+  auto iter = std::find(a.begin(), a.end(), ky);
+  CHECK(iter != a.end());
+  a.erase(iter);
+}
+
 void port_data_t::freeStream() {
   CHECK(stream) << "No stream to free!";
   CHECK(!stream->stream_active()) << "Stream is still active!";
   struct PostProcessor : dsa::sim::stream::Functor {
     void Visit(LinearReadStream *lrs) {
       if (lrs->be) {
-        CHECK(lrs->be->use == lrs);
-        lrs->be->use = nullptr;
+        find_and_erase<base_stream_t*>(lrs->be->referencer, lrs);
       }
     }
     void Visit(LinearWriteStream *lws) {
       if (lws->be) {
-        CHECK(lws->be->load == lws);
-        lws->be->load = nullptr;
+        find_and_erase<base_stream_t*>(lws->be->referencer, lws);
       }
     }
   };
@@ -443,7 +448,7 @@ accel_t::accel_t(int i, ssim_t *ssim)
       _ssim(ssim), _accel_index(i), _accel_mask(1 << i),
       _dma_c(this, &_scr_r_c, &_scr_w_c, &_net_c), _scr_r_c(this, &_dma_c),
       _scr_w_c(this, &_dma_c), _net_c(this, &_dma_c) {
-  spads.emplace_back(8, 16, SCRATCH_SIZE, 1, new dsa::sim::InputBuffer(4, 16, 1));
+  spads.emplace_back(8, 32, SCRATCH_SIZE, 1, new dsa::sim::InputBuffer(4, 16, 1));
 
   ENFORCED_SYSTEM("mkdir -p stats/");
   ENFORCED_SYSTEM("mkdir -p viz/");
@@ -1054,7 +1059,9 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       port_available = std::min(lws->be->SpaceAvailable(), port_available);
       stream.be->mo = DMO_Write;
     }
-    auto info = stream.ls->cacheline(memory_bw, std::min(memory_bw, port_available), stream.be, DMO_Write, stream.dest());
+    LOG(MEM_REQ) << "write bandwidth: " << memory_bw;
+    auto info = stream.ls->cacheline(memory_bw, std::min(memory_bw, port_available), stream.be,
+                                     DMO_Write, stream.dest());
     int to_pop = std::accumulate(info.mask.begin(), info.mask.end(), (int) 0, std::plus<int>());
     CHECK(to_pop % ovp.get_port_width() == 0);
     std::vector<uint8_t> data;
@@ -1076,11 +1083,15 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     LOG(MEM_REQ)
       << "write request: " << info.linebase << ", " << info.start
       << " for " << stream.toString() << " " << stream.stream_active();
+    if (lws->be) {
+      LOG(MEM_REQ) << "write to buffet: " << lws->be->toString();
+    }
     std::ostringstream oss;
     for (int i = 0; i < data.size(); ++i) {
       oss << " " << (int) data[i];
     }
-    LOG(MEM_REQ) << oss.str();
+    LOG(MEM_REQ)
+      << data.size() << "/" << std::min(port_available, memory_bw) << " bytes: " << oss.str();
   }
 
   void Visit(RecurrentStream *pps) override {
@@ -1132,8 +1143,10 @@ struct SPADResponser : dsa::sim::stream::Functor {
       << "SPAD response stream " << stream->id() << ", "
       << "base: " << response.info.linebase << ", "
       << "start: " << response.info.start << ", "
-      << "data: " << data.size() << " bytes "
-      << (response.info.stream_last ? "last!" : "");
+      << "data: " << data.size() << " bytes, "
+      << "shrink: " << response.info.shrink
+      << (response.info.stream_last ? " last!" : "");
+    LOG(MEM_REQ) << stream->toString();
     for (auto &elem : stream->pes) {
       auto &ivp = accel->port_interf().in_port(elem.port);
       ivp.push_data(data);

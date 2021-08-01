@@ -538,34 +538,6 @@ class ExecContext : public ::ExecContext
           ssim.AtomicMemoryOperation(args[0], args[1], args[2], args[3], args[4]);
           break;
         }
-        // case SS_SCR_PRT:
-        //   ssim.load_scratch_to_port(thread.getSSReg(SS_REPEAT),
-        //                             thread.getSSReg(SS_REPEAT_STRETCH), thread.getSSReg(SS_CFG_SIZE), thread.getSSReg(SS_CONTEXT), thread.getSSReg(SS_GARB_ELEM));
-        //   break;
-        // case SS_PRT_SCR:
-        //   ssim.write_scratchpad();
-        //   break;
-        // case SS_IND_PRT:
-        //   ssim.indirect(
-        //     thread.getSSReg(SS_IND_PORT), thread.getSSReg(SS_IND_TYPE),
-        //     thread.getSSReg(SS_IN_PORT), thread.getSSReg(SS_INDEX_ADDR),
-        //     thread.getSSReg(SS_NUM_ELEM), thread.getSSReg(SS_REPEAT),
-        //     thread.getSSReg(SS_REPEAT_STRETCH), thread.getSSReg(SS_OFFSET_LIST),
-        //     thread.getSSReg(SS_DTYPE), thread.getSSReg(SS_IND_MULT),
-        //     thread.getSSReg(SS_IS_SCRATCH), thread.getSSReg(SS_FLAGS),
-        //     thread.getSSReg(SS_STRIDE), thread.getSSReg(SS_ACCESS_SIZE),
-        //     thread.getSSReg(SS_STRETCH), thread.getSSReg(SS_OFFSET), thread.getSSReg(SS_CFG_SIZE), thread.getSSReg(SS_CONTEXT), thread.getSSReg(SS_GARB_ELEM)); // changed interpretation of stretch here
-        //   break;
-        // case SS_PRT_IND:
-        //   ssim.indirect_write(
-        //     thread.getSSReg(SS_IND_PORT), thread.getSSReg(SS_IND_TYPE),
-        //     thread.getSSReg(SS_OUT_PORT), thread.getSSReg(SS_INDEX_ADDR),
-        //     thread.getSSReg(SS_NUM_ELEM), thread.getSSReg(SS_OFFSET_LIST),
-        //     thread.getSSReg(SS_DTYPE), thread.getSSReg(SS_IND_MULT),
-        //     thread.getSSReg(SS_IS_SCRATCH), thread.getSSReg(SS_FLAGS),
-        //     thread.getSSReg(SS_STRIDE), thread.getSSReg(SS_ACCESS_SIZE),
-        //     thread.getSSReg(SS_STRETCH), thread.getSSReg(SS_OFFSET));
-        //   break;
         // case SS_CNS_PRT:
         //   ssim.write_constant(
         //     thread.getSSReg(SS_NUM_STRIDES), thread.getSSReg(SS_IN_PORT),
