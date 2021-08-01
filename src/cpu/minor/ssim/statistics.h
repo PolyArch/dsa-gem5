@@ -6,6 +6,8 @@
 
 #include "cpu/static_inst.hh"
 
+#include "loc.hh"
+
 
 class ssim_t;
 class accel_t;

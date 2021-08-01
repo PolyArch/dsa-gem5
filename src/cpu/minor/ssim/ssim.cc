@@ -128,17 +128,6 @@ CONSTRUCT_LINEAR_STREAM[] = {
   }
 };
 
-BuffetEntry *FindBuffetEntry(int begin, int end, std::vector<BuffetEntry> &bes) {
-  auto iter = std::find_if(bes.begin(), bes.end(),
-                           [begin, end](const BuffetEntry &be) {
-                             return be.begin == begin && be.end == end; });
-  if (iter == bes.end()) {
-    bes.emplace_back(begin, end);
-    return &(*(bes.end() - 1));
-  }
-  return &(*iter);
-}
-
 void ssim_t::LoadMemoryToPort(int port, int source, int dim, int padding) {
   std::vector<PortExecState> pes = gatherBroadcastPorts(port);
   assert(dim < 3);
@@ -149,9 +138,7 @@ void ssim_t::LoadMemoryToPort(int port, int source, int dim, int padding) {
   s->inst = inst;
   if (rf[DSARF::BR].value != -1) {
     int begin = rf[DSARF::BR].value & 65535, end = (rf[DSARF::BR].value >> 16) & 65535;
-    s->be = FindBuffetEntry(begin, end, bes);
-    s->be->use = s;
-    LOG(COMMAND) << "Allocate Buffet: " << s->be->toString();
+    RegisterBuffet(s, begin, end);
   }
   LOG(COMMAND) << "Linear Read Stream: " << s->toString();
   cmd_queue.push_back(s);
@@ -170,9 +157,7 @@ void ssim_t::WritePortToMemory(int port, int operation, int dst, int dim) {
   s->inst = inst;
   if (rf[DSARF::BR].value != -1) {
     int begin = rf[DSARF::BR].value & 65535, end = (rf[DSARF::BR].value >> 16) & 65535;
-    s->be = FindBuffetEntry(begin, end, bes);
-    s->be->load = s;
-    LOG(COMMAND) << "Allocate Buffet: " << s->be->toString();
+    RegisterBuffet(s, begin, end);
   }
   LOG(COMMAND) << "Linear Write Stream: " << s->toString();
   cmd_queue.push_back(s);
@@ -608,7 +593,7 @@ void ssim_t::print_stats() {
    out << "\n*** ROI STATISTICS for CORE ID: " << lsq()->getCpuId() << " ***\n";
    out << "Simulator Time: " << statistics.timeElapsed() << " seconds" << std::endl;
 
-   out << "Cycles: " << statistics.cycleElapsed() << "\n";
+   out << "Cycles: " << (int) statistics.cycleElapsed() << "\n";
    out << "Number of coalesced SPU requests: " << lanes[0]->_stat_num_spu_req_coalesced << "\n";
    out << "Control Core Insts Issued: " << statistics.insts_issued << "\n";
    out << "Control Core Discarded Insts Issued: " << statistics.insts_discarded << "\n";

@@ -18,6 +18,9 @@ struct BuffetChecker : dsa::sim::stream::Functor {
             << "Load from Buffet: " << lrs->be->toString() << " Request: " << addr;
         } else {
           ok = false;
+          LOG(SCHEDULE)
+            << lrs->be << " "
+            << addr << " not in range! " << lrs->be->toString();
         }
       }
     }
@@ -25,15 +28,17 @@ struct BuffetChecker : dsa::sim::stream::Functor {
     /*!
      * \brief To support buffet stream, we need to check if the write is in the buffer.
      */
-    void Visit(LinearWriteStream *lws) {
+    void Visit(LinearWriteStream *lws) override {
       if (lws->be) {
         auto addr = lws->ls->poll(false);
         if (lws->be->SpaceAvailable()) {
           ok = true;
           LOG(SCHEDULE)
+            << lws->be << " "
             << "Write to Buffet: " << lws->be->toString() << " Request: " << addr;
         } else {
           ok = false;
+          LOG(SCHEDULE) << "No buffer space to write!";
         }
       }
     }

@@ -98,13 +98,9 @@ struct BuffetEntry {
   /*!
    * \brief Use stream involved by this buffet.
    */
-  IPortStream *use{nullptr};
-  /*!
-   * \brief Load stream involved by this buffet.
-   */
-  OPortStream *load{nullptr};
+  std::vector<base_stream_t*> referencer;
 
-  BuffetEntry(int begin_, int end_) : begin(begin_), end(end_) {}
+  BuffetEntry(int begin_, int end_) : begin(begin_), end(end_), address(begin_) {}
 
   /*!
    * \brief Dump to string for debugging.
@@ -130,7 +126,7 @@ struct BuffetEntry {
   /*!
    * \brief Translate the requested absolute address to relative address in buffet.
    */
-  int64_t Translate(int64_t addr);
+  int64_t Translate(int64_t addr, MemoryOperation mo);
 
   /*!
    * \brief Append bytes of data to the Buffet FIFO.
@@ -496,14 +492,7 @@ struct LinearReadStream : public IPortStream {
     return ls->volume;
   }
 
-  IPortStream *clone(accel_t *accel) override {
-    auto res = new LinearReadStream(*this);
-    if (res->be) {
-      res->be->use = res;
-    }
-    res->parent = accel;
-    return res;
-  }
+  IPortStream *clone(accel_t *accel) override;
 
   bool stream_active() override {
     return ls->hasNext();
@@ -540,15 +529,7 @@ struct LinearWriteStream : public OPortStream {
     f->Visit(this);
   }
 
-  OPortStream *clone(accel_t *accel) override {
-    auto res = new LinearWriteStream(*this);
-    // After dispatching, the buffet entry should be updated accordingly.
-    if (res->be) {
-      res->be->load = res;
-    }
-    res->parent = accel;
-    return res;
-  }
+  OPortStream *clone(accel_t *accel) override;
 
   bool garbage() {
     if (src() != LOC::DMA) {

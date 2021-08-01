@@ -33,10 +33,22 @@ bool BuffetEntry::EnforceReadWrite(int64_t addr, int word) {
   return false;
 }
 
-int64_t BuffetEntry::Translate(int64_t addr) {
-  CHECK(InRange(addr))
-    << "Address out of range: " << addr << " not in ["
-    << address << ", " << address + occupied << ")";
+int64_t BuffetEntry::Translate(int64_t addr, MemoryOperation mo) {
+  switch (mo) {
+  case DMO_Write:
+    CHECK(SpaceAvailable() && addr == address + occupied)
+      << "For now only appended writing is supported!"
+      << "request: " << addr << ", address: [" << address << ", " << address + occupied << ")"
+      << ", Size: " << Size();
+    break;
+  case DMO_Read:
+    CHECK(InRange(addr))
+      << "Address out of range: " << addr << " not in ["
+      << address << ", " << address + occupied << ")";
+    break;
+  default:
+    CHECK(false) << "Not supported: " << mo;
+  }
   CQ_PTR(addr, front - address);
   return addr;
 }
@@ -45,6 +57,7 @@ void BuffetEntry::Append(int bytes) {
   CHECK(occupied + bytes <= Size())
     << "Buffet size overflow!" << occupied << " " << bytes << " " << Size();
   occupied += bytes;
+  LOG(BUFFET) << "Append " << bytes << ", now: " << toString();
   CQ_PTR(tail, bytes);
 }
 
@@ -52,6 +65,7 @@ void BuffetEntry::Shrink(int bytes) {
   CHECK(occupied - bytes >= 0)
     << "Buffet size underflow!" << occupied << " " << bytes << " " << Size();
   occupied -= bytes;
+  LOG(BUFFET) << "Pop " << bytes << ", now: " << toString();
   address += bytes;
   CQ_PTR(front, bytes);
 }
@@ -82,9 +96,9 @@ void base_stream_t::set_mem_map_config() {
 
 std::string BuffetEntry::toString() {
   std::ostringstream oss;
-  oss << "Alloc: [" << begin << ", " << end << "), Buffered: ["
-      << front << ", " << tail << "), Occupied: " << occupied
-      << ", Address: " << address;
+  oss << "Alloc: [" << begin << ", " << end << "), Ptr: ("
+      << front << ", " << tail << "), Buffered: [" << address
+      << ", " << address + occupied << ")";
   return oss.str();
 }
 
@@ -147,6 +161,32 @@ std::string LinearReadStream::toString() {
   }
   oss << ", pad: " << padding;
   return oss.str();
+}
+
+template<typename T>
+void replace_vec_elem(std::vector<T> &a, T tgt, T tbr) {
+  auto iter = std::find(a.begin(), a.end(), tgt);
+  CHECK(iter != a.end());
+  *iter = tbr;
+}
+
+OPortStream *LinearWriteStream::clone(accel_t *accel) {
+  auto res = new LinearWriteStream(*this);
+  // After dispatching, the buffet entry should be updated accordingly.
+  if (res->be) {
+    replace_vec_elem<base_stream_t*>(res->be->referencer, this, res);
+  }
+  res->parent = accel;
+  return res;
+}
+
+IPortStream *LinearReadStream::clone(accel_t *accel){
+  auto res = new LinearReadStream(*this);
+  if (res->be) {
+    replace_vec_elem<base_stream_t*>(res->be->referencer, this, res);
+  }
+  res->parent = accel;
+  return res;
 }
 
 std::string LinearWriteStream::toString() {
@@ -229,27 +269,38 @@ LinearStream::LineInfo Linear1D::cacheline(int bandwidth, int at_most, BuffetEnt
   std::vector<bool> mask(bandwidth, 0);
   CHECK(bandwidth == (bandwidth & -bandwidth));
   int64_t head = poll(false);
+  if (be) {
+    head = be->Translate(head, mo);
+  }
   int64_t base = ~(bandwidth - 1) & head;
+  LOG(LI) << "Head: " << head << ", Base: " << base;
   int64_t cnt = 0;
   int64_t current = -1;
+  int64_t untranslated = -1;
   int64_t prev = -1;
   while (cnt < at_most && hasNext()) {
     prev = current;
-    current = poll(false);
+    untranslated = current = poll(false);
     if (be && !be->EnforceReadWrite(current, word)) {
+      LOG(LI) << "Cannot write to buffet!";
       break;
+    }
+    if (be) {
+      current = be->Translate(current, mo);
+      prev = current;
     }
     CHECK(current >= base);
     if (current < base + bandwidth) {
+      LOG(LI) << "Address: " << current << " x " << word;
+      if (mo != DMO_Read && loc == LOC::DMA && (prev != -1 && current - prev != word)) {
+        LOG(LI) << "Break by incontinuous write!";
+        break;
+      }
       if (be) {
         if (be->mo == DMO_Write) {
+          // Commit buffet append here.
           be->Append(word);
         }
-        prev = current;
-        current = be->Translate(current);
-      }
-      if (mo != DMO_Read && loc == LOC::DMA && (prev != -1 && current - prev != word)) {
-        break;
       }
       for (int j = 0, n = abs(word); j < n; ++j) {
         CHECK(current - base + j >= 0 && current - base + j < mask.size())
@@ -258,13 +309,14 @@ LinearStream::LineInfo Linear1D::cacheline(int bandwidth, int at_most, BuffetEnt
         mask[(current - base) + j] = true;
         ++cnt;
       }
-      head = std::min(head, current);
       poll(true); // pop the current one
     } else {
+      LOG(LI) << "Break by bandwidth: " << current << " >= " << base << " + " << bandwidth;
       break;
     }
   }
-  return LineInfo(base, head, mask, current + word, first, !hasNext(), !hasNext());
+  LOG(SHRINK) << "shrink: " << untranslated + word;
+  return LineInfo(base, head, mask, untranslated + word, first, !hasNext(), !hasNext());
 }
 
 void Functor::Visit(base_stream_t *) {}

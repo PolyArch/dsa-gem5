@@ -11,7 +11,8 @@ ScratchMemory::ScratchMemory(int line_size_, int num_banks_, int capacity_, int 
   CHECK(!rb->parent) << "Already assigned to a indirect memory?";
   rb->parent = this;
   CHECK(num_bytes % num_banks == 0) << "Memory size " << num_bytes << " is not divisible by #banks " << num_banks;
-  CHECK((num_banks & -num_banks) == num_banks) << "#Banks is not a power of 2, " << num_banks;
+  CHECK((num_banks & -num_banks) == num_banks)
+    << "#Banks is not a power of 2, " << num_banks << " " << (num_banks & -num_banks);
   banks.reserve(num_banks);
   for (int i = 0; i < num_banks; ++i) {
     banks.emplace_back(this, i, fifo_size_, num_bytes / num_banks);
@@ -131,7 +132,7 @@ void Bank::InsituCompute() {
         BW_IMPL(64)
       #undef BW_IMPL
         default:
-          CHECK(false) << compute->request.data_size << " is not a power of 2!";
+          CHECK(false) << compute->request.data_size * 8 << " is not a power of 2!";
       }
       std::vector<uint8_t> c((uint8_t*)(&res), (uint8_t*)(&res) + 8);
       for (int j = 0; j < compute->request.data_size; ++j) {

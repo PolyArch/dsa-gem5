@@ -49,7 +49,7 @@ public:
   dsa::Specification spec;
 
   /*! \brief Buffet entries. */
-  std::vector<BuffetEntry> bes;
+  std::vector<BuffetEntry*> bes;
 
   /*! \brief The array of spatial lanes. */
   std::vector<accel_t*> lanes;
@@ -173,6 +173,31 @@ public:
    * \brief Dispatch streams to accelerator lanes.
    */
   void DispatchStream();
+
+  /*!
+   * \brief Register buffet for the stream.
+   * \param s The stream that uses buffet.
+   * \param begin, end The buffet ID.
+   */
+  template<typename T>
+  void RegisterBuffet(T *s, int begin, int end) {
+    CHECK(begin != -1 && end != -1);
+    auto iter = std::find_if(bes.begin(), bes.end(),
+                 [begin, end] (BuffetEntry *be) { return be->begin == begin && be->end == end; });
+    if (iter == bes.end()) {
+      bes.push_back(new BuffetEntry(begin, end));
+      iter = bes.end() - 1;
+    }
+    LOG(COMMAND)
+      << "Buffet Entry: [" << *iter << ", " << iter - bes.begin() << "] " << (*iter)->toString();
+    CHECK((*iter)->referencer.size() < 2);
+    (*iter)->referencer.push_back(s);
+    s->be = *iter;
+    if ((*iter)->referencer.size() == 2) {
+      bes.erase(iter);
+      LOG(COMMAND) << "Buffet in pair, retired!";
+    }
+  }
   
   void atomic_update_hardware_config(int addr_port, int val_port, int out_port);
   void atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode, int val_num, int num_updates, bool is_update_cnt_port, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type);
