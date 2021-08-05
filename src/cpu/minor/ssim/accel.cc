@@ -1100,6 +1100,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     CHECK(pps->dtype % ovp.get_port_width() == 0);
     std::vector<uint8_t> data;
     int port_width = ovp.get_port_width();
+    int cnt = 0;
     while (ovp.mem_size() >= pps->dtype / port_width && pps->stream_active()) {
       for (int i = 0; i < pps->dtype / port_width; ++i) {
         auto value = ovp.pop_out_data();
@@ -1107,12 +1108,20 @@ struct StreamExecutor : dsa::sim::stream::Functor {
         data.insert(data.end(), ptr, ptr + port_width);
       }
       ++pps->i;
+      ++cnt;
     }
     for (auto &elem : pps->pes) {
       auto &ivp = accel->port_interf().in_port(elem.port);
       ivp.push_data(data);
+      LOG(RECUR)
+        << ivp.port() << ": "
+        << "Int Buffer: " << ivp.mem_size() << ", Ready: " << ivp.num_ready()
+        << ", Leftover: " << ivp.leftover.size();
     }
-    LOG(RECUR) << pps->toString();
+    if (cnt) {
+      LOG(RECUR) << cnt << " pushed, in total: " << data.size() << " bytes";
+      LOG(RECUR) << pps->toString();
+    }
     if (!pps->stream_active()) {
       LOG(STREAM) << pps->toString() << " freed!";
       ovp.freeStream();
@@ -1321,8 +1330,8 @@ void accel_t::cycle_cgra_backpressure() {
          << "Port details: " << cur_in_port.port_cgra_elem() << " "
          << vec_in->logical_len() << " ( " << vec_in->name() << " ) "
          << cur_in_port.pes.toString()
-         << " and num_ready: " << cur_in_port.num_ready()
-         << " and mem size: " << cur_in_port.mem_size();
+         << ", num_ready: " << cur_in_port.num_ready()
+         << ", and mem size: " << cur_in_port.mem_size();
 
     if (cur_in_port.num_ready() && cur_in_port.pes.repeat > 0) {
 
@@ -1363,7 +1372,9 @@ void accel_t::cycle_cgra_backpressure() {
           vec_in->values[i].push(data[i], data_valid[i], 0);
         }
 
-        LOG(COMP) << "Vec name: " << vec_in->name() << " allowed to push input: ";
+        LOG(COMP)
+          << "Vec name: " << vec_in->name() << " allowed to push "
+          << data.size() << " input(s): ";
         for (size_t i = 0; i < data.size(); ++i) {
           LOG(COMP) << &vec_in->values[i] << "|" << data[i] << "(" << data_valid[i] << ") ";
         }
@@ -1389,6 +1400,10 @@ void accel_t::cycle_cgra_backpressure() {
   num_computed = _dfg->forward(_back_cgra);
   if (num_computed) {
     statistics.blame = dsa::stat::Accelerator::Blame::COMPUTING;
+  }
+
+  if (statistics.roi()) {
+    statistics.dynamic_instructions += num_computed;
   }
 
   _cgra_issued += _dfg->total_dyn_insts(0) + _dfg->total_dyn_insts(1);
@@ -1789,9 +1804,12 @@ void accel_t::print_statistics(std::ostream &out) {
   }
   out << "CGRA Insts / Computation Instance: "
       << ((double)_stat_ss_insts) / ((double)_stat_comp_instances) << "\n";
-  out << "CGRA Insts / Cycle: "
-      << ((double)_stat_ss_insts) / ((double)roi_cycles())
-      << " (overall activity factor)\n";
+  {
+    double ilp = ((double)(statistics.dynamic_instructions)) / get_ssim()->statistics.cycleElapsed();
+    out << "CGRA Insts / Cycle: "
+        << (statistics.dynamic_instructions) << " / " << ((int) get_ssim()->statistics.cycleElapsed())
+        << " = " << ilp << " (overall activity factor)\n";
+  }
   out << "Mapped DFG utilization: "
       << ((double)_stat_ss_dfg_util) / ((double)roi_cycles()) << "\n";
   // FIXME: see it's use
@@ -1850,12 +1868,25 @@ void accel_t::print_statistics(std::ostream &out) {
         <<  dpr << " B/r" << ") " << traffic.num_requests << std::endl;
   };
 
+  auto print_request = [this, &out, &cycles](const std::string &name, int x, int y, int bw) {
+    CHECK(x >= 0 && x < 2);
+    CHECK(y >= 0 && y < LOC::TOTAL);
+    auto &traffic = this->statistics.traffic[x][y];
+    int64_t request_traffic = traffic.num_requests * bw;
+    auto dpc = request_traffic / cycles;
+    out << name << ":\t" << request_traffic << " B" << " (" << dpc << " B/c)" << std::endl;
+  };
+
   out << "Bandwidth Table: (B/c=Bytes/cycle, B/r=Bytes/request) -- Breakdown "
          "(sources/destinatinos): \n";
   print_component("Read SPAD", true, LOC::SCR);
+  print_request("R/Request SPAD", true, LOC::SCR, spads[0].bandwidth());
   print_component("Write SPAD", false, LOC::SCR);
+  print_request("W/Request SPAD", false, LOC::SCR, spads[0].bandwidth());
   print_component("Read DMA", true, LOC::DMA);
+  print_request("R/Request DMA", true, LOC::DMA, get_ssim()->spec.dma_bandwidth);
   print_component("Write DMA", false, LOC::DMA);
+  print_request("W/Request DMA", false, LOC::DMA, get_ssim()->spec.dma_bandwidth);
   print_component("Recur Bus", false, LOC::REC_BUS);
   
 }
@@ -3679,9 +3710,9 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
     << addr << " " << std::dec << size;
 
   std::string basename = ((char*)(bits) + 9);
-  SSDfg *dfg = dsa::dfg::Import("sched/" + basename + ".dfg.json");
+  SSDfg *dfg = dsa::dfg::Import(".sched/" + basename + ".dfg.json");
   auto sched = new Schedule(_ssconfig, dfg);
-  sched->LoadMappingInJson("sched/" + basename + ".sched.json");
+  sched->LoadMappingInJson(".sched/" + basename + ".sched.json");
   bsw = dsa::sim::BitstreamWrapper(sched);
 
   for (int i = 0; i < 2; ++i) {

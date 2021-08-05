@@ -1008,7 +1008,9 @@ LSQ::tryToSendToTransfers(LSQRequestPtr request)
         }
     } else {
         //We should have checked from the accelerator side if there was space
-        assert(sd_transfers[request->sdInfo->trans_idx].remainingSpace()>0);
+        if (!sd_transfers[request->sdInfo->trans_idx].remainingSpace()) {
+          return;
+        }
     }
 
     if (request->isComplete() || request->state == LSQRequest::Failed) {

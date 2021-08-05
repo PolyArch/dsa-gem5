@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <iostream>
+#include <sstream>
 
 #include "dsa-ext/rf.h"
 
@@ -185,7 +186,10 @@ struct base_stream_t {
   LOC side(bool is_source) { return is_source ? src() : dest(); }
 
   std::string short_name() {
-    return std::string(LOC_NAME[src()]) + "->" + LOC_NAME[dest()];
+    std::ostringstream oss;
+    oss
+      << "[" << ((void*) this) << "]" << std::string(LOC_NAME[src()]) << "->" << LOC_NAME[dest()];
+    return oss.str();
   }
 
   virtual ~base_stream_t() { }

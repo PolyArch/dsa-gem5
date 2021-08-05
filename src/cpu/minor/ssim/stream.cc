@@ -210,7 +210,7 @@ std::string ConstPortStream::toString() {
   for (auto &elem : pes) {
     oss << " " << elem.toString();
     if (bsw) {
-      oss << "(" << bsw->name(false, elem.port) << ")";
+      oss << "(" << bsw->name(true, elem.port) << ")";
     }
   }
   return oss.str();

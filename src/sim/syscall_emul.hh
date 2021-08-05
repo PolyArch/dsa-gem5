@@ -2697,4 +2697,27 @@ eventfdFunc(SyscallDesc *desc, ThreadContext *tc,
 #endif
 }
 
+/// Target sched_getaffinity
+template <class OS>
+SyscallReturn
+schedGetaffinityFunc(SyscallDesc *desc, ThreadContext *tc,
+                     pid_t pid, size_t cpusetsize, Addr cpu_set_mask)
+{
+#if defined(__linux__)
+    if (cpusetsize < CPU_ALLOC_SIZE(tc->getSystemPtr()->numContexts()))
+        return -EINVAL;
+
+    BufferArg maskBuf(cpu_set_mask, cpusetsize);
+    maskBuf.copyIn(tc->getVirtProxy());
+    for (int i = 0; i < tc->getSystemPtr()->numContexts(); i++) {
+        CPU_SET(i, (cpu_set_t *)maskBuf.bufferPtr());
+    }
+    maskBuf.copyOut(tc->getVirtProxy());
+    return CPU_ALLOC_SIZE(tc->getSystemPtr()->numContexts());
+#else
+    warnUnsupportedOS("sched_getaffinity");
+    return -1;
+#endif
+}
+
 #endif // __SIM_SYSCALL_EMUL_HH__

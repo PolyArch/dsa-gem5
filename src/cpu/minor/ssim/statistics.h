@@ -92,6 +92,10 @@ struct Accelerator {
    */
   int64_t instance_cnt{0};
   /*!
+   * \brief Dynamic instructions executed. [dedicated, temporal]
+   */
+  int64_t dynamic_instructions{0};
+  /*!
    * \brief We to blame for this cycle of iteration.
    */
   enum Blame {

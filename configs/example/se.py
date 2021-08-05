@@ -182,7 +182,7 @@ if numThreads > 1:
 system.voltage_domain = VoltageDomain(voltage = options.sys_voltage)
 
 # Create a source clock for the system and set the clock period
-system.clk_domain = SrcClockDomain(clock =  options.sys_clock,
+system.clk_domain = SrcClockDomain(clock = options.sys_clock,
                                    voltage_domain = system.voltage_domain)
 
 # Create a CPU voltage domain

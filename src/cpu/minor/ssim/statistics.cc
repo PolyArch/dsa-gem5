@@ -43,7 +43,8 @@ double Host::timeElapsed() {
 }
 
 double Host::cycleElapsed() {
-  return (sim_cycle[0] - sim_cycle[1]) / 500.0;
+  double elapsed = (sim_cycle[0] - sim_cycle[1]);
+  return elapsed / parent.lsq()->get_cpu().clockDomain.clockPeriod();
 }
 
 const char *Accelerator::BlameStr[] = {

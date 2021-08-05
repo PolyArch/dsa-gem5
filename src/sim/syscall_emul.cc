@@ -65,6 +65,7 @@ SyscallReturn
 unimplementedFunc(SyscallDesc *desc, ThreadContext *tc)
 {
     fatal("syscall %s (#%d) unimplemented.", desc->name(), desc->num());
+    return 0;
 }
 
 
@@ -1632,4 +1633,5 @@ setsockoptFunc(SyscallDesc *desc, ThreadContext *tc,
 
     return (status == -1) ? -errno : status;
 }
+
 

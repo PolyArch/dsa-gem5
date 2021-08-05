@@ -275,15 +275,17 @@ void ssim_t::DispatchStream() {
       for (auto &elem : pes) {
         auto &in = accel->port_interf().in_port(elem.port);
         if (in.stream) {
-          LOG(DISPATCH) << "ivp" << elem.port << " serving stream " << in.stream->toString();
+          LOG(CMD_BLOCK) << "ivp" << elem.port << " serving stream " << in.stream->toString();
           return false;
         }
         if (std::find(iports.begin(), iports.end(), elem.port) != iports.end()) {
-          LOG(DISPATCH) << "ivp" << elem.port << " is enforced by previous conflict port!";
+          LOG(CMD_BLOCK) << "ivp" << elem.port << " is enforced by previous conflict port!";
           return false;
         }
         if (in.mem_size() || in.num_ready()) {
-          LOG(DISPATCH) << "ivp" << elem.port << " buffer not empty! " << in.mem_size() << ", " << in.num_ready();
+          LOG(CMD_BLOCK)
+            << "ivp" << elem.port << " buffer not empty! "
+            << in.mem_size() << ", " << in.num_ready();
           return false;
           // FIXME(@were): This can be more aggressive, but what should I do?
           // if (elem.repeat != in.pes.repeat ||
@@ -300,11 +302,11 @@ void ssim_t::DispatchStream() {
       for (auto port : ports) {
         auto &out = accel->port_interf().out_port(port);
         if (out.stream) {
-          LOG(DISPATCH) << "ovp" << port << " is serving " << out.stream->toString();
+          LOG(CMD_BLOCK) << "ovp" << port << " is serving " << out.stream->toString();
           return false;
         }
         if (std::find(oports.begin(), oports.end(), port) != oports.end()) {
-          LOG(DISPATCH) << "ovp" << port << " is enforced by conflict streams!";
+          LOG(CMD_BLOCK) << "ovp" << port << " is enforced by conflict streams!";
           return false;
         }
       }
@@ -434,7 +436,9 @@ void ssim_t::DispatchStream() {
     }
 
     void debugLog(base_stream_t *s) {
-      LOG(DISPATCH) << "Issue to Accel" << accel->accel_index() << ": " << s->toString();
+      LOG(DISPATCH)
+        << "[" << accel->get_ssim()->CurrentCycle() << "]: "
+        << "Issue to Accel" << accel->accel_index() << " " << s->toString();
     }
 
     /*!
@@ -443,7 +447,7 @@ void ssim_t::DispatchStream() {
     void Visit(IPortStream *ips) override {
       auto cloned = ips->clone(accel);
       BindStreamToPorts(cloned->pes, cloned);
-      debugLog(ips);
+      debugLog(cloned);
     }
 
     /*!
@@ -452,7 +456,7 @@ void ssim_t::DispatchStream() {
     void Visit(OPortStream *ops) override {
       auto cloned = ops->clone(accel);
       BindStreamToPorts(ops->oports(), cloned);
-      debugLog(ops);
+      debugLog(cloned);
     }
 
     /*!
@@ -464,7 +468,7 @@ void ssim_t::DispatchStream() {
       BindStreamToPorts(pps->pes, cloned);
       auto &out = accel->port_interf().out_port(port);
       out.bindStream(cloned);
-      debugLog(pps);
+      debugLog(cloned);
     }
 
     /*!
@@ -488,7 +492,7 @@ void ssim_t::DispatchStream() {
         cmd_queue[i]->Accept(&dc[j]);
         retire = retire && dc[j].retire;
         if (!retire) {
-          LOG(DISPATCH) << "Cannot Issue Stream: " << cmd_queue[i]->toString();
+          LOG(CMD_BLOCK) << "Cannot Issue Stream: " << cmd_queue[i]->toString();
           break;
         }
       }
