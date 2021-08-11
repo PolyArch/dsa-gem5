@@ -63,16 +63,21 @@ struct SSMemReqInfo {
     bool last{false};
     bool isConfig{0};
     uint64_t which_accel{0};
-    int request_cycle{-1};
+    /*! \brief The cycle this request is pushed to LSQ. */
+    int64_t request_cycle{-1};
+
+    int64_t breakdown[11];
 
     // mask: dma direct read
     SSMemReqInfo(int stream_id_, uint64_t which_accel_, const std::vector<int> ports_,
-        const std::vector<bool>& mask_, int request_cycle_,
+        const std::vector<bool>& mask_, int64_t request_cycle_,
         uint32_t fill_, bool stride_first_, bool stride_last_, bool last_)
         : stream_id(stream_id_), trans_idx(ports_[0]),
         ports(ports_), fill_mode(fill_), mask(mask_),
         stride_first(stride_first_), stride_last(stride_last_), last(last_),
-        which_accel(which_accel_), request_cycle(request_cycle_) {}
+        which_accel(which_accel_), request_cycle(request_cycle_) {
+      memset(breakdown, -1, sizeof breakdown);
+    }
 
     // for config/write streams (not including for now)!
     SSMemReqInfo(int stream_id_, uint64_t which_accel_, int trans_idx_)
@@ -759,8 +764,7 @@ class LSQ : public Named
     Fault pushRequest(MinorDynInstPtr inst, bool isLoad, uint8_t *data,
                       unsigned int size, Addr addr, Request::Flags flags,
                       uint64_t *res, AtomicOpFunctorPtr amo_op,
-                      const std::vector<bool>& byte_enable =
-                          std::vector<bool>(),
+                      const std::vector<bool>& byte_enable = std::vector<bool>(),
                       SSMemReqInfoPtr sdInfo = nullptr);
 
     /** Push a predicate failed-representing request into the queues just

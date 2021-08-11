@@ -122,6 +122,11 @@ struct Accelerator {
    */
   Traffic traffic[2][LOC::TOTAL];
   /*!
+   * \brief Count the average memory latency.
+   */
+  int64_t memory_latency{0};
+  int64_t mem_lat_brkd[11];
+  /*!
    * \brief The accelerator to which this instance belongs.
    */
   accel_t &parent;
@@ -136,6 +141,15 @@ struct Accelerator {
    * \param delta The data traffic made this time.
    */
   void countDataTraffic(int is_input, LOC unit, int delta);
+
+  /*!
+   * \brief Count the memory latency.
+   */
+  void countMemoryLatency(int64_t request_cycle, int64_t *breakdown);
+
+  double averageImpl(int64_t);
+
+  double averageMemoryLatency();
 
   /*!
    * \brief A convinience wrapper for access ROI in host statistics.

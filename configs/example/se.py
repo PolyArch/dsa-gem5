@@ -221,7 +221,7 @@ if options.simpoint_profile:
 
 
 for i in range(np):
-    system.cpu[i].executeMaxAccessesInMemory = 20
+    system.cpu[i].executeMaxAccessesInMemory = 32
     if options.smt:
         system.cpu[i].workload = multiprocesses
     elif len(multiprocesses) == 1:

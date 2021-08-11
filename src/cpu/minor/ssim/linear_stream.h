@@ -110,7 +110,7 @@ struct Linear1D : LinearStream {
    */
   int64_t poll(bool next=true) override {
     assert(hasNext());
-    auto res = i * stride + start;
+    auto res = i * stride * word + start;
     if (next) {
       ++i;
     }

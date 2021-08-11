@@ -55,6 +55,7 @@ const char *Accelerator::BlameStr[] = {
 
 Accelerator::Accelerator(accel_t &parent_) : parent(parent_) {
   memset(blame_count, 0, sizeof(blame_count));
+  memset(mem_lat_brkd, 0, sizeof(mem_lat_brkd));
 }
 
 void Accelerator::countDataTraffic(int is_input, LOC unit, int delta) {
@@ -100,6 +101,26 @@ void Accelerator::blameCycle() {
     }
   }
   ++blame_count[blame];
+}
+
+void Accelerator::countMemoryLatency(int64_t request_cycle, int64_t *breakdown) {
+  if (roi()) {
+    memory_latency += curTick() - request_cycle;
+    for (int i = 0; i < 11; ++i) {
+      mem_lat_brkd[i] += (curTick() - breakdown[i]);
+    }
+  }
+}
+
+double Accelerator::averageImpl(int64_t value) {
+  double freq = parent.lsq()->get_cpu().clockDomain.clockPeriod();
+  auto res = (double) value / freq;
+  int norm = traffic[true][LOC::DMA].num_requests;
+  return res / norm;
+}
+
+double Accelerator::averageMemoryLatency() {
+  return averageImpl(memory_latency);
 }
 
 }

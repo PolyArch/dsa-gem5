@@ -172,6 +172,11 @@ LSQ::LSQRequest::setState(LSQRequestState new_state)
     DPRINTFS(MinorMem, (&port), "Setting state from %d to %d for request:"
         " %s\n", state, new_state, *inst);
     state = new_state;
+    if (sdInfo) {
+      if (sdInfo->breakdown[new_state] == -1) {
+        sdInfo->breakdown[new_state] = curTick();
+      }
+    }
 }
 
 bool
@@ -1139,7 +1144,9 @@ LSQ::tryToSendToTransfers(LSQRequestPtr request)
         }
     } else {
         if (!canSendToMemorySystem()) {
-            DPRINTF(MinorMem, "Can't send request to memory system yet\n");
+
+            DPRINTF(MinorMem, "Can't send request to memory system yet %d < %d\n",
+                    numAccessesInMemorySystem, inMemorySystemLimit);
             return;
         }
 
@@ -1166,7 +1173,8 @@ LSQ::tryToSendToTransfers(LSQRequestPtr request)
     /* See the do_access comment above */
     if (do_access) {
         if (!canSendToMemorySystem()) {
-            DPRINTF(MinorMem, "Can't send request to memory system yet\n");
+            DPRINTF(MinorMem, "Can't send request to memory system yet %d %d\n",
+                    numAccessesInMemorySystem, inMemorySystemLimit);
             return;
         }
 
@@ -1645,25 +1653,22 @@ LSQ::findResponse(int streamId) {
         bool can_store = storeBuffer.canInsert();
         bool to_str_buf = request->state == LSQRequest::StoreToStoreBuffer;
 
-        LOG(LSQ) << "Checking " << streamId << " "
-                     << complete << " " << to_str_buf << " " << can_store << " "
-                     << sd_transfers[streamId].occupiedSpace() << "/"
-                     << sd_transfers[streamId].totalSpace();
+        LOG(LSQ)
+          << "Checking " << streamId << " " << complete << " " << to_str_buf << " "
+          << can_store << " " << sd_transfers[streamId].occupiedSpace() << "/"
+          << sd_transfers[streamId].totalSpace();
 
-        LOG(LSQ) << "requests: " << requests.occupiedSpace() << "/"
-                     << requests.totalSpace();
+        LOG(LSQ) << "requests: " << requests.occupiedSpace() << "/" << requests.totalSpace();
 
         if(complete || (to_str_buf && can_store)) {
-            ret = request;
+          ret = request;
         }
     }
 
     if (ret) {
-        DPRINTF(MinorMem, "Found matching memory response for stream: %d\n",
-        streamId);
+        DPRINTF(MinorMem, "Found matching memory response for stream: %d\n", streamId);
     } else {
-        DPRINTF(MinorMem, "No matching memory response for stream: %d\n",
-            streamId);
+        DPRINTF(MinorMem, "No matching memory response for stream: %d\n", streamId);
     }
     return ret;
 }
@@ -1929,7 +1934,8 @@ LSQ::issuedMemBarrierInst(MinorDynInstPtr inst)
 void
 LSQ::LSQRequest::makePacket()
 {
-    assert(inst->translationFault == NoFault);
+    CHECK(inst->translationFault == NoFault)
+      << inst->translationFault->name() << ": " << *inst;
 
     /* Make the function idempotent */
     if (packet)
