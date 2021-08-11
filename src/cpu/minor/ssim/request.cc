@@ -70,7 +70,7 @@ void RequestBuffer::Decode(const std::vector<Request> &requests, const stream::L
         << elem.data_size << " / " << bank_width << ")";
     }
 
-    LOG(XBAR) << "Process " << elem;
+    DSA_LOG(XBAR) << "Process " << elem;
     scoreboard[tail].emplace_back(parent, elem);
     // FIXME(@were): Confirm the details of coalescing requests with @Sihao
     // auto operand = elem.operand;
@@ -81,11 +81,11 @@ void RequestBuffer::Decode(const std::vector<Request> &requests, const stream::L
     //   duplicate.operand = operand & (~0ull >> (64 - bank_width * 8));
     //   operand >>= bank_width * 8;
     //   entries.emplace_back(parent, duplicate);
-    //   LOG(XBAR)
+    //   DSA_LOG(XBAR)
     //     << "Micro code: [" << entries.back().bankno() << "] "
     //     << entries.back().cacheline() << " + " << entries.back().offset()
     //     << "  " << duplicate.operand;
-    //   LOG(MASTER) << entries.back().id << " <-> " << entries[0].id;
+    //   DSA_LOG(MASTER) << entries.back().id << " <-> " << entries[0].id;
     // }
   }
   info[tail] = meta;
@@ -110,19 +110,19 @@ void InputBuffer::PushRequests() {
         auto pred = std::accumulate(elem.request.mask.begin(), elem.request.mask.end(), 0,
                                     std::plus<int>());
         if (pred) {
-          LOG(IDLE)
+          DSA_LOG(IDLE)
             << issue_checked << ": try to issue "
             << i << "," << j << " to " << bankno;
           if (cnt[bankno] >= provision) {
-            LOG(IDLE) << bankno << " over provisioned!";
+            DSA_LOG(IDLE) << bankno << " over provisioned!";
           } else {
             if (!parent->banks[bankno].Available()) {
-              LOG(IDLE) << bankno << " task fifo overwhelmed!";
+              DSA_LOG(IDLE) << bankno << " task fifo overwhelmed!";
             } else {
               ++cnt[bankno];
               parent->banks[bankno].task_fifo.push(&refer[j]);
               refer[j].status = Entry::Status::InFIFO;
-              LOG(XBAR) << "[" << i << "] Push micro code "
+              DSA_LOG(XBAR) << "[" << i << "] Push micro code "
                           << refer[j].request << " to bank " << bankno;
             }
           }
@@ -130,7 +130,7 @@ void InputBuffer::PushRequests() {
           elem.status = Entry::Status::Commit;
         }
       } else {
-        LOG(XBAR) << "[" << i << "] Already issued: @"
+        DSA_LOG(XBAR) << "[" << i << "] Already issued: @"
                     << STATUS[(int) elem.status] << " " << elem.request;
       }
       if (head_found) {
@@ -152,13 +152,13 @@ Response RequestBuffer::Commit() {
     op = scoreboard[front][0].request.op;
     for (int i = 0; i < (int) scoreboard[front].size(); ++i) {
       if (scoreboard[front][i].status != Entry::Status::Commit) {
-        LOG(RETIRE) << "[" << front << "] " << scoreboard[front][i].request
+        DSA_LOG(RETIRE) << "[" << front << "] " << scoreboard[front][i].request
                       << " is not committed yet! "
                       << STATUS[(int) scoreboard[front][i].status];
         return Response();
       }
     }
-    LOG(RETIRE) << "Row " << front << " is retiring";
+    DSA_LOG(RETIRE) << "Row " << front << " is retiring";
     for (int i = 0; i < (int) scoreboard[front].size(); ++i) {
       auto &entry = scoreboard[front][i];
       res.insert(res.end(), entry.result.begin(), entry.result.end());
@@ -200,7 +200,7 @@ void LinkBuffer::PushRequests() {
       int bankno = refer[j].bankno();
       if (elem.status == Entry::Status::NotIssued && grid[bankno][iter] == nullptr) {
         grid[bankno][iter] = &elem;
-        LOG(XBAR) << "Buffer bankno" << bankno << ", request" << iter << ": "
+        DSA_LOG(XBAR) << "Buffer bankno" << bankno << ", request" << iter << ": "
                     << STATUS[(int) elem.status] << elem.request << " " << &elem;
       }
     }
@@ -216,7 +216,7 @@ void LinkBuffer::PushRequests() {
         if (parent->banks[i].Available()) {
           to_issue->status = Entry::Status::InFIFO;
           parent->banks[i].task_fifo.push(to_issue);
-          LOG(XBAR) << "Issue bankno" << i << ", request" << iter << ": "
+          DSA_LOG(XBAR) << "Issue bankno" << i << ", request" << iter << ": "
                       << to_issue->request << " " << to_issue;
           to_issue = nullptr;
         }

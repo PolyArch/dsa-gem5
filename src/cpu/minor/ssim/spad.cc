@@ -32,12 +32,12 @@ bool Bank::Available() {
 
 void Bank::IssueRead() {
   if (task_fifo.empty()) {
-    LOG(ISSUE) << " [Issue] " << bankno << ": No tasks to issue!";
+    DSA_LOG(ISSUE) << " [Issue] " << bankno << ": No tasks to issue!";
     ++stat.task_idle;
     return;
   }
   if (read) {
-    LOG(ISSUE) << " [Issue] " << bankno << ": Read unit not available!";
+    DSA_LOG(ISSUE) << " [Issue] " << bankno << ": Read unit not available!";
     ++stat.read_backlog;
     return;
   }
@@ -49,22 +49,22 @@ void Bank::IssueRead() {
 
 void Bank::AccessData() {
   if (!read) {
-    LOG(READ) << " [Read] " << bankno << ": No indirect request!";
+    DSA_LOG(READ) << " [Read] " << bankno << ": No indirect request!";
     ++stat.read_idle;
     return;
   }
   if (compute) {
-    LOG(READ) << " [Read] " << bankno << ": Compute unit is busy!" << compute->request;
+    DSA_LOG(READ) << " [Read] " << bankno << ": Compute unit is busy!" << compute->request;
     ++stat.compute_backlog;
     return;
   }
   if (read->request.op != MemoryOperation::DMO_Read &&
       (write && write->request.addr == read->request.addr)) {
-    LOG(READ) << " [Read] " << bankno << ": Pending write, block to guarantee the atomicity";
+    DSA_LOG(READ) << " [Read] " << bankno << ": Pending write, block to guarantee the atomicity";
     ++stat.atomic_backlog;
     return;
   }
-  LOG(READ) << " [Read] Execute " << read->request.addr;
+  DSA_LOG(READ) << " [Read] Execute " << read->request.addr;
   auto addr = read->cacheline();
   CHECK(addr < data.size()) << read->cacheline();
   read->result = std::vector<uint8_t>(data.begin() + addr, data.begin() + addr + parent->bank_width);
@@ -75,12 +75,12 @@ void Bank::AccessData() {
 void Bank::InsituCompute() {
 
   if (!compute) {
-    LOG(COMPUTE) << " [Compute] " << bankno << ": No compute instance";
+    DSA_LOG(COMPUTE) << " [Compute] " << bankno << ": No compute instance";
     ++stat.compute_idle;
     return;
   }
   if (write) {
-    LOG(COMPUTE) << " [Compute] " << bankno << ": write unit not available";
+    DSA_LOG(COMPUTE) << " [Compute] " << bankno << ": write unit not available";
     ++stat.compute_idle;
     return;
   }
@@ -149,7 +149,7 @@ void Bank::InsituCompute() {
 void Bank::WriteBack() {
   if (write) {
     auto addr = write->cacheline();
-    LOG(ADDR)
+    DSA_LOG(ADDR)
       << "bank: " << bankno << ", port: " << write->request.port
       << ", addr: " << write->request.addr
       << ", " << write->result.size() << "-byte:"
@@ -161,7 +161,7 @@ void Bank::WriteBack() {
           data[addr + i] = write->result[i];
         }
       }
-      LOG(COMMIT) << " [Commit] " << bankno << ": Commit " << write->request;
+      DSA_LOG(COMMIT) << " [Commit] " << bankno << ": Commit " << write->request;
     }
     write->status = Entry::Status::Commit;
     write = nullptr;

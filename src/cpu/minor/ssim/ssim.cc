@@ -54,17 +54,17 @@ void ssim_t::LoadBitstream() {
   auto addr = rf[DSARF::CSA].value;
   auto size = rf[DSARF::CFS].value;
 
-  LOG(CONFIG) << addr << " " << size;
+  DSA_LOG(CONFIG) << addr << " " << size;
 
   if(addr == 0) {
     if (size == 0) {
-      LOG(COMMAND_I) << "Complete reset request issued";
+      DSA_LOG(COMMAND_I) << "Complete reset request issued";
       //This is the reset_data case!
       lanes[0]->request_reset_data();
       return;
     }
     if(size == 1) {
-      LOG(COMMAND_I) << "RESET stream request triggered";
+      DSA_LOG(COMMAND_I) << "RESET stream request triggered";
       lanes[0]->switch_stream_cleanup_mode_on();
       return;
     }
@@ -79,7 +79,7 @@ void ssim_t::LoadBitstream() {
     }
   }
 
-  LOG(COMMAND) << "Request 0x" << std::hex << addr << ", " << std::dec << size << " to configure";
+  DSA_LOG(COMMAND) << "Request 0x" << std::hex << addr << ", " << std::dec << size << " to configure";
 
   SSMemReqInfoPtr sdInfo = new SSMemReqInfo(-4, context, CONFIG_STREAM);
 
@@ -140,7 +140,7 @@ void ssim_t::LoadMemoryToPort(int port, int source, int dim, int padding) {
     int begin = rf[DSARF::BR].value & 65535, end = (rf[DSARF::BR].value >> 16) & 65535;
     RegisterBuffet(s, begin, end);
   }
-  LOG(COMMAND) << "Linear Read Stream: " << s->toString();
+  DSA_LOG(COMMAND) << "Linear Read Stream: " << s->toString();
   cmd_queue.push_back(s);
 }
 
@@ -159,7 +159,7 @@ void ssim_t::WritePortToMemory(int port, int operation, int dst, int dim) {
     int begin = rf[DSARF::BR].value & 65535, end = (rf[DSARF::BR].value >> 16) & 65535;
     RegisterBuffet(s, begin, end);
   }
-  LOG(COMMAND) << "Linear Write Stream: " << s->toString();
+  DSA_LOG(COMMAND) << "Linear Write Stream: " << s->toString();
   cmd_queue.push_back(s);
 }
 
@@ -172,7 +172,7 @@ void ssim_t::ConstStream(int port, int dim) {
   auto s = new ConstPortStream(rf[DSARF::TBC].value, gatherBroadcastPorts(port), ls);
   s->dtype = dtype;
   s->inst = inst;
-  LOG(COMMAND) << "Const Stream: " << s->toString();
+  DSA_LOG(COMMAND) << "Const Stream: " << s->toString();
   cmd_queue.push_back(s);
 }
 
@@ -226,7 +226,7 @@ void ssim_t::IndirectMemoryToPort(int port, int source, int ind, int dim) {
   irs->dtype = (1 << ((rf[DSARF::CSR].value >> 0) & 3));
   irs->inst = inst;
   cmd_queue.push_back(irs);
-  LOG(COMMAND) << "Indirect Read Stream: " << irs->toString();
+  DSA_LOG(COMMAND) << "Indirect Read Stream: " << irs->toString();
 }
 
 void ssim_t::AtomicMemoryOperation(int port, int mem, int operation, int ind, int dim) {
@@ -244,7 +244,7 @@ void ssim_t::AtomicMemoryOperation(int port, int mem, int operation, int ind, in
   ias->inst = inst;
   ias->mo = (MemoryOperation) operation;
   cmd_queue.push_back(ias);
-  LOG(COMMAND) << "Indirect Write Stream: " << ias->toString();
+  DSA_LOG(COMMAND) << "Indirect Write Stream: " << ias->toString();
 }
 
 std::vector<PortExecState> ssim_t::gatherBroadcastPorts(int port) {
@@ -252,7 +252,7 @@ std::vector<PortExecState> ssim_t::gatherBroadcastPorts(int port) {
   for (int i = 0; i < DSA_MAX_IN_PORTS; ++i) {
     if (vps[i].broadcast || i == port) {
       pes.emplace_back(vps[i], i);
-      LOG(PORTS) << pes.back().toString();
+      DSA_LOG(PORTS) << pes.back().toString();
     }
   }
   return pes;
@@ -275,15 +275,15 @@ void ssim_t::DispatchStream() {
       for (auto &elem : pes) {
         auto &in = accel->port_interf().in_port(elem.port);
         if (in.stream) {
-          LOG(CMD_BLOCK) << "ivp" << elem.port << " serving stream " << in.stream->toString();
+          DSA_LOG(CMD_BLOCK) << "ivp" << elem.port << " serving stream " << in.stream->toString();
           return false;
         }
         if (std::find(iports.begin(), iports.end(), elem.port) != iports.end()) {
-          LOG(CMD_BLOCK) << "ivp" << elem.port << " is enforced by previous conflict port!";
+          DSA_LOG(CMD_BLOCK) << "ivp" << elem.port << " is enforced by previous conflict port!";
           return false;
         }
         if (in.mem_size() || in.num_ready()) {
-          LOG(CMD_BLOCK)
+          DSA_LOG(CMD_BLOCK)
             << "ivp" << elem.port << " buffer not empty! "
             << in.mem_size() << ", " << in.num_ready();
           return false;
@@ -302,11 +302,11 @@ void ssim_t::DispatchStream() {
       for (auto port : ports) {
         auto &out = accel->port_interf().out_port(port);
         if (out.stream) {
-          LOG(CMD_BLOCK) << "ovp" << port << " is serving " << out.stream->toString();
+          DSA_LOG(CMD_BLOCK) << "ovp" << port << " is serving " << out.stream->toString();
           return false;
         }
         if (std::find(oports.begin(), oports.end(), port) != oports.end()) {
-          LOG(CMD_BLOCK) << "ovp" << port << " is enforced by conflict streams!";
+          DSA_LOG(CMD_BLOCK) << "ovp" << port << " is enforced by conflict streams!";
           return false;
         }
       }
@@ -324,7 +324,7 @@ void ssim_t::DispatchStream() {
       // If there are streams (either active or wait in FIFO) before
       // this barrier are seperated by this barrier, this barrier should not retire.
       if (bar->_mask & barred) {
-        LOG(BAR) << "Cannot retire because of prior streams.";
+        DSA_LOG(BAR) << "Cannot retire because of prior streams.";
         return;
       }
       // If there are active stream affected by this barrier,
@@ -332,14 +332,14 @@ void ssim_t::DispatchStream() {
       for (auto &i : accel->bsw.iports()) {
         auto &in = accel->port_interf().in_port(i.port);
         if (in.stream && (in.stream->barrier_mask() & bar->_mask)) {
-          LOG(BAR) << "Cannot retire because of active streams.";
+          DSA_LOG(BAR) << "Cannot retire because of active streams.";
           return;
         }
       }
       for (auto &i : accel->bsw.oports()) {
         auto &out = accel->port_interf().out_port(i.port);
         if (out.stream && (out.stream->barrier_mask() & bar->_mask)) {
-          LOG(BAR) << "Cannot retire because of active streams.";
+          DSA_LOG(BAR) << "Cannot retire because of active streams.";
           return;
         }
       }
@@ -436,7 +436,7 @@ void ssim_t::DispatchStream() {
     }
 
     void debugLog(base_stream_t *s) {
-      LOG(DISPATCH)
+      DSA_LOG(DISPATCH)
         << "[" << accel->get_ssim()->CurrentCycle() << "]: "
         << "Issue to Accel" << accel->accel_index() << " " << s->toString();
     }
@@ -492,7 +492,7 @@ void ssim_t::DispatchStream() {
         cmd_queue[i]->Accept(&dc[j]);
         retire = retire && dc[j].retire;
         if (!retire) {
-          LOG(CMD_BLOCK) << "Cannot Issue Stream: " << cmd_queue[i]->toString();
+          DSA_LOG(CMD_BLOCK) << "Cannot Issue Stream: " << cmd_queue[i]->toString();
           break;
         }
       }
@@ -526,7 +526,7 @@ void ssim_t::Reroute(int oport, int iport) {
   auto pps = new RecurrentStream(rf[DSARF::TBC].value, oport, ips, n);
   pps->dtype = dtype;
   cmd_queue.push_back(pps);
-  LOG(COMMAND) << pps->toString();
+  DSA_LOG(COMMAND) << pps->toString();
 }
 
 // receive network message at the given input port id
@@ -798,7 +798,7 @@ void ssim_t::multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_por
       s->_remote_port = rem_port;
       // s->_unit=LOC::SCR; (probably add a flag for the destination to save a new opcode)
       s->set_orig();
-      LOG(NET_REQ) << s->toString();
+      DSA_LOG(NET_REQ) << s->toString();
       // BroadcastStream(s);
     } else {
       if(rem_port!=0) { // I hope it can never be 0
@@ -871,7 +871,7 @@ uint64_t ssim_t::Receive(int port, int dtype) {
       CHECK(raw.size() <= 8);
       raw.resize(8, 0);
       auto res = *reinterpret_cast<uint64_t*>(&raw[0]);
-      LOG(RECV)
+      DSA_LOG(RECV)
         << "SS_RECV value: " << res
         << " on port" << out_vp.port() << " " << out_vp.mem_size()
         << " on core: " << lsq()->getCpuId();

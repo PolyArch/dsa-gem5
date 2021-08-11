@@ -274,7 +274,7 @@ class FailureReporterInterface {
 GTEST_API_ FailureReporterInterface* GetFailureReporter();
 
 // Asserts that condition is true; aborts the process with the given
-// message if condition is false.  We cannot use LOG(FATAL) or CHECK()
+// message if condition is false.  We cannot use DSA_LOG(FATAL) or CHECK()
 // as Google Mock might be used to mock the log sink itself.  We
 // inline this function to prevent it from showing up in the stack
 // trace.

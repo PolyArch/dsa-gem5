@@ -192,7 +192,7 @@ struct Linear2D : LinearStream {
     res.stream_last = !hasNext();
     if (hasNext()) {
       res.shrink = std::min(res.shrink, init.start);
-      LOG(SHRINK) << "shrink: " << res.shrink << " " << init.start;
+      DSA_LOG(SHRINK) << "shrink: " << res.shrink << " " << init.start;
     }
     return res;
   }
@@ -272,7 +272,7 @@ struct Linear3D : LinearStream {
     res.stream_last = !hasNext();
     if (hasNext()) {
       res.shrink = std::min(res.shrink, init.init.start);
-      LOG(SHRINK) << "shrink: " << res.shrink << " " << init.init.start;
+      DSA_LOG(SHRINK) << "shrink: " << res.shrink << " " << init.init.start;
     }
     return res;
   }
