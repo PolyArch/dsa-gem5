@@ -435,10 +435,10 @@ void ssim_t::DispatchStream() {
       }
     }
 
-    void debugLog(base_stream_t *s) {
-      LOG(DISPATCH)
-        << "[" << accel->get_ssim()->CurrentCycle() << "]: "
-        << "Issue to Accel" << accel->accel_index() << " " << s->toString();
+    void debugLog(base_stream_t *orig, base_stream_t *cloned) {
+      LOG(DISPATCH) << curTick() << ": "
+        << "[" << accel->get_ssim()->CurrentCycle() << "]: " << orig
+        << " Issue to Accel" << accel->accel_index() << " " << cloned->toString();
     }
 
     /*!
@@ -447,7 +447,7 @@ void ssim_t::DispatchStream() {
     void Visit(IPortStream *ips) override {
       auto cloned = ips->clone(accel);
       BindStreamToPorts(cloned->pes, cloned);
-      debugLog(cloned);
+      debugLog(ips, cloned);
     }
 
     /*!
@@ -456,7 +456,7 @@ void ssim_t::DispatchStream() {
     void Visit(OPortStream *ops) override {
       auto cloned = ops->clone(accel);
       BindStreamToPorts(ops->oports(), cloned);
-      debugLog(cloned);
+      debugLog(ops, cloned);
     }
 
     /*!
@@ -468,7 +468,7 @@ void ssim_t::DispatchStream() {
       BindStreamToPorts(pps->pes, cloned);
       auto &out = accel->port_interf().out_port(port);
       out.bindStream(cloned);
-      debugLog(cloned);
+      debugLog(pps, cloned);
     }
 
     /*!
@@ -492,7 +492,7 @@ void ssim_t::DispatchStream() {
         cmd_queue[i]->Accept(&dc[j]);
         retire = retire && dc[j].retire;
         if (!retire) {
-          LOG(CMD_BLOCK) << "Cannot Issue Stream: " << cmd_queue[i]->toString();
+          LOG(CMD_BLOCK) << curTick() << ": Cannot Issue Stream: " << cmd_queue[i]->toString();
           break;
         }
       }
@@ -511,6 +511,7 @@ void ssim_t::DispatchStream() {
     }
     if (retire) {
       cmd_queue.erase(cmd_queue.begin() + i);
+      --i;
     }
   }
 
