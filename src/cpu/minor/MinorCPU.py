@@ -250,7 +250,7 @@ class MinorCPU(BaseCPU):
     executeMemoryWidth = Param.Unsigned(0,
         "Width (and snap) in bytes of the data memory interface. (0 mean use"
         " the system cacheLineSize)")
-    executeMaxAccessesInMemory = Param.Unsigned(2,
+    executeMaxAccessesInMemory = Param.Unsigned(32,
         "Maximum number of concurrent accesses allowed to the memory system"
         " from the dcache port") # 8
     executeLSQMaxStoreBufferStoresPerCycle = Param.Unsigned(2,

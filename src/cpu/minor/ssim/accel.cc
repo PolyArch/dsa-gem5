@@ -818,7 +818,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     bool read = op == MemoryOperation::DMO_Read;
     SSMemReqInfoPtr sdInfo = new SSMemReqInfo(sid, accel->accel_index(), ports,
                                               read ? info.mask : std::vector<bool>(),
-                                              accel->get_cur_cycle(), info.padding,
+                                              curTick(), info.padding,
                                               info.stride_first, info.stride_last,
                                               info.stream_last);
     if (read) {
@@ -1885,6 +1885,12 @@ void accel_t::print_statistics(std::ostream &out) {
   print_request("W/Request SPAD", false, LOC::SCR, spads[0].bandwidth());
   print_component("Read DMA", true, LOC::DMA);
   print_request("R/Request DMA", true, LOC::DMA, get_ssim()->spec.dma_bandwidth);
+  out
+    << "Avg DMA Latency: " << statistics.averageMemoryLatency() << " cycles "
+    << ", " << statistics.averageImpl(statistics.mem_lat_brkd[Minor::LSQ::LSQRequest::LSQRequestState::InTranslation])
+    << ", " << statistics.averageImpl(statistics.mem_lat_brkd[Minor::LSQ::LSQRequest::LSQRequestState::Translated])
+    << ", " << statistics.averageImpl(statistics.mem_lat_brkd[Minor::LSQ::LSQRequest::LSQRequestState::RequestIssuing])
+    << ", " << statistics.averageImpl(statistics.mem_lat_brkd[Minor::LSQ::LSQRequest::LSQRequestState::Complete]) << "\n";
   print_component("Write DMA", false, LOC::DMA);
   print_request("W/Request DMA", false, LOC::DMA, get_ssim()->spec.dma_bandwidth);
   print_component("Recur Bus", false, LOC::REC_BUS);
@@ -2191,6 +2197,9 @@ void dma_controller_t::port_resp(unsigned cur_port) {
             sample_vp.reset_is_bytes_waiting_final();
           }
         }
+
+        _accel->statistics.countMemoryLatency(response->sdInfo->request_cycle,
+                                              response->sdInfo->breakdown);
 
         // cache hit stats collection
         if(_accel->_ssim->in_roi()) {

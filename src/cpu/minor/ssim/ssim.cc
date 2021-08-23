@@ -439,6 +439,7 @@ void ssim_t::DispatchStream() {
       DSA_LOG(DISPATCH)
         << "[" << accel->get_ssim()->CurrentCycle() << "]: "
         << "Issue to Accel" << accel->accel_index() << " " << s->toString();
+
     }
 
     /*!
@@ -447,7 +448,7 @@ void ssim_t::DispatchStream() {
     void Visit(IPortStream *ips) override {
       auto cloned = ips->clone(accel);
       BindStreamToPorts(cloned->pes, cloned);
-      debugLog(cloned);
+      debugLog(ips, cloned);
     }
 
     /*!
@@ -456,7 +457,7 @@ void ssim_t::DispatchStream() {
     void Visit(OPortStream *ops) override {
       auto cloned = ops->clone(accel);
       BindStreamToPorts(ops->oports(), cloned);
-      debugLog(cloned);
+      debugLog(ops, cloned);
     }
 
     /*!
@@ -468,7 +469,7 @@ void ssim_t::DispatchStream() {
       BindStreamToPorts(pps->pes, cloned);
       auto &out = accel->port_interf().out_port(port);
       out.bindStream(cloned);
-      debugLog(cloned);
+      debugLog(pps, cloned);
     }
 
     /*!
@@ -511,6 +512,7 @@ void ssim_t::DispatchStream() {
     }
     if (retire) {
       cmd_queue.erase(cmd_queue.begin() + i);
+      --i;
     }
   }
 
