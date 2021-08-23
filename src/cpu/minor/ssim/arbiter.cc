@@ -14,11 +14,11 @@ struct BuffetChecker : dsa::sim::stream::Functor {
         auto addr = lrs->ls->poll(false);
         if (lrs->be->InRange(addr)) {
           ok = true;
-          LOG(SCHEDULE)
+          DSA_LOG(SCHEDULE)
             << "Load from Buffet: " << lrs->be->toString() << " Request: " << addr;
         } else {
           ok = false;
-          LOG(SCHEDULE)
+          DSA_LOG(SCHEDULE)
             << lrs->be << " "
             << addr << " not in range! " << lrs->be->toString();
         }
@@ -33,12 +33,12 @@ struct BuffetChecker : dsa::sim::stream::Functor {
         auto addr = lws->ls->poll(false);
         if (lws->be->SpaceAvailable()) {
           ok = true;
-          LOG(SCHEDULE)
+          DSA_LOG(SCHEDULE)
             << lws->be << " "
             << "Write to Buffet: " << lws->be->toString() << " Request: " << addr;
         } else {
           ok = false;
-          LOG(SCHEDULE) << "No buffer space to write!";
+          DSA_LOG(SCHEDULE) << "No buffer space to write!";
         }
       }
     }
@@ -73,7 +73,7 @@ std::vector<base_stream_t*> RoundRobin::Arbit(accel_t *accel) {
           }
           last_executed[is_input][loc] = idx;
           res.push_back(stream);
-          LOG(SCHEDULE) << "Execute Stream (" << is_input << ", " << loc << "): "
+          DSA_LOG(SCHEDULE) << "Execute Stream (" << is_input << ", " << loc << "): "
                         << stream->toString();
           break;
         }

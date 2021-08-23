@@ -1298,7 +1298,7 @@ private:
     for(int i = 0; i < count; i+=sizeof(SBDT)) {
       uint64_t running_addr=  scr_addr+i;
       if(scratchpad_writers[running_addr]) {
-        LOG(CHECK_SCR_ALIAS)
+        DSA_LOG(CHECK_SCR_ALIAS)
           << "WARNING: scr_addr: " << running_addr
           << " constistency is potentially violated; "
           << " writer_id: " << scratchpad_writers[running_addr]
@@ -1315,14 +1315,14 @@ private:
     for(int i = 0; i < count; i+=sizeof(SBDT)) {
       uint64_t running_addr = scr_addr+i;
       if(scratchpad_writers[running_addr]) {
-        LOG(CHECK_SCR_ALIAS)
+        DSA_LOG(CHECK_SCR_ALIAS)
           << "WARNING: scr_addr: " << running_addr
           << " constistency is potentially violated; "
           << " writer_id: " << scratchpad_writers[running_addr]
           << " writer_id: " << id;
       }
       if(scratchpad_readers[running_addr]) {
-        LOG(CHECK_SCR_ALIAS)
+        DSA_LOG(CHECK_SCR_ALIAS)
           << "WARNING: scr_addr: " << running_addr
           << " constistency is potentially violated; "
           << " reader_id: " << scratchpad_readers[running_addr]
@@ -1342,7 +1342,7 @@ private:
     for(int i=0; i<num_bytes; ++i){
       temp.push_back(data[i]);
     }
-    LOG(NET_REQ) << "Received value: " << *reinterpret_cast<SBDT *>(&temp[0])
+    DSA_LOG(NET_REQ) << "Received value: " << *reinterpret_cast<SBDT *>(&temp[0])
                  << " at remote port: " << remote_in_port;
     in_vp.push_data(temp);
     // inc remote values received at this port

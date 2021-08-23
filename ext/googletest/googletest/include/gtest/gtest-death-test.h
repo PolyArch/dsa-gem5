@@ -216,13 +216,13 @@ class GTEST_API_ KilledBySignal {
 // in debug mode.
 //
 // In practice, this can be used to test functions that utilize the
-// LOG(DFATAL) macro using the following style:
+// DSA_LOG(DFATAL) macro using the following style:
 //
 // int DieInDebugOr12(int* sideeffect) {
 //   if (sideeffect) {
 //     *sideeffect = 12;
 //   }
-//   LOG(DFATAL) << "death";
+//   DSA_LOG(DFATAL) << "death";
 //   return 12;
 // }
 //
@@ -241,7 +241,7 @@ class GTEST_API_ KilledBySignal {
 // }
 //
 // This will assert that DieInDebugReturn12InOpt() crashes in debug
-// mode, usually due to a DCHECK or LOG(DFATAL), but returns the
+// mode, usually due to a DCHECK or DSA_LOG(DFATAL), but returns the
 // appropriate fallback value (12 in this case) in opt mode. If you
 // need to test that a function has appropriate side-effects in opt
 // mode, include assertions against the side-effects.  A general

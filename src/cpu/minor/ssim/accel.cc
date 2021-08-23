@@ -113,7 +113,7 @@ void accel_t::sanity_check_stream(base_stream_t *s) {
 void accel_t::request_reset_data() {
   _cleanup_mode = true;
   reset_data();
-  LOG(COMMAND_O) << "Complete reset request served except deleting requested memory reads/writes: "
+  DSA_LOG(COMMAND_O) << "Complete reset request served except deleting requested memory reads/writes: "
                  << lsq()->getCpuId() << "\n";
 }
 
@@ -146,7 +146,7 @@ void accel_t::request_reset_streams() {
 
   if(!all_ports_empty()) return;
 
-  LOG(COMMAND_O) << "RESET STREAM REQUEST RELEASED for core: " << lsq()->getCpuId();
+  DSA_LOG(COMMAND_O) << "RESET STREAM REQUEST RELEASED for core: " << lsq()->getCpuId();
 
   // free ports and streams (not input ports?)
   // reset_data();
@@ -182,7 +182,7 @@ void accel_t::switch_stream_cleanup_mode_on() {
 }
 
 void accel_t::reset_data() {
-  LOG(COMMAND) << curTick() << ": Reset data requested";
+  DSA_LOG(COMMAND) << curTick() << ": Reset data requested";
 
   for (int i = 0; i < 2; ++i) {
     for (auto &elem : bsw.ports[i]) {
@@ -306,8 +306,8 @@ SBDT port_data_t::pop_out_data(int bytes) {
     _valid_data.pop_front(); // TODO: for now we ignore invalid, hope that's okay?
     res |= val << (i * 8);
   }
-  LOG(DATA_STATUS) << "bytes popped: " << bytes << ", value is " << res << " at port id: " << _port;
-  LOG(DATA_STATUS) << "remain " << _port_width * _mem_data.size() << " bytes";
+  DSA_LOG(DATA_STATUS) << "bytes popped: " << bytes << ", value is " << res << " at port id: " << _port;
+  DSA_LOG(DATA_STATUS) << "remain " << _port_width * _mem_data.size() << " bytes";
   return res;
 }
 
@@ -353,7 +353,7 @@ SBDT port_data_t::peek_out_data(int idx, int bytes) {
     res |= partial << (8 * i);
   }
 
-  LOG(DATA_STATUS) << "peeked value is " << bytes;
+  DSA_LOG(DATA_STATUS) << "peeked value is " << bytes;
 
   return res;
 }
@@ -832,7 +832,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
                               /*size in bytes*/size, /*addr*/address, /*flags*/0,
                               /*res*/0, /*atomic op*/nullptr, /*byte enable*/std::vector<bool>(),
                               sdInfo);
-    LOG(MEM_REQ) << (read ? "Read" : "Write") << " request: " << info.linebase << ", " << info.start;
+    DSA_LOG(MEM_REQ) << (read ? "Read" : "Write") << " request: " << info.linebase << ", " << info.start;
   }
 
   void requestIndirect(int sid, int bw_cnt, dsa::sim::stream::IndirectFSM *ism,
@@ -849,8 +849,8 @@ struct StreamExecutor : dsa::sim::stream::Functor {
         in.push_data(in.get_byte_vector(stream.ls->poll(false), stream.data_width()));
       }
       auto value = stream.ls->poll(true);
-      LOG(CONST) << "Const value pushed: " << value;
-      LOG(CONST) << stream.toString();
+      DSA_LOG(CONST) << "Const value pushed: " << value;
+      DSA_LOG(CONST) << stream.toString();
       pushed += stream.data_width();
     }
     accel->statistics.countDataTraffic(true, cps->src(), pushed);
@@ -898,7 +898,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     }
     makeMemoryRequest(lrs, {}, ports, info, DMO_Read);
     accel->statistics.countDataTraffic(true, stream.unit(), info.bytes_read());
-    LOG(MEM_REQ) << "read request: " << info.linebase << ", " << info.start
+    DSA_LOG(MEM_REQ) << "read request: " << info.linebase << ", " << info.start
                  << " for " << stream.toString();
   }
 
@@ -952,7 +952,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
           mask[offset + j] = 1;
         }
         meta.mask.insert(meta.mask.end(), mask.begin(), mask.end());
-        LOG(MEM_REQ)
+        DSA_LOG(MEM_REQ)
           << " [Indirect Read Request] addr: " << addr
           << ", memory op: " << MemoryOperation::DMO_Read;
       }
@@ -993,7 +993,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
                      std::vector<uint8_t>((uint8_t*) &data[0], (uint8_t*)&data[0] + ias->data_width()),
                      info);
       if (!ias->stream_active()) {
-        LOG(STREAM) << ias->toString() << " freed!";
+        DSA_LOG(STREAM) << ias->toString() << " freed!";
         for (auto elem : ias->oports()) {
           accel->port_interf().out_port(elem).freeStream();
         }
@@ -1016,12 +1016,12 @@ struct StreamExecutor : dsa::sim::stream::Functor {
         meta.mask.insert(meta.mask.end(), mask.begin(), mask.end());
         requests.back().operand =
           std::vector<uint8_t>((uint8_t*)&data[i], (uint8_t*)&data[i] + ias->dtype);
-        LOG(MEM_REQ)
+        DSA_LOG(MEM_REQ)
           << " [SPAD Atomic Request] addr: " << addr << ", data: " << data[i]
           << ", memory op: " << ias->mo;
       }
       if (!ias->stream_active()) {
-        LOG(STREAM) << ias->toString() << " freed!";
+        DSA_LOG(STREAM) << ias->toString() << " freed!";
         for (auto elem : ias->oports()) {
           accel->port_interf().out_port(elem).freeStream();
         }
@@ -1059,7 +1059,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       port_available = std::min(lws->be->SpaceAvailable(), port_available);
       stream.be->mo = DMO_Write;
     }
-    LOG(MEM_REQ) << "write bandwidth: " << memory_bw;
+    DSA_LOG(MEM_REQ) << "write bandwidth: " << memory_bw;
     auto info = stream.ls->cacheline(memory_bw, std::min(memory_bw, port_available), stream.be,
                                      DMO_Write, stream.dest());
     int to_pop = std::accumulate(info.mask.begin(), info.mask.end(), (int) 0, std::plus<int>());
@@ -1077,20 +1077,20 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     makeMemoryRequest(lws, data, {MEM_WR_STREAM}, info, DMO_Write);
     accel->statistics.countDataTraffic(false, stream.unit(), info.bytes_read());
     if (!stream.stream_active()) {
-      LOG(STREAM) << stream.toString() << " freed!";
+      DSA_LOG(STREAM) << stream.toString() << " freed!";
       out_port.freeStream();
     }
-    LOG(MEM_REQ)
+    DSA_LOG(MEM_REQ)
       << "write request: " << info.linebase << ", " << info.start
       << " for " << stream.toString() << " " << stream.stream_active();
     if (lws->be) {
-      LOG(MEM_REQ) << "write to buffet: " << lws->be->toString();
+      DSA_LOG(MEM_REQ) << "write to buffet: " << lws->be->toString();
     }
     std::ostringstream oss;
     for (int i = 0; i < data.size(); ++i) {
       oss << " " << (int) data[i];
     }
-    LOG(MEM_REQ)
+    DSA_LOG(MEM_REQ)
       << data.size() << "/" << std::min(port_available, memory_bw) << " bytes: " << oss.str();
   }
 
@@ -1113,17 +1113,17 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     for (auto &elem : pps->pes) {
       auto &ivp = accel->port_interf().in_port(elem.port);
       ivp.push_data(data);
-      LOG(RECUR)
+      DSA_LOG(RECUR)
         << ivp.port() << ": "
         << "Int Buffer: " << ivp.mem_size() << ", Ready: " << ivp.num_ready()
         << ", Leftover: " << ivp.leftover.size();
     }
     if (cnt) {
-      LOG(RECUR) << cnt << " pushed, in total: " << data.size() << " bytes";
-      LOG(RECUR) << pps->toString();
+      DSA_LOG(RECUR) << cnt << " pushed, in total: " << data.size() << " bytes";
+      DSA_LOG(RECUR) << pps->toString();
     }
     if (!pps->stream_active()) {
-      LOG(STREAM) << pps->toString() << " freed!";
+      DSA_LOG(STREAM) << pps->toString() << " freed!";
       ovp.freeStream();
       for (auto &elem : pps->pes) {
         accel->port_interf().in_port(elem.port).freeStream();
@@ -1148,14 +1148,14 @@ struct SPADResponser : dsa::sim::stream::Functor {
     is_is = true;
     std::vector<uint8_t> data;
     data = apply_mask(response.raw.data(), response.info.mask);
-    LOG(MEM_REQ)
+    DSA_LOG(MEM_REQ)
       << "SPAD response stream " << stream->id() << ", "
       << "base: " << response.info.linebase << ", "
       << "start: " << response.info.start << ", "
       << "data: " << data.size() << " bytes, "
       << "shrink: " << response.info.shrink
       << (response.info.stream_last ? " last!" : "");
-    LOG(MEM_REQ) << stream->toString();
+    DSA_LOG(MEM_REQ) << stream->toString();
     for (auto &elem : stream->pes) {
       auto &ivp = accel->port_interf().in_port(elem.port);
       ivp.push_data(data);
@@ -1186,7 +1186,7 @@ struct SPADResponser : dsa::sim::stream::Functor {
       auto new_addr = std::max(lrs->be->address, response.info.shrink);
       auto to_pop = new_addr - lrs->be->address;
       if (to_pop) {
-        LOG(BUFFET) << "Buffet shrink " << lrs->be->address << " -> " << new_addr;
+        DSA_LOG(BUFFET) << "Buffet shrink " << lrs->be->address << " -> " << new_addr;
       }
       lrs->be->Shrink(to_pop);
     }
@@ -1224,7 +1224,7 @@ void accel_t::tick() {
 
   auto spad_response = spads[0].Step();
   if (spad_response.id != -1) {
-    LOG(MEM_REQ) << "Responding port: " << spad_response.id;
+    DSA_LOG(MEM_REQ) << "Responding port: " << spad_response.id;
     if (spad_response.op == MemoryOperation::DMO_Read) {
       auto &vp = port_interf().in_port(spad_response.id);
       CHECK(vp.stream)
@@ -1284,7 +1284,7 @@ void accel_t::tick() {
   }
 
   statistics.blameCycle();
-  LOG(ROI) << get_ssim()->now() << ": " << BLAME_NAME[statistics.blame];
+  DSA_LOG(ROI) << get_ssim()->now() << ": " << BLAME_NAME[statistics.blame];
 }
 
 bool accel_t::is_shared() { return _accel_index == get_ssim()->lanes.size() - 1; }
@@ -1326,7 +1326,7 @@ void accel_t::cycle_cgra_backpressure() {
     ssvport *vp = *vp_iter;
     auto *vec_in = dynamic_cast<dsa::dfg::InputPort*>(bsw.sched->dfgNodeOf(vp));
 
-    LOG(REPEAT)
+    DSA_LOG(REPEAT)
          << "Port details: " << cur_in_port.port_cgra_elem() << " "
          << vec_in->logical_len() << " ( " << vec_in->name() << " ) "
          << cur_in_port.pes.toString()
@@ -1372,18 +1372,18 @@ void accel_t::cycle_cgra_backpressure() {
           vec_in->values[i].push(data[i], data_valid[i], 0);
         }
 
-        LOG(COMP)
+        DSA_LOG(COMP)
           << "Vec name: " << vec_in->name() << " allowed to push "
           << data.size() << " input(s): ";
         for (size_t i = 0; i < data.size(); ++i) {
-          LOG(COMP) << &vec_in->values[i] << "|" << data[i] << "(" << data_valid[i] << ") ";
+          DSA_LOG(COMP) << &vec_in->values[i] << "|" << data[i] << "(" << data_valid[i] << ") ";
         }
 
         // pop input from CGRA port after it is pushed into the dfg node
         bool should_pop = cur_in_port.pes.tick();
-        LOG(PORTS) << cur_in_port.pes.toString();
+        DSA_LOG(PORTS) << cur_in_port.pes.toString();
         if (should_pop) {
-          LOG(PORTS) << "pop! " << cur_in_port.num_ready();
+          DSA_LOG(PORTS) << "pop! " << cur_in_port.num_ready();
           cur_in_port.pop(1);
         }
 
@@ -1438,10 +1438,10 @@ void accel_t::cycle_cgra_backpressure() {
       vector<bool> data_valid;
       vec_output->pop(data, data_valid);
 
-      LOG(COMP) << "outvec[" << vec_output->name() << "] allowed to pop output: ";
+      DSA_LOG(COMP) << "outvec[" << vec_output->name() << "] allowed to pop output: ";
       assert(data_valid.size() == data.size());
       for (int j = 0, n = data.size(); j < n; ++j) {
-        LOG(COMP) << "pop: " << data[j] << "(" << data_valid[j] << ") ";
+        DSA_LOG(COMP) << "pop: " << data[j] << "(" << data_valid[j] << ") ";
       }
       if (in_roi()) {
         _stat_comp_instances += 1;
@@ -1497,7 +1497,7 @@ void accel_t::cycle_cgra() {
   }
 
   if (_cgra_issued > 0) {
-    LOG(NET_REQ) << "ACCEL ID: " << lsq()->getCpuId();
+    DSA_LOG(NET_REQ) << "ACCEL ID: " << lsq()->getCpuId();
   }
 }
 
@@ -2034,7 +2034,7 @@ void accel_t::schedule_streams() {
     //   }
 
     //   str_issued++;
-    //   LOG(COMMAND_I) << get_ssim()->CurrentCycle()
+    //   DSA_LOG(COMMAND_I) << get_ssim()->CurrentCycle()
     //                  << " ISSUED \tid:" << ip->id() << " ";
     //   if (SS_DEBUG::COMMAND_I) {
     //     // TODO(@were): Change this to toString()
@@ -2171,7 +2171,7 @@ void dma_controller_t::port_resp(unsigned cur_port) {
           oss << " " << ((int) data[i]);
         }
 
-        LOG(MEM_REQ)
+        DSA_LOG(MEM_REQ)
           << get_ssim()->CurrentCycle() << " response for "
           << std::hex << packet->getAddr() << std::dec
           << "for port " << cur_port << ", size in bytes: "
@@ -2188,7 +2188,7 @@ void dma_controller_t::port_resp(unsigned cur_port) {
                         response->sdInfo->stride_last,
                         static_cast<Padding>(response->sdInfo->fill_mode));
           if (last) {
-            LOG(STREAM) << in_vp.stream->toString() << " freed!";
+            DSA_LOG(STREAM) << in_vp.stream->toString() << " freed!";
             if (auto irs = dynamic_cast<IndirectReadStream*>(in_vp.stream)) {
               auto &out_vp = pi.out_port(irs->oports[0]);
               out_vp.freeStream();
@@ -2300,12 +2300,12 @@ void scratch_write_controller_t::write_scratch_remote_ind(
     uint64_t meta_info = addr_vp.pop_out_data(); // no offset here
     // this addr should have both num_bytes and addr info
     addr_t addr = meta_info & 65535; // for 16-bits
-    LOG(NET_REQ) << "addr is: " << addr << "\n";
+    DSA_LOG(NET_REQ) << "addr is: " << addr << "\n";
     int num_bytes = meta_info >> 16;
     assert(num_bytes <= 64);
     for (int j = 0; j < num_bytes / 8; ++j) {
       val[j] = val_vp.pop_out_data();
-      LOG(NET_REQ) << curTick() << " val being written to remote scratchpad: " << val[j];
+      DSA_LOG(NET_REQ) << curTick() << " val being written to remote scratchpad: " << val[j];
     }
     _accel->write_scratchpad(addr, &val[0], num_bytes, stream.id());
     bytes_written += num_bytes;
@@ -2316,7 +2316,7 @@ void scratch_write_controller_t::write_scratch_remote_ind(
   if (is_empty) {
     _accel->process_stream_stats(stream);
 
-    LOG(VP_SCORE2) << "SOURCE: INDIRECT PORT -> SCR\n";
+    DSA_LOG(VP_SCORE2) << "SOURCE: INDIRECT PORT -> SCR\n";
     addr_vp.freeStream();
     val_vp.freeStream();
   }
@@ -2332,7 +2332,7 @@ void scratch_write_controller_t::write_scratch_remote_ind(
 
 
 void scratch_read_controller_t::push_ind_rem_read_req(bool is_remote, int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry) {
-  LOG(NET_REQ)
+  DSA_LOG(NET_REQ)
     << "Read request reached with requesting core: "
     << req_core << " x dim: " << request_ptr << " y dim: "
     << reorder_entry << " and addr: " << addr << " data bytes: " << data_bytes;
@@ -2352,7 +2352,7 @@ void scratch_read_controller_t::push_ind_rem_read_req(bool is_remote, int req_co
     // Assuming linear mapping by default
     int bank_id = request.addr & (logical_banks - 1);
 
-    LOG(NET_REQ)
+    DSA_LOG(NET_REQ)
       << "Remote read request at bank: " << bank_id << " and core: "
       << _accel->lsq()->getCpuId() << " for addr: " << request.addr;
     assert(request.addr<SCRATCH_SIZE);
@@ -2363,7 +2363,7 @@ void scratch_read_controller_t::push_ind_rem_read_req(bool is_remote, int req_co
 
 // write the data into IROB (no arbitration modeled)
 void scratch_read_controller_t::push_ind_rem_read_data(int8_t* data, int request_ptr, int addr, int data_bytes, int reorder_entry) {
-    LOG(NET_REQ)
+    DSA_LOG(NET_REQ)
       << "Pushing the returned data of indirect read with x dim: " << request_ptr
       << " y dim: " << reorder_entry << " addr: " << addr << " data bytes: " << data_bytes
       << "Currently at core: " << _accel->lsq()->getCpuId();
@@ -2449,7 +2449,7 @@ void scratch_read_controller_t::serve_ind_read_banks() {
       // if this is the last reorder entry allocated in irob and no more
       // entries to allocated in stream
       if (reorder_entry->last && !stream.stream_active()) {
-        LOG(VP_SCORE2) << "SOURCE: Indirect SCR->PORT \n";
+        DSA_LOG(VP_SCORE2) << "SOURCE: Indirect SCR->PORT \n";
 
         // TODO(@were): Implement this.
         // for (int in_port : stream.in_ports()) {
@@ -2524,10 +2524,10 @@ void network_controller_t::multicast_data(
       remote_elem_sent+=1;
       stream._num_elements--;
 
-      LOG(NET_REQ)
+      DSA_LOG(NET_REQ)
         << curTick() << "POPPED b/c port->remote port WRITE: " << out_vp.port() << " "
         << out_vp.mem_size() << " data: " << std::hex << data;
-      LOG(NET_REQ) << "After issue: " << stream.toString();
+      DSA_LOG(NET_REQ) << "After issue: " << stream.toString();
     }
     // cout << "Sending message of size: " << (remote_elem_sent*data_width) << endl;
     // if(stream._out_port==7) { cout << "Core id: " << _accel->get_core_id() << " REMOTE BYTES SENT: " << (remote_elem_sent*data_width) << endl; }
@@ -2615,8 +2615,8 @@ void network_controller_t::write_direct_remote_scr(
     spad_offset_bits = (int)log2(SCRATCH_SIZE+LSCRATCH_SIZE);
     int cores = _accel->_ssim->num_active_threads();
     int dest_core_id = (final_scr_addr >> spad_offset_bits) & (cores-1); // last bits?
-    LOG(NET_REQ) << "dest_core_id: " << dest_core_id;
-    LOG(NET_REQ) << "scr_offset: " << scr_offset;
+    DSA_LOG(NET_REQ) << "dest_core_id: " << dest_core_id;
+    DSA_LOG(NET_REQ) << "scr_offset: " << scr_offset;
     while (final_scr_addr < max_addr && stream.stream_active() // enough in dest
            && val_vp.mem_size() &&
            bytes_written < 64) { // enough in source (64-bytes)
@@ -2634,10 +2634,10 @@ void network_controller_t::write_direct_remote_scr(
       remote_elem_sent+=1;
       // stream._num_elements--;
 
-      LOG(NET_REQ)
+      DSA_LOG(NET_REQ)
         << curTick() << ": POPPED b/c direct port->remote scr WRITE: "
         << val_vp.port() << " " << val_vp.mem_size();
-      LOG(NET_REQ) << "After issue: " << stream.toString();
+      DSA_LOG(NET_REQ) << "After issue: " << stream.toString();
     }
     // _accel->lsq()->push_spu_scr_wr_req(stream._scr_type, val, scr_offset, dest_core_id, stream.id());
     // num_bytes = remote_elem_sent*8
@@ -2680,8 +2680,8 @@ void network_controller_t::cycle() {
 
         if (!stream.stream_active()) {
           _accel->process_stream_stats(stream);
-          LOG(VP_SCORE2) << "SOURCE: DIRECT PORT->REMOTE SCR";
-          LOG(NET_REQ) << "Direct remote scratchpad write stream empty";
+          DSA_LOG(VP_SCORE2) << "SOURCE: DIRECT PORT->REMOTE SCR";
+          DSA_LOG(NET_REQ) << "Direct remote scratchpad write stream empty";
           val_vp.freeStream();
           delete_stream(_which_remote, sp);
         }
@@ -2700,8 +2700,8 @@ void network_controller_t::cycle() {
 
         if (!stream.stream_active()) {
           _accel->process_stream_stats(stream);
-          LOG(VP_SCORE2) << "SOURCE: INDIRECT PORT->REMOTE SCR";
-          LOG(NET_REQ) << "Indirect remote scratchpad write stream empty";
+          DSA_LOG(VP_SCORE2) << "SOURCE: INDIRECT PORT->REMOTE SCR";
+          DSA_LOG(NET_REQ) << "Indirect remote scratchpad write stream empty";
           val_vp.freeStream();
           addr_vp.freeStream();
           delete_stream(_which_remote, sp);
@@ -2839,7 +2839,7 @@ void scratch_write_controller_t::serve_atomic_requests(bool &performed_atomic_sc
       // atomic_in_val.push_data(_atom_val_store.front());
       // _atom_val_store.erase(tid);
       
-      LOG(COMP)
+      DSA_LOG(COMP)
         << "Atomic update value being read from scratchpad with first value: "
         << (read_value[0] | read_value[1]<<8) << " OR: "
         << (read_value[0]<<8 | read_value[1]) << " with atomic sent: "
@@ -2878,7 +2878,7 @@ void scratch_write_controller_t::serve_atomic_requests(bool &performed_atomic_sc
 
     _accel->_stat_tot_updates+=data_bytes;
 
-    LOG(COMP)
+    DSA_LOG(COMP)
       << "Atomic update value being written back to scratchpad with updates: "
       << _accel->_stat_tot_updates;
     bytes_written += data_bytes;
@@ -2985,8 +2985,8 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
       if(stream._val_sstream_left>0) {
         loc = out_addr.peek_out_data(0, stream._addr_bytes); // ;output_bytes);
         // cout << "value popped from port: " << loc << " ";
-        LOG(COMP) << "1 cycle execution : ";
-        LOG(COMP) << "64-bit value at the addr port is: " << loc;
+        DSA_LOG(COMP) << "1 cycle execution : ";
+        DSA_LOG(COMP) << "64-bit value at the addr port is: " << loc;
         loc = stream.cur_addr(loc);
         // cout << "cur addr index: " << stream._cur_addr_index << " addr bytes: " << stream._addr_bytes << endl;
 
@@ -3004,7 +3004,7 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
              stream._val_sstream_left!=-1) {
              // (stream._val_sstream_left>0 || stream._sstream_left>0)) {
              // num_val_pops < 64) {
-        LOG(COMP) << "\tupdate at index location: " << loc
+        DSA_LOG(COMP) << "\tupdate at index location: " << loc
                   << " and scr_addr: " << scr_addr
                   << " and scr_size is: " << SCRATCH_SIZE
                   << " input num strides left: " << stream._num_strides;
@@ -3073,7 +3073,7 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
           stream._cur_val_index = 0;
           num_val_pops++;
           // out_val.pop_out_data(stream._value_bytes);
-          LOG(COMP) << "\tpopped data from val port";
+          DSA_LOG(COMP) << "\tpopped data from val port";
         }
         if (pop_addr) {
           _update_broadcast_dest.push_back(scr_addr);
@@ -3081,7 +3081,7 @@ void scratch_write_controller_t::atomic_scratch_update(atomic_scr_stream_t &stre
           // for bank conflicts calc purposes
           num_addr_pops++;
           out_addr.pop_out_data(stream._addr_bytes);
-          LOG(COMP) << "\tpopped data from addr port";
+          DSA_LOG(COMP) << "\tpopped data from addr port";
         }
 
 
@@ -3371,16 +3371,16 @@ bool accel_t::done(bool show, int mask) {
     for (auto &elem : bsw.ports[io]) {
       auto &port = port_interf().ports(io)[elem.port];
       if (port.stream && (port.stream->barrier_mask() & mask)) {
-        LOG(WAIT) << IO_STR[io] << "Port: " << port.port() << " " << port.stream->toString();
+        DSA_LOG(WAIT) << IO_STR[io] << "Port: " << port.port() << " " << port.stream->toString();
         return false;
       }
       if (mask == -1) {
         if (port.mem_size()) {
-          LOG(WAIT) << IO_STR[io] << "Port: " << port.port() << " data buffer not empty!";
+          DSA_LOG(WAIT) << IO_STR[io] << "Port: " << port.port() << " data buffer not empty!";
           return false;
         }
         if (port.num_ready()) {
-          LOG(WAIT) << IO_STR[io] << "Port: " << port.port() << " data entry not empty!";
+          DSA_LOG(WAIT) << IO_STR[io] << "Port: " << port.port() << " data entry not empty!";
           return false;
         }
       }
@@ -3714,7 +3714,7 @@ bool accel_t::cgra_done(bool show, int mask) {
 // Configure once you get all the bits
 void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
 
-  LOG(MEM_REQ)
+  DSA_LOG(MEM_REQ)
     << "dsaURE(response): " << "0x" << std::hex
     << addr << " " << std::dec << size;
 

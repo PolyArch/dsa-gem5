@@ -57,7 +57,7 @@ void BuffetEntry::Append(int bytes) {
   CHECK(occupied + bytes <= Size())
     << "Buffet size overflow!" << occupied << " " << bytes << " " << Size();
   occupied += bytes;
-  LOG(BUFFET) << "Append " << bytes << ", now: " << toString();
+  DSA_LOG(BUFFET) << "Append " << bytes << ", now: " << toString();
   CQ_PTR(tail, bytes);
 }
 
@@ -65,7 +65,7 @@ void BuffetEntry::Shrink(int bytes) {
   CHECK(occupied - bytes >= 0)
     << "Buffet size underflow!" << occupied << " " << bytes << " " << Size();
   occupied -= bytes;
-  LOG(BUFFET) << "Pop " << bytes << ", now: " << toString();
+  DSA_LOG(BUFFET) << "Pop " << bytes << ", now: " << toString();
   address += bytes;
   CQ_PTR(front, bytes);
 }
@@ -134,7 +134,7 @@ addr_t base_stream_t::memory_map(addr_t logical_addr, addr_t cur_scr_offset) {
   // adding the importance of core
   mapped_local_scr_addr = SCRATCH_SIZE*_used_cores[core_id] + mapped_local_scr_addr;
 
-  LOG(SHOW_CONFIG) << "original addr: " << logical_addr << " scr offset: " << cur_scr_offset << " extracted part_offset: " << part_offset << " part_id: " << part_id << " core_id: " << core_id << " mapped scr addr: " << mapped_local_scr_addr << "\n";
+  DSA_LOG(SHOW_CONFIG) << "original addr: " << logical_addr << " scr offset: " << cur_scr_offset << " extracted part_offset: " << part_offset << " part_id: " << part_id << " core_id: " << core_id << " mapped scr addr: " << mapped_local_scr_addr << "\n";
 
   // int core_id = logical_addr >> part_bits & (N_CORES-1) + start_core + core_dist;
   // int part_id = addr >> (part_bits+log(N_CORES);
@@ -273,7 +273,7 @@ LinearStream::LineInfo Linear1D::cacheline(int bandwidth, int at_most, BuffetEnt
     head = be->Translate(head, mo);
   }
   int64_t base = ~(bandwidth - 1) & head;
-  LOG(LI) << "Head: " << head << ", Base: " << base;
+  DSA_LOG(LI) << "Head: " << head << ", Base: " << base;
   int64_t cnt = 0;
   int64_t current = -1;
   int64_t untranslated = -1;
@@ -282,7 +282,7 @@ LinearStream::LineInfo Linear1D::cacheline(int bandwidth, int at_most, BuffetEnt
     prev = current;
     untranslated = current = poll(false);
     if (be && !be->EnforceReadWrite(current, word)) {
-      LOG(LI) << "Cannot write to buffet!";
+      DSA_LOG(LI) << "Cannot write to buffet!";
       break;
     }
     if (be) {
@@ -291,9 +291,9 @@ LinearStream::LineInfo Linear1D::cacheline(int bandwidth, int at_most, BuffetEnt
     }
     CHECK(current >= base);
     if (current < base + bandwidth) {
-      LOG(LI) << "Address: " << current << " x " << word;
+      DSA_LOG(LI) << "Address: " << current << " x " << word;
       if (mo != DMO_Read && loc == LOC::DMA && (prev != -1 && current - prev != word)) {
-        LOG(LI) << "Break by incontinuous write!";
+        DSA_LOG(LI) << "Break by incontinuous write!";
         break;
       }
       if (be) {
@@ -311,11 +311,11 @@ LinearStream::LineInfo Linear1D::cacheline(int bandwidth, int at_most, BuffetEnt
       }
       poll(true); // pop the current one
     } else {
-      LOG(LI) << "Break by bandwidth: " << current << " >= " << base << " + " << bandwidth;
+      DSA_LOG(LI) << "Break by bandwidth: " << current << " >= " << base << " + " << bandwidth;
       break;
     }
   }
-  LOG(SHRINK) << "shrink: " << untranslated + word;
+  DSA_LOG(SHRINK) << "shrink: " << untranslated + word;
   return LineInfo(base, head, mask, untranslated + word, first, !hasNext(), !hasNext());
 }
 

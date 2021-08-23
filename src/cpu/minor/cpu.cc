@@ -127,7 +127,7 @@ void MinorCPU::wakeup()
         data[i] = (*msg).m_DataBlk.getByte(i);
       }
     }
-    LOG(NET_REQ)
+    DSA_LOG(NET_REQ)
       << curCycle() << "Wake up accel at destination node: " << cpuId()
       << " and num_bytes: " << num_bytes << " and complete return info: " << return_info;
 
@@ -138,7 +138,7 @@ void MinorCPU::wakeup()
       // Step1: get the start address from here
       if(is_tagged) {
         int tag = (return_info >> 2) & 65535;
-        LOG(NET_REQ) << "Received tag in the received packet: " << tag << "\n";
+        DSA_LOG(NET_REQ) << "Received tag in the received packet: " << tag << "\n";
         uint8_t l;
         if(is_tag_packet) {
           if(pipeline->pending_request_queue_full()) return;
@@ -170,7 +170,7 @@ void MinorCPU::wakeup()
           start_addr.clear();
         } else {
 
-          LOG(NET_REQ) << "Received value packet with tag: " << tag << "\n";
+          DSA_LOG(NET_REQ) << "Received value packet with tag: " << tag << "\n";
           std::vector<uint8_t> inc_val;
           for(int i=0; i<SPU_NET_PACKET_SIZE; ++i) {
             int8_t x = msg->m_DataBlk.getByte(i);
@@ -225,8 +225,8 @@ void MinorCPU::wakeup()
 
       if(data_bytes>8) data_bytes=NUM_SCRATCH_BANKS*(data_bytes-8);
 
-      LOG(NET_REQ) << " Request: " << read_req;
-      LOG(NET_REQ)
+      DSA_LOG(NET_REQ) << " Request: " << read_req;
+      DSA_LOG(NET_REQ)
         << "In wakeup, remote read with addr: " << addr
         << " x dim: " << request_ptr << " y dim: " << reorder_entry << " and data bytes: " << data_bytes;
       if(read_req) {
@@ -235,7 +235,7 @@ void MinorCPU::wakeup()
           uint8_t b = (*msg).m_DataBlk.getByte(j);
           req_core = req_core | (b << ((j-1)*8));
         }
-        LOG(NET_REQ) << "Read request with req core: " << req_core;
+        DSA_LOG(NET_REQ) << "Read request with req core: " << req_core;
         addr = addr & (SCRATCH_SIZE-1);
         pipeline->receiveSpuReadRequest(req_core, request_ptr, addr, data_bytes, reorder_entry);
       } else {
@@ -244,7 +244,7 @@ void MinorCPU::wakeup()
       }
     } else if((*msg).m_Type == SpuRequestType_ST) {
       int remote_port_id = return_info & 63;
-      LOG(NET_REQ) << "Received multicast message at remote port: " << remote_port_id << " with number of bytes: " << num_bytes;
+      DSA_LOG(NET_REQ) << "Received multicast message at remote port: " << remote_port_id << " with number of bytes: " << num_bytes;
       pipeline->receiveSpuMessage(data, num_bytes, remote_port_id);
     }
     else {

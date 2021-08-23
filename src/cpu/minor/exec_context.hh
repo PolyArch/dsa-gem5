@@ -467,7 +467,7 @@ class ExecContext : public ::ExecContext
 
     void setDSARegisterFile(int idx, uint64_t value, bool sticky) override {
       if (idx) {
-        LOG(REGISTER) << idx << " " << REG_NAMES[idx] << ": "
+        DSA_LOG(REGISTER) << idx << " " << REG_NAMES[idx] << ": "
                       << value << ", " << sticky;
         execute.getSSIM().rf[idx].value = value;
         execute.getSSIM().rf[idx].sticky = sticky;

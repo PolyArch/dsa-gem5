@@ -31,7 +31,7 @@ bool Host::roi(bool value) {
   roi_ = value;
   gettimeofday(sim_time + value, nullptr);
   sim_cycle[value] = curTick();
-  LOG(ROI) << (value ? "Enter" : "Exit") << " ROI @" << curTick();
+  DSA_LOG(ROI) << (value ? "Enter" : "Exit") << " ROI @" << curTick();
   return roi_;
 }
 
@@ -62,7 +62,7 @@ void Accelerator::countDataTraffic(int is_input, LOC unit, int delta) {
   if (!roi()) {
     return;
   }
-  LOG(COUNT) << is_input << " " << LOC_NAME[unit] << " + " << delta;
+  DSA_LOG(COUNT) << is_input << " " << LOC_NAME[unit] << " + " << delta;
   traffic[is_input][(int) unit].num_requests++;
   traffic[is_input][(int) unit].traffic += delta;
 }

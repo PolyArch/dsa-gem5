@@ -1653,12 +1653,14 @@ LSQ::findResponse(int streamId) {
         bool can_store = storeBuffer.canInsert();
         bool to_str_buf = request->state == LSQRequest::StoreToStoreBuffer;
 
-        LOG(LSQ)
-          << "Checking " << streamId << " " << complete << " " << to_str_buf << " "
-          << can_store << " " << sd_transfers[streamId].occupiedSpace() << "/"
-          << sd_transfers[streamId].totalSpace();
+        DSA_LOG(LSQ) << "Checking " << streamId << " "
+                     << complete << " " << to_str_buf << " " << can_store << " "
+                     << sd_transfers[streamId].occupiedSpace() << "/"
+                     << sd_transfers[streamId].totalSpace();
 
-        LOG(LSQ) << "requests: " << requests.occupiedSpace() << "/" << requests.totalSpace();
+        DSA_LOG(LSQ) << "requests: " << requests.occupiedSpace() << "/"
+                     << requests.totalSpace();
+
 
         if(complete || (to_str_buf && can_store)) {
           ret = request;
@@ -1678,7 +1680,7 @@ LSQ::popResponse(int streamId) {
     CHECK(!sd_transfers[streamId].empty());
     LSQ::LSQRequestPtr response = sd_transfers[streamId].front();
     sd_transfers[streamId].pop();
-    LOG(LSQ) << streamId << " popped";
+    DSA_LOG(LSQ) << streamId << " popped";
 
 
     if (response->issuedToMemory)

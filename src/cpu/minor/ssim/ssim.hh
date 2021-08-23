@@ -188,14 +188,14 @@ public:
       bes.push_back(new BuffetEntry(begin, end));
       iter = bes.end() - 1;
     }
-    LOG(COMMAND)
+    DSA_LOG(COMMAND)
       << "Buffet Entry: [" << *iter << ", " << iter - bes.begin() << "] " << (*iter)->toString();
     CHECK((*iter)->referencer.size() < 2);
     (*iter)->referencer.push_back(s);
     s->be = *iter;
     if ((*iter)->referencer.size() == 2) {
       bes.erase(iter);
-      LOG(COMMAND) << "Buffet in pair, retired!";
+      DSA_LOG(COMMAND) << "Buffet in pair, retired!";
     }
   }
   
@@ -248,14 +248,14 @@ public:
 
   void set_in_use() {
     if(!_in_use) {
-      LOG(COMMAND) << now() << "SSIM in use";
-      LOG(ROI) << now() << "SSIM in use";
+      DSA_LOG(COMMAND) << now() << "SSIM in use";
+      DSA_LOG(ROI) << now() << "SSIM in use";
     }
     _in_use=true;
   }
   void set_not_in_use() {
-    LOG(COMMAND) << now() << "SSIM not in use";
-    LOG(ROI) << now() << "SSIM not in use";
+    DSA_LOG(COMMAND) << now() << "SSIM not in use";
+    DSA_LOG(ROI) << now() << "SSIM not in use";
     _in_use=false;
   }
   bool in_use() {return _in_use;}
