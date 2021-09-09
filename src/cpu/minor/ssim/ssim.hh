@@ -4,11 +4,11 @@
 #include <time.h>
 #include <cstdint>
 #include <iostream>
-#include "accel.hh"
-#include "state.h"
-#include "statistics.h"
+#include "./accel.hh"
+#include "./port.h"
+#include "./spec.h"
+#include "./statistics.h"
 #include "dsa-ext/spec.h"
-#include "spec.h"
 
 namespace Minor {
 
@@ -212,27 +212,30 @@ public:
   int get_bytes_from_type(int t);
 
   bool atomic_addr_full(int bytes) {
-    return lanes[0]->_scr_w_c.atomic_addr_full(bytes);
+    // return lanes[0]->_scr_w_c.atomic_addr_full(bytes);
+    return false;
   }
   bool atomic_val_full(int bytes) {
-    return lanes[0]->_scr_w_c.atomic_val_full(bytes);
+    // return lanes[0]->_scr_w_c.atomic_val_full(bytes);
+    return false;
   }
   bool pending_request_queue_full() {
-    return lanes[0]->_scr_w_c.pending_request_queue_full();
+    // return lanes[0]->_scr_w_c.pending_request_queue_full();
+    return false;
   }
 
 
   void insert_pending_request_queue(int tid, std::vector<int> start_addr, int bytes_waiting) {
-    lanes[0]->insert_pending_request_queue(tid, start_addr, bytes_waiting);
+    // lanes[0]->insert_pending_request_queue(tid, start_addr, bytes_waiting);
   }
     
   int push_and_update_addr_in_pq(int tid, int num_bytes) {
-  
-    return lanes[0]->push_and_update_addr_in_pq(tid, num_bytes);
+    // return lanes[0]->push_and_update_addr_in_pq(tid, num_bytes);
+    return 0;
   }
   
   void push_atomic_inc(int tag, std::vector<uint8_t> inc, int repeat_times) {
-    lanes[0]->push_atomic_inc(tag, inc, repeat_times);
+    // lanes[0]->push_atomic_inc(tag, inc, repeat_times);
   }
 
 

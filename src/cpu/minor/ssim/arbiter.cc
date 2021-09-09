@@ -48,7 +48,6 @@ struct BuffetChecker : dsa::sim::stream::Functor {
 
 std::vector<base_stream_t*> RoundRobin::Arbit(accel_t *accel) {
   BitstreamWrapper &bsw = accel->bsw;
-  port_interf_t &pi = accel->port_interf();
   std::vector<base_stream_t*> res;
   for (int is_input = 0; is_input < 2; ++is_input) {
     for (int loc = 0; loc < LOC::TOTAL; ++loc) {
@@ -56,7 +55,7 @@ std::vector<base_stream_t*> RoundRobin::Arbit(accel_t *accel) {
       for (int j = 1; j <= (int) ports.size(); ++j) {
         int idx = (last_executed[is_input][loc] + j) % ports.size();
         int port = ports[idx].port;
-        if (auto stream = pi.ports(is_input)[port].stream) {
+        if (auto stream = accel->port(is_input, port)->stream) {
           if (!stream->stream_active()) {
             continue;
           }

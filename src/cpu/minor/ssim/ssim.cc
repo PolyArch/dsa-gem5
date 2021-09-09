@@ -273,7 +273,7 @@ void ssim_t::DispatchStream() {
      */
     bool IVPAvailable(const std::vector<PortExecState> &pes) {
       for (auto &elem : pes) {
-        auto &in = accel->port_interf().in_port(elem.port);
+        auto &in = accel->input_ports[elem.port];
         if (in.stream) {
           DSA_LOG(CMD_BLOCK) << "ivp" << elem.port << " serving stream " << in.stream->toString();
           return false;
@@ -282,10 +282,10 @@ void ssim_t::DispatchStream() {
           DSA_LOG(CMD_BLOCK) << "ivp" << elem.port << " is enforced by previous conflict port!";
           return false;
         }
-        if (in.mem_size() || in.num_ready()) {
+        if (!in.buffer.empty()) {
           DSA_LOG(CMD_BLOCK)
-            << "ivp" << elem.port << " buffer not empty! "
-            << in.mem_size() << ", " << in.num_ready();
+            << "ivp" << elem.port << " buffer not empty! Buffer: "
+            << in.buffer.size();
           return false;
           // FIXME(@were): This can be more aggressive, but what should I do?
           // if (elem.repeat != in.pes.repeat ||
@@ -300,7 +300,7 @@ void ssim_t::DispatchStream() {
 
     bool OVPAvailable(const std::vector<int> &ports) {
       for (auto port : ports) {
-        auto &out = accel->port_interf().out_port(port);
+        auto &out = accel->output_ports[port];
         if (out.stream) {
           DSA_LOG(CMD_BLOCK) << "ovp" << port << " is serving " << out.stream->toString();
           return false;
@@ -330,14 +330,14 @@ void ssim_t::DispatchStream() {
       // If there are active stream affected by this barrier,
       // this barrier should not retire.
       for (auto &i : accel->bsw.iports()) {
-        auto &in = accel->port_interf().in_port(i.port);
+        auto &in = accel->input_ports[i.port];
         if (in.stream && (in.stream->barrier_mask() & bar->_mask)) {
           DSA_LOG(BAR) << "Cannot retire because of active streams.";
           return;
         }
       }
       for (auto &i : accel->bsw.oports()) {
-        auto &out = accel->port_interf().out_port(i.port);
+        auto &out = accel->output_ports[i.port];
         if (out.stream && (out.stream->barrier_mask() & bar->_mask)) {
           DSA_LOG(BAR) << "Cannot retire because of active streams.";
           return;
@@ -423,7 +423,7 @@ void ssim_t::DispatchStream() {
      */
     void BindStreamToPorts(const vector<PortExecState> &pes, base_stream_t *stream) {
       for (auto &elem : pes) {
-        auto &ivp = accel->port_interf().in_port(elem.port);
+        auto &ivp = accel->input_ports[elem.port];
         ivp.bindStream(stream);
         ivp.pes = elem;
       }
@@ -431,15 +431,14 @@ void ssim_t::DispatchStream() {
   
     void BindStreamToPorts(const vector<int> &ports, base_stream_t *stream) {
       for (auto &elem : ports) {
-        accel->port_interf().out_port(elem).bindStream(stream);
+        accel->output_ports[elem].bindStream(stream);
       }
     }
 
-    void debugLog(base_stream_t *s) {
+    void debugLog(base_stream_t *s0, base_stream_t *s1) {
       DSA_LOG(DISPATCH)
-        << "[" << accel->get_ssim()->CurrentCycle() << "]: "
-        << "Issue to Accel" << accel->accel_index() << " " << s->toString();
-
+        << "[" << accel->get_ssim()->CurrentCycle() << "]: [" << s0
+        << "] Issue to Accel" << accel->accel_index() << " " << s1->toString();
     }
 
     /*!
@@ -467,7 +466,7 @@ void ssim_t::DispatchStream() {
       int port = pps->oports[0];
       auto cloned = pps->clone(accel);
       BindStreamToPorts(pps->pes, cloned);
-      auto &out = accel->port_interf().out_port(port);
+      auto &out = accel->output_ports[port];
       out.bindStream(cloned);
       debugLog(pps, cloned);
     }
@@ -539,7 +538,7 @@ void ssim_t::push_in_accel_port(int accel_id, int8_t* val, int num_bytes, int in
 
 // SPU has only 1 DGRA in a core
 void ssim_t::push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int out_bytes, uint64_t inc) {
-  lanes[0]->push_atomic_update_req(scr_addr, opcode, val_bytes, out_bytes, inc);
+  // lanes[0]->push_atomic_update_req(scr_addr, opcode, val_bytes, out_bytes, inc);
 }
 
 void ssim_t::push_ind_rem_read_req(bool is_remote, int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry) {
@@ -741,14 +740,14 @@ void ssim_t::write_remote_banked_scratchpad(uint8_t* val, int num_bytes, uint16_
 
 void ssim_t::atomic_update_hardware_config(int addr_port, int val_port, int out_port) {
 
-    // set up the associated stream here
-  lanes[0]->_scr_w_c.set_atomic_cgra_addr_port(addr_port);
-  lanes[0]->_scr_w_c.set_atomic_cgra_val_port(val_port);
-  lanes[0]->_scr_w_c.set_atomic_cgra_out_port(out_port);
-  lanes[0]->_scr_w_c.set_atomic_addr_bytes(2); // get_bytes_from_type(addr_type));
+  // set up the associated stream here
+  // lanes[0]->_scr_w_c.set_atomic_cgra_addr_port(addr_port);
+  // lanes[0]->_scr_w_c.set_atomic_cgra_val_port(val_port);
+  // lanes[0]->_scr_w_c.set_atomic_cgra_out_port(out_port);
+  // lanes[0]->_scr_w_c.set_atomic_addr_bytes(2); // get_bytes_from_type(addr_type));
 
-  port_data_t& value_port = lanes[0]->port_interf().in_port(val_port);
-  lanes[0]->_scr_w_c.set_atomic_val_bytes(value_port.get_port_width());
+  // port_data_t& value_port = lanes[0]->port_interf().in_port(val_port);
+  // lanes[0]->_scr_w_c.set_atomic_val_bytes(value_port.get_port_width());
   // std::cout << " Addr port: " << addr_port << " val port: " << val_port << " out port: " << out_port << "\n";
 
 }
@@ -844,12 +843,12 @@ bool ssim_t::CanReceive(int port, int dtype) {
   CHECK(context) << "No accelerator to receive";
   for(int i = 0; i < (int) lanes.size(); ++i) {
     if(context >> i & 1) {
-      auto &ovp = lanes[i]->port_interf().out_port(port);
-      CHECK(dtype % ovp.get_port_width() == 0);
+      auto &ovp = lanes[i]->output_ports[port];
+      CHECK(dtype % ovp.scalarSizeInBytes() == 0);
       if (ovp.stream) {
         return false;
       }
-      return dtype / ovp.get_port_width() <= ovp.mem_size();
+      return ovp.raw.size() >= dtype;
     }
   }
   return false;
@@ -862,20 +861,14 @@ uint64_t ssim_t::Receive(int port, int dtype) {
   CHECK(context) << "No accelerator to receive";
   for (int i = 0; i < (int) lanes.size(); ++i) {
     if(context >> i & 1) {
-      port_data_t &out_vp = lanes[i]->port_interf().out_port(port);
-      CHECK(dtype % out_vp.get_port_width() == 0);
-      std::vector<uint8_t> raw;
-      for (int i = 0; i < dtype; i += out_vp.get_port_width()) {
-        auto val = out_vp.pop_out_data();
-        auto *ptr = (uint8_t*)&val;
-        raw.insert(raw.end(), ptr, ptr + out_vp.get_port_width());
-      }
+      auto &out_vp = lanes[i]->output_ports[port];
+      std::vector<uint8_t> raw(out_vp.raw.begin(), out_vp.raw.begin() + dtype);
       CHECK(raw.size() <= 8);
       raw.resize(8, 0);
       auto res = *reinterpret_cast<uint64_t*>(&raw[0]);
       DSA_LOG(RECV)
         << "SS_RECV value: " << res
-        << " on port" << out_vp.port() << " " << out_vp.mem_size()
+        << " on port" << out_vp.id() << " " << out_vp.raw.size()
         << " on core: " << lsq()->getCpuId();
       return res;
     }

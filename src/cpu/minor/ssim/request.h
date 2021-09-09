@@ -94,7 +94,7 @@ struct Response {
 
   Response(uint64_t id_ = -1, MemoryOperation op_ = MemoryOperation::DMO_Unkown,
            const std::vector<uint8_t> &raw_ = {},
-           const stream::LinearStream::LineInfo &info_ = stream::LinearStream::LineInfo()) :
+           const stream::LinearStream::LineInfo &info_ = stream::LinearStream::LineInfo(0, 0, {}, 0)) :
     id(id_), op(op_), raw(raw_), info(info_) {}
 };
 

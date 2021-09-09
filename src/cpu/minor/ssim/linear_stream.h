@@ -18,30 +18,83 @@ namespace dsa {
 namespace sim {
 namespace stream {
 
+/*!
+ * \brief The status of the state machine of an affine stream.
+ */
+struct AffineStatus {
+  /*!
+   * \brief The outer-most dimension of "first". Say, if we yield a 2d stream
+   *        [[1,2,3,4,5],[6,7,8,9,10]]. When yielding 1, this value should be 2-d.
+   *        Though it is also the first of a 1-d stream, 1-d is NOT the outer-most.
+   *        However, when yielding 6, this value should be 1-d, since it is just the beginning
+   *        of the second 1-d stream.
+   */
+  int dim_1st{-1};
+  /*!
+   * \brief The outer-most dimension of "last". Explaination similar to what we have above.
+   */
+  int dim_last{-1};
+  /*!
+   * \brief If this is the first response of this stream.
+   */
+  bool stream_1st{false};
+  /*!
+   * \brief If this is the last response of this stream.
+   */
+  bool stream_last{false};
+  /*!
+   * \brief The trip count of the inner most dimension.
+   */
+  int64_t n{-1};
+  /*!
+   * \brief The padding policy of this stream.
+   */
+  Padding padding{Padding::DP_NoPadding};
+
+  AffineStatus() {}
+};
+
 /*! \brief The abstract class of a linear stream. */
 struct LinearStream {
 
   LinearStream(int64_t volume_, bool is_mem_) : volume(volume_), is_mem(is_mem_) {}
 
-  /*! \brief The infomation of the retrieved cacheline. */
+  /*!
+   * \brief The infomation of the a cacheline response.
+   */
   struct LineInfo {
-    int64_t linebase;
-    int64_t start;
+    /*!
+     * \brief The address aligned to the cacheline, giving the starting address.
+     */
+    int64_t linebase{0};
+    /*!
+     * \brief The original starting address.
+     */
+    int64_t start{0};
+    /*!
+     * \brief The bitmask predicate of this cacheline operation.
+     */
     std::vector<bool> mask;
-    int64_t shrink;
-    bool stride_first;
-    bool stride_last;
-    bool stream_last;
-    int padding;
-    explicit LineInfo(int64_t linebase_ = 0, int64_t start_ = 0,
-                      const std::vector<bool> &mask_ = {},
-                      int64_t shrink_ = 0, bool stride_first_ = false,
-                      bool stride_last_ = false, bool stream_last_ = false,
-                      int padding_ = 0) :
-      linebase(linebase_), start(start_), mask(mask_), shrink(shrink_),
-      stride_first(stride_first_), stride_last(stride_last_),
-      stream_last(stream_last_), padding(padding_) {}
+    /*!
+     * \brief If we want to shrink buffet after using this response.
+     */
+    int64_t shrink{0};
+    /*!
+     * \brief The status of this affined stream when generating this cacheline request.
+     */
+    AffineStatus as;
 
+    LineInfo(int64_t linebase_, int64_t start_, const std::vector<bool> &mask_,
+             int64_t shrink_, const AffineStatus &as_) :
+      linebase(linebase_), start(start_), mask(mask_), shrink(shrink_), as(as_) {}
+
+    LineInfo(int64_t linebase_, int64_t start_, const std::vector<bool> &mask_,
+             int64_t shrink_) :
+      linebase(linebase_), start(start_), mask(mask_), shrink(shrink_) {}
+
+    /*!
+     * \brief The valid bytes read from memory in this response.
+     */
     int bytes_read() const;
   };
 
@@ -76,9 +129,30 @@ struct LinearStream {
    */
   virtual int word_bytes() = 0;
 
+  /*!
+   * \brief The number of dimensions.
+   */
+  virtual int dimension() = 0;
+
+  /*!
+   * \brief The total bytes of data read by this stream.
+   */
   int64_t volume;
+  /*!
+   * \brief If this stream is for memory.
+   */
   bool is_mem;
+  /*!
+   * \brief The progress of this stream.
+   */
   int64_t i{0};
+
+  void updateStatus(AffineStatus &as, bool isLast) {
+    as.stream_1st = as.stream_1st && i == 0;
+    as.stream_last = !hasNext();
+    as.dim_1st = i == 0 ? dimension() : as.dim_1st;
+    as.dim_last = !hasNext() ? dimension() : as.dim_last;
+  }
 };
 
 /*! \brief 1-d linear stream. */
@@ -97,6 +171,13 @@ struct Linear1D : LinearStream {
       CHECK(word) << "word should not be zero!";
       CHECK(start % word == 0) << start << " " << std::dec << word;
     }
+  }
+
+  /*!
+   * \brief The number of dimensions.
+   */
+  int dimension() override {
+    return 1;
   }
 
   /*!  \brief If we have a next value to retrieve. */
@@ -181,6 +262,13 @@ struct Linear2D : LinearStream {
     return false;
   }
 
+  /*!
+   * \brief The number of dimensions.
+   */
+  int dimension() override {
+    return 2;
+  }
+
   int64_t poll(bool next=true) override {
     assert(hasNext());
     return exec.poll(next);
@@ -188,8 +276,10 @@ struct Linear2D : LinearStream {
 
   LineInfo cacheline(int bandwidth, int available, BuffetEntry *be, MemoryOperation mo, LOC unit) override {
     auto res = exec.cacheline(bandwidth, available, be, mo, unit);
-    res.stream_last = false;
-    res.stream_last = !hasNext();
+    res.as.stream_1st = res.as.stream_1st && i == 0;
+    res.as.stream_last = !hasNext();
+    res.as.dim_1st = i == 0 ? 2 : res.as.dim_1st;
+    res.as.dim_last = i == length ? 2 : res.as.dim_last;
     if (hasNext()) {
       res.shrink = std::min(res.shrink, init.start);
       DSA_LOG(SHRINK) << "shrink: " << res.shrink << " " << init.start;
@@ -268,8 +358,10 @@ struct Linear3D : LinearStream {
 
   LineInfo cacheline(int bandwidth, int available, BuffetEntry *be, MemoryOperation mo, LOC unit) override {
     auto res = exec.cacheline(bandwidth, available, be, mo, unit);
-    res.stream_last = false;
-    res.stream_last = !hasNext();
+    res.as.stream_1st = res.as.stream_1st && i == 0;
+    res.as.stream_last = !hasNext();
+    res.as.dim_1st = i == 0 ? 3 : res.as.dim_1st;
+    res.as.dim_last = i == length ? 3 : res.as.dim_last;
     if (hasNext()) {
       res.shrink = std::min(res.shrink, init.init.start);
       DSA_LOG(SHRINK) << "shrink: " << res.shrink << " " << init.init.start;
@@ -304,6 +396,13 @@ struct Linear3D : LinearStream {
 
   int word_bytes() override {
     return init.word_bytes();
+  }
+
+  /*!
+   * \brief The number of dimensions.
+   */
+  int dimension() override {
+    return 3;
   }
 };
 
