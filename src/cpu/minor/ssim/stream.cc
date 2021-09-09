@@ -134,18 +134,12 @@ addr_t base_stream_t::memory_map(addr_t logical_addr, addr_t cur_scr_offset) {
   // adding the importance of core
   mapped_local_scr_addr = SCRATCH_SIZE*_used_cores[core_id] + mapped_local_scr_addr;
 
-  DSA_LOG(SHOW_CONFIG) << "original addr: " << logical_addr << " scr offset: " << cur_scr_offset << " extracted part_offset: " << part_offset << " part_id: " << part_id << " core_id: " << core_id << " mapped scr addr: " << mapped_local_scr_addr << "\n";
+  DSA_LOG(SHOW_CONFIG)
+    << "original addr: " << logical_addr << " scr offset: " << cur_scr_offset
+    << " extracted part_offset: " << part_offset << " part_id: " << part_id
+    << " core_id: " << core_id << " mapped scr addr: " << mapped_local_scr_addr << "\n";
 
-  // int core_id = logical_addr >> part_bits & (N_CORES-1) + start_core + core_dist;
-  // int part_id = addr >> (part_bits+log(N_CORES);
-  
   return mapped_local_scr_addr;
-  /*if (map_type == 0) {
-    int bank_id = local_scr_addr >> (part_bits-bank_bits) & (NUM_BANKS-1);
-  } else {
-    int bank_id = local_scr_addr & (NUM_BANKS-1);
-  }*/
-
 }
 
 
@@ -265,7 +259,9 @@ int LinearStream::LineInfo::bytes_read() const {
 LinearStream::LineInfo Linear1D::cacheline(int bandwidth, int at_most, BuffetEntry *be,
                                            MemoryOperation mo, LOC loc) {
   CHECK(hasNext());
-  bool first = i == 0;
+  AffineStatus as;
+  as.stream_1st = i == 0;
+  as.dim_1st = i == 0 ? 1 : -1;
   std::vector<bool> mask(bandwidth, 0);
   CHECK(bandwidth == (bandwidth & -bandwidth));
   int64_t head = poll(false);
@@ -316,7 +312,10 @@ LinearStream::LineInfo Linear1D::cacheline(int bandwidth, int at_most, BuffetEnt
     }
   }
   DSA_LOG(SHRINK) << "shrink: " << untranslated + word;
-  return LineInfo(base, head, mask, untranslated + word, first, !hasNext(), !hasNext());
+  as.dim_last = i == length ? 1 : -1;
+  as.n = length * word;
+  as.stream_last = !hasNext();
+  return LineInfo(base, head, mask, untranslated + word, as);
 }
 
 void Functor::Visit(base_stream_t *) {}
@@ -376,13 +375,16 @@ struct IFSMTicker : Functor {
   x = &x##_;
 
   void Visit(RecurrentStream *rs) override {
-    auto &ovp = accel->port_interf().out_port(rs->oports[0]);
+    auto &ovp = accel->output_ports[rs->oports[0]];
     CHECK(rs->stream_active());
-    if (ovp.mem_size()) {
+    if (!ovp.raw.empty()) {
       SET_PTR(i, rs->i);
-      SET_PTR(res, ovp.peek_out_data(0, rs->dtype));
+      auto data = ovp.poll(rs->dtype);
+      data.resize(8, 0);
+      auto value = *reinterpret_cast<uint64_t*>(data.data());
+      SET_PTR(res, value);
       if (pop) {
-        ovp.pop_out_data(rs->dtype);
+        ovp.pop(rs->dtype);
         ++rs->i;
       }
     }
@@ -400,7 +402,7 @@ struct IFSMTicker : Functor {
   bool pop;
   accel_t *accel;
   int64_t *res{nullptr};
-  int64_t *i;
+  int64_t *i{nullptr};
 
   IFSMTicker(bool p, accel_t *a) : pop(p), accel{a} {}
 

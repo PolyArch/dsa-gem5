@@ -58,6 +58,7 @@ if 'MinorCPU' in env['CPU_MODELS']:
     Source('scoreboard.cc')
     Source('stats.cc')
 
+    Source('ssim/port.cc')
     Source('ssim/stream.cc')
     Source('ssim/ssim.cc')
     Source('ssim/sim-debug.cc')
@@ -71,7 +72,12 @@ if 'MinorCPU' in env['CPU_MODELS']:
     env.Append(CPPPATH=Dir(os.environ['SS_TOOLS']+'/include/'))
     env.Append(LIBS=['dsa'])
     env.Append(LIBS=['jsoncpp'])
+    env.Append(LIBS=['torch'])
+    env.Append(LIBS=['c10'])
+    env.Append(LIBS=['torch_cpu'])
+    env.Append(LIBS=['kineto'])
     env.Append(LIBPATH=[Dir(os.environ['RISCV']+'/lib/')])
+    env.Append(LIBPATH=[Dir(os.environ['SS']+'/ss-scheduler/3rd-party/libtorch/lib')])
     env.Append(LIBPATH=[Dir(os.environ['SS_TOOLS']+'/lib/')])
     env.Append(LIBPATH=[Dir(os.environ['SS_TOOLS']+'/lib64/')])
 
