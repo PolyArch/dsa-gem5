@@ -86,10 +86,10 @@ void Accelerator::blameCycle() {
     int io_cnt[2] = {0, 0};
     for (int is_input = 0; is_input < 2; ++is_input) {
       for (auto &port : parent.bsw.ports[is_input]) {
-        auto &pi = *parent.port(is_input, port.port);
+        auto &pi = parent.port_interf().ports(is_input)[port.port];
         if (pi.stream) {
           ++io_cnt[is_input];
-          if (pi.empty() && blame_map.count(pi.stream->unit())) {
+          if (!pi.any_data() && blame_map.count(pi.stream->unit())) {
             auto to_blame = blame_map[pi.stream->unit()];
             blame = std::min(blame, to_blame);
           }

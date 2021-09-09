@@ -144,7 +144,7 @@ void InputBuffer::PushRequests() {
 
 Response RequestBuffer::Commit() {
   std::vector<uint8_t> res;
-  stream::LinearStream::LineInfo meta(0, 0, {}, 0);
+  stream::LinearStream::LineInfo meta;
   int port = -1;
   MemoryOperation op = MemoryOperation::DMO_Unkown;
   if (!scoreboard[front].empty()) {
@@ -166,15 +166,14 @@ Response RequestBuffer::Commit() {
     scoreboard[front].clear();
     scoreboard[front].shrink_to_fit();
     meta = info[front];
-    // info[front] = stream::LinearStream::LineInfo();
+    info[front] = stream::LinearStream::LineInfo();
     ++front;
     front %= scoreboard.size();
   }
   return Response(port, op, res, meta);
 }
 
-RequestBuffer::RequestBuffer(int sb_size) :
-  scoreboard(sb_size), info(sb_size, stream::LinearStream::LineInfo(0, 0, {}, 0)) {}
+RequestBuffer::RequestBuffer(int sb_size) : scoreboard(sb_size), info(sb_size) {}
 
 InputBuffer::InputBuffer(int size, int issue_width_, int provision_) :
   RequestBuffer(size), issue_width(issue_width_), provision(provision_) {}

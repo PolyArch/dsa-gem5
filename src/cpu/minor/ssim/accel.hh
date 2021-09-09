@@ -24,26 +24,23 @@
 #include "dsa/debug.h"
 #include "dsa/arch/model.h"
 #include "dsa/mapper/schedule.h"
-#include "dsa/simulation/data.h"
 
 #include "cpu/minor/dyn_inst.hh"
 #include "cpu/minor/lsq.hh"
 
 #include "sim-debug.hh"
-#include "./port.h"
-#include "./stream.hh"
-#include "./consts.hh"
-#include "./statistics.h"
+#include "stream.hh"
+#include "consts.hh"
+#include "statistics.h"
 #include "./spad.h"
-#include "sim/port.hh"
 
 namespace dsa {
 namespace sim {
 
 struct StreamArbiter;
 
-} // namespace sim
-} // namespace dsa
+}
+}
 
 using namespace dsa;
 
@@ -63,6 +60,481 @@ class ssim_t;
 class accel_t;
 
 // -------------- Vector Ports ------------------------
+
+
+// "Wide" or interface port (AKA Vector Ports)
+
+// "Wide" or interface port (AKA Vector Ports)
+class port_data_t {
+public:
+
+  /*!
+   * \brief The size of the buffer.
+   */
+  int buffer_size;
+
+  /*!
+   * \brief The size of the data buffer.
+   */
+  std::queue<uint8_t> buffer;
+
+  /*!
+   * \brief The data in the buffer of the crossbar is ready to fire to the spatial arch.
+   */
+  std::vector<uint64_t> xbar;
+
+  /*!
+   * \brief The stream this port currently executes.
+   */
+  base_stream_t *stream{nullptr};
+
+  /*!
+   * \brief A stream can be broadcast to multiple ports.
+   *        This stores port repeat information of "this" port.
+   */
+  dsa::sim::rt::PortExecState pes;
+
+  port_data_t(int size) : buffer_size(size), pes(dsa::sim::IVPState(), -1) {}
+
+  port_data_t() : pes(dsa::sim::IVPState(), -1) {}
+
+  /*!
+   * \brief Move on the state this port.
+   */
+  void tick();
+
+  /*!
+   * \brief If we still have space in the FIFO.
+   */
+  bool bufferAvailable();
+
+  /*!
+   * \brief The accelerator this port belongs to.
+   */
+  accel_t *parent;
+
+
+  enum class STATUS {FREE, COMPLETE, BUSY};
+
+  void initialize(SSModel* ssconfig, int port, bool isInput);
+  void reset(); //reset if configuration happens
+
+  //This function is similar to port_vec_elem, but...
+  //For now, the *only* cases where we don't return vector length is
+  //1. this port is not assigned a vector, or
+  //2. temporal vector: all elements are mapped to the same cgra port
+  // TODO: rename it to logical length and cgra port length
+  // FIXME: dgra logical ports doesn't work with the temporal region
+  unsigned port_cgra_elem() {
+    if(_dfg_vec) {
+      return _dfg_vec->logical_len();
+    }
+    return 1;
+  } 
+
+  unsigned port_vec_elem(); //total size elements of the std::vector port
+  unsigned port_depth() { return port_vec_elem() / port_cgra_elem();} //depth of queue
+  // unsigned cgra_port_for_index(unsigned i) { return i%port_cgra_elem();}
+  // it should return same output for a range of i (might be an issue for dgra
+  // temporal)
+  unsigned cgra_port_for_index(unsigned i) { 
+    int x = i*8/_port_width;
+    return x%port_cgra_elem();
+  }
+
+  //reset all data
+  void reset_data() {
+    stream = nullptr;
+    _mem_data.clear();
+    _valid_data.clear(); // FIXME:CHECKME: check if this is true!
+    _outstanding=0;
+    for(int i = 0; i < _cgra_data.size(); ++i) {
+      _cgra_data[i].clear();
+      _cgra_valid[i].clear();
+    }
+    _num_in_flight=0;
+    _num_ready=0;
+    _total_pushed=0;
+  }
+
+  float instances_ready() {
+    return _num_ready + _mem_data.size() / (float) port_cgra_elem();
+  }
+
+  bool can_push_vp(int size) {
+    return size <= num_can_push();
+  }
+
+  bool can_push_bytes_vp(int num_bytes) {
+    int num_elem = num_bytes/_port_width;
+    // std::cout << "num elem: " << num_elem << " num can push: " << num_can_push() << "\n";
+    return num_elem <= num_can_push();
+  }
+
+  int num_can_push() {
+    // effective buffer size should be more here
+    if(_mem_data.size() < VP_LEN*8/_port_width) {
+      // return VP_LEN-_mem_data.size();
+      return VP_LEN*8/_port_width-_mem_data.size();
+    } else {
+      return 0;
+    }
+  }
+
+  //utility functions
+  template <typename T>
+  std::vector<uint8_t> get_byte_vector(T val, int len){
+    // std::cout << "value inside get_byte_vector is: " << val << " and length should be: " << len << "\n";
+    std::vector<uint8_t> v;
+    for(int i=0; i<len; i++){
+      v.push_back((val >> (i*8)) & 255);
+    }
+    return v;
+  }
+
+  // FIXME: hack for now--create a map of data_width and datatype
+  template <typename T>
+  T get_custom_val(std::vector<uint8_t> v, int len){
+    switch (len) {
+    case 1:
+      return *reinterpret_cast<uint8_t*>(&v[0]);
+    case 2:
+      return *reinterpret_cast<uint16_t*>(&v[0]);
+    case 4:
+      return *reinterpret_cast<uint32_t*>(&v[0]);
+    case 8:
+      return *reinterpret_cast<uint64_t*>(&v[0]);
+    default:
+      assert(0);
+    }
+  }
+
+  template <typename T>
+  void push_mem_data(T data) {
+    int data_size = sizeof(T);
+    assert(data_size == _port_width && "data size doesn't match the port width in dfg");
+    push_data(data);
+  }
+
+  void push_data_byte(uint8_t b) {
+     leftover.emplace_back(b, true);
+     if(leftover.size() == 8) {
+       push_data({},true);
+     }
+  }
+
+  // not used for only read (should be just for port_resp from dma)
+  // associated with each port
+  // push mem_data=1 ie. port_width amount of data
+  std::vector<std::pair<uint8_t, bool>> leftover;
+  void push_data(std::vector<uint8_t> data, bool valid=true) {
+    for(uint8_t item : data) {
+      leftover.emplace_back(item, valid);
+    }
+    size_t i;
+    for (i = 0; i + _port_width <= leftover.size(); i += _port_width) {
+      std::vector<uint8_t> to_append;
+      for (int j = 0; j < _port_width; ++j) {
+        to_append.push_back(leftover[i + j].first);
+        assert(leftover[i + j].second == leftover[i].second);
+      }
+      // std::cout << "pushed to mem data\n";
+      _mem_data.push_back(to_append);
+      _valid_data.push_back(leftover[i].second);
+      _total_pushed += valid;
+    }
+
+    leftover.erase(leftover.begin(), leftover.begin() + i);
+  }
+
+  template <typename T>
+  void push_data(T data, bool valid=true) {
+    int data_size = sizeof(T);
+    assert(data_size == _port_width && "data size doesn't match the port width in dfg");
+    if (!leftover.empty()) {
+      std::cout << "It's not cool to leave random incomplete words in the port, "
+           << "please be more tidy next time\n";
+      assert(0);
+    }
+    std::vector<uint8_t> vec(sizeof(T));
+    *reinterpret_cast<T*>(&vec[0]) = data;
+    push_data(vec, valid);
+  }
+
+  void PadData(bool stride_first, bool stride_last, Padding policy) {
+    auto f = [this] (bool valid) {
+      int width = port_cgra_elem();
+      int residue = _mem_data.size() % width;
+      if (residue == 0) {
+        return;
+      }
+      std::vector<uint8_t> dummy_val(_port_width, 0);
+      int extra = width - residue;
+      for(int i = 0; i < extra; ++i) {
+        push_data(dummy_val, valid);
+      }
+    };
+    if (stride_first) {
+      if (policy == DP_PreStridePredOff) {
+        f(false);
+      } else if (policy == DP_PreStrideZero) {
+        f(true);
+      }
+    }
+    if (stride_last) {
+      if (policy == DP_PostStridePredOff) {
+        f(false);
+      } else if (policy == DP_PostStrideZero) {
+        f(true);
+      }
+    }
+  }
+
+  void reformat_in();  //rearrange all data for CGRA
+  void reformat_in_one_vec();
+  void reformat_in_work();
+
+  void set_in_flight() {
+    assert(_num_ready>0);
+    _num_ready-=1;
+    _num_in_flight+=1;
+  }
+
+  void set_out_complete() {
+    assert(_num_in_flight>0);
+    _num_in_flight-=1;
+    _num_ready+=1;
+  }
+
+  bool can_output() {return _num_ready >= port_depth();}
+  void reformat_out(); //rearrange all data from CGRA
+  void reformat_out_one_vec();
+  void reformat_out_work();
+
+  int port() {return _port;}
+
+
+  void push_cgra_port(unsigned cgra_port, SBDT val, bool valid) {
+    std::vector<uint8_t> v(sizeof(SBDT));
+    *reinterpret_cast<SBDT*>(&v[0]) = val;
+    _cgra_data[cgra_port].push_back(v);
+    _cgra_valid[cgra_port].push_back(valid);
+  }
+
+  //get the value of an instance in cgra port
+  SBDT value_of(unsigned port_idx, unsigned instance) {
+    auto &vec = _cgra_data[port_idx][instance];
+    switch (vec.size()) {
+    case 1:
+      return *reinterpret_cast<uint8_t*>(&vec[0]);
+    case 2:
+      return *reinterpret_cast<uint16_t*>(&vec[0]);
+    case 4:
+      return *reinterpret_cast<uint32_t*>(&vec[0]);
+    case 8:
+      return *reinterpret_cast<uint64_t*>(&vec[0]);
+    default:
+      assert(0);
+    }
+  }
+
+  bool valid_of(unsigned port_idx, unsigned instance) {
+    return _cgra_valid[port_idx][instance];
+  }
+
+  SBDT pop_in_data(); // pop one data from mem
+  template <typename T>
+  T pop_in_custom_data(); // pop one data from mem
+
+  SBDT pop_out_data(int bytes = -1); // pop one data from mem
+  template <typename T>
+  T pop_out_custom_data(); // pop one data from mem
+  SBDT peek_out_data(int i = 0, int bytes = -1); // peek one data from mem
+
+  bool any_data() {
+    if(_isInput) {
+      return num_ready();
+    } else {
+      return mem_size();
+    }
+  }
+
+  unsigned mem_size() {
+    return _mem_data.size(); // size of the deque (_mem_data.size()*_port_width)
+  }
+
+  unsigned num_ready() { return _num_ready; }         //Num of ready instances
+
+  unsigned num_in_flight() {return _num_in_flight;}  //outputs in flight
+
+  std::string status_string() {
+    if(status()==STATUS::FREE) return "free";
+    std::string ret;
+    if(loc()==LOC::SCR)  ret = " (SCR)";
+    if(loc()==LOC::PORT) ret = " (PORT)";
+    if(loc()==LOC::DMA)  ret = " (DMA)";
+    if(status()==STATUS::BUSY)     return "BUSY " + ret;
+    if(status()==STATUS::COMPLETE) return "COMP " + ret;
+    assert(0);
+  }
+
+  void bindStream(base_stream_t *exec_stream);
+
+  void freeStream();
+
+  bool in_use() {
+    return status() != STATUS::FREE;
+  }
+
+  bool completed() {
+    return status() == STATUS::COMPLETE;
+  }
+
+  LOC loc() {
+    if (stream) {
+      return stream->src();
+    }
+    return LOC::NONE;
+  }
+
+  STATUS status() {
+    if (stream) {
+      return stream->stream_active() ? STATUS::BUSY : STATUS::COMPLETE;
+    }
+    return STATUS::FREE;
+  }
+
+  void pop(unsigned instances);  //Throw away data in CGRA input ports
+
+  uint64_t total_pushed() { return _total_pushed; }
+
+  void set_port_width(int num_bits){
+    assert(num_bits % 8 == 0);
+    _port_width = num_bits / 8;
+  }
+
+  // in bytes
+  int get_port_width() {
+    CHECK(_dfg_vec) << port();
+    return _dfg_vec->bitwidth() / 8;
+  }
+
+  void set_dfg_vec(dsa::dfg::VectorPort* dfg_vec) {
+    _dfg_vec = dfg_vec;
+    // std::cout << "CGRA ELEM SIZE: " << port_cgra_elem() << "\n";
+    _cgra_data.resize(port_cgra_elem());
+    _cgra_valid.resize(port_cgra_elem());
+    assert(_cgra_data.size() > 0);
+  }
+
+  // stats info (see if I need it)
+  void inc_rem_wr(int x) { _num_rem_wr+=x; }
+  unsigned get_rem_wr() { return _num_rem_wr; }
+
+  void set_is_bytes_waiting_final() {
+    _is_bytes_waiting_final=true;
+  }
+
+
+  void reset_is_bytes_waiting_final() {
+    _is_bytes_waiting_final=false;
+  }
+
+  void inc_bytes_waiting(int x) {
+    _bytes_waiting += x;
+    // std::cout << "New bytes waiting: " << _bytes_waiting << " and inc: " << x << "\n";
+  }
+
+  bool is_bytes_waiting_zero() {
+    return _bytes_waiting==0;
+  }
+
+  bool get_is_bytes_waiting_final() {
+    return _is_bytes_waiting_final;
+  }
+
+  int get_bytes_waiting() {
+    return _bytes_waiting;
+  }
+
+private:
+
+  dsa::dfg::VectorPort *_dfg_vec{nullptr}; // null by default
+
+  // cgra_port: vec_loc(offset)
+  // 23: 1, 2   24: 3, 4
+  bool _isInput;
+  int _port=-1;
+  int _port_width=-1; // 8; // take 8 bytes by default
+  int _outstanding=0;
+  // std::deque<SBDT> _mem_data;
+  std::deque<std::vector<uint8_t>> _mem_data;
+  std::deque<bool> _valid_data;
+  // std::vector<std::deque<SBDT>> _cgra_data; //data per port
+  // outermost for number of scalar ports, and innermost is for datatype of the
+  // port
+  std::vector<std::deque<std::vector<uint8_t>>> _cgra_data; //data per scalar port
+  std::vector<std::deque<bool>> _cgra_valid; //data per port
+  unsigned _num_in_flight=0;
+  unsigned _num_ready=0;
+
+  unsigned _num_rem_wr=0;
+
+  uint64_t _total_pushed=0;
+  int _bytes_waiting=0;
+  bool _is_bytes_waiting_final=false;
+};
+
+//Entire Port interface with each being port_data_t
+class port_interf_t {
+public:
+
+  void initialize(SSModel* ssconfig);
+  // void initialize(SSModel* ssconfig, Schedule* sched);
+  void push_data(std::vector<SBDT>& data, int port) {
+    for(SBDT i : data) {
+      _in_port_data[port].push_data(i);
+    }
+  }
+
+  void push_data(SBDT data, int port) {
+    _in_port_data[port].push_data(data);
+  }
+  void reformat_in(int port) {
+    _in_port_data[port].reformat_in();
+  }
+
+  port_data_t& in_port(int i) { return _in_port_data[i]; }
+  port_data_t& out_port(int i) { return _out_port_data[i]; }
+  std::vector<port_data_t> &ports(bool is_input) { return is_input ? _in_port_data : _out_port_data; }
+
+  void reset() {
+    for(unsigned i = 0; i < _in_port_data.size(); ++i) {
+      if(i == NET_VAL_PORT || i == NET_ADDR_PORT){
+      } else {
+        _in_port_data[i].reset();
+      }
+    }
+    for(unsigned i = 0; i < _out_port_data.size(); ++i) {
+      // TODO: check if this was useful!
+      _out_port_data[i].reset();
+      /*
+      if(_out_port_data[i].port() == MEM_SCR_PORT || _out_port_data[i].port() == SCR_MEM_PORT){
+        // printf("Detected a network port\n");
+      } else {
+      // printf("Index of out_port is: %d\n",i);
+        _out_port_data[i].reset();
+      }
+      */
+    }
+
+  }
+
+private:
+
+  std::vector<port_data_t> _in_port_data;
+  std::vector<port_data_t> _out_port_data;
+};
 
 
 //.............. Streams and Controllers .................
@@ -271,8 +743,11 @@ class scratch_write_controller_t : public data_controller_t {
   void write_scratch_remote_ind(remote_core_net_stream_t& stream);
   void write_scratch_remote_direct(direct_remote_scr_stream_t& stream);
   void atomic_scratch_update(atomic_scr_stream_t& stream);
+  void serve_atomic_requests(bool &performed_atomic_scr);
   void push_remote_wr_req(uint8_t *val, int num_bytes, addr_t scr_addr);
+  void scr_write(addr_t addr, LinearWriteStream& stream, port_data_t& out_vp);
   // for remote atomic update
+  void push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int out_bytes, uint64_t inc);
 
   void insert_pending_request_queue(int tid, std::vector<int> start_addr, int bytes_waiting);
   int push_and_update_addr_in_pq(int tid, int num_bytes);
@@ -289,6 +764,9 @@ class scratch_write_controller_t : public data_controller_t {
   }
 
   bool crossbar_backpressureOn();
+  bool atomic_addr_full(int bytes);
+  bool atomic_val_full(int bytes);
+  bool pending_request_queue_full();
 
   int atomic_val_size() { return _atom_val_store.size(); }
   int pending_request_queue_size() { return _pending_request_queue.size(); }
@@ -298,6 +776,7 @@ class scratch_write_controller_t : public data_controller_t {
   void cycle(bool can_perform_atomic_scr, bool &performed_atomic_scr);
   void linear_scratch_write_cycle();
   void finish_cycle();
+  bool done(bool,int);
 
   bool schedule_atomic_scr_op(atomic_scr_stream_t& s);
   bool schedule_network_stream(remote_core_net_stream_t& s);
@@ -306,6 +785,7 @@ class scratch_write_controller_t : public data_controller_t {
   void cycle_status();
 
   bool atomic_scr_streams_active();
+  bool atomic_scr_issued_requests_active();
 
   bool release_df_barrier(){
     assert(_df_count!=-1);
@@ -325,6 +805,7 @@ class scratch_write_controller_t : public data_controller_t {
   void set_atomic_addr_bytes(int p) { _atomic_addr_bytes=p; }
   void set_atomic_val_bytes(int p) { _atomic_val_bytes=p; }
   bool is_conflict(addr_t scr_addr, int num_bytes);
+  void push_atomic_val();
 
   private:
   int _which_wr=0; // for banked scratchpad
@@ -654,23 +1135,6 @@ public:
    */
   dsa::sim::BitstreamWrapper bsw;
 
-  /*!
-   * \brief The vector of input ports.
-   */
-  std::vector<dsa::sim::InPort> input_ports;
-
-  /*!
-   * \brief The vector of output ports.
-   */
-  std::vector<dsa::sim::OutPort> output_ports;
-
-  /*!
-   * \brief Get the corresponding port.
-   * \param isInput If it is an input port.
-   * \param id The ID of the port.
-   */
-  dsa::sim::Port *port(bool isInput, int id);
-
   accel_t(int i, ssim_t* ssim);
 
   Minor::LSQ *lsq();
@@ -693,6 +1157,11 @@ public:
   void request_reset_streams();
   void switch_stream_cleanup_mode_on();
   bool all_ports_empty();
+
+  port_interf_t& port_interf() {
+    return _port_interf;
+  }
+
 
   bool done(bool show = false, int mask = 0);
 
@@ -763,9 +1232,44 @@ private:
 
   void reset_data(); //carry out the work
 
+  void cycle_in_interf();
+  void cycle_out_interf();
+  void cycle_indirect_interf(); //forward from indirect inputs to indirect outputs
   void schedule_streams();
 
   bool cgra_done(bool, int mask);
+  bool cgra_input_active() {
+    for (int i = 0; i < bsw.ports[1].size(); ++i) {
+      int cur_port = bsw.ports[1][i].port;
+      auto& in_vp = _port_interf.in_port(cur_port);
+      if(in_vp.in_use() || in_vp.num_ready() || in_vp.mem_size()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool cgra_compute_active() {
+    for(int i = 0; i < bsw.ports[0].size(); ++i) {
+      int cur_port = bsw.ports[0][i].port;
+      auto& out_vp = _port_interf.out_port(cur_port);
+      if(out_vp.num_in_flight()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool cgra_output_active() {
+    for(int i = 0; i < bsw.ports[0].size(); ++i) {
+      int cur_port = bsw.ports[0][i].port;
+      auto& out_vp = _port_interf.out_port(cur_port);
+      if(out_vp.in_use() || out_vp.num_ready() || out_vp.mem_size()) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   bool in_roi();
 
@@ -829,22 +1333,40 @@ private:
   }
 
   void receive_message(int8_t* data, int num_bytes, int remote_in_port) {
-    // auto& in_vp = input_ports[remote_in_port];
+    port_data_t& in_vp = _port_interf.in_port(remote_in_port);
     // TODO: Check the max port size here and apply backpressure
     
+    // assert(num_bytes%in_vp.get_port_width()==1);
+    std::vector<uint8_t> temp;
     // TODO: make it uint everywhere on n/w side
-    // for(int i=0; i<num_bytes; ++i){
-    //   in_vp.raw.push(data[i]);
-    // }
-    // TODO(@were): Open this later.
-    // DSA_LOG(NET_REQ) << "Received value: " << *reinterpret_cast<SBDT *>(&temp[0])
-    //              << " at remote port: " << remote_in_port;
-    // // inc remote values received at this port
-    // in_vp.inc_rem_wr(num_bytes/in_vp.get_port_width());
+    for(int i=0; i<num_bytes; ++i){
+      temp.push_back(data[i]);
+    }
+    DSA_LOG(NET_REQ) << "Received value: " << *reinterpret_cast<SBDT *>(&temp[0])
+                 << " at remote port: " << remote_in_port;
+    in_vp.push_data(temp);
+    // inc remote values received at this port
+    in_vp.inc_rem_wr(num_bytes/in_vp.get_port_width());
   }
 
   void push_scratch_remote_buf(uint8_t* val, int num_bytes, uint16_t scr_addr){
       _scr_w_c.push_remote_wr_req(val, num_bytes, scr_addr);
+  }
+
+  void push_atomic_update_req(int scr_addr, int opcode, int val_bytes, int out_bytes, uint64_t inc) {
+    _scr_w_c.push_atomic_update_req(scr_addr, opcode, val_bytes, out_bytes, inc);
+  }
+
+  void insert_pending_request_queue(int tid, std::vector<int> start_addr, int bytes_waiting) {
+    _scr_w_c.insert_pending_request_queue(tid, start_addr, bytes_waiting);
+  }
+
+  int push_and_update_addr_in_pq(int tid, int num_bytes) {
+    return _scr_w_c.push_and_update_addr_in_pq(tid, num_bytes);
+  }
+  
+  void push_atomic_inc(int tid, std::vector<uint8_t> inc, int repeat_times) {
+    _scr_w_c.push_atomic_inc(tid, inc, repeat_times);
   }
 
   void push_ind_rem_read_req(bool is_remote, int req_core, int request_ptr, int addr, int data_bytes, int reorder_entry) {
@@ -877,6 +1399,9 @@ private:
 
   void push_net_in_cmd_queue(base_stream_t* s);
 
+
+  //members------------------------
+  port_interf_t _port_interf;
 
   SSModel *_ssconfig{nullptr};
 

@@ -11,7 +11,7 @@
 #include "consts.hh"
 #include "loc.hh"
 #include "sim-debug.hh"
-#include "./port.h"
+#include "state.h"
 #include "./bitstream.h"
 #include "./linear_stream.h"
 #include "./ism.h"
@@ -383,7 +383,7 @@ using dsa::sim::stream::LinearStream;
 using dsa::sim::stream::Linear1D;
 using dsa::sim::stream::Linear2D; // NOLINT
 using dsa::sim::stream::Linear3D; // NOLINT
-using dsa::sim::PortExecState;
+using dsa::sim::rt::PortExecState;
 
 /*!
  * \brief Stream that only involves input ports.

@@ -50,66 +50,40 @@
 #include "cpu/minor/pipe_data.hh"
 #include "cpu/minor/trace.hh"
 
-#include "ssim/linear_stream.h"
-
 
 struct SSMemReqInfo {
-  /*!
-   * \brief The stream this packet belongs to.
-   */
-  int stream_id{-3};
-  /*!
-   * \brief Did we use this?
-   * // TODO(@were): If not delete it.
-   */
-  int trans_idx{0};
-  /*!
-   * \brief The ports this request will be fed to.
-   */
-  std::vector<int> ports;
-  /*!
-   * \brief The bitmask applied on the memory.
-   */
-  std::vector<bool> mask;
-  /*!
-   * \brief TODO(@were): Deprecate this. This is for indirect memory, but can already be covered
-   *        by the mask.
-   */
-  std::vector<int> map;
-  /*!
-   * \brief The status of the stream that generates this request.
-   */
-  dsa::sim::stream::AffineStatus as;
-  /*!
-   * \brief If this is a config stream.
-   */
-  bool isConfig{0};
-  /*!
-   * \brief The bit mask of the accelerators this response will be broadcast to.
-   */
-  uint64_t which_accel{0};
-  /*!
-   * \brief The cycle this request is pushed to LSQ.
-   */
-  int64_t request_cycle{-1};
-  /*!
-   * \brief The time breakdown of profiling the life of a request to response.
-   */
-  int64_t breakdown[11];
+    int stream_id{-3};
+    int trans_idx{0};
+    std::vector<int> ports;
+    uint32_t fill_mode{0};
+    std::vector<bool> mask;
+    std::vector<int> map;
+    bool stride_first{false};
+    bool stride_last{false};
+    bool last{false};
+    bool isConfig{0};
+    uint64_t which_accel{0};
+    /*! \brief The cycle this request is pushed to LSQ. */
+    int64_t request_cycle{-1};
 
-  // mask: dma direct read
-  SSMemReqInfo(int stream_id_, uint64_t which_accel_, const std::vector<int> ports_,
-      const std::vector<bool>& mask_, int64_t request_cycle_,
-      const dsa::sim::stream::AffineStatus &as_)
-      : stream_id(stream_id_), trans_idx(ports_[0]),
-      ports(ports_), mask(mask_), as(as_), which_accel(which_accel_),
-      request_cycle(request_cycle_) {
-    memset(breakdown, -1, sizeof breakdown);
-  }
+    int64_t breakdown[11];
 
-  // for config/write streams (not including for now)!
-  SSMemReqInfo(int stream_id_, uint64_t which_accel_, int trans_idx_)
-      : stream_id(stream_id_), trans_idx(trans_idx_), which_accel(which_accel_) {}
+    // mask: dma direct read
+    SSMemReqInfo(int stream_id_, uint64_t which_accel_, const std::vector<int> ports_,
+        const std::vector<bool>& mask_, int64_t request_cycle_,
+        uint32_t fill_, bool stride_first_, bool stride_last_, bool last_)
+        : stream_id(stream_id_), trans_idx(ports_[0]),
+        ports(ports_), fill_mode(fill_), mask(mask_),
+        stride_first(stride_first_), stride_last(stride_last_), last(last_),
+        which_accel(which_accel_), request_cycle(request_cycle_) {
+      memset(breakdown, -1, sizeof breakdown);
+    }
+
+    // for config/write streams (not including for now)!
+    SSMemReqInfo(int stream_id_, uint64_t which_accel_, int trans_idx_)
+        : stream_id(stream_id_), trans_idx(trans_idx_), which_accel(which_accel_) {}
+
+
 };
 typedef SSMemReqInfo *SSMemReqInfoPtr;
 
