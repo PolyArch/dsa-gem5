@@ -698,11 +698,13 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     std::vector<int64_t> data;
     for (int i = 0; i < n; ++i) {
       if (ias->fsm.hasNext(accel) != 1) {
+        DSA_LOG(ATOMIC) << "No element to write!";
         break;
       }
       auto buffer = ias->fsm.poll(accel, true);
       addrs.push_back(buffer[0]);
       data.push_back(buffer[1]);
+      DSA_LOG(ATOMIC) << buffer[0] << " " << buffer[1];
     }
     if (ias->unit() == LOC::DMA) {
       uint64_t cacheline = accel->get_ssim()->spec.dma_bandwidth;
@@ -1052,13 +1054,6 @@ void accel_t::cycle_cgra_backpressure() {
     ssvport *vp = *vp_iter;
     auto *vec_in = dynamic_cast<dsa::dfg::InputPort*>(bsw.sched->dfgNodeOf(vp));
 
-    // DSA_LOG(REPEAT)
-    //      << "Port details: " << cur_in_port.port_cgra_elem() << " "
-    //      << vec_in->logical_len() << " ( " << vec_in->name() << " ) "
-    //      << cur_in_port.pes.toString()
-    //      << ", num_ready: " << cur_in_port.num_ready()
-    //      << ", and mem size: " << cur_in_port.mem_size();
-
     if (cur_in_port.lanesReady()) {
 
       assert(vec_in != NULL && "input port pointer is null\n");
@@ -1067,13 +1062,25 @@ void accel_t::cycle_cgra_backpressure() {
         forward_progress();
 
         CHECK(cur_in_port.vectorLanes() == vec_in->values.size())
-          << cur_in_port.vectorLanes() << " " << vec_in->length()
+          << cur_in_port.vectorLanes() << " " << vec_in->vectorLanes()
           << " ( " << vec_in->name() << " )";
 
         auto data = cur_in_port.poll();
         CHECK(!data.empty()) << cur_in_port.vectorLanes();
+        bool valid = false;
         for (int i = 0; i < cur_in_port.vectorLanes(); ++i) {
           vec_in->values[i].push(data[i].value, data[i].valid, 0);
+          valid |= data[i].valid;
+        }
+        if (auto tag_port = cur_in_port.affine_tag) {
+          uint8_t tag = 0;
+          for (int i = 0; i < cur_in_port.vectorLanes(); ++i) {
+            tag |= data[i].tag;
+          }
+          CHECK(tag_port->vp->values.size() == 1);
+          tag_port->vp->values[0].push(tag, valid, 0);
+          DSA_LOG(COMP)
+            << "Push tag " << tag_port->vp->name() << ": " << std::bitset<8>(tag).to_string();
         }
         // TODO(@were): Move repeat port stuff to port pop.
         cur_in_port.pop();
@@ -1147,6 +1154,7 @@ void accel_t::cycle_cgra_backpressure() {
           cur_out_port.push(raw);
         } 
       }
+      DSA_LOG(COMP) << vec_output->name() << " buffered " << cur_out_port.raw.size() << " byte(s)";
     }
   }
 
@@ -1402,8 +1410,9 @@ void accel_t::print_status() {
   for (auto &elem : bsw.oports()) {
     unsigned cur_p = elem.port;
     string s = bsw.name(0, cur_p);
-    std::cout << "Out Port " << cur_p << " " << s << ": ";
-    std::cout << "  Buffer: " << output_ports[cur_p].raw.size();
+    std::cout
+      << "Out Port " << cur_p << " " << s << ": "
+     << "  Buffer: " << output_ports[cur_p].raw.size() << std::endl;
   }
 
   std::cout << "Atomic scr val port: " << _scr_w_c.atomic_val_size() << "\n";
@@ -2734,6 +2743,19 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
   for (auto &elem : bsw.iports()) {
     auto &vp = input_ports[elem.port];
     vp.vp = elem.vp;
+  }
+
+  for (auto &elem : bsw.iports()) {
+    auto &vp = input_ports[elem.port];
+    // If this input port's tag is not -1, find its corresponding vp.
+    if (vp.ivp()->tid != -1) {
+      for (auto &another : bsw.iports()) {
+        auto &another_vp = input_ports[another.port];
+        if (another.vp->id() == vp.ivp()->tid) {
+          vp.affine_tag = &another_vp;
+        }
+      }
+    }
   }
 
   for (auto &elem : bsw.oports()) {

@@ -150,15 +150,20 @@ struct Port {
   Port(accel_t *a) : parent(a) {}
 };
 
-/*!
- * \brief Convert the raw byte-data to spatial packet.
- * \param raw The data to be converted. Leftover data will remain in this array.
- * \param scalar_bytes The data type of each spatial packet.
- */
-std::vector<SpatialPacket> rawToSpatialPacket(std::deque<uint8_t> &raw, int scalar_bytes);
+struct PortPacket : SpatialPacket {
+  /*!
+   * \brief The tag should affiliated to compute instances.
+   */
+  uint8_t tag;
 
+  PortPacket(const SpatialPacket &sp) : SpatialPacket(sp.available_at, sp.value, sp.valid) {}
+};
 
 struct InPort : Port {
+  /*!
+   * \brief The port that feeds affine stream status.
+   */
+  InPort *affine_tag{nullptr};
   /*!
    * \brief The data in bytes that is in ongoing requests.
    */
@@ -166,7 +171,7 @@ struct InPort : Port {
   /*!
    * \brief The data ready to be distributed by the crossbar.
    */
-  std::deque<sim::SpatialPacket> buffer;
+  std::deque<PortPacket> buffer;
   /*!
    * \brief The state machine of port data repeat.
    */
@@ -193,7 +198,7 @@ struct InPort : Port {
    * \brief Get the data ready.
    * \param n Get n elements once.
    */
-  std::vector<SpatialPacket> poll();
+  std::vector<PortPacket> poll();
   /*!
    * \brief Push raw data to the FIFO.
    * \param data The data to be pushed.
@@ -220,7 +225,11 @@ struct InPort : Port {
   /*!
    * \brief The vector lanes of this port.
    */
-   int vectorLanes() const override;
+  int vectorLanes() const override;
+  /*!
+   * \brief The input port sub-class.
+   */
+  dfg::InputPort *ivp();
 
   InPort(accel_t *a, int size, int id) : Port(a), pes(IVPState(), id), buffer_size(size) {}
 };
@@ -272,6 +281,10 @@ struct OutPort : Port {
    * \param data The data in raw byte format.
    */
   void push(const std::vector<uint8_t> &data);
+  /*!
+   * \brief The output port sub-class.
+   */
+  dfg::OutputPort *ovp();
 };
 
 }

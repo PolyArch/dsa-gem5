@@ -261,7 +261,7 @@ LinearStream::LineInfo Linear1D::cacheline(int bandwidth, int at_most, BuffetEnt
   CHECK(hasNext());
   AffineStatus as;
   as.stream_1st = i == 0;
-  as.dim_1st = i == 0 ? 1 : -1;
+  as.dim_1st = i == 0 ? 1 : 0;
   std::vector<bool> mask(bandwidth, 0);
   CHECK(bandwidth == (bandwidth & -bandwidth));
   int64_t head = poll(false);
@@ -312,7 +312,7 @@ LinearStream::LineInfo Linear1D::cacheline(int bandwidth, int at_most, BuffetEnt
     }
   }
   DSA_LOG(SHRINK) << "shrink: " << untranslated + word;
-  as.dim_last = i == length ? 1 : -1;
+  as.dim_last = i == length ? 1 : 0;
   as.n = length * word;
   as.stream_last = !hasNext();
   return LineInfo(base, head, mask, untranslated + word, as);
@@ -371,13 +371,15 @@ BarrierFlag Loc2BarrierFlag(LOC loc) {
 
 struct IFSMTicker : Functor {
 #define SET_PTR(x, y) \
-  x##_ = y;           \
-  x = &x##_;
+  do {                \
+    x##_ = y;         \
+    x = &x##_;        \
+  } while (false)
 
   void Visit(RecurrentStream *rs) override {
     auto &ovp = accel->output_ports[rs->oports[0]];
     CHECK(rs->stream_active());
-    if (!ovp.raw.empty()) {
+    if (ovp.canPop(rs->dtype)) {
       SET_PTR(i, rs->i);
       auto data = ovp.poll(rs->dtype);
       data.resize(8, 0);
@@ -403,6 +405,7 @@ struct IFSMTicker : Functor {
   accel_t *accel;
   int64_t *res{nullptr};
   int64_t *i{nullptr};
+  std::string reason;
 
   IFSMTicker(bool p, accel_t *a) : pop(p), accel{a} {}
 
@@ -425,7 +428,10 @@ int IndirectFSM::hasNext(accel_t *accel) {
     index->Accept(&it);
     IFSMTicker vt(false, accel); // Value ticker.
     value->Accept(&vt);
-    if (!it.res || !vt.res) {
+    if (!it.res) {
+      return -1;
+    }
+    if (!vt.res) {
       return -1;
     }
     return 1;
@@ -494,6 +500,28 @@ std::string IndirectFSM::toString(accel_t *accel) {
   } else {
     oss << " retired indirect stream";
   }
+  return oss.str();
+}
+
+uint8_t AffineStatus::toTag(bool packet_1st, bool packet_last) const {
+  int res = 0;
+  int mask_1st = (1 << dim_1st) - 1;
+  int mask_last = (1 << dim_last) - 1;
+  res = (res << 1) | (((mask_last & 2) >> 1) && packet_last); // L2D end, MSB
+  res = (res << 1) | (((mask_1st & 2) >> 1) && packet_1st);   // L2D 1st
+  res = (res << 1) | ((mask_last & 1) && packet_last);        // L1D end
+  res = (res << 1) | ((mask_1st & 1) && packet_1st);          // L1D 1st
+  res = (res << 1) | (stream_last && packet_last);            // Stream end
+  res = (res << 1) | (stream_1st && packet_1st);              // Stream 1st, LSB
+  return res;
+}
+
+std::string AffineStatus::toString() const {
+  std::ostringstream oss;
+  oss
+    << "dim 1st: " << dim_1st << ", dim last: " << dim_last
+    << ", stream 1st: " << stream_1st << ", stream last: " << stream_last
+    << ", bytes: " << n;
   return oss.str();
 }
 

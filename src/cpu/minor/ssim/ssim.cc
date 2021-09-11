@@ -846,11 +846,17 @@ bool ssim_t::CanReceive(int port, int dtype) {
       auto &ovp = lanes[i]->output_ports[port];
       CHECK(dtype % ovp.scalarSizeInBytes() == 0);
       if (ovp.stream) {
-        return false;
+        break;
       }
-      return ovp.raw.size() >= dtype;
+      if (ovp.raw.size() >= dtype) {
+        DSA_LOG(RECV) << "Can receive " << dtype << " bytes from " << port;
+        return true;
+      } else {
+        break;
+      }
     }
   }
+  DSA_LOG(RECV) << "CANNOT receive " << dtype << " bytes from " << port;
   return false;
 }
 

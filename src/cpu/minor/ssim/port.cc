@@ -1,5 +1,7 @@
+#include "./accel.hh"
 #include "./stream.hh"
 #include "./port.h"
+#include "dsa/dfg/port.h"
 #include "dsa/simulation/data.h"
 
 
@@ -121,9 +123,9 @@ void InPort::push(const std::vector<uint8_t> &raw, const stream::AffineStatus &a
     CHECK(padCount % dbytes == 0) << as.n << " % (" << lanes << " * " << dbytes << ")";
     padCount /= dbytes;
   }
+
   // TODO(@were): Make sure this is correct!
   auto aa = _curEventQueue->nextTick();
-
 #define PADDING_IMPL(cond, zero_enum, predoff_enum)                \
   do {                                                             \
     if (cond) {                                                    \
@@ -137,16 +139,23 @@ void InPort::push(const std::vector<uint8_t> &raw, const stream::AffineStatus &a
     }                                                              \
   } while (false)
 
+  int from = buffer.size();
+
   PADDING_IMPL(as.dim_1st == 1, DP_PreStrideZero, DP_PreStridePredOff);
   for (int i = 0; i < raw.size(); i += dbytes) {
     uint64_t data = 0;
     std::memcpy(&data, raw.data() + i, dbytes);
-    buffer.emplace_back(aa, data, true);
+    buffer.emplace_back(SpatialPacket(aa, data, true));
   }
   PADDING_IMPL(as.dim_last == 1, DP_PostStrideZero, DP_PostStridePredOff);
 #undef PADDING_IMPL
   DSA_LOG(PORT)
     << id() << ": Buffered: " << buffer.size() * scalarSizeInBytes() << ", Ongoing: " << ongoing;
+
+  for (int i = from; i < (int) buffer.size(); ++i) {
+    buffer[i].tag = as.toTag(i == from, i == buffer.size() - 1);
+    DSA_LOG(PORT) << "Push: " << buffer[i].value << "(" << buffer[i].valid << ")";
+  }
 }
 
 int InPort::canPush() {
@@ -193,15 +202,27 @@ bool InPort::empty() {
   return buffer.empty();
 }
 
-std::vector<SpatialPacket> InPort::poll() {
+std::vector<PortPacket> InPort::poll() {
   int n = vectorLanes();
   CHECK(lanesReady());
-  std::vector<SpatialPacket> res(buffer.begin(), buffer.begin() + n);
+  std::vector<PortPacket> res(buffer.begin(), buffer.begin() + n);
   return res;
 }
 
 void OutPort::push(const std::vector<uint8_t> &data) {
   raw.insert(raw.end(), data.begin(), data.end());
+}
+
+dfg::InputPort *InPort::ivp() {
+  auto *res = dynamic_cast<dfg::InputPort *>(vp);
+  CHECK(res) << "The configured vp for input port should be an input, but get " << vp->name();
+  return res;
+}
+
+dfg::OutputPort *OutPort::ovp() {
+  auto *res = dynamic_cast<dfg::OutputPort *>(vp);
+  CHECK(res) << "The configured vp for output port should be an output, but get " << vp->name();
+  return res;
 }
 
 }

@@ -29,11 +29,11 @@ struct AffineStatus {
    *        However, when yielding 6, this value should be 1-d, since it is just the beginning
    *        of the second 1-d stream.
    */
-  int dim_1st{-1};
+  int dim_1st{0};
   /*!
    * \brief The outer-most dimension of "last". Explaination similar to what we have above.
    */
-  int dim_last{-1};
+  int dim_last{0};
   /*!
    * \brief If this is the first response of this stream.
    */
@@ -50,6 +50,17 @@ struct AffineStatus {
    * \brief The padding policy of this stream.
    */
   Padding padding{Padding::DP_NoPadding};
+
+  /*!
+   * \brief Pack the data to stream tag bitmask.
+   * \param If this tag is for the 1st element of this response packet.
+   * \param If this tag is for the last element of this response packet.
+   */
+  uint8_t toTag(bool packet_1st, bool packet_last) const;
+  /*!
+   * \brief Dump the textformat of the affine status for debugging.
+   */
+  std::string toString() const;
 
   AffineStatus() {}
 };
