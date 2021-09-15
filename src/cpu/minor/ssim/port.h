@@ -270,7 +270,7 @@ struct OutPort : Port {
    * \brief Get the given bytes from the FIFO.
    * \param n The given bytes to get.
    */
-  std::vector<uint8_t> poll(int n) { return std::vector<uint8_t>(&raw[0], &raw[0] + n);}
+  std::vector<uint8_t> poll(int n);
   /*!
    * \brief Pop the given bytes from the FIFO.
    * \param n The given bytes to pop.

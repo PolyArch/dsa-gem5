@@ -763,6 +763,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     CHECK(stream.stream_active()) << "Inactive stream should be freed!";
     auto &out_port = accel->output_ports[stream.port()];
     if (!out_port.canPop(stream.dtype)) {
+      DSA_INFO << "not enough data to write!";
       return;
     }
     if (stream.garbage()) {
@@ -777,6 +778,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     // Check if the write unit is available.
     int memory_bw = canRequest(lws->dest(), MEM_WR_STREAM);
     if (memory_bw == -1) {
+      DSA_INFO << "write unit is not available!";
       return;
     }
     // Prepare the data according to the port data availability and memory bandwidth

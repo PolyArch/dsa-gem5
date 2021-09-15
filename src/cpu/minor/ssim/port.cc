@@ -213,6 +213,15 @@ void OutPort::push(const std::vector<uint8_t> &data) {
   raw.insert(raw.end(), data.begin(), data.end());
 }
 
+std::vector<uint8_t> OutPort::poll(int n) {
+  std::vector<uint8_t> res;
+  res.reserve(n);
+  for (int i = 0; i < n; ++i) {
+    res.push_back(raw[i]);
+  }
+  return res;
+}
+
 dfg::InputPort *InPort::ivp() {
   auto *res = dynamic_cast<dfg::InputPort *>(vp);
   CHECK(res) << "The configured vp for input port should be an input, but get " << vp->name();
