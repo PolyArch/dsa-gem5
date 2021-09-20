@@ -75,9 +75,10 @@ void Accelerator::blameCycle() {
   if (!roi()) {
     return;
   }
+  base_stream_t *sb = nullptr;
   if (blame == Blame::UNKNOWN) {
     blame = Blame::CMD_QUEUE;
-    std::unordered_map<LOC, Blame> blame_map = {
+    static std::unordered_map<LOC, Blame> blame_map = {
       {LOC::CONST, Blame::CONST_BW},
       {LOC::DMA, Blame::MEMORY_BW},
       {LOC::SCR, Blame::SPAD_BW},
@@ -91,7 +92,10 @@ void Accelerator::blameCycle() {
           ++io_cnt[is_input];
           if (pi.empty() && blame_map.count(pi.stream->unit())) {
             auto to_blame = blame_map[pi.stream->unit()];
-            blame = std::min(blame, to_blame);
+            if (blame < to_blame) {
+              blame = to_blame;
+              sb = pi.stream;
+            }
           }
         }
       }
@@ -101,6 +105,7 @@ void Accelerator::blameCycle() {
     }
   }
   ++blame_count[blame];
+  DSA_LOG(BLAME) << curTick() << ": " << (sb ? sb->toString() : "(null)");
 }
 
 void Accelerator::countMemoryLatency(int64_t request_cycle, int64_t *breakdown) {

@@ -616,9 +616,10 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     }
     makeMemoryRequest(lrs, {}, ports, info, DMO_Read);
     accel->statistics.countDataTraffic(true, stream.unit(), info.bytes_read());
+    int total_bytes = std::accumulate(bm.begin(), bm.end(), 0);
     DSA_LOG(MEM_REQ)
       << "read request: " << info.linebase << ", " << info.start
-      << " for " << stream.toString();
+      << " for " << stream.toString() << " in total " << total_bytes << " bytes";
   }
 
   void Visit(IndirectReadStream *irs) override {
@@ -654,8 +655,8 @@ struct StreamExecutor : dsa::sim::stream::Functor {
         CHECK(i + addr % cacheline < bm.size());
         bm[i + addr % cacheline] = true;
       }
-      reserveBuffers(ports, irs->data_width());
       dsa::sim::stream::LinearStream::LineInfo info(linebase, addr, bm, 0);
+      reserveBuffers(ports, irs->data_width());
       info.as.stream_last = !irs->fsm.hasNext(accel);
       info.as.padding = DP_NoPadding;
       makeDMARequest(irs->id(), irs->inst, DMO_Read, ports, {}, info);
@@ -763,7 +764,6 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     CHECK(stream.stream_active()) << "Inactive stream should be freed!";
     auto &out_port = accel->output_ports[stream.port()];
     if (!out_port.canPop(stream.dtype)) {
-      DSA_INFO << "not enough data to write!";
       return;
     }
     if (stream.garbage()) {
@@ -778,7 +778,6 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     // Check if the write unit is available.
     int memory_bw = canRequest(lws->dest(), MEM_WR_STREAM);
     if (memory_bw == -1) {
-      DSA_INFO << "write unit is not available!";
       return;
     }
     // Prepare the data according to the port data availability and memory bandwidth
@@ -825,7 +824,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
   int bufferAvailable(const std::vector<PortExecState> &pes, int bw) {
     for (auto elem : pes) {
       auto &ivp = accel->input_ports[elem.port];
-      bw = std::min(ivp.canPush(), bw);
+      bw = std::min(ivp.canPush(false), bw);
     }
     return bw;
   }
@@ -845,7 +844,6 @@ struct StreamExecutor : dsa::sim::stream::Functor {
   void Visit(RecurrentStream *pps) override {
     CHECK(pps->oports.size() == 1);
     auto &ovp = accel->output_ports[pps->oports[0]];
-    std::vector<uint8_t> data;
     CHECK(pps->dtype % ovp.scalarSizeInBytes() == 0)
       << "Recurrence Element Bytes: " << pps->dtype
       << ", Port Scalar Bytes: " << ovp.scalarSizeInBytes();
@@ -862,10 +860,14 @@ struct StreamExecutor : dsa::sim::stream::Functor {
           << ", Ready: " << ivp.lanesReady();
       }
       ++pps->i;
+      ++cnt;
     }
     if (cnt) {
-      DSA_LOG(RECUR) << cnt << " pushed, in total: " << data.size() << " bytes";
-      DSA_LOG(RECUR) << pps->toString();
+      DSA_LOG(RECUR) << curTick() << ": " << cnt << " recur pushed " << pps->toString();
+    } else {
+      DSA_LOG(RECUR_BLAME) << curTick() << ": "
+        << "output(?): " << ovp.canPop(pps->dtype)
+        << ", input(?): " << bufferAvailable(pps->pes, pps->dtype) << ">= " << pps->dtype;
     }
     if (!pps->stream_active()) {
       DSA_LOG(STREAM) << pps->toString() << " freed!";
@@ -874,7 +876,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
         accel->input_ports[elem.port].freeStream();
       }
     }
-    accel->statistics.countDataTraffic(false, pps->unit(), data.size());
+    accel->statistics.countDataTraffic(false, pps->unit(), cnt * pps->dtype);
   }
 
   StreamExecutor(accel_t *accel_) : accel(accel_) {}
@@ -1139,7 +1141,8 @@ void accel_t::cycle_cgra_backpressure() {
       vector<bool> data_valid;
       vec_output->pop(data, data_valid);
 
-      DSA_LOG(COMP) << "outvec[" << vec_output->name() << "] allowed to pop output: ";
+      DSA_LOG(COMP)
+        << curTick() << ": outvec[" << vec_output->name() << "] allowed to pop output: ";
       assert(data_valid.size() == data.size());
       for (int j = 0, n = data.size(); j < n; ++j) {
         DSA_LOG(COMP) << "pop: " << data[j] << "(" << data_valid[j] << ") ";

@@ -111,8 +111,9 @@ void InPort::push(const std::vector<uint8_t> &raw, const stream::AffineStatus &a
     DSA_LOG(PORT) << "Deregister " << raw.size() << " bytes for port " << id();
   }
   CHECK(ongoing >= 0);
-  CHECK(canPush() >= raw.size())
-    << ongoing << " + " << buffer.size() << " * " << scalarSizeInBytes() << " ? " << buffer_size;
+  CHECK(canPush(true) >= raw.size())
+    << buffer_size << " - " << ongoing << " - " << buffer.size() << " * " << scalarSizeInBytes()
+    << " = " << canPush(true) << " < " << raw.size();
   CHECK(raw.size() % dbytes == 0)
     << raw.size() << " % " << dbytes << " != 0, cannot gaurantee the alignment of predicate!";
   int residue = as.n % (lanes * dbytes);
@@ -141,13 +142,13 @@ void InPort::push(const std::vector<uint8_t> &raw, const stream::AffineStatus &a
 
   int from = buffer.size();
 
-  PADDING_IMPL(as.dim_1st == 1, DP_PreStrideZero, DP_PreStridePredOff);
+  PADDING_IMPL(as.dim_1st, DP_PreStrideZero, DP_PreStridePredOff);
   for (int i = 0; i < raw.size(); i += dbytes) {
     uint64_t data = 0;
     std::memcpy(&data, raw.data() + i, dbytes);
     buffer.emplace_back(SpatialPacket(aa, data, true));
   }
-  PADDING_IMPL(as.dim_last == 1, DP_PostStrideZero, DP_PostStridePredOff);
+  PADDING_IMPL(as.dim_last, DP_PostStrideZero, DP_PostStridePredOff);
 #undef PADDING_IMPL
   DSA_LOG(PORT)
     << id() << ": Buffered: " << buffer.size() * scalarSizeInBytes() << ", Ongoing: " << ongoing;
@@ -158,8 +159,9 @@ void InPort::push(const std::vector<uint8_t> &raw, const stream::AffineStatus &a
   }
 }
 
-int InPort::canPush() {
-  return buffer_size - (ongoing + buffer.size() * scalarSizeInBytes());
+int InPort::canPush(bool ip) {
+  int padding_buffer = ip * vectorLanes() * scalarSizeInBytes();
+  return buffer_size + padding_buffer  - (ongoing + buffer.size() * scalarSizeInBytes());
 }
 
 bool InPort::lanesReady() {
@@ -214,6 +216,7 @@ void OutPort::push(const std::vector<uint8_t> &data) {
 }
 
 std::vector<uint8_t> OutPort::poll(int n) {
+  CHECK(canPop(n));
   std::vector<uint8_t> res;
   res.reserve(n);
   for (int i = 0; i < n; ++i) {

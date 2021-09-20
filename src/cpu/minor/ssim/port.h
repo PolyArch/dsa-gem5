@@ -182,8 +182,9 @@ struct InPort : Port {
   int buffer_size;
   /*!
    * \brief If data can be pushed to the buffer.
+   * \param reserve_padding If padding buffer is included. false for requests, true for response.
    */
-  int canPush();
+  int canPush(bool include_padding);
   /*!
    * \brief If there is enough data can be popped to the spatial CGRA.
    * \param n The number of lanes to be ready. If -1, the number of the vector configured.
