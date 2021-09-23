@@ -199,6 +199,11 @@ public:
     }
   }
   
+  /*!
+   * \brief The current cycle.
+   */
+  uint64_t now();
+
   void atomic_update_hardware_config(int addr_port, int val_port, int out_port);
   void atomic_update_scratchpad(uint64_t offset, uint64_t iters, int addr_port, int inc_port, int value_type, int output_type, int addr_type, int opcode, int val_num, int num_updates, bool is_update_cnt_port, uint64_t partition_size, uint64_t active_core_bitvector, int mapping_type);
   void multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_port, int rem_port, bool dest_flag, bool spad_type, int64_t stride, int64_t access_size);
@@ -251,7 +256,6 @@ public:
 
   void set_in_use() {
     if(!_in_use) {
-      DSA_LOG(COMMAND) << now() << "SSIM in use";
       DSA_LOG(ROI) << now() << "SSIM in use";
     }
     _in_use=true;
@@ -263,7 +267,6 @@ public:
   }
   bool in_use() {return _in_use;}
 
-  uint64_t now();
 
   bool in_roi() {return _in_roi;}
   void roi_entry(bool enter);

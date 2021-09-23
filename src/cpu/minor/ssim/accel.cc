@@ -36,7 +36,7 @@ std::vector<uint8_t> apply_mask(const uint8_t *raw_data, vector<bool> mask) {
 }
 
 int accel_t::get_cur_cycle() {
-  return curTick() - _ssim->roi_enter_cycle();
+  return now() - _ssim->roi_enter_cycle();
 }
 
 dsa::sim::Port *accel_t::port(bool isInput, int id) {
@@ -147,7 +147,7 @@ void accel_t::switch_stream_cleanup_mode_on() {
 }
 
 void accel_t::reset_data() {
-  DSA_LOG(COMMAND) << curTick() << ": Reset data requested";
+  DSA_LOG(COMMAND) << now() << ": Reset data requested";
 
   for (int i = 0; i < 2; ++i) {
     for (auto &elem : bsw.ports[i]) {
@@ -166,7 +166,7 @@ void accel_t::reset_data() {
 
 // ---------------------------- ACCEL ------------------------------------------
 uint64_t accel_t::now() {
-  return lsq()->get_cpu().curCycle();
+  return get_ssim()->now();
 }
 
 Minor::LSQ *accel_t::lsq() {
@@ -543,7 +543,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     bool read = op == MemoryOperation::DMO_Read;
     auto *sdInfo = new SSMemReqInfo(sid, accel->accel_index(), ports,
                                     read ? info.mask : std::vector<bool>(),
-                                    curTick(), info.as);
+                                    accel->now(), info.as);
     if (read) {
       accel->lsq()->sd_transfers[ports[0]].reserve();
     }
@@ -590,19 +590,9 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     int cacheline = canRequest(stream.src(), lrs->pes[0].port);
     // If the request unit is not available just return.
     if (cacheline == -1) {
-      // DSA_INFO << "Cannot request because memory overwhelmed!";
       return;
     }
-    int available = bufferAvailable(lrs->pes, cacheline);
-    // Make sure all the ports have enough space to push the data.
-    if (!available) {
-      // DSA_INFO << "Cannot request because port buffer not available! "
-      //   << lrs->pes[0].port << ", "
-      //   << accel->input_ports[lrs->pes[0].port].ongoing << ", "
-      //   << accel->input_ports[lrs->pes[0].port].buffer.size() << " " << available;
-      return;
-    }
-
+    int available = cacheline;
     if (stream.be) {
       available = std::min(stream.be->occupied, available);
       stream.be->mo = DMO_Read;
@@ -635,10 +625,6 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       return;
     }
     int n = irs->src() == LOC::DMA ? 1 : accel->spads[0].bandwidth() / irs->fsm.idx().dtype;
-    n = bufferAvailable(irs->pes, n * irs->dtype) / irs->dtype;
-    if (!n) {
-      return;
-    }
     std::vector<int64_t> addrs;
     for (int i = 0; i < n; ++i) {
       if (irs->fsm.hasNext(accel) != 1) {
@@ -863,11 +849,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       ++cnt;
     }
     if (cnt) {
-      DSA_LOG(RECUR) << curTick() << ": " << cnt << " recur pushed " << pps->toString();
-    } else {
-      DSA_LOG(RECUR_BLAME) << curTick() << ": "
-        << "output(?): " << ovp.canPop(pps->dtype)
-        << ", input(?): " << bufferAvailable(pps->pes, pps->dtype) << ">= " << pps->dtype;
+      DSA_LOG(RECUR) << accel->now() << ": " << cnt << " recur pushed " << pps->toString();
     }
     if (!pps->stream_active()) {
       DSA_LOG(STREAM) << pps->toString() << " freed!";
@@ -1030,7 +1012,6 @@ void accel_t::tick() {
   }
 
   statistics.blameCycle();
-  DSA_LOG(ROI) << get_ssim()->now() << ": " << BLAME_NAME[statistics.blame];
 }
 
 bool accel_t::is_shared() { return _accel_index == get_ssim()->lanes.size() - 1; }
@@ -1041,6 +1022,15 @@ bool accel_t::is_shared() { return _accel_index == get_ssim()->lanes.size() - 1;
 // Simulate the portion of the dataflow graph which requires either
 // 1. backpressure, or 2. temporal sharing.
 // Ports relevant for this simulation this are called "active_in_ports_bp"
+
+std::string dumpPredicatedValues(const std::vector<uint64_t> &a, const std::vector<bool> &b) {
+  CHECK(a.size() == b.size());
+  ostringstream oss;
+  for (int i = 0; i < (int) a.size(); ++i) {
+    oss << " " << a[i] << "(" << b[i] << ")";
+  }
+  return oss.str();
+}
 
 void accel_t::cycle_cgra_backpressure() {
 
@@ -1072,9 +1062,13 @@ void accel_t::cycle_cgra_backpressure() {
         auto data = cur_in_port.poll();
         CHECK(!data.empty()) << cur_in_port.vectorLanes();
         bool valid = false;
+        std::vector<uint64_t> values;
+        std::vector<bool> predicates;
         for (int i = 0; i < cur_in_port.vectorLanes(); ++i) {
           vec_in->values[i].push(data[i].value, data[i].valid, 0);
           valid |= data[i].valid;
+          values.push_back(data[i].value);
+          predicates.push_back(data[i].valid);
         }
         if (auto tag_port = cur_in_port.affine_tag) {
           uint8_t tag = 0;
@@ -1090,12 +1084,8 @@ void accel_t::cycle_cgra_backpressure() {
         cur_in_port.pop();
 
         DSA_LOG(COMP)
-          << "Vec name: " << vec_in->name() << " allowed to push "
-          << data.size() << " input(s): ";
-        for (size_t i = 0; i < data.size(); ++i) {
-          DSA_LOG(COMP)
-            << &vec_in->values[i] << "|" << data[i].value << "(" << data[i].valid << ") ";
-        }
+          << now() << ": In Port: " << vec_in->name() << " allowed to push "
+          << data.size() << " input(s): " << dumpPredicatedValues(values, predicates);
 
       }
 
@@ -1141,12 +1131,6 @@ void accel_t::cycle_cgra_backpressure() {
       vector<bool> data_valid;
       vec_output->pop(data, data_valid);
 
-      DSA_LOG(COMP)
-        << curTick() << ": outvec[" << vec_output->name() << "] allowed to pop output: ";
-      assert(data_valid.size() == data.size());
-      for (int j = 0, n = data.size(); j < n; ++j) {
-        DSA_LOG(COMP) << "pop: " << data[j] << "(" << data_valid[j] << ") ";
-      }
       if (in_roi()) {
         _stat_comp_instances += 1;
       }
@@ -1159,7 +1143,10 @@ void accel_t::cycle_cgra_backpressure() {
           cur_out_port.push(raw);
         } 
       }
-      DSA_LOG(COMP) << vec_output->name() << " buffered " << cur_out_port.raw.size() << " byte(s)";
+      DSA_LOG(COMP)
+        << now() << ": outvec[" << vec_output->name() << "] allowed to pop output: "
+        << dumpPredicatedValues(data, data_valid)
+        << ", buffered " << cur_out_port.raw.size() << " byte(s)";
     }
   }
 
@@ -1859,7 +1846,11 @@ void dma_controller_t::port_resp(unsigned cur_port) {
             }
             in_vp.freeStream();
           }
+          DSA_LOG(MEM_REQ)
+            << _accel->bsw.iports()[in_port].vp->name()
+            << " buffers " << in_vp.buffer.size() << " element(s)";
         }
+
 
         _accel->statistics.countMemoryLatency(response->sdInfo->request_cycle,
                                               response->sdInfo->breakdown);
@@ -1969,7 +1960,7 @@ void scratch_write_controller_t::write_scratch_remote_ind(
 //    assert(num_bytes <= 64);
 //    for (int j = 0; j < num_bytes / 8; ++j) {
 //      val[j] = val_vp.pop_out_data();
-//      DSA_LOG(NET_REQ) << curTick() << " val being written to remote scratchpad: " << val[j];
+//      DSA_LOG(NET_REQ) << now() << " val being written to remote scratchpad: " << val[j];
 //    }
 //    _accel->write_scratchpad(addr, &val[0], num_bytes, stream.id());
 //    bytes_written += num_bytes;
@@ -2177,7 +2168,7 @@ void network_controller_t::multicast_data(
 //      stream._num_elements--;
 //
 //      DSA_LOG(NET_REQ)
-//        << curTick() << "POPPED b/c port->remote port WRITE: " << out_vp.port() << " "
+//        << now() << "POPPED b/c port->remote port WRITE: " << out_vp.port() << " "
 //        << out_vp.mem_size() << " data: " << std::hex << data;
 //      DSA_LOG(NET_REQ) << "After issue: " << stream.toString();
 //    }
@@ -2288,7 +2279,7 @@ void network_controller_t::write_direct_remote_scr(
   //     // stream._num_elements--;
 
   //     DSA_LOG(NET_REQ)
-  //       << curTick() << ": POPPED b/c direct port->remote scr WRITE: "
+  //       << now() << ": POPPED b/c direct port->remote scr WRITE: "
   //       << val_vp.port() << " " << val_vp.mem_size();
   //     DSA_LOG(NET_REQ) << "After issue: " << stream.toString();
   //   }

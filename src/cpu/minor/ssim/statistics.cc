@@ -30,8 +30,8 @@ bool Host::roi(bool value) {
   CHECK(roi_ != value) << "ROI can only be flipped!";
   roi_ = value;
   gettimeofday(sim_time + value, nullptr);
-  sim_cycle[value] = curTick();
-  DSA_LOG(ROI) << (value ? "Enter" : "Exit") << " ROI @" << curTick();
+  sim_cycle[value] = parent.now();
+  DSA_LOG(ROI) << (value ? "Enter" : "Exit") << " ROI @" << parent.now();
   return roi_;
 }
 
@@ -76,43 +76,59 @@ void Accelerator::blameCycle() {
     return;
   }
   base_stream_t *sb = nullptr;
+  int io_cnt[2] = {0, 0};
   if (blame == Blame::UNKNOWN) {
-    blame = Blame::CMD_QUEUE;
+    blame = parent.get_ssim()->cmd_queue.empty() ? Blame::HOST : Blame::CMD_QUEUE;
     static std::unordered_map<LOC, Blame> blame_map = {
       {LOC::CONST, Blame::CONST_BW},
       {LOC::DMA, Blame::MEMORY_BW},
       {LOC::SCR, Blame::SPAD_BW},
       {LOC::REC_BUS, Blame::REC_WAIT},
     };
-    int io_cnt[2] = {0, 0};
     for (int is_input = 0; is_input < 2; ++is_input) {
       for (auto &port : parent.bsw.ports[is_input]) {
         auto &pi = *parent.port(is_input, port.port);
         if (pi.stream) {
           ++io_cnt[is_input];
-          if (pi.empty() && blame_map.count(pi.stream->unit())) {
+          int can_pop = pi.bytesBuffered() < pi.vectorLanes() * pi.scalarSizeInBytes();
+          if (can_pop && blame_map.count(pi.stream->unit())) {
             auto to_blame = blame_map[pi.stream->unit()];
-            if (blame < to_blame) {
+            if (to_blame < blame) {
               blame = to_blame;
               sb = pi.stream;
             }
           }
+          DSA_LOG(BLAME_PORT) << port.vp->name() << ": " << pi.bytesBuffered();
         }
       }
     }
-    if (io_cnt[1] == 0 && blame == Blame::CMD_QUEUE) {
-      blame = Blame::DRAIN_PIPE;
+    if (blame == Blame::HOST) {
+      if (io_cnt[1] == 0) {
+        auto f = [this] () {
+          for (auto &elem : parent.bsw.dfg()->nodes) {
+            for (auto &value : elem->values) {
+              if (!value.fifo.empty()) {
+                blame = Blame::DRAIN_PIPE;
+                return;
+              }
+            }
+          }
+        };
+        f();
+      }
     }
   }
   ++blame_count[blame];
-  DSA_LOG(BLAME) << curTick() << ": " << (sb ? sb->toString() : "(null)");
+  DSA_LOG(BLAME)
+    << parent.now() << " " << BlameStr[blame] << ": " << (sb ? sb->toString() : "(null)")
+    << ", output: " << io_cnt[0] << ", input: " << io_cnt[1];
 }
 
 void Accelerator::countMemoryLatency(int64_t request_cycle, int64_t *breakdown) {
   if (roi()) {
-    memory_latency += curTick() - request_cycle;
+    memory_latency += parent.now() - request_cycle;
     for (int i = 0; i < 11; ++i) {
-      mem_lat_brkd[i] += (curTick() - breakdown[i]);
+      mem_lat_brkd[i] += (parent.now() - breakdown[i]);
     }
   }
 }

@@ -79,7 +79,9 @@ void ssim_t::LoadBitstream() {
     }
   }
 
-  DSA_LOG(COMMAND) << "Request 0x" << std::hex << addr << ", " << std::dec << size << " to configure";
+  DSA_LOG(COMMAND)
+    << now() << ": Request 0x" << std::hex << addr
+    << ", " << std::dec << size << " to configure";
 
   SSMemReqInfoPtr sdInfo = new SSMemReqInfo(-4, context, CONFIG_STREAM);
 
@@ -140,7 +142,7 @@ void ssim_t::LoadMemoryToPort(int port, int source, int dim, int padding) {
     int begin = rf[DSARF::BR].value & 65535, end = (rf[DSARF::BR].value >> 16) & 65535;
     RegisterBuffet(s, begin, end);
   }
-  DSA_LOG(COMMAND) << "Linear Read Stream: " << s->toString();
+  DSA_LOG(COMMAND) << now() << ": Linear Read Stream: " << s->toString();
   cmd_queue.push_back(s);
 }
 
@@ -159,7 +161,7 @@ void ssim_t::WritePortToMemory(int port, int operation, int dst, int dim) {
     int begin = rf[DSARF::BR].value & 65535, end = (rf[DSARF::BR].value >> 16) & 65535;
     RegisterBuffet(s, begin, end);
   }
-  DSA_LOG(COMMAND) << "Linear Write Stream: " << s->toString();
+  DSA_LOG(COMMAND) << now() << ": Linear Write Stream: " << s->toString();
   cmd_queue.push_back(s);
 }
 
@@ -172,7 +174,7 @@ void ssim_t::ConstStream(int port, int dim) {
   auto s = new ConstPortStream(rf[DSARF::TBC].value, gatherBroadcastPorts(port), ls);
   s->dtype = dtype;
   s->inst = inst;
-  DSA_LOG(COMMAND) << "Const Stream: " << s->toString();
+  DSA_LOG(COMMAND) << now() << ": Const Stream: " << s->toString();
   cmd_queue.push_back(s);
 }
 
@@ -226,7 +228,7 @@ void ssim_t::IndirectMemoryToPort(int port, int source, int ind, int dim) {
   irs->dtype = (1 << ((rf[DSARF::CSR].value >> 0) & 3));
   irs->inst = inst;
   cmd_queue.push_back(irs);
-  DSA_LOG(COMMAND) << "Indirect Read Stream: " << irs->toString();
+  DSA_LOG(COMMAND) << now() << ": Indirect Read Stream: " << irs->toString();
 }
 
 void ssim_t::AtomicMemoryOperation(int port, int mem, int operation, int ind, int dim) {
@@ -244,7 +246,7 @@ void ssim_t::AtomicMemoryOperation(int port, int mem, int operation, int ind, in
   ias->inst = inst;
   ias->mo = (MemoryOperation) operation;
   cmd_queue.push_back(ias);
-  DSA_LOG(COMMAND) << "Indirect Write Stream: " << ias->toString();
+  DSA_LOG(COMMAND) << now() << ": Indirect Write Stream: " << ias->toString();
 }
 
 std::vector<PortExecState> ssim_t::gatherBroadcastPorts(int port) {
@@ -527,7 +529,7 @@ void ssim_t::Reroute(int oport, int iport) {
   auto pps = new RecurrentStream(rf[DSARF::TBC].value, oport, ips, n);
   pps->dtype = dtype;
   cmd_queue.push_back(pps);
-  DSA_LOG(COMMAND) << pps->toString();
+  DSA_LOG(COMMAND) << now() << ": Recur: "<< pps->toString();
 }
 
 // receive network message at the given input port id
@@ -849,14 +851,14 @@ bool ssim_t::CanReceive(int port, int dtype) {
         break;
       }
       if (ovp.raw.size() >= dtype) {
-        DSA_LOG(RECV) << "Can receive " << dtype << " bytes from " << port;
+        DSA_LOG(RECV) << now() << ": Receive " << dtype << " bytes from " << port;
         return true;
       } else {
         break;
       }
     }
   }
-  DSA_LOG(RECV) << "CANNOT receive " << dtype << " bytes from " << port;
+  // DSA_LOG(RECV) << "CANNOT receive " << dtype << " bytes from " << port;
   return false;
 }
 
@@ -903,7 +905,7 @@ void ssim_t::insert_df_barrier(int64_t num_scr_wr, bool spad_type) {
 }
 
 uint64_t ssim_t::now() {
-  return curTick();
+  return curTick(); //lsq()->get_cpu().curCycle();
 }
 
 void ssim_t::update_stat_cycle() {

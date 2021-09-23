@@ -671,13 +671,17 @@ public:
    */
   dsa::sim::Port *port(bool isInput, int id);
 
+  /*!
+   * \brief The current cycle.
+   */
+  uint64_t now();
+
   accel_t(int i, ssim_t* ssim);
 
   Minor::LSQ *lsq();
 
   bool in_use();
   void timestamp(); //print timestamp
-  uint64_t now(); //return's sim's current time
 
   //Stats Interface
   void print_stats();

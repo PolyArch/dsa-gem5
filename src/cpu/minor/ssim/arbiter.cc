@@ -73,7 +73,8 @@ std::vector<base_stream_t*> RoundRobin::Arbit(accel_t *accel) {
           last_executed[is_input][loc] = idx;
           res.push_back(stream);
           DSA_LOG(SCHEDULE)
-            << "Execute Stream (" << is_input << ", " << loc << "): " << stream->toString();
+            << accel->now() << ": Execute Stream (" << is_input << ", " << loc << "): "
+            << stream->toString();
           break;
         }
       }

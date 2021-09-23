@@ -1680,7 +1680,6 @@ LSQ::popResponse(int streamId) {
     CHECK(!sd_transfers[streamId].empty());
     LSQ::LSQRequestPtr response = sd_transfers[streamId].front();
     sd_transfers[streamId].pop();
-    DSA_LOG(LSQ) << streamId << " popped";
 
 
     if (response->issuedToMemory)

@@ -146,6 +146,10 @@ struct Port {
    * \brief The vector lanes of this port.
    */
   virtual int vectorLanes() const = 0;
+  /*!
+   * \brief Data in bytes buffered in this port.
+   */
+  virtual int bytesBuffered() const = 0;
 
   Port(accel_t *a) : parent(a) {}
 };
@@ -231,6 +235,10 @@ struct InPort : Port {
    * \brief The input port sub-class.
    */
   dfg::InputPort *ivp();
+  /*!
+   * \brief Data in bytes buffered in this port.
+   */
+  int bytesBuffered() const override;
 
   InPort(accel_t *a, int size, int id) : Port(a), pes(IVPState(), id), buffer_size(size) {}
 };
@@ -286,6 +294,10 @@ struct OutPort : Port {
    * \brief The output port sub-class.
    */
   dfg::OutputPort *ovp();
+  /*!
+   * \brief Data in bytes buffered in this port.
+   */
+  int bytesBuffered() const override;
 };
 
 }

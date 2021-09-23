@@ -1,4 +1,5 @@
 #include "./accel.hh"
+#include "./ssim.hh"
 #include "./stream.hh"
 #include "./port.h"
 #include "dsa/dfg/port.h"
@@ -111,9 +112,10 @@ void InPort::push(const std::vector<uint8_t> &raw, const stream::AffineStatus &a
     DSA_LOG(PORT) << "Deregister " << raw.size() << " bytes for port " << id();
   }
   CHECK(ongoing >= 0);
-  CHECK(canPush(true) >= raw.size())
-    << buffer_size << " - " << ongoing << " - " << buffer.size() << " * " << scalarSizeInBytes()
-    << " = " << canPush(true) << " < " << raw.size();
+  // TODO(@were): This significantly hurt the performance.
+  // CHECK(canPush(true) >= raw.size())
+  //   << buffer_size << " - " << ongoing << " - " << buffer.size() << " * " << scalarSizeInBytes()
+  //   << " = " << canPush(true) << " < " << raw.size();
   CHECK(raw.size() % dbytes == 0)
     << raw.size() << " % " << dbytes << " != 0, cannot gaurantee the alignment of predicate!";
   int residue = as.n % (lanes * dbytes);
@@ -126,7 +128,8 @@ void InPort::push(const std::vector<uint8_t> &raw, const stream::AffineStatus &a
   }
 
   // TODO(@were): Make sure this is correct!
-  auto aa = _curEventQueue->nextTick();
+  auto cpu_freq = parent->lsq()->get_cpu().clockDomain.clockPeriod();
+  auto aa = parent->now() + cpu_freq;
 #define PADDING_IMPL(cond, zero_enum, predoff_enum)                \
   do {                                                             \
     if (cond) {                                                    \
@@ -170,7 +173,7 @@ bool InPort::lanesReady() {
     return false;
   }
   for (int i = 0; i < n; ++i) {
-    if (curTick() < buffer[i].available_at) {
+    if (parent->now() < buffer[i].available_at) {
       return false;
     }
   }
@@ -235,6 +238,14 @@ dfg::OutputPort *OutPort::ovp() {
   auto *res = dynamic_cast<dfg::OutputPort *>(vp);
   CHECK(res) << "The configured vp for output port should be an output, but get " << vp->name();
   return res;
+}
+
+int InPort::bytesBuffered() const {
+  return buffer.size() * scalarSizeInBytes();
+}
+
+int OutPort::bytesBuffered() const {
+  return raw.size();
 }
 
 }

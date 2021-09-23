@@ -1106,8 +1106,9 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
             ssim.wait_inst(inst->staticInst->get_imm()); //track stats
             DPRINTF(SS,"Wait blocked, mask: %x\n",inst->staticInst->get_imm());
           } else {
-            DPRINTF(SS,"Wait complete, mask: %x\n",inst->staticInst->get_imm());
-            DSA_LOG(COMMAND) << "Wait complete, mask:" << inst->staticInst->get_imm() << "\n";
+            DSA_LOG(COMMAND)
+              << curTick() << ": Wait complete, mask: "
+              << std::bitset<32>(inst->staticInst->get_imm()).to_string();
           }
         }
 
