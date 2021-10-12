@@ -781,7 +781,7 @@ private:
 
   void forward_progress() {
     _waiting_cycles=0;
-    _forward_progress_cycle=now();
+    _forward_progress_cycle = now();
   }
 
 

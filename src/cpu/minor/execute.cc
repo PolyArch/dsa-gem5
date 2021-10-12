@@ -970,9 +970,11 @@ Execute::doInstCommitAccounting(MinorDynInstPtr inst)
 
 void Execute::timeout_check(bool should_commit, MinorDynInstPtr inst) {
   uint64_t cyc = cpu.curCycle();
-  uint64_t last_event = std::max(last_sd_issue, ssim.forward_progress_cycle());
+  uint64_t last_event = std::max(last_sd_issue, ssim.forward_progress_cycle() / cpu.frequency());
 
   if(!should_commit) {
+    DSA_LOG(TICK) << "Not commit: " << ssim.forward_progress_cycle() / cpu.frequency()
+      << ", " << cpu.curCycle();
     if (cyc > 100000 + last_event) {
       ssim.print_stats();
       CHECK(false) << "Instruction: " << *inst << " is stalled for too long!!! ABORTING";

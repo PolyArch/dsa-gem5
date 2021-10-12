@@ -513,7 +513,8 @@ uint8_t AffineStatus::toTag(bool packet_1st, bool packet_last) const {
   res = (res << 1) | ((mask_1st & 1) && packet_1st);          // L1D 1st
   res = (res << 1) | (stream_last && packet_last);            // Stream end
   res = (res << 1) | (stream_1st && packet_1st);              // Stream 1st, LSB
-  return res;
+  DSA_LOG(TAG) << res << " & " << mask << " = " << (res & mask);
+  return res & mask;
 }
 
 std::string AffineStatus::toString() const {

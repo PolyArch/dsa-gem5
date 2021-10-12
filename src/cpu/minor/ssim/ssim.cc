@@ -135,7 +135,8 @@ void ssim_t::LoadMemoryToPort(int port, int source, int dim, int padding) {
   assert(dim < 3);
   auto addressable = 1 << (rf[DSARF::CSR].value & 3);
   LinearStream *ls = CONSTRUCT_LINEAR_STREAM[dim](addressable, true, rf);
-  auto* s = new LinearReadStream(source == 0 ? LOC::DMA : LOC::SCR, rf[DSARF::TBC].value, ls, pes, padding);
+  auto* s = new LinearReadStream(source == 0 ? LOC::DMA : LOC::SCR, rf[DSARF::TBC].value,
+                                 ls, pes, padding, rf[DSARF::BMSS].value);
   s->dtype = s->ls->word_bytes();
   s->inst = inst;
   if (rf[DSARF::BR].value != -1) {

@@ -599,6 +599,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     }
     auto info = stream.ls->cacheline(cacheline, available, stream.be, DMO_Read, stream.src());
     info.as.padding = (Padding) stream.padding;
+    info.as.mask = stream.status_mask;
     std::vector<bool> bm = info.mask;
     std::vector<int> ports;
     for (auto &elem : stream.pes) {
@@ -929,6 +930,7 @@ struct SPADResponser : dsa::sim::stream::Functor {
 }
 
 void accel_t::tick() {
+  DSA_LOG(TICK) << curTick() << ": tick accelerator!";
   if (statistics.blame != dsa::stat::Accelerator::Blame::CONFIGURE) {
     statistics.blame = dsa::stat::Accelerator::Blame::UNKNOWN;
   }
@@ -1023,11 +1025,14 @@ bool accel_t::is_shared() { return _accel_index == get_ssim()->lanes.size() - 1;
 // 1. backpressure, or 2. temporal sharing.
 // Ports relevant for this simulation this are called "active_in_ports_bp"
 
-std::string dumpPredicatedValues(const std::vector<uint64_t> &a, const std::vector<bool> &b) {
-  CHECK(a.size() == b.size());
+std::string dumpPredicatedValues(const std::vector<sim::PortPacket> &a) {
   ostringstream oss;
   for (int i = 0; i < (int) a.size(); ++i) {
-    oss << " " << a[i] << "(" << b[i] << ")";
+    oss << " " << a[i].value << "(" << a[i].valid;
+    if (a[i].available_at != -1) {
+      oss << std::bitset<8>(a[i].tag).to_string();
+    }
+    oss << ")";
   }
   return oss.str();
 }
@@ -1053,6 +1058,7 @@ void accel_t::cycle_cgra_backpressure() {
       assert(vec_in != NULL && "input port pointer is null\n");
 
       if (vec_in->can_push()) {
+        DSA_LOG(TICK) << curTick() << ": progress input";
         forward_progress();
 
         CHECK(cur_in_port.vectorLanes() == vec_in->values.size())
@@ -1085,7 +1091,7 @@ void accel_t::cycle_cgra_backpressure() {
 
         DSA_LOG(COMP)
           << now() << ": In Port: " << vec_in->name() << " allowed to push "
-          << data.size() << " input(s): " << dumpPredicatedValues(values, predicates);
+          << data.size() << " input(s): " << dumpPredicatedValues(data);
 
       }
 
@@ -1126,10 +1132,12 @@ void accel_t::cycle_cgra_backpressure() {
     assert(vec_output != NULL && "output port pointer is null\n");
 
     if (vec_output->can_pop()) {
-      forward_progress();
       vector<SBDT> data;
       vector<bool> data_valid;
+      std::vector<sim::PortPacket> debug_data;
       vec_output->pop(data, data_valid);
+
+      forward_progress();
 
       if (in_roi()) {
         _stat_comp_instances += 1;
@@ -1137,15 +1145,18 @@ void accel_t::cycle_cgra_backpressure() {
 
       int dtype = cur_out_port.scalarSizeInBytes();
       for (int j = 0; j < (int) data.size(); ++j) {
+        sim::SpatialPacket sp(-1, data[j], data_valid[j]);
+        debug_data.emplace_back(sp);
         // push the data to the CGRA output port only if discard is not 0
         if (data_valid[j]) {
           std::vector<uint8_t> raw((uint8_t*)&data[j], (uint8_t*)&data[j] + dtype);
           cur_out_port.push(raw);
         } 
       }
+      DSA_LOG(TICK) << curTick() << ": progress output";
       DSA_LOG(COMP)
         << now() << ": outvec[" << vec_output->name() << "] allowed to pop output: "
-        << dumpPredicatedValues(data, data_valid)
+        << dumpPredicatedValues(debug_data)
         << ", buffered " << cur_out_port.raw.size() << " byte(s)";
     }
   }

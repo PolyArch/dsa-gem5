@@ -50,7 +50,10 @@ struct AffineStatus {
    * \brief The padding policy of this stream.
    */
   Padding padding{Padding::DP_NoPadding};
-
+  /*!
+   * \brief The bitmask of the tag.
+   */
+  uint32_t mask{~0u};
   /*!
    * \brief Pack the data to stream tag bitmask.
    * \param If this tag is for the 1st element of this response packet.
