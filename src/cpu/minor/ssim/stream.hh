@@ -597,6 +597,10 @@ struct ConstPortStream : public IPortStream {
 
 struct IndirectReadStream : public PortPortStream {
   /*!
+   * \brief Stream state bit mask.
+   */
+  int64_t bmss{-1};
+  /*!
    * \brief The finite state machine of the indirect stream.
    */
   dsa::sim::stream::IndirectFSM fsm;
@@ -1019,27 +1023,27 @@ struct atomic_scr_stream_t : public base_stream_t {
 
   atomic_scr_stream_t() : base_stream_t(LOC::SCR, 0, 0) {}
   virtual void set_orig() { //like constructor but lazier
-    switch(_value_type) {
-      case T64: _value_bytes= 8; _value_mask = 0xFFFFFFFFFFFFFFFF;  break;
-      case T32: _value_bytes= 4; _value_mask = 0xFFFFFFFF;          break;
-      case T16: _value_bytes= 2; _value_mask = 0xFFFF;              break;
-      case T08: _value_bytes= 1; _value_mask = 0xFF;                break;
-      default: assert(0);
-    }
-    switch(_output_type) {
-      case T64: _output_bytes= 8; _output_mask = 0xFFFFFFFFFFFFFFFF;  break;
-      case T32: _output_bytes= 4; _output_mask = 0xFFFFFFFF;          break;
-      case T16: _output_bytes= 2; _output_mask = 0xFFFF;              break;
-      case T08: _output_bytes= 1; _output_mask = 0xFF;                break;
-      default: assert(0);
-    }
-    switch(_addr_type) {
-      case T64:  _addr_bytes= 8; _addr_mask = 0xFFFFFFFFFFFFFFFF; break;
-      case T32:  _addr_bytes= 4; _addr_mask = 0xFFFFFFFF;         break;
-      case T16:  _addr_bytes= 2; _addr_mask = 0xFFFF;             break;
-      case T08:  _addr_bytes= 1; _addr_mask = 0xFF;               break;
-      default: assert(0);
-    }
+    // switch(_value_type) {
+    //   case T64: _value_bytes= 8; _value_mask = 0xFFFFFFFFFFFFFFFF;  break;
+    //   case T32: _value_bytes= 4; _value_mask = 0xFFFFFFFF;          break;
+    //   case T16: _value_bytes= 2; _value_mask = 0xFFFF;              break;
+    //   case T08: _value_bytes= 1; _value_mask = 0xFF;                break;
+    //   default: assert(0);
+    // }
+    // switch(_output_type) {
+    //   case T64: _output_bytes= 8; _output_mask = 0xFFFFFFFFFFFFFFFF;  break;
+    //   case T32: _output_bytes= 4; _output_mask = 0xFFFFFFFF;          break;
+    //   case T16: _output_bytes= 2; _output_mask = 0xFFFF;              break;
+    //   case T08: _output_bytes= 1; _output_mask = 0xFF;                break;
+    //   default: assert(0);
+    // }
+    // switch(_addr_type) {
+    //   case T64:  _addr_bytes= 8; _addr_mask = 0xFFFFFFFFFFFFFFFF; break;
+    //   case T32:  _addr_bytes= 4; _addr_mask = 0xFFFFFFFF;         break;
+    //   case T16:  _addr_bytes= 2; _addr_mask = 0xFFFF;             break;
+    //   case T08:  _addr_bytes= 1; _addr_mask = 0xFF;               break;
+    //   default: assert(0);
+    // }
     _cur_val_index=0;
     _cur_addr_index=0;
     _values_in_word = DATA_WIDTH / _value_bytes;

@@ -180,14 +180,15 @@ void ssim_t::ConstStream(int port, int dim) {
 }
 
 dsa::sim::stream::IndirectFSM
-initializeIndirectFSM(dsa::sim::ConfigState *rf, int ind, int dim,
+initializeIndirectFSM(dsa::sim::ConfigState *rf, int ind, int dim, int penetrate, int associate,
                       const std::vector<int> &PORT_SHIFT,
                       const std::vector<int> &TYPE_SHIFT) {
   CHECK(PORT_SHIFT.size() == TYPE_SHIFT.size());
   auto ctx = rf[DSARF::TBC].value;
   using Attr = dsa::sim::stream::IndirectFSM::FSMAttr;
-  dsa::sim::stream::IndirectFSM fsm(rf[DSARF::SAR].value, rf[DSARF::E2D].value,
-                                    rf[DSARF::I2D].value, rf[DSARF::I1D].value);
+  dsa::sim::stream::IndirectFSM fsm(dim + 1, rf[DSARF::SAR].value, rf[DSARF::E2D].value,
+                                    rf[DSARF::I2D].value, rf[DSARF::I1D].value,
+                                    penetrate, associate);
   for (int i = 0; i < PORT_SHIFT.size(); ++i) {
     fsm.attrs.emplace_back();
     if ((ind >> i) & 1) {
@@ -207,7 +208,7 @@ initializeIndirectFSM(dsa::sim::ConfigState *rf, int ind, int dim,
       attr.stream = new ConstPortStream(ctx, {}, l1d);
       attr.stream->dtype = attr.dtype;
     } else {
-      CHECK(dim != 1) << "Only 2D stream can have inner dimension trip count from a port!";
+      CHECK(dim == 1) << "Only 2D stream can have inner dimension from a port!";
       attr.stream = new RecurrentStream(ctx, attr.port, {}, outer);
     }
   };
@@ -216,28 +217,29 @@ initializeIndirectFSM(dsa::sim::ConfigState *rf, int ind, int dim,
   return fsm;
 }
 
-void ssim_t::IndirectMemoryToPort(int port, int source, int ind, int dim) {
+void ssim_t::IndirectMemoryToPort(int port, int source, int ind, int dim, bool penetrate, bool associate) {
   auto ctx = rf[DSARF::TBC].value;
   // INDP[0:7]: Index Port; INDP[14:20]: Start Address; INDP[21:27]: Length
   //  CSR[4:5]: Index Port;    CSR[8:9]: Start Address;  CSR[10:11]: Length
-  auto fsm = initializeIndirectFSM(rf, ind, dim, {0, 14, 21}, {4, 8, 10});
+  auto fsm = initializeIndirectFSM(rf, ind, dim, penetrate, associate, {0, 7, 14}, {4, 8, 10});
   fsm.attrs.emplace_back();
   fsm.value().stream = new SentinelStream(false);
   CHECK(fsm.attrs.size() == 4);
-  auto irs = new IndirectReadStream(source == 0 ? LOC::DMA : LOC::SCR, ctx,
-                                    gatherBroadcastPorts(port), fsm);
+  auto ports = gatherBroadcastPorts(port);
+  auto irs = new IndirectReadStream(source == 0 ? LOC::DMA : LOC::SCR, ctx, ports, fsm);
+  irs->bmss = rf[DSARF::BMSS].value;
   irs->dtype = (1 << ((rf[DSARF::CSR].value >> 0) & 3));
   irs->inst = inst;
   cmd_queue.push_back(irs);
   DSA_LOG(COMMAND) << now() << ": Indirect Read Stream: " << irs->toString();
 }
 
-void ssim_t::AtomicMemoryOperation(int port, int mem, int operation, int ind, int dim) {
+void ssim_t::AtomicMemoryOperation(int port, int mem, int operation, int ind, int dim, bool penetrate, bool associate) {
   auto ctx = rf[DSARF::TBC].value;
   // INDP[0:7]: Index Port; INDP[14:20]: Start Address; INDP[21:27]: Length;
   //  CSR[4:5]: Index Port;    CSR[8:9]: Start Address;  CSR[10:11]: Length;
   int dtype = 1 << ((rf[DSARF::CSR].value >> 0) & 3);
-  auto fsm = initializeIndirectFSM(rf, ind | 8, dim, {0, 14, 21}, {4, 8, 10});
+  auto fsm = initializeIndirectFSM(rf, ind | 8, dim, penetrate, associate, {0, 7, 14}, {4, 8, 10});
   fsm.attrs.emplace_back();
   fsm.value().port = port;
   fsm.value().stream = new SentinelStream(false);
@@ -933,11 +935,6 @@ void ssim_t::roi_entry(bool enter) {
 }
 
 int ssim_t::get_bytes_from_type(int t) {
-  switch(t) {
-    case T64: return 8;
-    case T32: return 4;
-    case T16: return 2;
-    case T08: return 1;
-    default: assert(0);
-  }
+  CHECK(false);
+  return 0;
 }

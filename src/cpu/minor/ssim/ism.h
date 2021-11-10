@@ -14,12 +14,14 @@ namespace dsa {
 namespace sim {
 namespace stream {
 
+struct AffineStatus;
+
 /*
  * for (j = 0; j < L2D; ++j) {
  *   ptr = array.pop() + j * I2D;
  *   n = length.pop();
  *   for (i = 0; i < n + j * E1D; ++i) {
- *     addr = SAR + ptr + (index.pop() + i) * I1D;
+ *     addr = SAR + (ptr + (index.pop() + i) * I1D) * dtype;
  *     if (value) val = value->pop();
  *     auto &ref = *reinterpret_cast<uint##dtype##_t*>(addr);
  *     ref = operation(ref, val);
@@ -73,6 +75,10 @@ struct IndirectFSM {
   FSMAttr &value() { return attrs[3]; };
 
   /*!
+   * \brief Redundant information. The number of dimensions.
+   */
+  int dimension;
+  /*!
    * \brief SAR.
    */
   int64_t start_offset;
@@ -88,12 +94,21 @@ struct IndirectFSM {
    * \brief I1D.
    */
   int64_t stride1d;
+  /*!
+   * \brief If the stream is penetrated by index.
+   */
+  bool penetrate{false};
+  /*!
+   * \brief If the stream is associate with index.
+   */
+  bool associate{false};
 
   /*!
    * \brief Get the value address generated from accelerator.
    * \param accel The accelerator this state machine belongs to.
+   * \return A 2-long vector: [index, value].
    */
-  std::vector<int64_t> poll(accel_t *accel, bool pop);
+  std::vector<int64_t> poll(accel_t *accel, bool pop, AffineStatus &as);
   /*!
    * \brief If we have next address to generte.
    *        0: stream has no next;
@@ -120,8 +135,8 @@ struct IndirectFSM {
     return res;
   }
 
-  IndirectFSM(int64_t sar, int64_t stretch_, int64_t i2d, int64_t i1d) :
-    start_offset(sar), stretch(stretch_), stride2d(i2d), stride1d(i1d) {}
+  IndirectFSM(int dim, int64_t sar, int64_t stretch_, int64_t i2d, int64_t i1d, int p, int a) :
+    dimension(dim), start_offset(sar), stretch(stretch_), stride2d(i2d), stride1d(i1d), penetrate(p), associate(a) {}
 };
 
 }

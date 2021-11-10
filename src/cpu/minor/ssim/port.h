@@ -115,6 +115,10 @@ struct Port {
    */
   dfg::VectorPort *vp{nullptr};
   /*!
+   * \brief The port that feeds affine stream status.
+   */
+  Port *affine_state{nullptr};
+  /*!
    * \brief The scalar data type of this port.
    */
   int scalarSizeInBytes() const;
@@ -152,22 +156,20 @@ struct Port {
   virtual int bytesBuffered() const = 0;
 
   Port(accel_t *a) : parent(a) {}
+
+  virtual ~Port() {}
 };
 
 struct PortPacket : SpatialPacket {
   /*!
-   * \brief The tag should affiliated to compute instances.
+   * \brief The stream state affiliated to compute instances.
    */
-  uint8_t tag;
+  uint8_t stream_state;
 
   PortPacket(const SpatialPacket &sp) : SpatialPacket(sp.available_at, sp.value, sp.valid) {}
 };
 
 struct InPort : Port {
-  /*!
-   * \brief The port that feeds affine stream status.
-   */
-  InPort *affine_tag{nullptr};
   /*!
    * \brief The data in bytes that is in ongoing requests.
    */
@@ -274,7 +276,7 @@ struct OutPort : Port {
    * \param n The bytes to pop. If -1, pop as many as it can.
    * \return The number of bytes this port can pop.
    */
-  int canPop(int n) { return raw.size() >= n; }
+  int canPop(int n);
   /*!
    * \brief Get the given bytes from the FIFO.
    * \param n The given bytes to get.
@@ -284,7 +286,7 @@ struct OutPort : Port {
    * \brief Pop the given bytes from the FIFO.
    * \param n The given bytes to pop.
    */
-  void pop(int n);;
+  void pop(int n);
   /*!
    * \brief Push data from spatial architecture to the port FIFO buffer.
    * \param data The data in raw byte format.

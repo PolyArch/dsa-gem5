@@ -77,6 +77,7 @@ void Port::freeStream() {
     }
   };
   PostProcessor functor;
+  DSA_LOG(COMMAND) << id() << " free " << stream->toString();
   stream->Accept(&functor);
   stream = nullptr;
 }
@@ -156,9 +157,21 @@ void InPort::push(const std::vector<uint8_t> &raw, const stream::AffineStatus &a
   DSA_LOG(PORT)
     << id() << ": Buffered: " << buffer.size() * scalarSizeInBytes() << ", Ongoing: " << ongoing;
 
+  if (as.penetrate_state.empty()) {
+    for (int i = from; i < (int) buffer.size(); ++i) {
+      buffer[i].stream_state = as.toTag(i == from, i == buffer.size() - 1);
+    }
+  } else {
+    CHECK(as.penetrate_state.size() == (buffer.size() - from))
+      << as.penetrate_state.size() << " != " << (buffer.size() - from);
+    for (int i = from; i < (int) buffer.size(); ++i) {
+      buffer[i].stream_state = as.penetrate_state[i - from];
+    }
+  }
   for (int i = from; i < (int) buffer.size(); ++i) {
-    buffer[i].tag = as.toTag(i == from, i == buffer.size() - 1);
-    DSA_LOG(PORT) << "Push: " << buffer[i].value << "(" << buffer[i].valid << ")";
+    DSA_LOG(PORT)
+      << "Push: " << buffer[i].value << "(" << buffer[i].valid << ", "
+      << std::bitset<8>(buffer[i].stream_state).to_string() << ")";
   }
 }
 
@@ -197,6 +210,12 @@ void InPort::pop() {
 void OutPort::pop(int n) {
   CHECK(raw.size() >= n);
   raw.erase(raw.begin(), raw.begin() + n);
+  if (affine_state) {
+    auto *aop = dynamic_cast<OutPort*>(affine_state);
+    CHECK(aop) << affine_state->vp->name();
+    CHECK(aop->raw.size() >= 1);
+    aop->pop(1);
+  }
 }
 
 void InPort::reset() {
@@ -218,12 +237,30 @@ void OutPort::push(const std::vector<uint8_t> &data) {
   raw.insert(raw.end(), data.begin(), data.end());
 }
 
+int OutPort::canPop(int n) {
+  if (affine_state) {
+    auto *aop = dynamic_cast<OutPort*>(affine_state);
+    CHECK(aop) << affine_state->vp->name();
+    // TODO(@were): Support vectorized!
+    if (!aop->canPop(1)) {
+      return false;
+    }
+  }
+  return raw.size() >= n;
+}
+
 std::vector<uint8_t> OutPort::poll(int n) {
   CHECK(canPop(n));
   std::vector<uint8_t> res;
-  res.reserve(n);
+  res.reserve(n + (affine_state != nullptr));
   for (int i = 0; i < n; ++i) {
     res.push_back(raw[i]);
+  }
+  if (affine_state) {
+    auto *aop = dynamic_cast<OutPort*>(affine_state);
+    CHECK(aop) << affine_state->vp->name();
+    res.push_back(aop->poll(1)[0]);
+    DSA_LOG(PENE) << "Penetrate: " << (int) res.back();
   }
   return res;
 }

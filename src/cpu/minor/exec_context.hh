@@ -527,8 +527,8 @@ class ExecContext : public ::ExecContext
           break;
         }
         case SS_IND_PRT: {
-          CHECK(args.size() == 4);
-          ssim.IndirectMemoryToPort(args[0], args[1], args[2], args[3]);
+          CHECK(args.size() == 6);
+          ssim.IndirectMemoryToPort(args[0], args[1], args[2], args[3], args[4], args[5]);
           break;
         }
         case SS_PRT_PRT: {
@@ -536,8 +536,8 @@ class ExecContext : public ::ExecContext
           break;
         }
         case SS_ATOMIC_SCR_OP: {
-          CHECK(args.size() == 5);
-          ssim.AtomicMemoryOperation(args[0], args[1], args[2], args[3], args[4]);
+          CHECK(args.size() == 7);
+          ssim.AtomicMemoryOperation(args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
           break;
         }
         // case SS_CNS_PRT:

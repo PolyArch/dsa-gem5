@@ -37,7 +37,7 @@ struct BitstreamWrapper {
      */
     dsa::dfg::VectorPort *vp;
     /*!
-     * \brief The id of the port.
+     * \brief The port id of the port.
      */
     int port;
 

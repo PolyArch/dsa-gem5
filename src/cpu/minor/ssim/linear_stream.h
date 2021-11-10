@@ -55,6 +55,10 @@ struct AffineStatus {
    */
   uint32_t mask{~0u};
   /*!
+   * \brief Penetrate state from one stream to another.
+   */
+  std::vector<int8_t> penetrate_state;
+  /*!
    * \brief Pack the data to stream tag bitmask.
    * \param If this tag is for the 1st element of this response packet.
    * \param If this tag is for the last element of this response packet.

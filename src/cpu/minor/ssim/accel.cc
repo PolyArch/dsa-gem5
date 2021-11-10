@@ -16,6 +16,7 @@
 #include "./arbiter.h"
 #include "./request.h"
 #include "./ism.h"
+#include "stream.hh"
 
 using namespace std;
 
@@ -555,7 +556,8 @@ struct StreamExecutor : dsa::sim::stream::Functor {
                               /*size in bytes*/size, /*addr*/address, /*flags*/0,
                               /*res*/0, /*atomic op*/nullptr, /*byte enable*/std::vector<bool>(),
                               sdInfo);
-    DSA_LOG(MEM_REQ) << (read ? "Read" : "Write") << " request: " << info.linebase << ", " << info.start;
+    DSA_LOG(MEM_REQ)
+      << (read ? "Read" : "Write") << " request: " << info.linebase << ", " << info.start;
   }
 
   void Visit(ConstPortStream *cps) override {
@@ -614,8 +616,8 @@ struct StreamExecutor : dsa::sim::stream::Functor {
   }
 
   void Visit(IndirectReadStream *irs) override {
-    CHECK(irs->oports.size() == 1);
     if (irs->fsm.hasNext(accel) != 1) {
+      DSA_LOG(DD) << "No next to write!";
       return;
     }
     std::vector<int> ports;
@@ -623,15 +625,31 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       ports.push_back(elem.port);
     }
     if (canRequest(irs->src(), irs->pes[0].port) == -1) {
+      DSA_LOG(DD) << "No resource to request!";
       return;
     }
     int n = irs->src() == LOC::DMA ? 1 : accel->spads[0].bandwidth() / irs->fsm.idx().dtype;
     std::vector<int64_t> addrs;
+    std::vector<int8_t> state;
+    sim::stream::AffineStatus as;
+    as.mask = irs->bmss;
     for (int i = 0; i < n; ++i) {
       if (irs->fsm.hasNext(accel) != 1) {
         break;
       }
-      addrs.push_back(irs->fsm.poll(accel, true)[0]);
+      auto buffer = irs->fsm.poll(accel, true, as);
+      addrs.push_back(buffer[0]);
+      if (irs->fsm.penetrate) {
+        for (auto iport : ports) {
+          CHECK(buffer.size() == 3);
+          auto &ivp = accel->input_ports[iport];
+          if (ivp.affine_state) {
+            auto *asp = dynamic_cast<sim::InPort*>(ivp.affine_state);
+            CHECK(asp);
+            state.push_back(buffer[2]);
+          }
+        }
+      }
     }
     if (irs->src() == LOC::DMA) {
       uint64_t cacheline = accel->get_ssim()->spec.dma_bandwidth;
@@ -639,13 +657,16 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       auto addr = addrs[0];
       int linebase = addr & ~(cacheline - 1);
       for (int i = 0; i < irs->data_width(); ++i) {
-        CHECK(i + addr % cacheline < bm.size());
+        CHECK(i + addr % cacheline < bm.size())
+          << i << " + " << addr % cacheline << " >= " << bm.size();
         bm[i + addr % cacheline] = true;
       }
       dsa::sim::stream::LinearStream::LineInfo info(linebase, addr, bm, 0);
       reserveBuffers(ports, irs->data_width());
-      info.as.stream_last = !irs->fsm.hasNext(accel);
+      // as.stream_last = !irs->fsm.hasNext(accel);
+      info.as = as;
       info.as.padding = DP_NoPadding;
+      info.as.penetrate_state = state;
       makeDMARequest(irs->id(), irs->inst, DMO_Read, ports, {}, info);
       accel->statistics.countDataTraffic(true, irs->unit(), info.bytes_read());
     } else {
@@ -669,7 +690,9 @@ struct StreamExecutor : dsa::sim::stream::Functor {
           << " [Indirect Read Request] addr: " << addr
           << ", memory op: " << MemoryOperation::DMO_Read;
       }
-      meta.as.stream_last = !irs->fsm.hasNext(accel);
+      // as.stream_last = !irs->fsm.hasNext(accel);
+      meta.as = as;
+      meta.as.penetrate_state = state;
       accel->spads[0].rb->Decode(requests, meta);
     }
   }
@@ -684,16 +707,18 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     int n = ias->unit() == LOC::DMA ? 1 : accel->spads[0].bandwidth() / ias->dtype;
     std::vector<int64_t> addrs;
     std::vector<int64_t> data;
+    sim::stream::AffineStatus as;
     for (int i = 0; i < n; ++i) {
       if (ias->fsm.hasNext(accel) != 1) {
         DSA_LOG(ATOMIC) << "No element to write!";
         break;
       }
-      auto buffer = ias->fsm.poll(accel, true);
+      auto buffer = ias->fsm.poll(accel, true, as);
       addrs.push_back(buffer[0]);
       data.push_back(buffer[1]);
       DSA_LOG(ATOMIC) << buffer[0] << " " << buffer[1];
     }
+    // TODO(@were): Unify this!
     if (ias->unit() == LOC::DMA) {
       uint64_t cacheline = accel->get_ssim()->spec.dma_bandwidth;
       std::vector<bool> bm(cacheline, false);
@@ -703,7 +728,8 @@ struct StreamExecutor : dsa::sim::stream::Functor {
         bm[i + addr % cacheline] = true;
       }
       dsa::sim::stream::LinearStream::LineInfo info(linebase, addr, bm, 0);
-      info.as.stream_last = !ias->stream_active();
+      // as.stream_last = !ias->fsm.hasNext(accel);
+      info.as = as;
       makeDMARequest(
         ias->id(), ias->inst, DMO_Write, {MEM_WR_STREAM},
         std::vector<uint8_t>((uint8_t*) &data[0], (uint8_t*)&data[0] + ias->data_width()), info);
@@ -741,7 +767,8 @@ struct StreamExecutor : dsa::sim::stream::Functor {
           accel->output_ports[elem].freeStream();
         }
       }
-      meta.as.stream_last = !ias->stream_active();
+      as.stream_last = !ias->fsm.hasNext(accel);
+      meta.as = as;
       accel->spads[0].rb->Decode(requests, meta);
     }
   }
@@ -783,6 +810,10 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       << to_pop << " % " << ovp.scalarSizeInBytes() << " != 0";
     auto data = ovp.poll(to_pop);
     ovp.pop(to_pop);
+    // TODO(@were): Support linear penetrate later.
+    if (ovp.affine_state) {
+      data.pop_back();
+    }
     makeMemoryRequest(lws, data, {MEM_WR_STREAM}, info, DMO_Write);
     accel->statistics.countDataTraffic(false, stream.unit(), info.bytes_read());
     if (!stream.stream_active()) {
@@ -898,10 +929,10 @@ struct SPADResponser : dsa::sim::stream::Functor {
     VisitImpl<IPortStream>(ips);
   }
 
-  void Visit(IndirectReadStream *ips) override {
-    VisitImpl<IndirectReadStream>(ips);
+  void Visit(IndirectReadStream *irs) override {
+    VisitImpl<IndirectReadStream>(irs);
     if (response.info.as.stream_last) {
-      auto &idxp = accel->output_ports[ips->idx_port()];
+      auto &idxp = accel->output_ports[irs->idx_port()];
       idxp.freeStream();
     }
   }
@@ -1030,7 +1061,7 @@ std::string dumpPredicatedValues(const std::vector<sim::PortPacket> &a) {
   for (int i = 0; i < (int) a.size(); ++i) {
     oss << " " << a[i].value << "(" << a[i].valid;
     if (a[i].available_at != -1) {
-      oss << std::bitset<8>(a[i].tag).to_string();
+      oss << std::bitset<8>(a[i].stream_state).to_string();
     }
     oss << ")";
   }
@@ -1076,23 +1107,21 @@ void accel_t::cycle_cgra_backpressure() {
           values.push_back(data[i].value);
           predicates.push_back(data[i].valid);
         }
-        if (auto tag_port = cur_in_port.affine_tag) {
-          uint8_t tag = 0;
+        if (auto tag_port = cur_in_port.affine_state) {
+          uint8_t state = 0;
           for (int i = 0; i < cur_in_port.vectorLanes(); ++i) {
-            tag |= data[i].tag;
+            state |= data[i].stream_state;
           }
           CHECK(tag_port->vp->values.size() == 1);
-          tag_port->vp->values[0].push(tag, valid, 0);
+          tag_port->vp->values[0].push(state, valid, 0);
           DSA_LOG(COMP)
-            << "Push tag " << tag_port->vp->name() << ": " << std::bitset<8>(tag).to_string();
+            << "Push state " << tag_port->vp->name() << ": " << std::bitset<8>(state).to_string();
         }
         // TODO(@were): Move repeat port stuff to port pop.
         cur_in_port.pop();
-
         DSA_LOG(COMP)
           << now() << ": In Port: " << vec_in->name() << " allowed to push "
           << data.size() << " input(s): " << dumpPredicatedValues(data);
-
       }
 
     }
@@ -1120,7 +1149,7 @@ void accel_t::cycle_cgra_backpressure() {
 
   for (auto &elem : bsw.oports()) {
     int port_index = elem.port; 
-    auto &cur_out_port = output_ports[(port_index)];
+    auto &cur_out_port = output_ports[port_index];
 
     auto vp_iter = std::find_if(vps.begin(), vps.end(), [port_index] (ssvport *vp) {
       return vp->port() == port_index && vp->out_links().empty();
@@ -1793,7 +1822,8 @@ void apply_map(uint8_t *raw_data, const vector<int> &imap,
   }
 }
 
-void dma_controller_t::port_resp(unsigned cur_port) {
+void dma_controller_t::port_resp(sim::BitstreamWrapper::PortInfo &pi) {
+  int cur_port = pi.port;
   if (Minor::LSQ::LSQRequestPtr response =
           _accel->lsq()->findResponse(cur_port)) {
 
@@ -1848,6 +1878,11 @@ void dma_controller_t::port_resp(unsigned cur_port) {
         // request for all added ports
         for (int in_port : response->sdInfo->ports) {
           auto &in_vp = _accel->input_ports[in_port];
+          if (auto *irs = dynamic_cast<IndirectReadStream*>(in_vp.stream)) {
+            if (irs->fsm.penetrate && in_vp.affine_state) {
+              CHECK(!response->sdInfo->as.penetrate_state.empty()) << in_vp.vp->name();
+            }
+          }
           in_vp.push(data, response->sdInfo->as, false);
           if (last) {
             DSA_LOG(STREAM) << in_vp.stream->toString() << " freed!";
@@ -1858,7 +1893,7 @@ void dma_controller_t::port_resp(unsigned cur_port) {
             in_vp.freeStream();
           }
           DSA_LOG(MEM_REQ)
-            << _accel->bsw.iports()[in_port].vp->name()
+            << pi.vp->name()
             << " buffers " << in_vp.buffer.size() << " element(s)";
         }
 
@@ -1914,8 +1949,8 @@ void dma_controller_t::cycle() {
 
   // Memory Read to Ports
   for (unsigned i = 0; i < _accel->bsw.iports().size(); ++i) {
-    int cur_port = _accel->bsw.iports()[i].port;
-    port_resp(cur_port);
+    auto &ref = _accel->bsw.iports()[i];
+    port_resp(ref);
   }
 
 }
@@ -2752,22 +2787,28 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
     vp.vp = elem.vp;
   }
 
+  for (auto &elem : bsw.oports()) {
+    auto &vp = output_ports[elem.port];
+    vp.vp = elem.vp;
+  }
+
   for (auto &elem : bsw.iports()) {
     auto &vp = input_ports[elem.port];
     // If this input port's tag is not -1, find its corresponding vp.
-    if (vp.ivp()->tid != -1) {
-      for (auto &another : bsw.iports()) {
-        auto &another_vp = input_ports[another.port];
-        if (another.vp->id() == vp.ivp()->tid) {
-          vp.affine_tag = &another_vp;
-        }
-      }
+    if (vp.ivp()->stated()) {
+      auto state_port = sched->vecPortOf(vp.ivp()->stated());
+      vp.affine_state = &input_ports[state_port];
+      DSA_INFO << vp.affine_state->vp->name();
     }
   }
 
   for (auto &elem : bsw.oports()) {
     auto &vp = output_ports[elem.port];
-    vp.vp = elem.vp;
+    if (vp.ovp()->stated()) {
+      auto state_port = sched->vecPortOf(vp.ovp()->stated());
+      vp.affine_state = &output_ports[state_port];
+      DSA_INFO << vp.affine_state->vp->name();
+    }
   }
 
 }

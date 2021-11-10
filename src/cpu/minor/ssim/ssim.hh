@@ -100,7 +100,7 @@ public:
    * \param ind The indirect memory flag.
    * \param dim 0: 1-d stream; 2-d stream.
    */
-  void IndirectMemoryToPort(int port, int source, int ind, int dim);
+  void IndirectMemoryToPort(int port, int source, int ind, int dim, bool penetrate, bool associate);
 
   /*!
    * \brief Atomic memory operation on memory.
@@ -110,7 +110,8 @@ public:
    * \param ind The indirect memory flag.
    * \param dim 0: 1-d stream; 2-d stream.
    */
-  void AtomicMemoryOperation(int port, int mem, int operation, int ind, int dim);
+  void AtomicMemoryOperation(int port, int mem, int operation, int ind, int dim,
+                             bool penetrate, bool associate);
 
   /*!
    * \brief Dump the current cycle info as prefix of debugging.

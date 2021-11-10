@@ -153,7 +153,7 @@ class dma_controller_t : public data_controller_t {
   scratch_write_controller_t* _scr_w_c;
   network_controller_t* _net_c;
 
-  void port_resp(unsigned i);
+  void port_resp(sim::BitstreamWrapper::PortInfo &pi);
 
   unsigned _which_rd=0, _which_wr=0;
 

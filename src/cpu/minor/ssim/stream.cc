@@ -1,3 +1,4 @@
+#include <limits>
 #include <numeric>
 #include <functional>
 
@@ -380,8 +381,15 @@ struct IFSMTicker : Functor {
     auto &ovp = accel->output_ports[rs->oports[0]];
     CHECK(rs->stream_active());
     if (ovp.canPop(rs->dtype)) {
+      stream_first = (rs->i == 0);
       SET_PTR(i, rs->i);
       auto data = ovp.poll(rs->dtype);
+      state = 0;
+      if (data.size() == rs->dtype + 1) {
+        SET_PTR(state, data.back());
+        DSA_LOG(IFSM) << "Penetrated State: " << std::bitset<8>(state).to_string();
+        data.back() = 0;
+      }
       data.resize(8, 0);
       auto value = *reinterpret_cast<uint64_t*>(data.data());
       SET_PTR(res, value);
@@ -389,6 +397,7 @@ struct IFSMTicker : Functor {
         ovp.pop(rs->dtype);
         ++rs->i;
       }
+      stream_last = !rs->stream_active();
     }
   }
 
@@ -396,22 +405,44 @@ struct IFSMTicker : Functor {
     CHECK(cps->ls->hasNext());
     auto l1d = dynamic_cast<Linear1D*>(cps->ls);
     CHECK(l1d);
+    stream_first = (l1d->i == 0);
     // Set index before popping data, or the index would be contaminated.
     SET_PTR(i, l1d->i);
     SET_PTR(res, cps->ls->poll(pop));
+    stream_last = !l1d->hasNext();
   }
 
+  /*!
+   * \brief If we want to pop element.
+   */
   bool pop;
+  /*!
+   * \breif The accelerator it belongs to.
+   */
   accel_t *accel;
+  /*!
+   * \brief The result of ticking the stream.
+   */
   int64_t *res{nullptr};
+  /*!
+   * \brief The index of ticking the stream.
+   */
   int64_t *i{nullptr};
-  std::string reason;
+  /*!
+   * \brief The state of the stream recurrence.
+   */
+  int8_t *state{nullptr};
+
+  bool stream_first{false};
+
+  bool stream_last{false};
 
   IFSMTicker(bool p, accel_t *a) : pop(p), accel{a} {}
 
  private:
   int64_t res_{0};
   int64_t i_;
+  int8_t state_{0};
 
 #undef SET_PTR
 };
@@ -429,17 +460,19 @@ int IndirectFSM::hasNext(accel_t *accel) {
     IFSMTicker vt(false, accel); // Value ticker.
     value->Accept(&vt);
     if (!it.res) {
+      DSA_LOG(IFSM) << "Index Starving: " << index->toString();
       return -1;
     }
     if (!vt.res) {
+      DSA_LOG(IFSM) << "Operand Starving: " << value->toString();
       return -1;
     }
     return 1;
   };
-  auto renewStream = [ctx] (int port, int n, int dtype) -> base_stream_t * {
+  auto renewStream = [ctx] (int port, int64_t n, int dtype) -> base_stream_t * {
     base_stream_t *res;
     if (port == -1) {
-      auto l1d = new Linear1D(dtype, 0, 1, n, 0);
+      auto l1d = new Linear1D(1, 0, 0, n, 0);
       res = new ConstPortStream(ctx, {}, l1d);
     } else {
       res = new RecurrentStream(ctx, port, {}, n);
@@ -457,34 +490,69 @@ int IndirectFSM::hasNext(accel_t *accel) {
     IFSMTicker at(false, accel); // Pointer ticker.
     length().stream->Accept(&lt);
     array().stream->Accept(&at);
-    if (lt.res && at.res) {
-      idx().stream = renewStream(idx().port, *lt.res, idx().dtype);
-      value().stream = renewStream(value().port, *lt.res, value().dtype);
-      lt.pop = at.pop = true;
-      length().stream->Accept(&lt);
-      length().value = *lt.res;
-      length().i = *lt.i;
-      CHECK(lt.res && lt.i);
-      array().stream->Accept(&at);
-      array().value = *at.res;
-      array().i = *at.i;
-      CHECK(at.res && at.i);
-      return hasNextIndex(idx().stream, value().stream);
+    if (!lt.res) {
+      DSA_LOG(IFSM) << "L1D Starving: " << length().stream->toString();
+      return -1;
     }
-    return -1;
+    if (!at.res) {
+      DSA_LOG(IFSM) << "Array Ptr Starving: " << array().stream->toString();
+      return -1;
+    }
+    // If associate, the inner dimension is infinite.
+    // TODO(@were): Support multi dimension.
+    int64_t inner_n = associate ? std::numeric_limits<int64_t>::max() : *lt.res;
+    idx().stream = renewStream(idx().port, inner_n, idx().dtype);
+    value().stream = renewStream(value().port, inner_n, value().dtype);
+    lt.pop = at.pop = true;
+    length().stream->Accept(&lt);
+    length().value = *lt.res;
+    length().i = *lt.i;
+    CHECK(lt.res && lt.i);
+    array().stream->Accept(&at);
+    array().value = *at.res;
+    array().i = *at.i;
+    CHECK(at.res && at.i);
+    return hasNextIndex(idx().stream, value().stream);
   }
   return hasNextIndex(idx().stream, value().stream);
 }
 
-std::vector<int64_t> IndirectFSM::poll(accel_t *accel, bool pop) {
+std::vector<int64_t> IndirectFSM::poll(accel_t *accel, bool pop, AffineStatus &as) {
   CHECK(hasNext(accel) == 1) << "No value to pop now!";
   CHECK(idx().stream->stream_active() && value().stream->stream_active());
   IFSMTicker it(pop, accel);
   IFSMTicker vt(pop, accel);
   idx().stream->Accept(&it);
+  idx().i = *it.i;
+  idx().value = *it.res;
   value().stream->Accept(&vt);
+  value().i = *vt.i;
+  value().value = *vt.res;
   CHECK(it.res && vt.res);
-  return {*it.res * stride1d + array().value + start_offset, *vt.res};
+  if (pop && it.state && ((*it.state >> 1) & 1)) {
+    value().stream = idx().stream = new SentinelStream(false);
+    DSA_LOG(IFSM) << "Kill associated stream!";
+  }
+  int64_t addr = (idx().i * stride1d + idx().value + array().value) * value().dtype + start_offset;
+  DSA_LOG(IND_ADDR)
+    << "(" << idx().i << " * " << stride1d << " + " << idx().value << " + "
+    << array().value << ") * " << value().dtype << " + " << start_offset << " = " << addr;
+  std::vector<int64_t> res{addr, *vt.res};
+  if (penetrate) {
+    CHECK(it.state);
+    res.push_back(*it.state);
+    DSA_LOG(IND_ADDR) << "State: " << (int) *it.state;
+    as.stream_last = !hasNext(accel);
+  } else {
+    // TODO(@were): The stream first is not correct now, but I guess it is OK?
+    as.dim_1st = it.stream_first ? 1 : 0;
+    as.dim_last = it.stream_last ? 1 : 0;
+    if (!hasNext(accel)) {
+      as.dim_last = dimension;
+    }
+    as.stream_last = !hasNext(accel);
+  }
+  return res;
 }
 
 std::string IndirectFSM::toString(accel_t *accel) {
@@ -526,6 +594,6 @@ std::string AffineStatus::toString() const {
   return oss.str();
 }
 
-}
-}
-}
+} // namespace stream
+} // namespace sim
+} // namespace dsa
