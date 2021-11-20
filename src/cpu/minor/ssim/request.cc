@@ -32,7 +32,7 @@ std::ostream &operator<<(std::ostream &os, const Request &req) {
 void RequestBuffer::Decode(int port, MemoryOperation op,
                            const stream::LinearStream::LineInfo &request,
                            const std::vector<uint8_t> &operands) {
-  CHECK(Available()) << "No available slot in the reorder buffer!";
+  DSA_CHECK(Available()) << "No available slot in the reorder buffer!";
   for (int i = 0; i < parent->num_banks; ++i) {
     Request uop(port, request.linebase + i * parent->bank_width, parent->bank_width, op);
     int l = i * parent->bank_width;
@@ -51,20 +51,20 @@ void RequestBuffer::Decode(const std::vector<Request> &requests, const stream::L
   const int num_bytes = parent->num_bytes;
   const int bank_width = parent->bank_width;
   const int num_banks = parent->num_banks;
-  CHECK(Available()) << "No available slot in the reorder buffer!";
+  DSA_CHECK(Available()) << "No available slot in the reorder buffer!";
   for (const auto &elem : requests) {
-    CHECK(elem.data_size < bank_width * num_banks)
+    DSA_CHECK(elem.data_size < bank_width * num_banks)
       << "Request cannot be larger than the bandwidth";
-    CHECK(elem.op == requests[0].op)
+    DSA_CHECK(elem.op == requests[0].op)
       << "All grouped requests should have the same operation!";
-    CHECK(elem.addr + elem.data_size <= num_bytes)
+    DSA_CHECK(elem.addr + elem.data_size <= num_bytes)
       << "Requested address exceed the space " << elem.addr << " >= " << num_bytes;
-    CHECK(elem.addr % elem.data_size == 0)
+    DSA_CHECK(elem.addr % elem.data_size == 0)
       << "Requested address should be aligned with the data size";
     if (elem.data_size >= bank_width) {
       // If a word we request straddle multiple banks,
       // we should check if the banks are aligned by this word.
-      CHECK(elem.addr % num_banks % (elem.data_size / bank_width) == 0)
+      DSA_CHECK(elem.addr % num_banks % (elem.data_size / bank_width) == 0)
         << "Decomposability is straddled! ("
         << elem.addr << " % " << num_banks << ") % ("
         << elem.data_size << " / " << bank_width << ")";
@@ -211,7 +211,7 @@ void LinkBuffer::PushRequests() {
     for (int j = 0, m = scoreboard.size(); j < m; ++j) {
       int iter = (j + front) % scoreboard.size();
       if (auto &to_issue = grid[i][iter]) {
-        CHECK(to_issue->status == Entry::Status::NotIssued)
+        DSA_CHECK(to_issue->status == Entry::Status::NotIssued)
           << STATUS[(int) to_issue->status] << ": bank" << i
           << " request" << iter << to_issue->request << " " << to_issue;
         if (parent->banks[i].Available()) {

@@ -977,7 +977,7 @@ void Execute::timeout_check(bool should_commit, MinorDynInstPtr inst) {
       << ", " << cpu.curCycle();
     if (cyc > 100000 + last_event) {
       ssim.print_stats();
-      CHECK(false) << "Instruction: " << *inst << " is stalled for too long!!! ABORTING";
+      DSA_CHECK(false) << "Instruction: " << *inst << " is stalled for too long!!! ABORTING";
       exit(1);
     }
   } else {

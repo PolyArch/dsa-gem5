@@ -8,10 +8,10 @@ namespace sim {
 
 ScratchMemory::ScratchMemory(int line_size_, int num_banks_, int capacity_, int fifo_size_, RequestBuffer *rb_) :
   adg::ScratchMemory(line_size_, num_banks_, capacity_), rb(rb_) {
-  CHECK(!rb->parent) << "Already assigned to a indirect memory?";
+  DSA_CHECK(!rb->parent) << "Already assigned to a indirect memory?";
   rb->parent = this;
-  CHECK(num_bytes % num_banks == 0) << "Memory size " << num_bytes << " is not divisible by #banks " << num_banks;
-  CHECK((num_banks & -num_banks) == num_banks)
+  DSA_CHECK(num_bytes % num_banks == 0) << "Memory size " << num_bytes << " is not divisible by #banks " << num_banks;
+  DSA_CHECK((num_banks & -num_banks) == num_banks)
     << "#Banks is not a power of 2, " << num_banks << " " << (num_banks & -num_banks);
   banks.reserve(num_banks);
   for (int i = 0; i < num_banks; ++i) {
@@ -66,7 +66,7 @@ void Bank::AccessData() {
   }
   DSA_LOG(READ) << " [Read] Execute " << read->request.addr;
   auto addr = read->cacheline();
-  CHECK(addr < data.size()) << read->cacheline();
+  DSA_CHECK(addr < data.size()) << read->cacheline();
   read->result = std::vector<uint8_t>(data.begin() + addr, data.begin() + addr + parent->bank_width);
   (compute = read)->status = Entry::Status::Compute;
   read = nullptr;
@@ -103,13 +103,13 @@ void Bank::InsituCompute() {
         case MemoryOperation::DMO_Write:
           return b;
         default:
-          CHECK(false) << (int) op << " is not a operation";
+          DSA_CHECK(false) << (int) op << " is not a operation";
       }
       return -1;
     };
     for (int i = 0; i < parent->bank_width; i += compute->request.data_size) {
       for (int j = 1; j < compute->request.data_size; ++j) {
-        CHECK(compute->request.mask[i] == compute->request.mask[i + j])
+        DSA_CHECK(compute->request.mask[i] == compute->request.mask[i + j])
           << i << ", " << j
           << " Data operation should not be in sub-dtype granularity!";
       }
@@ -120,8 +120,8 @@ void Bank::InsituCompute() {
       switch (compute->request.data_size * 8) {
       #define BW_IMPL(bw)                                    \
         case bw:                                             \
-          CHECK(a.size() == bw / 8);                         \
-          CHECK(b.size() == bw / 8);                         \
+          DSA_CHECK(a.size() == bw / 8);                         \
+          DSA_CHECK(b.size() == bw / 8);                         \
           res = f(*reinterpret_cast<int##bw##_t*>(a.data()), \
                   *reinterpret_cast<int##bw##_t*>(b.data()), \
                   compute->request.op);                      \
@@ -132,7 +132,7 @@ void Bank::InsituCompute() {
         BW_IMPL(64)
       #undef BW_IMPL
         default:
-          CHECK(false) << compute->request.data_size * 8 << " is not a power of 2!";
+          DSA_CHECK(false) << compute->request.data_size * 8 << " is not a power of 2!";
       }
       std::vector<uint8_t> c((uint8_t*)(&res), (uint8_t*)(&res) + 8);
       for (int j = 0; j < compute->request.data_size; ++j) {
@@ -140,7 +140,7 @@ void Bank::InsituCompute() {
       }
     }
   }
-  CHECK(compute->result.size() == parent->bank_width)
+  DSA_CHECK(compute->result.size() == parent->bank_width)
     << compute->result.size() << " == " << parent->bank_width;
   write = compute;
   compute = nullptr;
@@ -154,7 +154,7 @@ void Bank::WriteBack() {
       << ", addr: " << write->request.addr
       << ", " << write->result.size() << "-byte:"
       << *reinterpret_cast<uint64_t*>(write->result.data());
-    CHECK(addr < data.size()) << addr;
+    DSA_CHECK(addr < data.size()) << addr;
     if (write->request.op != MemoryOperation::DMO_Read) {
       for (int i = 0; i < parent->bank_width; ++i) {
         if (write->request.mask[i]) {

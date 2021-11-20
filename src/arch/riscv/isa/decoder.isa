@@ -1015,7 +1015,7 @@ decode QUADRANT default Unknown::unknown() {
                           SS_ATOMIC_SCR_OP,
                           {port, mem, operation, ind_mode, dimension, penetrate, associate});
                     } else {
-                        CHECK(mem == MemoryType::DMT_SPAD)
+                        DSA_CHECK(mem == MemoryType::DMT_SPAD)
                           << "Atomic operation can only be on spad";
                         xc->callSSFunc(
                           SS_ATOMIC_SCR_OP,

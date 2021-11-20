@@ -186,8 +186,8 @@ struct Linear1D : LinearStream {
   Linear1D(int64_t word_, int64_t start_, int64_t stride_, int64_t length_, bool is_mem) :
     LinearStream(word_ * length_, is_mem), word(word_), start(start_), stride(stride_), length(length_) {
     if (is_mem) {
-      CHECK(word) << "word should not be zero!";
-      CHECK(start % word == 0) << start << " " << std::dec << word;
+      DSA_CHECK(word) << "word should not be zero!";
+      DSA_CHECK(start % word == 0) << start << " " << std::dec << word;
     }
   }
 

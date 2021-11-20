@@ -20,7 +20,7 @@ int base_stream_t::ID_SOURCE = 0;
     x += (delta);                      \
     if (x >= end) {                    \
       x = begin + (x) - end;           \
-      CHECK(x >= begin && x <= end);   \
+      DSA_CHECK(x >= begin && x <= end);   \
     }                                  \
   } while (false)
 
@@ -30,32 +30,32 @@ bool BuffetEntry::EnforceReadWrite(int64_t addr, int word) {
   } else if (mo == MemoryOperation::DMO_Write) {
     return addr >= address && addr < address + Size();
   }
-  CHECK(false) << "Not supported yet!";
+  DSA_CHECK(false) << "Not supported yet!";
   return false;
 }
 
 int64_t BuffetEntry::Translate(int64_t addr, MemoryOperation mo) {
   switch (mo) {
   case DMO_Write:
-    CHECK(SpaceAvailable() && addr == address + occupied)
+    DSA_CHECK(SpaceAvailable() && addr == address + occupied)
       << "For now only appended writing is supported!"
       << "request: " << addr << ", address: [" << address << ", " << address + occupied << ")"
       << ", Size: " << Size();
     break;
   case DMO_Read:
-    CHECK(InRange(addr))
+    DSA_CHECK(InRange(addr))
       << "Address out of range: " << addr << " not in ["
       << address << ", " << address + occupied << ")";
     break;
   default:
-    CHECK(false) << "Not supported: " << mo;
+    DSA_CHECK(false) << "Not supported: " << mo;
   }
   CQ_PTR(addr, front - address);
   return addr;
 }
 
 void BuffetEntry::Append(int bytes) {
-  CHECK(occupied + bytes <= Size())
+  DSA_CHECK(occupied + bytes <= Size())
     << "Buffet size overflow!" << occupied << " " << bytes << " " << Size();
   occupied += bytes;
   DSA_LOG(BUFFET) << "Append " << bytes << ", now: " << toString();
@@ -63,7 +63,7 @@ void BuffetEntry::Append(int bytes) {
 }
 
 void BuffetEntry::Shrink(int bytes) {
-  CHECK(occupied - bytes >= 0)
+  DSA_CHECK(occupied - bytes >= 0)
     << "Buffet size underflow!" << occupied << " " << bytes << " " << Size();
   occupied -= bytes;
   DSA_LOG(BUFFET) << "Pop " << bytes << ", now: " << toString();
@@ -81,7 +81,7 @@ int BuffetEntry::SpaceAvailable() {
     res = (end - front) + (tail - begin);
   }
   if (res != occupied) {
-    CHECK(occupied == 0 || occupied == end - begin)
+    DSA_CHECK(occupied == 0 || occupied == end - begin)
       << occupied << " ? " << end - begin << " | "
       << front << ", " << tail;
   }
@@ -161,7 +161,7 @@ std::string LinearReadStream::toString() {
 template<typename T>
 void replace_vec_elem(std::vector<T> &a, T tgt, T tbr) {
   auto iter = std::find(a.begin(), a.end(), tgt);
-  CHECK(iter != a.end());
+  DSA_CHECK(iter != a.end());
   *iter = tbr;
 }
 
@@ -259,12 +259,12 @@ int LinearStream::LineInfo::bytes_read() const {
 
 LinearStream::LineInfo Linear1D::cacheline(int bandwidth, int at_most, BuffetEntry *be,
                                            MemoryOperation mo, LOC loc) {
-  CHECK(hasNext());
+  DSA_CHECK(hasNext());
   AffineStatus as;
   as.stream_1st = i == 0;
   as.dim_1st = i == 0 ? 1 : 0;
   std::vector<bool> mask(bandwidth, 0);
-  CHECK(bandwidth == (bandwidth & -bandwidth));
+  DSA_CHECK(bandwidth == (bandwidth & -bandwidth));
   int64_t head = poll(false);
   if (be) {
     head = be->Translate(head, mo);
@@ -286,7 +286,7 @@ LinearStream::LineInfo Linear1D::cacheline(int bandwidth, int at_most, BuffetEnt
       current = be->Translate(current, mo);
       prev = current;
     }
-    CHECK(current >= base);
+    DSA_CHECK(current >= base);
     if (current < base + bandwidth) {
       DSA_LOG(LI) << "Address: " << current << " x " << word;
       if (mo != DMO_Read && loc == LOC::DMA && (prev != -1 && current - prev != word)) {
@@ -300,7 +300,7 @@ LinearStream::LineInfo Linear1D::cacheline(int bandwidth, int at_most, BuffetEnt
         }
       }
       for (int j = 0, n = abs(word); j < n; ++j) {
-        CHECK(current - base + j >= 0 && current - base + j < mask.size())
+        DSA_CHECK(current - base + j >= 0 && current - base + j < mask.size())
           << current << " - " << base << " + " << j << " = "
           << current - base + j << " not in [0, " << mask.size() << ")";
         mask[(current - base) + j] = true;
@@ -379,7 +379,7 @@ struct IFSMTicker : Functor {
 
   void Visit(RecurrentStream *rs) override {
     auto &ovp = accel->output_ports[rs->oports[0]];
-    CHECK(rs->stream_active());
+    DSA_CHECK(rs->stream_active());
     if (ovp.canPop(rs->dtype)) {
       stream_first = (rs->i == 0);
       SET_PTR(i, rs->i);
@@ -402,9 +402,9 @@ struct IFSMTicker : Functor {
   }
 
   void Visit(ConstPortStream *cps) override {
-    CHECK(cps->ls->hasNext());
+    DSA_CHECK(cps->ls->hasNext());
     auto l1d = dynamic_cast<Linear1D*>(cps->ls);
-    CHECK(l1d);
+    DSA_CHECK(l1d);
     stream_first = (l1d->i == 0);
     // Set index before popping data, or the index would be contaminated.
     SET_PTR(i, l1d->i);
@@ -450,7 +450,7 @@ struct IFSMTicker : Functor {
 int IndirectFSM::hasNext(accel_t *accel) {
   int ctx = 1 << accel->accel_index();
   auto hasNextIndex = [accel] (base_stream_t *index, base_stream_t *value) -> int {
-    CHECK(index->stream_active() == value->stream_active())
+    DSA_CHECK(index->stream_active() == value->stream_active())
       << "Two streams should be sync!";
     if (!index->stream_active()) {
       return 0;
@@ -482,7 +482,7 @@ int IndirectFSM::hasNext(accel_t *accel) {
   };
   if (!idx().stream->stream_active()) {
     // Refresh idx stream
-    CHECK(length().stream && array().stream);
+    DSA_CHECK(length().stream && array().stream);
     if (!length().stream->stream_active()) {
       return 0;
     }
@@ -507,19 +507,19 @@ int IndirectFSM::hasNext(accel_t *accel) {
     length().stream->Accept(&lt);
     length().value = *lt.res;
     length().i = *lt.i;
-    CHECK(lt.res && lt.i);
+    DSA_CHECK(lt.res && lt.i);
     array().stream->Accept(&at);
     array().value = *at.res;
     array().i = *at.i;
-    CHECK(at.res && at.i);
+    DSA_CHECK(at.res && at.i);
     return hasNextIndex(idx().stream, value().stream);
   }
   return hasNextIndex(idx().stream, value().stream);
 }
 
 std::vector<int64_t> IndirectFSM::poll(accel_t *accel, bool pop, AffineStatus &as) {
-  CHECK(hasNext(accel) == 1) << "No value to pop now!";
-  CHECK(idx().stream->stream_active() && value().stream->stream_active());
+  DSA_CHECK(hasNext(accel) == 1) << "No value to pop now!";
+  DSA_CHECK(idx().stream->stream_active() && value().stream->stream_active());
   IFSMTicker it(pop, accel);
   IFSMTicker vt(pop, accel);
   idx().stream->Accept(&it);
@@ -528,7 +528,7 @@ std::vector<int64_t> IndirectFSM::poll(accel_t *accel, bool pop, AffineStatus &a
   value().stream->Accept(&vt);
   value().i = *vt.i;
   value().value = *vt.res;
-  CHECK(it.res && vt.res);
+  DSA_CHECK(it.res && vt.res);
   if (pop && it.state && ((*it.state >> 1) & 1)) {
     value().stream = idx().stream = new SentinelStream(false);
     DSA_LOG(IFSM) << "Kill associated stream!";
@@ -539,7 +539,7 @@ std::vector<int64_t> IndirectFSM::poll(accel_t *accel, bool pop, AffineStatus &a
     << array().value << ") * " << value().dtype << " + " << start_offset << " = " << addr;
   std::vector<int64_t> res{addr, *vt.res};
   if (penetrate) {
-    CHECK(it.state);
+    DSA_CHECK(it.state);
     res.push_back(*it.state);
     DSA_LOG(IND_ADDR) << "State: " << (int) *it.state;
     as.stream_last = !hasNext(accel);
