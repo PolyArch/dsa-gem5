@@ -115,10 +115,6 @@ struct Port {
    */
   dfg::VectorPort *vp{nullptr};
   /*!
-   * \brief The port that feeds affine stream status.
-   */
-  Port *affine_state{nullptr};
-  /*!
    * \brief The scalar data type of this port.
    */
   int scalarSizeInBytes() const;
@@ -154,6 +150,12 @@ struct Port {
    * \brief Data in bytes buffered in this port.
    */
   virtual int bytesBuffered() const = 0;
+  /*!
+   * \brief Affine stream state buffer.
+   *        Input: buffers specific state of the state machine.
+   *        Output: buffers state to be penetrated.
+   */
+  std::vector<uint8_t> state;
 
   Port(accel_t *a) : parent(a) {}
 
@@ -236,7 +238,7 @@ struct InPort : Port {
   /*!
    * \brief The input port sub-class.
    */
-  dfg::InputPort *ivp();
+  dfg::InputPort *ivp() const;
   /*!
    * \brief Data in bytes buffered in this port.
    */
@@ -295,7 +297,7 @@ struct OutPort : Port {
   /*!
    * \brief The output port sub-class.
    */
-  dfg::OutputPort *ovp();
+  dfg::OutputPort *ovp() const;
   /*!
    * \brief Data in bytes buffered in this port.
    */

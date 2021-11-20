@@ -1093,20 +1093,24 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
         // ExecContext context(cpu, *cpu.threads[0], *this, inst);
 
         //break down by type
-        if ((inst->staticInst->isSSStream()  ||
-             (inst->staticInst->isSSWait() &&
-                 (ssim_t::stall_core(inst->staticInst->get_imm()))))
-              && !ssim.StreamBufferAvailable()) {
+        bool stallBySSWait = false;
+        int waitMask = 0;
+        if (inst->staticInst->isSSWait()) {
+          auto &regIdx = inst->staticInst->srcRegIdx(0);
+          DSA_CHECK(regIdx.isIntReg());
+          waitMask = thread->readIntReg(regIdx.index());
+          stallBySSWait = ssim_t::stall_core(waitMask);
+        }
 
+        if ((inst->staticInst->isSSStream() || stallBySSWait) && !ssim.StreamBufferAvailable()) {
+          should_commit = false;
+          DPRINTF(SS,"Can't issue stream b/c buffer is full");
+          // continue;
+        } else if (stallBySSWait) {
+          if (!ssim.done(false, waitMask)) {
             should_commit = false;
-            DPRINTF(SS,"Can't issue stream b/c buffer is full");
-            //continue;
-        } else if(inst->staticInst->isSSWait() &&
-                  ssim_t::stall_core(inst->staticInst->get_imm())) {
-          if(!ssim.done(false, inst->staticInst->get_imm())) {
-            should_commit = false;
-            ssim.wait_inst(inst->staticInst->get_imm()); //track stats
-            DPRINTF(SS,"Wait blocked, mask: %x\n",inst->staticInst->get_imm());
+            ssim.wait_inst(waitMask); //track stats
+            DPRINTF(SS,"Wait blocked, mask: %x\n", waitMask);
           } else {
             DSA_LOG(COMMAND)
               << curTick() << ": Wait complete, mask: "

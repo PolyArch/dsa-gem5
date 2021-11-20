@@ -51,10 +51,6 @@ struct AffineStatus {
    */
   Padding padding{Padding::DP_NoPadding};
   /*!
-   * \brief The bitmask of the tag.
-   */
-  uint32_t mask{~0u};
-  /*!
    * \brief Penetrate state from one stream to another.
    */
   std::vector<int8_t> penetrate_state;

@@ -16,6 +16,8 @@ struct base_stream_t;
 namespace dsa {
 namespace stat {
 
+struct Accelerator;
+
 /*!
  * \brief Statistics of the host controller.
  */
@@ -73,6 +75,10 @@ struct Host {
    * \brief If we are in ROI.
    */
   bool roi_{false};
+  /*!
+   * \brief
+   */
+  double cyclesImpl(int64_t);
 
  public:
   bool roi(); 
@@ -127,6 +133,10 @@ struct Accelerator {
   int64_t memory_latency{0};
   int64_t mem_lat_brkd[11];
   /*!
+   * \brief Write stream bounded by too many write requests.
+   */
+  int64_t write_unit_bubble{0};
+  /*!
    * \brief The accelerator to which this instance belongs.
    */
   accel_t &parent;
@@ -141,25 +151,28 @@ struct Accelerator {
    * \param delta The data traffic made this time.
    */
   void countDataTraffic(int is_input, LOC unit, int delta);
-
   /*!
    * \brief Count the memory latency.
    */
   void countMemoryLatency(int64_t request_cycle, int64_t *breakdown);
-
-  double averageImpl(int64_t);
-
+  /*!
+   * \brief Average cycles of memory response latency.
+   */
   double averageMemoryLatency();
-
   /*!
    * \brief A convinience wrapper for access ROI in host statistics.
    */
   bool roi();
-
   /*!
    * \brief Cycle breakdown.
    */
   void blameCycle();
+  /*!
+   * \brief Count memory write bounded by TLB transfer.
+   */
+  int64_t memoryWriteBoundByXfer(bool inc = false);
+
+  double averageImpl(int64_t);
 };
 
 }

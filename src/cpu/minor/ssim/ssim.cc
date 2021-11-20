@@ -136,7 +136,7 @@ void ssim_t::LoadMemoryToPort(int port, int source, int dim, int padding) {
   auto addressable = 1 << (rf[DSARF::CSR].value & 3);
   LinearStream *ls = CONSTRUCT_LINEAR_STREAM[dim](addressable, true, rf);
   auto* s = new LinearReadStream(source == 0 ? LOC::DMA : LOC::SCR, rf[DSARF::TBC].value,
-                                 ls, pes, padding, rf[DSARF::BMSS].value);
+                                 ls, pes, padding);
   s->dtype = s->ls->word_bytes();
   s->inst = inst;
   if (rf[DSARF::BR].value != -1) {
@@ -227,7 +227,6 @@ void ssim_t::IndirectMemoryToPort(int port, int source, int ind, int dim, bool p
   DSA_CHECK(fsm.attrs.size() == 4);
   auto ports = gatherBroadcastPorts(port);
   auto irs = new IndirectReadStream(source == 0 ? LOC::DMA : LOC::SCR, ctx, ports, fsm);
-  irs->bmss = rf[DSARF::BMSS].value;
   irs->dtype = (1 << ((rf[DSARF::CSR].value >> 0) & 3));
   irs->inst = inst;
   cmd_queue.push_back(irs);

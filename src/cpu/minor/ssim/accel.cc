@@ -8,7 +8,9 @@
 #include <functional>
 
 #include "dsa-ext/rf.h"
+#include "dsa/dfg/port.h"
 #include "dsa/dfg/utils.h"
+#include "dsa/core/singleton.h"
 
 #include "../cpu.hh"
 #include "./bitstream.h"
@@ -213,6 +215,7 @@ accel_t::accel_t(int i, ssim_t *ssim)
   if (!get_ssim()->spec.adg_file.empty()) {
     ssconfig_file = get_ssim()->spec.adg_file;
   }
+  dsa::ContextFlags::Global().adg_compat = true;
   _ssconfig = new SSModel(ssconfig_file.c_str());
   // cout << "Came here to create a new configuration for a new accel\n";
   _ssconfig->setMaxEdgeDelay(_fu_fifo_len);
@@ -520,10 +523,10 @@ struct StreamExecutor : dsa::sim::stream::Functor {
 
   void makeMemoryRequest(base_stream_t *s, const std::vector<uint8_t> &data, const std::vector<int> &ports,
                          const dsa::sim::stream::LinearStream::LineInfo &info, MemoryOperation mo) {
+    accel->statistics.countDataTraffic(MemoryOperation::DMO_Read == mo, s->unit(), info.bytes_read());
     int read = mo == DMO_Read;
     if (read) {
-      int to_reserve =
-        std::accumulate(info.mask.begin(), info.mask.end(), (int) 0, std::plus<int>());
+      int to_reserve = info.bytes_read();
       reserveBuffers(ports, to_reserve);
     }
     if (s->side(read) == LOC::DMA) {
@@ -570,6 +573,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       for (auto &elem : stream.pes) {
         auto &in = accel->input_ports[elem.port];
         in.push(data, sim::stream::AffineStatus(), true);
+
       }
       auto value = stream.ls->poll(true);
       DSA_LOG(CONST) << "Const value pushed: " << value;
@@ -601,14 +605,12 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     }
     auto info = stream.ls->cacheline(cacheline, available, stream.be, DMO_Read, stream.src());
     info.as.padding = (Padding) stream.padding;
-    info.as.mask = stream.status_mask;
     std::vector<bool> bm = info.mask;
     std::vector<int> ports;
     for (auto &elem : stream.pes) {
       ports.push_back(elem.port);
     }
     makeMemoryRequest(lrs, {}, ports, info, DMO_Read);
-    accel->statistics.countDataTraffic(true, stream.unit(), info.bytes_read());
     int total_bytes = std::accumulate(bm.begin(), bm.end(), 0);
     DSA_LOG(MEM_REQ)
       << "read request: " << info.linebase << ", " << info.start
@@ -632,7 +634,6 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     std::vector<int64_t> addrs;
     std::vector<int8_t> state;
     sim::stream::AffineStatus as;
-    as.mask = irs->bmss;
     for (int i = 0; i < n; ++i) {
       if (irs->fsm.hasNext(accel) != 1) {
         break;
@@ -643,9 +644,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
         for (auto iport : ports) {
           DSA_CHECK(buffer.size() == 3);
           auto &ivp = accel->input_ports[iport];
-          if (ivp.affine_state) {
-            auto *asp = dynamic_cast<sim::InPort*>(ivp.affine_state);
-            DSA_CHECK(asp);
+          if (ivp.ivp()->stated) {
             state.push_back(buffer[2]);
           }
         }
@@ -787,11 +786,17 @@ struct StreamExecutor : dsa::sim::stream::Functor {
         stream.ls->cacheline(cacheline, stream.dtype,
                              nullptr, DMO_Write, stream.dest());
       }
+      if (!stream.stream_active()) {
+        out_port.freeStream();
+      }
       return;
     }
     // Check if the write unit is available.
     int memory_bw = canRequest(lws->dest(), MEM_WR_STREAM);
     if (memory_bw == -1) {
+      if (stream.dest() == LOC::DMA) {
+        accel->statistics.memoryWriteBoundByXfer(true);
+      }
       return;
     }
     // Prepare the data according to the port data availability and memory bandwidth
@@ -811,11 +816,10 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     auto data = ovp.poll(to_pop);
     ovp.pop(to_pop);
     // TODO(@were): Support linear penetrate later.
-    if (ovp.affine_state) {
+    if (ovp.ovp()->penetrated_state != -1) {
       data.pop_back();
     }
     makeMemoryRequest(lws, data, {MEM_WR_STREAM}, info, DMO_Write);
-    accel->statistics.countDataTraffic(false, stream.unit(), info.bytes_read());
     if (!stream.stream_active()) {
       DSA_LOG(STREAM) << stream.toString() << " freed!";
       out_port.freeStream();
@@ -1089,39 +1093,36 @@ void accel_t::cycle_cgra_backpressure() {
       assert(vec_in != NULL && "input port pointer is null\n");
 
       if (vec_in->can_push()) {
-        DSA_LOG(TICK) << curTick() << ": progress input";
         forward_progress();
 
-        DSA_CHECK(cur_in_port.vectorLanes() == vec_in->values.size())
-          << cur_in_port.vectorLanes() << " " << vec_in->vectorLanes()
-          << " ( " << vec_in->name() << " )";
 
         auto data = cur_in_port.poll();
         DSA_CHECK(!data.empty()) << cur_in_port.vectorLanes();
         bool valid = false;
-        std::vector<uint64_t> values;
         std::vector<bool> predicates;
+        int state = cur_in_port.ivp()->stated;
         for (int i = 0; i < cur_in_port.vectorLanes(); ++i) {
-          vec_in->values[i].push(data[i].value, data[i].valid, 0);
+          vec_in->values[i + state].push(data[i].value, data[i].valid, 0);
           valid |= data[i].valid;
-          values.push_back(data[i].value);
           predicates.push_back(data[i].valid);
         }
-        if (auto tag_port = cur_in_port.affine_state) {
+        if (cur_in_port.ivp()->stated) {
           uint8_t state = 0;
           for (int i = 0; i < cur_in_port.vectorLanes(); ++i) {
             state |= data[i].stream_state;
           }
-          DSA_CHECK(tag_port->vp->values.size() == 1);
-          tag_port->vp->values[0].push(state, valid, 0);
+          cur_in_port.ivp()->values[0].push(state, valid, 0);
           DSA_LOG(COMP)
-            << "Push state " << tag_port->vp->name() << ": " << std::bitset<8>(state).to_string();
+            << "Push state " << cur_in_port.ivp()->name()
+            << ": " << std::bitset<8>(state).to_string();
         }
         // TODO(@were): Move repeat port stuff to port pop.
         cur_in_port.pop();
         DSA_LOG(COMP)
           << now() << ": In Port: " << vec_in->name() << " allowed to push "
           << data.size() << " input(s): " << dumpPredicatedValues(data);
+      } else {
+        DSA_LOG(COMP) << vec_in->name() << " cannot push!";
       }
 
     }
@@ -1172,15 +1173,19 @@ void accel_t::cycle_cgra_backpressure() {
         _stat_comp_instances += 1;
       }
 
+      int ops = cur_out_port.ovp()->penetrated_state;
       int dtype = cur_out_port.scalarSizeInBytes();
-      for (int j = 0; j < (int) data.size(); ++j) {
+      for (int j = ops != -1; j < (int) data.size() + (ops != -1); ++j) {
         sim::SpatialPacket sp(-1, data[j], data_valid[j]);
         debug_data.emplace_back(sp);
         // push the data to the CGRA output port only if discard is not 0
         if (data_valid[j]) {
           std::vector<uint8_t> raw((uint8_t*)&data[j], (uint8_t*)&data[j] + dtype);
           cur_out_port.push(raw);
-        } 
+        }
+      }
+      if (ops != -1) {
+        cur_out_port.state.push_back(data[0]);
       }
       DSA_LOG(TICK) << curTick() << ": progress output";
       DSA_LOG(COMP)
@@ -1597,8 +1602,13 @@ void accel_t::print_statistics(std::ostream &out) {
     << ", " << statistics.averageImpl(statistics.mem_lat_brkd[Minor::LSQ::LSQRequest::LSQRequestState::Complete]) << "\n";
   print_component("Write DMA", false, LOC::DMA);
   print_request("W/Request DMA", false, LOC::DMA, get_ssim()->spec.dma_bandwidth);
+  out << "Bubbles Caused by TLB Transfer: " << statistics.memoryWriteBoundByXfer() << "\n";
   print_component("Recur Bus", false, LOC::REC_BUS);
-  
+
+}
+
+uint64_t accel_t::freq() {
+  return lsq()->get_cpu().clockDomain.clockPeriod();
 }
 
 // wait and print stats
@@ -1879,8 +1889,12 @@ void dma_controller_t::port_resp(sim::BitstreamWrapper::PortInfo &pi) {
         for (int in_port : response->sdInfo->ports) {
           auto &in_vp = _accel->input_ports[in_port];
           if (auto *irs = dynamic_cast<IndirectReadStream*>(in_vp.stream)) {
-            if (irs->fsm.penetrate && in_vp.affine_state) {
-              DSA_CHECK(!response->sdInfo->as.penetrate_state.empty()) << in_vp.vp->name();
+            if (irs->fsm.penetrate) {
+              auto *ip = dynamic_cast<dfg::InputPort*>(in_vp.vp);
+              DSA_CHECK(ip);
+              if (ip->stated) {
+                DSA_CHECK(!response->sdInfo->as.penetrate_state.empty()) << in_vp.vp->name();
+              }
             }
           }
           in_vp.push(data, response->sdInfo->as, false);
@@ -2790,25 +2804,6 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
   for (auto &elem : bsw.oports()) {
     auto &vp = output_ports[elem.port];
     vp.vp = elem.vp;
-  }
-
-  for (auto &elem : bsw.iports()) {
-    auto &vp = input_ports[elem.port];
-    // If this input port's tag is not -1, find its corresponding vp.
-    if (vp.ivp()->stated()) {
-      auto state_port = sched->vecPortOf(vp.ivp()->stated());
-      vp.affine_state = &input_ports[state_port];
-      DSA_INFO << vp.affine_state->vp->name();
-    }
-  }
-
-  for (auto &elem : bsw.oports()) {
-    auto &vp = output_ports[elem.port];
-    if (vp.ovp()->stated()) {
-      auto state_port = sched->vecPortOf(vp.ovp()->stated());
-      vp.affine_state = &output_ports[state_port];
-      DSA_INFO << vp.affine_state->vp->name();
-    }
   }
 
 }

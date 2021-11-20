@@ -44,7 +44,11 @@ double Host::timeElapsed() {
 
 double Host::cycleElapsed() {
   double elapsed = (sim_cycle[0] - sim_cycle[1]);
-  return elapsed / parent.lsq()->get_cpu().clockDomain.clockPeriod();
+  return cyclesImpl(elapsed);
+}
+
+double Host::cyclesImpl(int64_t x) {
+  return (double) x / parent.lsq()->get_cpu().clockDomain.clockPeriod();
 }
 
 const char *Accelerator::BlameStr[] = {
@@ -133,9 +137,15 @@ void Accelerator::countMemoryLatency(int64_t request_cycle, int64_t *breakdown) 
   }
 }
 
+int64_t Accelerator::memoryWriteBoundByXfer(bool inc) {
+  if (roi() && inc) {
+    write_unit_bubble++;
+  }
+  return write_unit_bubble;
+}
+
 double Accelerator::averageImpl(int64_t value) {
-  double freq = parent.lsq()->get_cpu().clockDomain.clockPeriod();
-  auto res = (double) value / freq;
+  double res = (double) value / parent.freq();
   int norm = traffic[true][LOC::DMA].num_requests;
   return res / norm;
 }
@@ -143,6 +153,7 @@ double Accelerator::averageImpl(int64_t value) {
 double Accelerator::averageMemoryLatency() {
   return averageImpl(memory_latency);
 }
+
 
 }
 }

@@ -1,3 +1,4 @@
+#include <bitset>
 #include "./accel.hh"
 #include "./ssim.hh"
 #include "./stream.hh"
@@ -97,12 +98,12 @@ int Port::scalarSizeInBytes() const {
 
 int InPort::vectorLanes() const {
   DSA_CHECK(vp) << "vectorLanes() is only meaningful when configured.";
-  return vp->values.size();
+  return ivp()->vectorLanes();
 }
 
 int OutPort::vectorLanes() const {
   DSA_CHECK(vp) << "vectorLanes() is only meaningful when configured.";
-  return vp->ops().size();
+  return ovp()->vectorLanes();
 }
 
 void InPort::push(const std::vector<uint8_t> &raw, const stream::AffineStatus &as, bool imm) {
@@ -210,11 +211,9 @@ void InPort::pop() {
 void OutPort::pop(int n) {
   DSA_CHECK(raw.size() >= n);
   raw.erase(raw.begin(), raw.begin() + n);
-  if (affine_state) {
-    auto *aop = dynamic_cast<OutPort*>(affine_state);
-    DSA_CHECK(aop) << affine_state->vp->name();
-    DSA_CHECK(aop->raw.size() >= 1);
-    aop->pop(1);
+  int ops = ovp()->penetrated_state;
+  if (ops != -1) {
+    state.erase(state.begin());
   }
 }
 
@@ -238,11 +237,10 @@ void OutPort::push(const std::vector<uint8_t> &data) {
 }
 
 int OutPort::canPop(int n) {
-  if (affine_state) {
-    auto *aop = dynamic_cast<OutPort*>(affine_state);
-    DSA_CHECK(aop) << affine_state->vp->name();
+  int ops = ovp()->penetrated_state;
+  if (ops != -1) {
     // TODO(@were): Support vectorized!
-    if (!aop->canPop(1)) {
+    if (state.size() < 1) {
       return false;
     }
   }
@@ -252,26 +250,25 @@ int OutPort::canPop(int n) {
 std::vector<uint8_t> OutPort::poll(int n) {
   DSA_CHECK(canPop(n));
   std::vector<uint8_t> res;
-  res.reserve(n + (affine_state != nullptr));
+  int ops = ovp()->penetrated_state;
+  res.reserve(n + (ops != -1));
   for (int i = 0; i < n; ++i) {
     res.push_back(raw[i]);
   }
-  if (affine_state) {
-    auto *aop = dynamic_cast<OutPort*>(affine_state);
-    DSA_CHECK(aop) << affine_state->vp->name();
-    res.push_back(aop->poll(1)[0]);
-    DSA_LOG(PENE) << "Penetrate: " << (int) res.back();
+  if (ops != -1) {
+    res.push_back(state[0]);
+    DSA_LOG(PENE) << "Penetrate: " << (int) res.back() << " " << std::bitset<6>(res.back());
   }
   return res;
 }
 
-dfg::InputPort *InPort::ivp() {
+dfg::InputPort *InPort::ivp() const {
   auto *res = dynamic_cast<dfg::InputPort *>(vp);
   DSA_CHECK(res) << "The configured vp for input port should be an input, but get " << vp->name();
   return res;
 }
 
-dfg::OutputPort *OutPort::ovp() {
+dfg::OutputPort *OutPort::ovp() const {
   auto *res = dynamic_cast<dfg::OutputPort *>(vp);
   DSA_CHECK(res) << "The configured vp for output port should be an output, but get " << vp->name();
   return res;

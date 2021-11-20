@@ -676,6 +676,8 @@ public:
    */
   uint64_t now();
 
+  uint64_t freq(); 
+
   accel_t(int i, ssim_t* ssim);
 
   Minor::LSQ *lsq();

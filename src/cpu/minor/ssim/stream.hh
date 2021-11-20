@@ -483,19 +483,14 @@ struct LinearReadStream : public IPortStream {
    */
   int padding;
   /*!
-   * \brief The mask of stream status.
-   *        When retuning stream status tag, binary-and it with this mask.
-   */
-  uint32_t status_mask;
-  /*!
    * \brief The buffet entry to which this stream belongs.
    */
   BuffetEntry *be{nullptr};
 
   LinearReadStream(LOC unit, uint64_t ctx, LinearStream *ls_, const std::vector<PortExecState> &pes_,
-                   int padding_, uint32_t sm_) :
+                   int padding_) :
     IPortStream(unit, ctx, (1 << dsa::sim::stream::Loc2BarrierFlag(unit)), pes_),
-    ls(ls_), padding(padding_), status_mask(sm_) {}
+    ls(ls_), padding(padding_) {}
 
   uint64_t data_volume() override {
     return ls->volume;
@@ -541,7 +536,7 @@ struct LinearWriteStream : public OPortStream {
   OPortStream *clone(accel_t *accel) override;
 
   bool garbage() {
-    if (src() != LOC::DMA) {
+    if (dest() != LOC::DMA) {
       return false;
     }
     if (auto l1d = dynamic_cast<Linear1D*>(ls)) {
@@ -596,10 +591,6 @@ struct ConstPortStream : public IPortStream {
 
 
 struct IndirectReadStream : public PortPortStream {
-  /*!
-   * \brief Stream state bit mask.
-   */
-  int64_t bmss{-1};
   /*!
    * \brief The finite state machine of the indirect stream.
    */
