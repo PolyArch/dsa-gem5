@@ -27,7 +27,7 @@ bool Host::roi() {
 }
 
 bool Host::roi(bool value) {
-  CHECK(roi_ != value) << "ROI can only be flipped!";
+  DSA_CHECK(roi_ != value) << "ROI can only be flipped!";
   roi_ = value;
   gettimeofday(sim_time + value, nullptr);
   sim_cycle[value] = parent.now();

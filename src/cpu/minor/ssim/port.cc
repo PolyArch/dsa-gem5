@@ -50,20 +50,20 @@ std::string PortExecState::toString() {
 }
 
 void Port::bindStream(base_stream_t *s) {
-  CHECK(!stream) << "Now serving stream " << s << ": " << s->toString();
+  DSA_CHECK(!stream) << "Now serving stream " << s << ": " << s->toString();
   stream = s;
 }
 
 template<typename T>
 void find_and_erase(std::vector<T> &a, T ky) {
   auto iter = std::find(a.begin(), a.end(), ky);
-  CHECK(iter != a.end());
+  DSA_CHECK(iter != a.end());
   a.erase(iter);
 }
 
 void Port::freeStream() {
-  CHECK(stream) << "No stream to free!";
-  CHECK(!stream->stream_active()) << "Stream is still ongoing!";
+  DSA_CHECK(stream) << "No stream to free!";
+  DSA_CHECK(!stream->stream_active()) << "Stream is still ongoing!";
   struct PostProcessor : dsa::sim::stream::Functor {
     void Visit(LinearReadStream *lrs) {
       if (lrs->be) {
@@ -91,17 +91,17 @@ void InPort::tick() {
 }
 
 int Port::scalarSizeInBytes() const {
-  CHECK(vp) << "scalarSizeInBytes() is only meaningful when configured.";
+  DSA_CHECK(vp) << "scalarSizeInBytes() is only meaningful when configured.";
   return vp->bitwidth() / 8;
 }
 
 int InPort::vectorLanes() const {
-  CHECK(vp) << "vectorLanes() is only meaningful when configured.";
+  DSA_CHECK(vp) << "vectorLanes() is only meaningful when configured.";
   return vp->values.size();
 }
 
 int OutPort::vectorLanes() const {
-  CHECK(vp) << "vectorLanes() is only meaningful when configured.";
+  DSA_CHECK(vp) << "vectorLanes() is only meaningful when configured.";
   return vp->ops().size();
 }
 
@@ -112,19 +112,19 @@ void InPort::push(const std::vector<uint8_t> &raw, const stream::AffineStatus &a
     ongoing -= raw.size();
     DSA_LOG(PORT) << "Deregister " << raw.size() << " bytes for port " << id();
   }
-  CHECK(ongoing >= 0);
+  DSA_CHECK(ongoing >= 0);
   // TODO(@were): This significantly hurt the performance.
-  // CHECK(canPush(true) >= raw.size())
+  // DSA_CHECK(canPush(true) >= raw.size())
   //   << buffer_size << " - " << ongoing << " - " << buffer.size() << " * " << scalarSizeInBytes()
   //   << " = " << canPush(true) << " < " << raw.size();
-  CHECK(raw.size() % dbytes == 0)
+  DSA_CHECK(raw.size() % dbytes == 0)
     << raw.size() << " % " << dbytes << " != 0, cannot gaurantee the alignment of predicate!";
   int residue = as.n % (lanes * dbytes);
   int padCount = residue ? (lanes * dbytes) - residue : 0;
   if (as.n == -1) {
     padCount = 0;
   } else {
-    CHECK(padCount % dbytes == 0) << as.n << " % (" << lanes << " * " << dbytes << ")";
+    DSA_CHECK(padCount % dbytes == 0) << as.n << " % (" << lanes << " * " << dbytes << ")";
     padCount /= dbytes;
   }
 
@@ -162,7 +162,7 @@ void InPort::push(const std::vector<uint8_t> &raw, const stream::AffineStatus &a
       buffer[i].stream_state = as.toTag(i == from, i == buffer.size() - 1);
     }
   } else {
-    CHECK(as.penetrate_state.size() == (buffer.size() - from))
+    DSA_CHECK(as.penetrate_state.size() == (buffer.size() - from))
       << as.penetrate_state.size() << " != " << (buffer.size() - from);
     for (int i = from; i < (int) buffer.size(); ++i) {
       buffer[i].stream_state = as.penetrate_state[i - from];
@@ -198,7 +198,7 @@ bool InPort::lanesReady() {
 }
 
 void InPort::pop() {
-  CHECK(lanesReady());
+  DSA_CHECK(lanesReady());
   if (pes.tick()) {
     int n = vectorLanes();
     buffer.erase(buffer.begin(), buffer.begin() + n);
@@ -208,12 +208,12 @@ void InPort::pop() {
 }
 
 void OutPort::pop(int n) {
-  CHECK(raw.size() >= n);
+  DSA_CHECK(raw.size() >= n);
   raw.erase(raw.begin(), raw.begin() + n);
   if (affine_state) {
     auto *aop = dynamic_cast<OutPort*>(affine_state);
-    CHECK(aop) << affine_state->vp->name();
-    CHECK(aop->raw.size() >= 1);
+    DSA_CHECK(aop) << affine_state->vp->name();
+    DSA_CHECK(aop->raw.size() >= 1);
     aop->pop(1);
   }
 }
@@ -228,7 +228,7 @@ bool InPort::empty() {
 
 std::vector<PortPacket> InPort::poll() {
   int n = vectorLanes();
-  CHECK(lanesReady());
+  DSA_CHECK(lanesReady());
   std::vector<PortPacket> res(buffer.begin(), buffer.begin() + n);
   return res;
 }
@@ -240,7 +240,7 @@ void OutPort::push(const std::vector<uint8_t> &data) {
 int OutPort::canPop(int n) {
   if (affine_state) {
     auto *aop = dynamic_cast<OutPort*>(affine_state);
-    CHECK(aop) << affine_state->vp->name();
+    DSA_CHECK(aop) << affine_state->vp->name();
     // TODO(@were): Support vectorized!
     if (!aop->canPop(1)) {
       return false;
@@ -250,7 +250,7 @@ int OutPort::canPop(int n) {
 }
 
 std::vector<uint8_t> OutPort::poll(int n) {
-  CHECK(canPop(n));
+  DSA_CHECK(canPop(n));
   std::vector<uint8_t> res;
   res.reserve(n + (affine_state != nullptr));
   for (int i = 0; i < n; ++i) {
@@ -258,7 +258,7 @@ std::vector<uint8_t> OutPort::poll(int n) {
   }
   if (affine_state) {
     auto *aop = dynamic_cast<OutPort*>(affine_state);
-    CHECK(aop) << affine_state->vp->name();
+    DSA_CHECK(aop) << affine_state->vp->name();
     res.push_back(aop->poll(1)[0]);
     DSA_LOG(PENE) << "Penetrate: " << (int) res.back();
   }
@@ -267,13 +267,13 @@ std::vector<uint8_t> OutPort::poll(int n) {
 
 dfg::InputPort *InPort::ivp() {
   auto *res = dynamic_cast<dfg::InputPort *>(vp);
-  CHECK(res) << "The configured vp for input port should be an input, but get " << vp->name();
+  DSA_CHECK(res) << "The configured vp for input port should be an input, but get " << vp->name();
   return res;
 }
 
 dfg::OutputPort *OutPort::ovp() {
   auto *res = dynamic_cast<dfg::OutputPort *>(vp);
-  CHECK(res) << "The configured vp for output port should be an output, but get " << vp->name();
+  DSA_CHECK(res) << "The configured vp for output port should be an output, but get " << vp->name();
   return res;
 }
 

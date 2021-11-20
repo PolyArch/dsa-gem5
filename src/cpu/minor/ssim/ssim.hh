@@ -182,7 +182,7 @@ public:
    */
   template<typename T>
   void RegisterBuffet(T *s, int begin, int end) {
-    CHECK(begin != -1 && end != -1);
+    DSA_CHECK(begin != -1 && end != -1);
     auto iter = std::find_if(bes.begin(), bes.end(),
                  [begin, end] (BuffetEntry *be) { return be->begin == begin && be->end == end; });
     if (iter == bes.end()) {
@@ -191,7 +191,7 @@ public:
     }
     DSA_LOG(COMMAND)
       << "Buffet Entry: [" << *iter << ", " << iter - bes.begin() << "] " << (*iter)->toString();
-    CHECK((*iter)->referencer.size() < 2);
+    DSA_CHECK((*iter)->referencer.size() < 2);
     (*iter)->referencer.push_back(s);
     s->be = *iter;
     if ((*iter)->referencer.size() == 2) {

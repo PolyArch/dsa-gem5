@@ -74,7 +74,7 @@ void ssim_t::LoadBitstream() {
 
   for (int i = 0; i < (int) lanes.size(); ++i) {
     if ((context >> i) & 1) {
-      CHECK(lanes[i]->statistics.blame != dsa::stat::Accelerator::CONFIGURE) << i;
+      DSA_CHECK(lanes[i]->statistics.blame != dsa::stat::Accelerator::CONFIGURE) << i;
       lanes[i]->statistics.blame = dsa::stat::Accelerator::CONFIGURE;
     }
   }
@@ -153,7 +153,7 @@ void ssim_t::WritePortToMemory(int port, int operation, int dst, int dim) {
   LinearStream *ls = CONSTRUCT_LINEAR_STREAM[dim](addressable, true, rf);
   auto unit = (dst == 0) ? LOC::DMA : LOC::SCR;
   if (operation != 1) {
-    CHECK(unit == LOC::SCR) << "Only scratch pad supports in-situ computing!";
+    DSA_CHECK(unit == LOC::SCR) << "Only scratch pad supports in-situ computing!";
   }
   auto* s = new LinearWriteStream(unit, rf[DSARF::TBC].value, ls, port, operation);
   s->dtype = s->ls->word_bytes();
@@ -168,7 +168,7 @@ void ssim_t::WritePortToMemory(int port, int operation, int dst, int dim) {
 
 
 void ssim_t::ConstStream(int port, int dim) {
-  CHECK(dim < 3);
+  DSA_CHECK(dim < 3);
   auto addressable = (1 << (rf[DSARF::CSR].value & 3));
   auto dtype = (1 << ((rf[DSARF::CSR].value >> 2) & 3));
   LinearStream *ls = CONSTRUCT_LINEAR_STREAM[dim](addressable, false, rf);
@@ -183,7 +183,7 @@ dsa::sim::stream::IndirectFSM
 initializeIndirectFSM(dsa::sim::ConfigState *rf, int ind, int dim, int penetrate, int associate,
                       const std::vector<int> &PORT_SHIFT,
                       const std::vector<int> &TYPE_SHIFT) {
-  CHECK(PORT_SHIFT.size() == TYPE_SHIFT.size());
+  DSA_CHECK(PORT_SHIFT.size() == TYPE_SHIFT.size());
   auto ctx = rf[DSARF::TBC].value;
   using Attr = dsa::sim::stream::IndirectFSM::FSMAttr;
   dsa::sim::stream::IndirectFSM fsm(dim + 1, rf[DSARF::SAR].value, rf[DSARF::E2D].value,
@@ -208,7 +208,7 @@ initializeIndirectFSM(dsa::sim::ConfigState *rf, int ind, int dim, int penetrate
       attr.stream = new ConstPortStream(ctx, {}, l1d);
       attr.stream->dtype = attr.dtype;
     } else {
-      CHECK(dim == 1) << "Only 2D stream can have inner dimension from a port!";
+      DSA_CHECK(dim == 1) << "Only 2D stream can have inner dimension from a port!";
       attr.stream = new RecurrentStream(ctx, attr.port, {}, outer);
     }
   };
@@ -224,7 +224,7 @@ void ssim_t::IndirectMemoryToPort(int port, int source, int ind, int dim, bool p
   auto fsm = initializeIndirectFSM(rf, ind, dim, penetrate, associate, {0, 7, 14}, {4, 8, 10});
   fsm.attrs.emplace_back();
   fsm.value().stream = new SentinelStream(false);
-  CHECK(fsm.attrs.size() == 4);
+  DSA_CHECK(fsm.attrs.size() == 4);
   auto ports = gatherBroadcastPorts(port);
   auto irs = new IndirectReadStream(source == 0 ? LOC::DMA : LOC::SCR, ctx, ports, fsm);
   irs->bmss = rf[DSARF::BMSS].value;
@@ -843,13 +843,13 @@ bool ssim_t::CanReceive(int imm) {
 //These two functions just return the first core from 0
 bool ssim_t::CanReceive(int port, int dtype) {
   auto context = rf[DSARF::TBC].value;
-  CHECK((context & -context) == context)
+  DSA_CHECK((context & -context) == context)
     << "More than one accelerator to receive!";
-  CHECK(context) << "No accelerator to receive";
+  DSA_CHECK(context) << "No accelerator to receive";
   for(int i = 0; i < (int) lanes.size(); ++i) {
     if(context >> i & 1) {
       auto &ovp = lanes[i]->output_ports[port];
-      CHECK(dtype % ovp.scalarSizeInBytes() == 0);
+      DSA_CHECK(dtype % ovp.scalarSizeInBytes() == 0);
       if (ovp.stream) {
         break;
       }
@@ -867,15 +867,15 @@ bool ssim_t::CanReceive(int port, int dtype) {
 
 uint64_t ssim_t::Receive(int port, int dtype) {
   auto context = rf[DSARF::TBC].value;
-  CHECK((context & -context) == context)
+  DSA_CHECK((context & -context) == context)
     << "More than one accelerator to receive!";
-  CHECK(context) << "No accelerator to receive";
+  DSA_CHECK(context) << "No accelerator to receive";
   for (int i = 0; i < (int) lanes.size(); ++i) {
     if(context >> i & 1) {
       auto &ovp = lanes[i]->output_ports[port];
       std::vector<uint8_t> raw(ovp.raw.begin(), ovp.raw.begin() + dtype);
       ovp.pop(dtype);
-      CHECK(raw.size() <= 8);
+      DSA_CHECK(raw.size() <= 8);
       raw.resize(8, 0);
       auto res = *reinterpret_cast<uint64_t*>(&raw[0]);
       DSA_LOG(RECV)
@@ -935,6 +935,6 @@ void ssim_t::roi_entry(bool enter) {
 }
 
 int ssim_t::get_bytes_from_type(int t) {
-  CHECK(false);
+  DSA_CHECK(false);
   return 0;
 }

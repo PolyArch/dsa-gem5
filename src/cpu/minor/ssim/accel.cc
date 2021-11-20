@@ -42,10 +42,10 @@ int accel_t::get_cur_cycle() {
 
 dsa::sim::Port *accel_t::port(bool isInput, int id) {
   if (isInput) {
-    CHECK(id >= 0 && id < (int) input_ports.size());
+    DSA_CHECK(id >= 0 && id < (int) input_ports.size());
     return input_ports.data() + id;
   }
-  CHECK(id >= 0 && id < (int) output_ports.size());
+  DSA_CHECK(id >= 0 && id < (int) output_ports.size());
   return output_ports.data() + id;
 }
 
@@ -494,7 +494,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     res.insert(res.begin(), before.begin(), before.end());
     std::vector<uint8_t> after(info.mask.size() - res.size(), 0);
     res.insert(res.end(), after.begin(), after.end());
-    CHECK(res.size() == info.mask.size());
+    DSA_CHECK(res.size() == info.mask.size());
     return res;
   }
 
@@ -510,7 +510,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
         return accel->get_ssim()->spec.dma_bandwidth;
       }
     } else {
-      CHECK(loc == LOC::SCR);
+      DSA_CHECK(loc == LOC::SCR);
       if (accel->spads[0].rb->Available()) {
         return accel->spads[0].bandwidth();
       }
@@ -588,7 +588,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
 
   void Visit(LinearReadStream *lrs) override {
     auto &stream = *lrs;
-    CHECK(stream.stream_active());
+    DSA_CHECK(stream.stream_active());
     int cacheline = canRequest(stream.src(), lrs->pes[0].port);
     // If the request unit is not available just return.
     if (cacheline == -1) {
@@ -641,11 +641,11 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       addrs.push_back(buffer[0]);
       if (irs->fsm.penetrate) {
         for (auto iport : ports) {
-          CHECK(buffer.size() == 3);
+          DSA_CHECK(buffer.size() == 3);
           auto &ivp = accel->input_ports[iport];
           if (ivp.affine_state) {
             auto *asp = dynamic_cast<sim::InPort*>(ivp.affine_state);
-            CHECK(asp);
+            DSA_CHECK(asp);
             state.push_back(buffer[2]);
           }
         }
@@ -657,7 +657,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       auto addr = addrs[0];
       int linebase = addr & ~(cacheline - 1);
       for (int i = 0; i < irs->data_width(); ++i) {
-        CHECK(i + addr % cacheline < bm.size())
+        DSA_CHECK(i + addr % cacheline < bm.size())
           << i << " + " << addr % cacheline << " >= " << bm.size();
         bm[i + addr % cacheline] = true;
       }
@@ -679,9 +679,9 @@ struct StreamExecutor : dsa::sim::stream::Functor {
         auto &mask = requests.back().mask;
         mask.resize(accel->spads[0].bank_width, 0);
         int offset = addr % accel->spads[0].bank_width;
-        CHECK(offset % irs->dtype == 0) << addr << " is not aligned with " << irs->dtype;
+        DSA_CHECK(offset % irs->dtype == 0) << addr << " is not aligned with " << irs->dtype;
         for (int j = 0; j < irs->dtype; ++j) {
-          CHECK(offset + j < mask.size()) << "No bank straddle is allowed.";
+          DSA_CHECK(offset + j < mask.size()) << "No bank straddle is allowed.";
           mask[offset + j] = 1;
         }
         reserveBuffers(ports, irs->dtype);
@@ -749,9 +749,9 @@ struct StreamExecutor : dsa::sim::stream::Functor {
         auto &mask = requests.back().mask;
         mask.resize(accel->spads[0].bank_width, 0);
         int offset = addr % accel->spads[0].bank_width;
-        CHECK(offset % ias->dtype == 0) << addr << " is not aligned with " << ias->dtype;
+        DSA_CHECK(offset % ias->dtype == 0) << addr << " is not aligned with " << ias->dtype;
         for (int j = 0; j < ias->dtype; ++j) {
-          CHECK(offset + j < mask.size()) << "No bank straddle is allowed.";
+          DSA_CHECK(offset + j < mask.size()) << "No bank straddle is allowed.";
           mask[offset + j] = 1;
         }
         meta.mask.insert(meta.mask.end(), mask.begin(), mask.end());
@@ -775,7 +775,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
 
   void Visit(LinearWriteStream *lws) override {
     auto &stream = *lws;
-    CHECK(stream.stream_active()) << "Inactive stream should be freed!";
+    DSA_CHECK(stream.stream_active()) << "Inactive stream should be freed!";
     auto &out_port = accel->output_ports[stream.port()];
     if (!out_port.canPop(stream.dtype)) {
       return;
@@ -806,7 +806,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     auto info = stream.ls->cacheline(memory_bw, std::min(memory_bw, port_available), stream.be,
                                      DMO_Write, stream.dest());
     int to_pop = std::accumulate(info.mask.begin(), info.mask.end(), (int) 0, std::plus<int>());
-    CHECK(to_pop % ovp.scalarSizeInBytes() == 0)
+    DSA_CHECK(to_pop % ovp.scalarSizeInBytes() == 0)
       << to_pop << " % " << ovp.scalarSizeInBytes() << " != 0";
     auto data = ovp.poll(to_pop);
     ovp.pop(to_pop);
@@ -860,9 +860,9 @@ struct StreamExecutor : dsa::sim::stream::Functor {
   }
 
   void Visit(RecurrentStream *pps) override {
-    CHECK(pps->oports.size() == 1);
+    DSA_CHECK(pps->oports.size() == 1);
     auto &ovp = accel->output_ports[pps->oports[0]];
-    CHECK(pps->dtype % ovp.scalarSizeInBytes() == 0)
+    DSA_CHECK(pps->dtype % ovp.scalarSizeInBytes() == 0)
       << "Recurrence Element Bytes: " << pps->dtype
       << ", Port Scalar Bytes: " << ovp.scalarSizeInBytes();
     int cnt = 0;
@@ -985,11 +985,11 @@ void accel_t::tick() {
     DSA_LOG(MEM_REQ) << "Responding port: " << spad_response.id;
     if (spad_response.op == MemoryOperation::DMO_Read) {
       auto &vp = this->input_ports[spad_response.id];
-      CHECK(vp.stream)
+      DSA_CHECK(vp.stream)
         << "Stream affiliated with the port is no longer active! " << vp.id();
       dsa::sim::SPADResponser pp(spad_response, this);
       vp.stream->Accept(&pp);
-      CHECK(pp.is_is) << "Not a input stream!";
+      DSA_CHECK(pp.is_is) << "Not a input stream!";
     }
   }
 
@@ -1080,7 +1080,7 @@ void accel_t::cycle_cgra_backpressure() {
     auto vp_iter = std::find_if(vps.begin(), vps.end(), [port_index] (ssvport *vp) {
       return vp->port() == port_index && vp->in_links().empty();
     });
-    CHECK(vp_iter != vps.end());
+    DSA_CHECK(vp_iter != vps.end());
     ssvport *vp = *vp_iter;
     auto *vec_in = dynamic_cast<dsa::dfg::InputPort*>(bsw.sched->dfgNodeOf(vp));
 
@@ -1092,12 +1092,12 @@ void accel_t::cycle_cgra_backpressure() {
         DSA_LOG(TICK) << curTick() << ": progress input";
         forward_progress();
 
-        CHECK(cur_in_port.vectorLanes() == vec_in->values.size())
+        DSA_CHECK(cur_in_port.vectorLanes() == vec_in->values.size())
           << cur_in_port.vectorLanes() << " " << vec_in->vectorLanes()
           << " ( " << vec_in->name() << " )";
 
         auto data = cur_in_port.poll();
-        CHECK(!data.empty()) << cur_in_port.vectorLanes();
+        DSA_CHECK(!data.empty()) << cur_in_port.vectorLanes();
         bool valid = false;
         std::vector<uint64_t> values;
         std::vector<bool> predicates;
@@ -1112,7 +1112,7 @@ void accel_t::cycle_cgra_backpressure() {
           for (int i = 0; i < cur_in_port.vectorLanes(); ++i) {
             state |= data[i].stream_state;
           }
-          CHECK(tag_port->vp->values.size() == 1);
+          DSA_CHECK(tag_port->vp->values.size() == 1);
           tag_port->vp->values[0].push(state, valid, 0);
           DSA_LOG(COMP)
             << "Push state " << tag_port->vp->name() << ": " << std::bitset<8>(state).to_string();
@@ -1154,7 +1154,7 @@ void accel_t::cycle_cgra_backpressure() {
     auto vp_iter = std::find_if(vps.begin(), vps.end(), [port_index] (ssvport *vp) {
       return vp->port() == port_index && vp->out_links().empty();
     });
-    CHECK(vp_iter != vps.end());
+    DSA_CHECK(vp_iter != vps.end());
     ssvport* vp = *vp_iter;
     auto *vec_output = dynamic_cast<dsa::dfg::OutputPort*>(bsw.sched->dfgNodeOf(vp));
 
@@ -1562,8 +1562,8 @@ void accel_t::print_statistics(std::ostream &out) {
   }
 
   auto print_component = [this, &out, &cycles](const std::string &name, int x, int y) {
-    CHECK(x >= 0 && x < 2);
-    CHECK(y >= 0 && y < LOC::TOTAL);
+    DSA_CHECK(x >= 0 && x < 2);
+    DSA_CHECK(y >= 0 && y < LOC::TOTAL);
     auto &traffic = this->statistics.traffic[x][y];
     auto dpc = traffic.traffic / cycles;
     auto dpr = (double) traffic.traffic / traffic.num_requests;
@@ -1573,8 +1573,8 @@ void accel_t::print_statistics(std::ostream &out) {
   };
 
   auto print_request = [this, &out, &cycles](const std::string &name, int x, int y, int bw) {
-    CHECK(x >= 0 && x < 2);
-    CHECK(y >= 0 && y < LOC::TOTAL);
+    DSA_CHECK(x >= 0 && x < 2);
+    DSA_CHECK(y >= 0 && y < LOC::TOTAL);
     auto &traffic = this->statistics.traffic[x][y];
     int64_t request_traffic = traffic.num_requests * bw;
     auto dpc = request_traffic / cycles;
@@ -1838,7 +1838,7 @@ void dma_controller_t::port_resp(sim::BitstreamWrapper::PortInfo &pi) {
     if (_accel->_accel_index == response->sdInfo->which_accel) {
 
       PacketPtr packet = response->packet;
-      CHECK(packet->getSize() == get_ssim()->spec.dma_bandwidth)
+      DSA_CHECK(packet->getSize() == get_ssim()->spec.dma_bandwidth)
         << packet->getSize() << " " << get_ssim()->spec.dma_bandwidth;
 
       vector<uint8_t> data;
@@ -1880,7 +1880,7 @@ void dma_controller_t::port_resp(sim::BitstreamWrapper::PortInfo &pi) {
           auto &in_vp = _accel->input_ports[in_port];
           if (auto *irs = dynamic_cast<IndirectReadStream*>(in_vp.stream)) {
             if (irs->fsm.penetrate && in_vp.affine_state) {
-              CHECK(!response->sdInfo->as.penetrate_state.empty()) << in_vp.vp->name();
+              DSA_CHECK(!response->sdInfo->as.penetrate_state.empty()) << in_vp.vp->name();
             }
           }
           in_vp.push(data, response->sdInfo->as, false);

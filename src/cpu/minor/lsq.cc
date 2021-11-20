@@ -1677,7 +1677,7 @@ LSQ::findResponse(int streamId) {
 
 void
 LSQ::popResponse(int streamId) {
-    CHECK(!sd_transfers[streamId].empty());
+    DSA_CHECK(!sd_transfers[streamId].empty());
     LSQ::LSQRequestPtr response = sd_transfers[streamId].front();
     sd_transfers[streamId].pop();
 
@@ -1935,7 +1935,7 @@ LSQ::issuedMemBarrierInst(MinorDynInstPtr inst)
 void
 LSQ::LSQRequest::makePacket()
 {
-    CHECK(inst->translationFault == NoFault)
+    DSA_CHECK(inst->translationFault == NoFault)
       << inst->translationFault->name() << ": " << *inst;
 
     /* Make the function idempotent */

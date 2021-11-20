@@ -510,11 +510,11 @@ class ExecContext : public ::ExecContext
           ssim.LoadBitstream();
           break;
         case SS_MEM_PRT:
-          CHECK(args.size() == 4);
+          DSA_CHECK(args.size() == 4);
           ssim.LoadMemoryToPort(args[0], args[1], args[2], args[3]);
           break;
         case SS_PRT_MEM:
-          CHECK(args.size() == 4);
+          DSA_CHECK(args.size() == 4);
           ssim.WritePortToMemory(args[0], args[1], args[2], args[3]);
           break;
         case SS_WAIT: {
@@ -522,12 +522,12 @@ class ExecContext : public ::ExecContext
           break;
         }
         case SS_CNS_PRT: {
-          CHECK(args.size() == 2);
+          DSA_CHECK(args.size() == 2);
           ssim.ConstStream(args[0], args[1]);
           break;
         }
         case SS_IND_PRT: {
-          CHECK(args.size() == 6);
+          DSA_CHECK(args.size() == 6);
           ssim.IndirectMemoryToPort(args[0], args[1], args[2], args[3], args[4], args[5]);
           break;
         }
@@ -536,7 +536,7 @@ class ExecContext : public ::ExecContext
           break;
         }
         case SS_ATOMIC_SCR_OP: {
-          CHECK(args.size() == 7);
+          DSA_CHECK(args.size() == 7);
           ssim.AtomicMemoryOperation(args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
           break;
         }
@@ -567,7 +567,7 @@ class ExecContext : public ::ExecContext
         //   ssim.instantiate_buffet(thread.getSSReg(SS_REPEAT), thread.getSSReg(SS_REPEAT_STRETCH));
         //   break;
         default:
-          CHECK(false) << "Command not supported!";
+          DSA_CHECK(false) << "Command not supported!";
           break;
       }
       ssim.resetNonStickyState();
