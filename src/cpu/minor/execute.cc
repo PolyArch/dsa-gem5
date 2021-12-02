@@ -1114,7 +1114,7 @@ Execute::commitInst(MinorDynInstPtr inst, bool early_memory_issue,
           } else {
             DSA_LOG(COMMAND)
               << curTick() << ": Wait complete, mask: "
-              << std::bitset<32>(inst->staticInst->get_imm()).to_string();
+              << std::bitset<32>(waitMask).to_string();
           }
         }
 

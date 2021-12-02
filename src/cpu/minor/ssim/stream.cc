@@ -545,8 +545,8 @@ std::vector<int64_t> IndirectFSM::poll(accel_t *accel, bool pop, AffineStatus &a
     as.stream_last = !hasNext(accel);
   } else {
     // TODO(@were): The stream first is not correct now, but I guess it is OK?
-    as.dim_1st = it.stream_first ? 1 : 0;
-    as.dim_last = it.stream_last ? 1 : 0;
+    as.dim_1st = (it.stream_first ? 1 : 0);
+    as.dim_last = (it.stream_last ? 1 : 0);
     if (!hasNext(accel)) {
       as.dim_last = dimension;
     }

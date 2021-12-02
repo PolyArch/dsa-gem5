@@ -630,38 +630,52 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       DSA_LOG(DD) << "No resource to request!";
       return;
     }
-    int n = irs->src() == LOC::DMA ? 1 : accel->spads[0].bandwidth() / irs->fsm.idx().dtype;
     std::vector<int64_t> addrs;
     std::vector<int8_t> state;
     sim::stream::AffineStatus as;
-    for (int i = 0; i < n; ++i) {
-      if (irs->fsm.hasNext(accel) != 1) {
-        break;
-      }
-      auto buffer = irs->fsm.poll(accel, true, as);
-      addrs.push_back(buffer[0]);
-      if (irs->fsm.penetrate) {
-        for (auto iport : ports) {
-          DSA_CHECK(buffer.size() == 3);
-          auto &ivp = accel->input_ports[iport];
-          if (ivp.ivp()->stated) {
-            state.push_back(buffer[2]);
-          }
-        }
-      }
-    }
     if (irs->src() == LOC::DMA) {
       uint64_t cacheline = accel->get_ssim()->spec.dma_bandwidth;
-      std::vector<bool> bm(cacheline, false);
-      auto addr = addrs[0];
-      int linebase = addr & ~(cacheline - 1);
-      for (int i = 0; i < irs->data_width(); ++i) {
-        DSA_CHECK(i + addr % cacheline < bm.size())
-          << i << " + " << addr % cacheline << " >= " << bm.size();
-        bm[i + addr % cacheline] = true;
+      uint64_t linebase = 0;
+      for (int i = 0; ; ++i) {
+        if (irs->fsm.hasNext(accel) != 1) {
+          break;
+        }
+        auto buffer = irs->fsm.poll(accel, false, as);
+        if (i == 0) {
+          addrs.push_back(buffer[0]);
+          linebase = addrs[0] & ~(cacheline - 1);
+          irs->fsm.poll(accel, true, as);
+        } else if (buffer[0] > addrs.back() && buffer[0] < linebase + cacheline) {
+          addrs.push_back(buffer[0]);
+          irs->fsm.poll(accel, true, as);
+        } else {
+          break;
+        }
+        // TODO(@were): Combine this with SPAD below
+        if (irs->fsm.penetrate) {
+          for (auto iport : ports) {
+            DSA_CHECK(buffer.size() == 3);
+            auto &ivp = accel->input_ports[iport];
+            if (ivp.ivp()->stated) {
+              state.push_back(buffer[2]);
+            }
+          }
+        }
+        if (as.dim_last) {
+          break;
+        }
       }
-      dsa::sim::stream::LinearStream::LineInfo info(linebase, addr, bm, 0);
-      reserveBuffers(ports, irs->data_width());
+      std::vector<bool> bm(cacheline, false);
+      for (int j = 0; j < addrs.size(); ++j) {
+        auto addr = addrs[j];
+        for (int i = 0; i < irs->data_width(); ++i) {
+          DSA_CHECK(i + addr % cacheline < bm.size())
+            << i << " + " << addr % cacheline << " >= " << bm.size();
+          bm[i + addr - linebase] = true;
+        }
+      }
+      dsa::sim::stream::LinearStream::LineInfo info(linebase, addrs[0], bm, 0);
+      reserveBuffers(ports, irs->data_width() * addrs.size());
       // as.stream_last = !irs->fsm.hasNext(accel);
       info.as = as;
       info.as.padding = DP_NoPadding;
@@ -669,6 +683,24 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       makeDMARequest(irs->id(), irs->inst, DMO_Read, ports, {}, info);
       accel->statistics.countDataTraffic(true, irs->unit(), info.bytes_read());
     } else {
+      int n = accel->spads[0].bandwidth() / irs->fsm.idx().dtype;
+      for (int i = 0; i < n; ++i) {
+        if (irs->fsm.hasNext(accel) != 1) {
+          break;
+        }
+        auto buffer = irs->fsm.poll(accel, true, as);
+        addrs.push_back(buffer[0]);
+        // TODO(@were): Combine this with DMA above
+        if (irs->fsm.penetrate) {
+          for (auto iport : ports) {
+            DSA_CHECK(buffer.size() == 3);
+            auto &ivp = accel->input_ports[iport];
+            if (ivp.ivp()->stated) {
+              state.push_back(buffer[2]);
+            }
+          }
+        }
+      }
       // TODO(@were): Merge this to the indirect atomic write to a unified function.
       std::vector<dsa::sim::Request> requests;
       dsa::sim::stream::LinearStream::LineInfo meta(0, 0, {}, 0);
