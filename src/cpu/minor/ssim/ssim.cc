@@ -117,8 +117,8 @@ CONSTRUCT_LINEAR_STREAM[] = {
   [](int word, bool is_mem, dsa::sim::ConfigState *rf) -> LinearStream* {
     rf += DSARF::SAR;
     return new Linear2D(word,
-                        rf[0].value, rf[1].value, rf[2].value,
-                        rf[3].value, rf[4].value, rf[5].value,
+                        /*start*/rf[0].value, /*l1d*/rf[1].value, /*stride-1d*/rf[2].value,
+                        /*stretch*/rf[3].value, /*stride-2d*/rf[4].value, /*l2d*/rf[5].value,
                         is_mem);
   },
   [](int word, bool is_mem, dsa::sim::ConfigState *rf) -> LinearStream* {
@@ -170,7 +170,7 @@ void ssim_t::WritePortToMemory(int port, int operation, int dst, int dim) {
 void ssim_t::ConstStream(int port, int dim) {
   DSA_CHECK(dim < 3);
   auto addressable = (1 << (rf[DSARF::CSR].value & 3));
-  auto dtype = (1 << ((rf[DSARF::CSR].value >> 2) & 3));
+  auto dtype = ConstDType();
   LinearStream *ls = CONSTRUCT_LINEAR_STREAM[dim](addressable, false, rf);
   auto s = new ConstPortStream(rf[DSARF::TBC].value, gatherBroadcastPorts(port), ls);
   s->dtype = dtype;
@@ -227,10 +227,27 @@ void ssim_t::IndirectMemoryToPort(int port, int source, int ind, int dim, bool p
   DSA_CHECK(fsm.attrs.size() == 4);
   auto ports = gatherBroadcastPorts(port);
   auto irs = new IndirectReadStream(source == 0 ? LOC::DMA : LOC::SCR, ctx, ports, fsm);
-  irs->dtype = (1 << ((rf[DSARF::CSR].value >> 0) & 3));
+  fsm.value().dtype = irs->dtype = (1 << ((rf[DSARF::CSR].value >> 0) & 3));
   irs->inst = inst;
   cmd_queue.push_back(irs);
   DSA_LOG(COMMAND) << now() << ": Indirect Read Stream: " << irs->toString();
+}
+
+void ssim_t::IndirectGenerationToPort(int port, int ind, int dim, bool penetrate, bool associate) {
+  auto ctx = rf[DSARF::TBC].value;
+  // INDP[0:7]: Index Port; INDP[14:20]: Start Address; INDP[21:27]: Length
+  //  CSR[4:5]: Index Port;    CSR[8:9]: Start Address;  CSR[10:11]: Length
+  auto fsm = initializeIndirectFSM(rf, ind, 1, penetrate, associate, {0, 7, 14}, {4, 8, 10});
+  fsm.attrs.emplace_back();
+  fsm.value().stream = new SentinelStream(false);
+  fsm.value().dtype = 1;
+  DSA_CHECK(fsm.attrs.size() == 4);
+  auto ports = gatherBroadcastPorts(port);
+  auto igs = new IndirectGenerationStream(ctx, ports, fsm);
+  igs->dtype = ConstDType();
+  igs->inst = inst;
+  cmd_queue.push_back(igs);
+  DSA_LOG(COMMAND) << now() << ": Indirect Generate Stream: " << igs->toString();
 }
 
 void ssim_t::AtomicMemoryOperation(int port, int mem, int operation, int ind, int dim, bool penetrate, bool associate) {
@@ -455,6 +472,37 @@ void ssim_t::DispatchStream() {
     }
 
     /*!
+     * \brief .
+     */
+    void Visit(LinearReadStream *lrs) override {
+      // if (auto *l2d = dynamic_cast<Linear2D*>(lrs->ls)) {
+      //   if (lrs->pes.size() == 1 && !lrs->be) {
+      //     auto &pes = lrs->pes[0];
+      //     if (l2d->init.stride == 1) {
+      //       if (l2d->stride < accel->input_ports[pes.port].vectorLanes() &&
+      //           l2d->init.length == accel->input_ports[pes.port].vectorLanes()) {
+      //         DSA_INFO << l2d->toString();
+      //         int shift = l2d->init.length - l2d->stride;
+      //         auto *l1d = new Linear1D(l2d->init.word, l2d->init.start, l2d->init.stride,
+      //                                  l2d->length + shift, l2d->is_mem);
+      //         auto *cloned =
+      //           new LinearReadStream(lrs->unit(), lrs->context, l1d, lrs->pes, lrs->padding);
+      //         cloned->dtype = lrs->ls->word_bytes();
+      //         cloned->inst = lrs->inst;
+      //         auto *input = dynamic_cast<dfg::InputPort*>(accel->input_ports[pes.port].vp);
+      //         // TODO(@were): This is a broken feature. Migrate this to DFG frontend.
+      //         input->stationary_shift = l2d->stride;
+      //         DSA_INFO << cloned->toString();
+      //         BindStreamToPorts(cloned->pes, cloned);
+      //         return;
+      //       }
+      //     }
+      //   }
+      // }
+      Visit(static_cast<IPortStream*>(lrs));
+    }
+
+    /*!
      * \brief Schedule the write stream.
      */
     void Visit(OPortStream *ops) override {
@@ -467,11 +515,12 @@ void ssim_t::DispatchStream() {
      * \brief Schedule a port to port stream.
      */
     void Visit(PortPortStream *pps) override {
-      int port = pps->oports[0];
       auto cloned = pps->clone(accel);
       BindStreamToPorts(pps->pes, cloned);
-      auto &out = accel->output_ports[port];
-      out.bindStream(cloned);
+      for (auto elem : pps->oports) {
+        auto &out = accel->output_ports[elem];
+        out.bindStream(cloned);
+      }
       debugLog(pps, cloned);
     }
 
@@ -830,12 +879,8 @@ void ssim_t::multicast_remote_port(uint64_t num_elem, uint64_t mask, int out_por
 
 // -------------------------------------------------------------------------------
 bool ssim_t::CanReceive(int imm) {
-  imm >>= 1;
-  int dtype = imm & 3;
-  imm >>= 2;
-  imm >>= 1;
-  int port = imm;
-  dtype = 1 << dtype;
+  int port = imm >> 5;
+  int dtype = StreamDType();
   return CanReceive(port, dtype);
 }
 
@@ -864,7 +909,8 @@ bool ssim_t::CanReceive(int port, int dtype) {
   return false;
 }
 
-uint64_t ssim_t::Receive(int port, int dtype) {
+uint64_t ssim_t::Receive(int port) {
+  int dtype = StreamDType();
   auto context = rf[DSARF::TBC].value;
   DSA_CHECK((context & -context) == context)
     << "More than one accelerator to receive!";
@@ -878,7 +924,7 @@ uint64_t ssim_t::Receive(int port, int dtype) {
       raw.resize(8, 0);
       auto res = *reinterpret_cast<uint64_t*>(&raw[0]);
       DSA_LOG(RECV)
-        << "SS_RECV value: " << res
+        << now() << " SS_RECV value: " << res
         << " on port" << ovp.id() << " " << ovp.raw.size()
         << " on core: " << lsq()->getCpuId();
       return res;

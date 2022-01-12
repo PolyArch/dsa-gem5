@@ -23,6 +23,7 @@ std::string IVPState::toString() {
 
 bool PortExecState::tick() {
   if (exec_repeat()) {
+    DSA_LOG(REPEAT) << "++: " << repeat_counter << "/" << exec_repeat();
     repeat_counter = (repeat_counter + 1) % exec_repeat();
   } else {
     // If it is zero, we should avoid dividen by zero,
@@ -30,7 +31,9 @@ bool PortExecState::tick() {
     repeat_counter = 0;
   }
   if (repeat_counter == 0) {
+    DSA_LOG(REPEAT) << "before stetching: " << exec_repeat();
     repeat += stretch;
+    DSA_LOG(REPEAT) << "stetched: " << exec_repeat();
     return true;
   }
   return false;
@@ -202,7 +205,17 @@ void InPort::pop() {
   DSA_CHECK(lanesReady());
   if (pes.tick()) {
     int n = vectorLanes();
-    buffer.erase(buffer.begin(), buffer.begin() + n);
+    if (ivp()->stationary_shift == -1) {
+      buffer.erase(buffer.begin(), buffer.begin() + n);
+    } else {
+      // If we reach the end of stream, clear the shift state, and all the remaining data.
+      if (buffer[n - 1].stream_state & 2) {
+        ivp()->stationary_shift = -1;
+        buffer.erase(buffer.begin(), buffer.begin() + n);
+      } else {
+        buffer.erase(buffer.begin(), buffer.begin() + ivp()->stationary_shift);
+      }
+    }
     DSA_LOG(PORT)
       << id() << ": Buffered: " << buffer.size() * scalarSizeInBytes() << ", Ongoing: " << ongoing;
   }

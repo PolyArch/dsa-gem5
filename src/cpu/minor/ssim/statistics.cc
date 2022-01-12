@@ -102,7 +102,9 @@ void Accelerator::blameCycle() {
               sb = pi.stream;
             }
           }
-          DSA_LOG(BLAME_PORT) << port.vp->name() << ": " << pi.bytesBuffered();
+          DSA_LOG(BLAME_PORT)
+            << "oi"[is_input] << " " << port.vp->name() << ": " << pi.bytesBuffered() << ", "
+            << pi.stream->toString();;
         }
       }
     }
@@ -125,7 +127,7 @@ void Accelerator::blameCycle() {
   ++blame_count[blame];
   DSA_LOG(BLAME)
     << parent.now() << " " << BlameStr[blame] << ": " << (sb ? sb->toString() : "(null)")
-    << ", output: " << io_cnt[0] << ", input: " << io_cnt[1];
+    << ", Active Out: " << io_cnt[0] << ", Active In: " << io_cnt[1];
 }
 
 void Accelerator::countMemoryLatency(int64_t request_cycle, int64_t *breakdown) {

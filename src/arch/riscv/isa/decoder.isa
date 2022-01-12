@@ -916,19 +916,9 @@ decode QUADRANT default Unknown::unknown() {
                 }
             }}, IsSSParam, IsNonSpeculative);
             0x6: IOp::ss_recv({{
-                auto mask = imm;
-                bool discard = mask & 1;
-                mask >>= 1;
-                int dtype = mask & 3;
-                dtype = 1 << dtype;
-                mask >>= 2;
-                mask >>= 1;
-                int port = mask;
-                if (!discard) {
-                    Rd = xc->receiveSS(port, dtype);
-                } else {
-                    // TODO(@were): Support this!
-                }
+                int port = imm >> 5;
+                // TODO(@were): Support other flags!
+                Rd = xc->receiveSS(port);
             }}, uint64_t, {{ imm = sext<12>(IMM12); }}, IsSSRecv, IsNonSpeculative, No_OpClass);
             // 0x0: SSOp::ss_cfg_port({{
             //     xc->setSSReg(Rs1,SS_REPEAT);
@@ -1006,7 +996,10 @@ decode QUADRANT default Unknown::unknown() {
                 int dimension = value & 1;
                 value >>= 1;
                 int associate = value & 1;
-                if (operation == MemoryOperation::DMO_Read) {
+                if (dimension && associate) {
+                    xc->callSSFunc(
+                      SS_IND_CNS_PRT, {port, ind_mode, dimension, 0, 0});
+                } else if (operation == MemoryOperation::DMO_Read) {
                     xc->callSSFunc(
                       SS_IND_PRT, {port, mem, ind_mode, dimension, penetrate, associate});
                 } else {

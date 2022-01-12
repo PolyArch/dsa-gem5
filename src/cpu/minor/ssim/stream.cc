@@ -58,17 +58,21 @@ void BuffetEntry::Append(int bytes) {
   DSA_CHECK(occupied + bytes <= Size())
     << "Buffet size overflow!" << occupied << " " << bytes << " " << Size();
   occupied += bytes;
-  DSA_LOG(BUFFET) << "Append " << bytes << ", now: " << toString();
   CQ_PTR(tail, bytes);
+  if (bytes) {
+    DSA_LOG(BUFFET) << "Append " << bytes << ", now: " << toString();
+  }
 }
 
 void BuffetEntry::Shrink(int bytes) {
   DSA_CHECK(occupied - bytes >= 0)
     << "Buffet size underflow!" << occupied << " " << bytes << " " << Size();
   occupied -= bytes;
-  DSA_LOG(BUFFET) << "Pop " << bytes << ", now: " << toString();
   address += bytes;
   CQ_PTR(front, bytes);
+  if (bytes) {
+    DSA_LOG(BUFFET) << "Pop " << bytes << ", now: " << toString();
+  }
 }
 
 #undef CQ_PTR
@@ -99,7 +103,8 @@ std::string BuffetEntry::toString() {
   std::ostringstream oss;
   oss << "Alloc: [" << begin << ", " << end << "), Ptr: ("
       << front << ", " << tail << "), Buffered: [" << address
-      << ", " << address + occupied << ")";
+      << ", " << address + occupied << "), occupied: "
+      << occupied << ", space: " << SpaceAvailable();
   return oss.str();
 }
 
@@ -212,6 +217,19 @@ std::string ConstPortStream::toString() {
 }
 
 std::string IndirectReadStream::toString() {
+  auto *bsw = parent ? &parent->bsw : nullptr;
+  std::ostringstream oss;
+  oss << short_name() << " " << fsm.toString(parent);
+  for (auto &elem : pes) {
+    oss << "ports: " << elem.toString();
+    if (bsw) {
+      oss << "(" << bsw->name(true, elem.port) << ")";
+    }
+  }
+  return oss.str();
+}
+
+std::string IndirectGenerationStream::toString() {
   auto *bsw = parent ? &parent->bsw : nullptr;
   std::ostringstream oss;
   oss << short_name() << " " << fsm.toString(parent);
@@ -353,6 +371,10 @@ void Functor::Visit(IndirectReadStream *irs) {
   Visit(static_cast<PortPortStream*>(irs));
 }
 
+void Functor::Visit(IndirectGenerationStream *irs) {
+  Visit(static_cast<PortPortStream*>(irs));
+}
+
 void Functor::Visit(RecurrentStream *rs) {
   Visit(static_cast<PortPortStream*>(rs));
 }
@@ -410,6 +432,10 @@ struct IFSMTicker : Functor {
     SET_PTR(i, l1d->i);
     SET_PTR(res, cps->ls->poll(pop));
     stream_last = !l1d->hasNext();
+  }
+
+  void Visit(base_stream_t *bs) override {
+    DSA_CHECK(false) << bs->toString() << " unsupported!";
   }
 
   /*!
@@ -483,6 +509,7 @@ int IndirectFSM::hasNext(accel_t *accel) {
   if (!idx().stream->stream_active()) {
     // Refresh idx stream
     DSA_CHECK(length().stream && array().stream);
+    DSA_CHECK(length().stream->stream_active() == array().stream->stream_active());
     if (!length().stream->stream_active()) {
       return 0;
     }
@@ -512,7 +539,15 @@ int IndirectFSM::hasNext(accel_t *accel) {
     array().value = *at.res;
     array().i = *at.i;
     DSA_CHECK(at.res && at.i);
-    return hasNextIndex(idx().stream, value().stream);
+    int res = hasNextIndex(idx().stream, value().stream);
+    if (!res) {
+      DSA_CHECK(length().stream->stream_active() == array().stream->stream_active());
+      if (length().stream->stream_active()) {
+        DSA_LOG(IFSM) << "Dimension Starving: " << idx().stream->toString();
+        return -1;
+      }
+    }
+    return res;
   }
   return hasNextIndex(idx().stream, value().stream);
 }

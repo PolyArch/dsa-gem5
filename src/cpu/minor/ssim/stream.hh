@@ -41,6 +41,7 @@ struct LinearWriteStream;
 struct Barrier;
 struct ConstPortStream;
 struct IndirectReadStream;
+struct IndirectGenerationStream;
 struct IndirectAtomicStream;
 struct RecurrentStream;
 struct SentinelStream;
@@ -64,6 +65,7 @@ struct Functor {
   virtual void Visit(Barrier *);
   virtual void Visit(ConstPortStream *);
   virtual void Visit(IndirectReadStream *);
+  virtual void Visit(IndirectGenerationStream *);
   virtual void Visit(IndirectAtomicStream *);
   virtual void Visit(RecurrentStream *);
   virtual void Visit(SentinelStream *);
@@ -625,6 +627,44 @@ struct IndirectReadStream : public PortPortStream {
                      dsa::sim::stream::IndirectFSM fsm_) :
                      PortPortStream(unit, ctx, 1 << dsa::sim::stream::Loc2BarrierFlag(unit), pes, fsm_.oports()),
                      fsm(fsm_) {}
+};
+
+struct IndirectGenerationStream : public PortPortStream {
+  /*!
+   * \brief The finite state machine of the indirect stream.
+   */
+  dsa::sim::stream::IndirectFSM fsm;
+
+  bool stream_active() override {
+    return fsm.hasNext(parent);
+  }
+
+  LOC src() override { return unit(); }
+  
+  LOC dest() override { return LOC::PORT; }
+
+  /*! \brief The entrance of the visitor pattern. */
+  virtual void Accept(dsa::sim::stream::Functor *f) override {
+    f->Visit(this);
+  }
+
+  PortPortStream *clone(accel_t *accel) override {
+    auto res = new IndirectGenerationStream(*this);
+    res->parent = accel;
+    return res;
+  }
+
+  int idx_port() {
+    return oports[0];
+  }
+
+  std::string toString() override;
+
+  IndirectGenerationStream(uint64_t ctx, const std::vector<PortExecState> &pes,
+                     dsa::sim::stream::IndirectFSM fsm_) :
+                     PortPortStream(LOC::CONST, ctx,
+                                    1 << dsa::sim::stream::Loc2BarrierFlag(LOC::CONST),
+                                    pes, fsm_.oports()), fsm(fsm_) {}
 };
 
 

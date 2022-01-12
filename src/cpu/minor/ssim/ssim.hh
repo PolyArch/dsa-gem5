@@ -70,6 +70,16 @@ public:
   std::vector<base_stream_t*> cmd_queue;
 
   /*!
+   * \brief The data type of a value generation stream.
+   */
+  int ConstDType() { return (1 << ((rf[DSARF::CSR].value >> 2) & 3)); }
+
+  /*!
+   * \brief The data type of a value generation stream.
+   */
+  int StreamDType() { return (1 << ((rf[DSARF::CSR].value >> 0) & 3)); }
+
+  /*!
    * \brief Load the config bitstream.
    */
   void LoadBitstream();
@@ -101,6 +111,14 @@ public:
    * \param dim 0: 1-d stream; 2-d stream.
    */
   void IndirectMemoryToPort(int port, int source, int ind, int dim, bool penetrate, bool associate);
+
+  /*!
+   * \brief Generate indirect address memory to port (without requesting).
+   * \param port The destination port.
+   * \param ind The indirect memory flag.
+   * \param dim 0: 1-d stream; 2-d stream.
+   */
+  void IndirectGenerationToPort(int port, int ind, int dim, bool penetrate, bool associate);
 
   /*!
    * \brief Atomic memory operation on memory.
@@ -158,7 +176,7 @@ public:
    * \param port The output port of data source.
    * \param dtype The data type in bytes of the register.
    */
-  uint64_t Receive(int port, int dtype);
+  uint64_t Receive(int port);
 
   /*!
    * \brief Reroute value from output port to in ports.

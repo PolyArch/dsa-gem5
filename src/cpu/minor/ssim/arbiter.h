@@ -10,7 +10,7 @@ class port_interf_t;
 namespace dsa {
 namespace sim {
 
-class BitstreamWrapper;
+struct BitstreamWrapper;
 
 /*!
  * \brief The base class of determining which streams to be executed.
@@ -26,9 +26,9 @@ struct RoundRobin : StreamArbiter {
   /*!
    * \brief The last executed streams of round robin.
    */
-  std::vector<std::vector<int>> last_executed;
+  std::vector<int> last_executed;
 
-  RoundRobin() : last_executed(2, std::vector<int>(LOC::TOTAL, 0)) {}
+  RoundRobin() : last_executed(std::vector<int>(LOC::TOTAL * 2, 0)) {}
 
   std::vector<base_stream_t*> Arbit(accel_t *accel) override;
 };

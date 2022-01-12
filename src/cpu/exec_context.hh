@@ -359,7 +359,7 @@ class ExecContext {
     virtual void setSSReg(uint64_t val, int ss_idx) { assert(false); }
     virtual void configAtomicHardware(uint64_t a, uint64_t b, uint64_t c) {}
     virtual void callSSFunc(int ss_func_opcode, const std::vector<int64_t> &args = {}) {}
-    virtual uint64_t receiveSS(int port, int dtype) { return 0; }
+    virtual uint64_t receiveSS(int port) { return 0; }
 #endif
 
     /** @} */

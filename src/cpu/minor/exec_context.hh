@@ -460,9 +460,9 @@ class ExecContext : public ::ExecContext
       execute.getSSIM().atomic_update_hardware_config(a,b,c);
     }
 
-    uint64_t receiveSS(int port, int dtype) override {
+    uint64_t receiveSS(int port) override {
       ssim_t& ssim = execute.getSSIM();
-      return ssim.Receive(port, dtype);
+      return ssim.Receive(port);
     }
 
     void setDSARegisterFile(int idx, uint64_t value, bool sticky) override {
@@ -524,6 +524,11 @@ class ExecContext : public ::ExecContext
         case SS_CNS_PRT: {
           DSA_CHECK(args.size() == 2);
           ssim.ConstStream(args[0], args[1]);
+          break;
+        }
+        case SS_IND_CNS_PRT: {
+          DSA_CHECK(args.size() == 5);
+          ssim.IndirectGenerationToPort(args[0], args[1], args[2], args[3], args[4]);
           break;
         }
         case SS_IND_PRT: {

@@ -48,38 +48,34 @@ struct BuffetChecker : dsa::sim::stream::Functor {
 
 std::vector<base_stream_t*> RoundRobin::Arbit(accel_t *accel) {
   BitstreamWrapper &bsw = accel->bsw;
-  std::vector<base_stream_t*> res;
+  std::vector<std::vector<base_stream_t*>> stream_tables;
+  stream_tables.resize(LOC::TOTAL * 2);
   for (int is_input = 0; is_input < 2; ++is_input) {
-    for (int loc = 0; loc < LOC::TOTAL; ++loc) {
-      auto &ports = bsw.ports[is_input];
-      for (int j = 1; j <= (int) ports.size(); ++j) {
-        int idx = (last_executed[is_input][loc] + j) % ports.size();
-        int port = ports[idx].port;
-        if (auto stream = accel->port(is_input, port)->stream) {
-          if (!stream->stream_active()) {
-            continue;
-          }
-          if (std::find(res.begin(), res.end(), stream) != res.end()) {
-            continue;
-          }
-          if (stream->side(is_input) != loc) {
-            continue;
-          }
-          BuffetChecker bc;
-          stream->Accept(&bc);
-          if (!bc.ok) {
-            continue;
-          }
-          last_executed[is_input][loc] = idx;
-          res.push_back(stream);
-          DSA_LOG(SCHEDULE)
-            << accel->now() << ": Execute Stream (" << is_input << ", " << loc << "): "
-            << stream->toString();
-          break;
+    const auto &ports = bsw.ports[is_input];
+    for (int i = 0; i < (int) ports.size(); ++i) {
+      if (auto *stream = accel->port(is_input, ports[i].port)->stream) {
+        if (stream->stream_active()) {
+          int key =
+            (stream->side(is_input) != LOC::DMA) * is_input * LOC::TOTAL + stream->side(is_input);
+          stream_tables[key].push_back(stream);
         }
       }
     }
   }
+  std::vector<base_stream_t*> res;
+  for (int i = 0; i < stream_tables.size(); ++i) {
+    if (!stream_tables[i].empty()) {
+      res.push_back(stream_tables[i][last_executed[i] % stream_tables[i].size()]);
+      last_executed[i]++;
+    }
+  }
+  std::sort(res.begin(), res.end());
+  auto new_end = std::unique(res.begin(), res.end());
+  res.resize(new_end - res.begin());
+  // DSA_INFO << accel->now();
+  // for (auto elem : res) {
+  //   DSA_INFO << elem->toString();
+  // }
   return res;
 }
 

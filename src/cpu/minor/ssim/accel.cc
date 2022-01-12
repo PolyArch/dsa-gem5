@@ -182,7 +182,7 @@ accel_t::accel_t(int i, ssim_t *ssim)
       _ssim(ssim), _accel_index(i), _accel_mask(1 << i),
       _dma_c(this, &_scr_r_c, &_scr_w_c, &_net_c), _scr_r_c(this, &_dma_c),
       _scr_w_c(this, &_dma_c), _net_c(this, &_dma_c) {
-  spads.emplace_back(8, 32, SCRATCH_SIZE, 1, new dsa::sim::InputBuffer(4, 16, 1));
+  spads.emplace_back(8, 8, SCRATCH_SIZE, 1, new dsa::sim::InputBuffer(4, 16, 1));
 
   ENFORCED_SYSTEM("mkdir -p stats/");
   ENFORCED_SYSTEM("mkdir -p viz/");
@@ -560,7 +560,9 @@ struct StreamExecutor : dsa::sim::stream::Functor {
                               /*res*/0, /*atomic op*/nullptr, /*byte enable*/std::vector<bool>(),
                               sdInfo);
     DSA_LOG(MEM_REQ)
-      << (read ? "Read" : "Write") << " request: " << info.linebase << ", " << info.start;
+      << accel->get_ssim()->now() << ": "
+      << (read ? "Read" : "Write") << " request: " << info.linebase << ", " << info.start
+      << (info.as.stream_last ? ", last request of stream" : "");
   }
 
   void Visit(ConstPortStream *cps) override {
@@ -573,7 +575,6 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       for (auto &elem : stream.pes) {
         auto &in = accel->input_ports[elem.port];
         in.push(data, sim::stream::AffineStatus(), true);
-
       }
       auto value = stream.ls->poll(true);
       DSA_LOG(CONST) << "Const value pushed: " << value;
@@ -589,6 +590,35 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     }
   }
 
+  void Visit(IndirectGenerationStream *igs) override {
+    auto &stream = *igs;
+    int pushed = 0;
+    sim::stream::AffineStatus as;
+    while (stream.stream_active() &&
+           stream.fsm.hasNext(accel) == 1 &&
+           pushed < accel->get_ssim()->spec.const_bandwidth &&
+           bufferAvailable(igs->pes, igs->dtype) >= igs->dtype) {
+      int64_t scalar = stream.fsm.poll(accel, false, as)[0];
+      std::vector<uint8_t> data((uint8_t*) &scalar, ((uint8_t*) &scalar) + igs->dtype);
+      for (auto &elem : stream.pes) {
+        auto &in = accel->input_ports[elem.port];
+        in.push(data, as, true);
+      }
+      auto value = stream.fsm.poll(accel, true, as);
+      DSA_LOG(CONST) << "Const value pushed: " << value[0];
+      DSA_LOG(CONST) << stream.toString();
+      pushed += stream.data_width();
+    }
+    accel->statistics.countDataTraffic(true, igs->src(), pushed);
+    if (!stream.stream_active()) {
+      for (auto &elem : stream.pes) {
+        accel->input_ports[elem.port].freeStream();
+      }
+      for (auto &elem : igs->oports) {
+        accel->output_ports[elem].freeStream();
+      }
+    }
+  }
 
   void Visit(LinearReadStream *lrs) override {
     auto &stream = *lrs;
@@ -828,18 +858,20 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     if (memory_bw == -1) {
       if (stream.dest() == LOC::DMA) {
         accel->statistics.memoryWriteBoundByXfer(true);
+      } else {
+        accel->statistics.blame = dsa::stat::Accelerator::SPAD_BW;
       }
       return;
     }
     // Prepare the data according to the port data availability and memory bandwidth
     auto &ovp = out_port;
-    int port_available = std::min(ovp.scalarSizeInBytes() * ovp.vectorLanes(), (int) ovp.raw.size());
+    int port_available = ovp.raw.size();
     // Make sure the value requested does not exceed the buffet buffer.
     if (lws->be) {
       port_available = std::min(lws->be->SpaceAvailable(), port_available);
       stream.be->mo = DMO_Write;
     }
-    DSA_LOG(MEM_REQ) << "write bandwidth: " << memory_bw;
+    DSA_LOG(MEM_REQ) << "write bandwidth: " << memory_bw << ", port available: " << port_available;
     auto info = stream.ls->cacheline(memory_bw, std::min(memory_bw, port_available), stream.be,
                                      DMO_Write, stream.dest());
     int to_pop = std::accumulate(info.mask.begin(), info.mask.end(), (int) 0, std::plus<int>());
@@ -970,6 +1002,10 @@ struct SPADResponser : dsa::sim::stream::Functor {
     if (response.info.as.stream_last) {
       auto &idxp = accel->output_ports[irs->idx_port()];
       idxp.freeStream();
+      if (irs->fsm.length().port != -1) {
+        auto &lenp = accel->output_ports[irs->fsm.length().port];
+        lenp.freeStream();
+      }
     }
   }
 
@@ -1020,7 +1056,7 @@ void accel_t::tick() {
   if (spad_response.id != -1) {
     DSA_LOG(MEM_REQ) << "Responding port: " << spad_response.id;
     if (spad_response.op == MemoryOperation::DMO_Read) {
-      auto &vp = this->input_ports[spad_response.id];
+      auto &vp = input_ports[spad_response.id];
       DSA_CHECK(vp.stream)
         << "Stream affiliated with the port is no longer active! " << vp.id();
       dsa::sim::SPADResponser pp(spad_response, this);
@@ -1126,33 +1162,32 @@ void accel_t::cycle_cgra_backpressure() {
 
       if (vec_in->can_push()) {
         forward_progress();
-
-
         auto data = cur_in_port.poll();
         DSA_CHECK(!data.empty()) << cur_in_port.vectorLanes();
         bool valid = false;
         std::vector<bool> predicates;
-        int state = cur_in_port.ivp()->stated;
+        int stated = cur_in_port.ivp()->stated;
         for (int i = 0; i < cur_in_port.vectorLanes(); ++i) {
-          vec_in->values[i + state].push(data[i].value, data[i].valid, 0);
+          vec_in->values[i + stated].push(data[i].value, data[i].valid, 0);
           valid |= data[i].valid;
           predicates.push_back(data[i].valid);
         }
-        if (cur_in_port.ivp()->stated) {
-          uint8_t state = 0;
+        if (stated) {
+          uint8_t union_state = 0;
           for (int i = 0; i < cur_in_port.vectorLanes(); ++i) {
-            state |= data[i].stream_state;
+            union_state |= data[i].stream_state;
           }
-          cur_in_port.ivp()->values[0].push(state, valid, 0);
+          cur_in_port.ivp()->values[0].push(union_state, valid, 0);
           DSA_LOG(COMP)
             << "Push state " << cur_in_port.ivp()->name()
-            << ": " << std::bitset<8>(state).to_string();
+            << ": " << std::bitset<8>(union_state).to_string();
         }
         // TODO(@were): Move repeat port stuff to port pop.
         cur_in_port.pop();
         DSA_LOG(COMP)
           << now() << ": In Port: " << vec_in->name() << " allowed to push "
           << data.size() << " input(s): " << dumpPredicatedValues(data);
+        DSA_LOG(COMP) << cur_in_port.pes.toString();
       } else {
         DSA_LOG(COMP) << vec_in->name() << " cannot push!";
       }
@@ -1194,6 +1229,9 @@ void accel_t::cycle_cgra_backpressure() {
     assert(vec_output != NULL && "output port pointer is null\n");
 
     if (vec_output->can_pop()) {
+      if (!num_computed) {
+        statistics.blame = dsa::stat::Accelerator::Blame::STREAMING;
+      }
       vector<SBDT> data;
       vector<bool> data_valid;
       std::vector<sim::PortPacket> debug_data;
@@ -1447,12 +1485,12 @@ void accel_t::print_status() {
   cout << "Active SEs:\n";
   for (auto elem : bsw.iports()) {
     if (auto stream = input_ports[elem.port].stream) {
-      cout << stream->toString() << std::endl;
+      cout << "in" << elem.port << ", " << stream->toString() << std::endl;
     }
   }
   for (auto elem : bsw.oports()) {
     if (auto stream = output_ports[elem.port].stream) {
-      cout << stream->toString() << std::endl;
+      cout << "out" << elem.port << ", " << stream->toString() << std::endl;
     }
   }
   _dma_c.print_status();
@@ -1933,8 +1971,10 @@ void dma_controller_t::port_resp(sim::BitstreamWrapper::PortInfo &pi) {
           if (last) {
             DSA_LOG(STREAM) << in_vp.stream->toString() << " freed!";
             if (auto irs = dynamic_cast<IndirectReadStream*>(in_vp.stream)) {
-              auto &out_vp = _accel->output_ports[irs->oports[0]];
-              out_vp.freeStream();
+              for (auto elem : irs->oports) {
+                auto &out_vp = _accel->output_ports[elem];
+                out_vp.freeStream();
+              }
             }
             in_vp.freeStream();
           }
@@ -2671,6 +2711,16 @@ bool accel_t::done(bool show, int mask) {
       if (mask == -1) {
         if (!vp->empty()) {
           DSA_LOG(WAIT) << IO_STR[io] << "Port: " << vp->id() << " data entry not empty!";
+          return false;
+        }
+      }
+    }
+  }
+  if (mask == -1 && bsw.dfg()) {
+    for (auto elem : bsw.dfg()->nodes) {
+      for (auto &val : elem->values) {
+        if (!val.fifo.empty()) {
+          DSA_LOG(WAIT) << val.name() << " not empty!";
           return false;
         }
       }
