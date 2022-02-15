@@ -138,7 +138,7 @@ void InPort::push(const std::vector<uint8_t> &raw, const stream::AffineStatus &a
 #define PADDING_IMPL(cond, zero_enum, predoff_enum)                \
   do {                                                             \
     if (cond) {                                                    \
-      if (as.padding == zero_enum || as.padding == predoff_enum) { \
+      if (as.padding == zero_enum) { \
         DSA_LOG(PAD) << "Padding: " << as.n << " " << residue << " " << padCount; \
         SpatialPacket padValue(aa, 0, as.padding == zero_enum);    \
         for (int i = 0; i < padCount; ++i) {                       \
@@ -150,7 +150,6 @@ void InPort::push(const std::vector<uint8_t> &raw, const stream::AffineStatus &a
 
   int from = buffer.size();
 
-  PADDING_IMPL(as.dim_1st, DP_PreStrideZero, DP_PreStridePredOff);
   for (int i = 0; i < raw.size(); i += dbytes) {
     uint64_t data = 0;
     std::memcpy(&data, raw.data() + i, dbytes);
