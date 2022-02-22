@@ -215,7 +215,11 @@ accel_t::accel_t(int i, ssim_t *ssim)
   if (!get_ssim()->spec.adg_file.empty()) {
     ssconfig_file = get_ssim()->spec.adg_file;
   }
-  dsa::ContextFlags::Global().adg_compat = true;
+  {
+    if (auto *compat_mode = getenv("COMPAT_ADG")) {
+      dsa::ContextFlags::Global().adg_compat = atoi(compat_mode);
+    }
+  }
   _ssconfig = new SSModel(ssconfig_file.c_str());
   // cout << "Came here to create a new configuration for a new accel\n";
   _ssconfig->setMaxEdgeDelay(_fu_fifo_len);
@@ -875,31 +879,47 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     auto info = stream.ls->cacheline(memory_bw, std::min(memory_bw, port_available), stream.be,
                                      DMO_Write, stream.dest());
     int to_pop = std::accumulate(info.mask.begin(), info.mask.end(), (int) 0, std::plus<int>());
+    int pop_pad = 0;
+    if (info.as.dim_last) {
+      if (stream.padding == DP_PostStridePredOff) {
+        pop_pad = (ovp.vectorBytes() - info.as.n % ovp.vectorBytes()) % ovp.vectorBytes();
+      }
+    }
+    // Wait for paddings.
+    if (pop_pad) {
+      if (to_pop + pop_pad > port_available) {
+        return;
+      }
+      DSA_INFO << ovp.vectorLanes() << " " << pop_pad;
+    }
     DSA_CHECK(to_pop % ovp.scalarSizeInBytes() == 0)
       << to_pop << " % " << ovp.scalarSizeInBytes() << " != 0";
-    auto data = ovp.poll(to_pop);
-    ovp.pop(to_pop);
+    auto data = ovp.poll(to_pop + pop_pad);
+    ovp.pop(to_pop + pop_pad);
+    data.erase(data.end() - pop_pad, data.end());
     // TODO(@were): Support linear penetrate later.
     if (ovp.ovp()->penetrated_state != -1) {
       data.pop_back();
     }
-    makeMemoryRequest(lws, data, {MEM_WR_STREAM}, info, DMO_Write);
+    if (!data.empty()) {
+      makeMemoryRequest(lws, data, {MEM_WR_STREAM}, info, DMO_Write);
+      DSA_LOG(MEM_REQ)
+        << "write request: " << info.linebase << ", " << info.start
+        << " for " << stream.toString() << " " << stream.stream_active();
+      if (lws->be) {
+        DSA_LOG(MEM_REQ) << "write to buffet: " << lws->be->toString();
+      }
+      std::ostringstream oss;
+      for (int i = 0; i < data.size(); ++i) {
+        oss << " " << (int) data[i];
+      }
+      DSA_LOG(MEM_REQ)
+        << data.size() << "/" << std::min(port_available, memory_bw) << " bytes: " << oss.str();
+    }
     if (!stream.stream_active()) {
       DSA_LOG(STREAM) << stream.toString() << " freed!";
       out_port.freeStream();
     }
-    DSA_LOG(MEM_REQ)
-      << "write request: " << info.linebase << ", " << info.start
-      << " for " << stream.toString() << " " << stream.stream_active();
-    if (lws->be) {
-      DSA_LOG(MEM_REQ) << "write to buffet: " << lws->be->toString();
-    }
-    std::ostringstream oss;
-    for (int i = 0; i < data.size(); ++i) {
-      oss << " " << (int) data[i];
-    }
-    DSA_LOG(MEM_REQ)
-      << data.size() << "/" << std::min(port_available, memory_bw) << " bytes: " << oss.str();
   }
 
   /*!
@@ -1150,9 +1170,10 @@ void accel_t::cycle_cgra_backpressure() {
     auto &cur_in_port = input_ports[port_index];
 
     auto vp_iter = std::find_if(vps.begin(), vps.end(), [port_index] (ssvport *vp) {
-      return vp->port() == port_index && vp->in_links().empty();
+      return vp->port() == port_index && vp->isInputPort();
     });
-    DSA_CHECK(vp_iter != vps.end());
+    DSA_CHECK(vp_iter != vps.end()) << "Cannot find a mapping for port "
+      << elem.port << " " << elem.vp->name();
     ssvport *vp = *vp_iter;
     auto *vec_in = dynamic_cast<dsa::dfg::InputPort*>(bsw.sched->dfgNodeOf(vp));
 
@@ -1220,7 +1241,7 @@ void accel_t::cycle_cgra_backpressure() {
     auto &cur_out_port = output_ports[port_index];
 
     auto vp_iter = std::find_if(vps.begin(), vps.end(), [port_index] (ssvport *vp) {
-      return vp->port() == port_index && vp->out_links().empty();
+      return vp->port() == port_index && vp->isOutputPort();
     });
     DSA_CHECK(vp_iter != vps.end());
     ssvport* vp = *vp_iter;

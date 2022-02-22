@@ -957,7 +957,7 @@ decode QUADRANT default Unknown::unknown() {
                     if (operation == 0) {
                         xc->callSSFunc(SS_MEM_PRT, {port, memory, dimension, padding});
                     } else {
-                        xc->callSSFunc(SS_PRT_MEM, {port, operation, memory, dimension});
+                        xc->callSSFunc(SS_PRT_MEM, {port, operation, memory, dimension, padding});
                     }
                 } else {
                     xc->callSSFunc(SS_CNS_PRT, {port, dimension});

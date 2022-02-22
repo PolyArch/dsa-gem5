@@ -520,6 +520,8 @@ struct LinearWriteStream : public OPortStream {
   LinearStream *ls;
   /*! \brief The atomic operation. */
   int operation;
+  /*! \brief For write stream, padding is discarding. */
+  int padding;
   /*!
    * \brief The buffet entry to which this stream belong.
    */

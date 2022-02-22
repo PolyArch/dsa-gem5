@@ -514,8 +514,8 @@ class ExecContext : public ::ExecContext
           ssim.LoadMemoryToPort(args[0], args[1], args[2], args[3]);
           break;
         case SS_PRT_MEM:
-          DSA_CHECK(args.size() == 4);
-          ssim.WritePortToMemory(args[0], args[1], args[2], args[3]);
+          DSA_CHECK(args.size() == 5);
+          ssim.WritePortToMemory(args[0], args[1], args[2], args[3], args[4]);
           break;
         case SS_WAIT: {
           ssim.InsertBarrier(args[0]);

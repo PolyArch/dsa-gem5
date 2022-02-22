@@ -147,7 +147,7 @@ void ssim_t::LoadMemoryToPort(int port, int source, int dim, int padding) {
   cmd_queue.push_back(s);
 }
 
-void ssim_t::WritePortToMemory(int port, int operation, int dst, int dim) {
+void ssim_t::WritePortToMemory(int port, int operation, int dst, int dim, int padding) {
   assert(dim < 3);
   auto addressable = (1 << (rf[DSARF::CSR].value & 3));
   LinearStream *ls = CONSTRUCT_LINEAR_STREAM[dim](addressable, true, rf);
@@ -158,6 +158,7 @@ void ssim_t::WritePortToMemory(int port, int operation, int dst, int dim) {
   auto* s = new LinearWriteStream(unit, rf[DSARF::TBC].value, ls, port, operation);
   s->dtype = s->ls->word_bytes();
   s->inst = inst;
+  s->padding = padding;
   if (rf[DSARF::BR].value != -1) {
     int begin = rf[DSARF::BR].value & 65535, end = (rf[DSARF::BR].value >> 16) & 65535;
     RegisterBuffet(s, begin, end);
@@ -271,7 +272,7 @@ void ssim_t::AtomicMemoryOperation(int port, int mem, int operation, int ind, in
 std::vector<PortExecState> ssim_t::gatherBroadcastPorts(int port) {
   std::vector<PortExecState> pes;
   for (int i = 0; i < DSA_MAX_IN_PORTS; ++i) {
-    if (vps[i].broadcast || i == port) {
+    if (vps[i].broadcast == port || i == port) {
       pes.emplace_back(vps[i], i);
       DSA_LOG(PORTS) << pes.back().toString();
     }

@@ -101,7 +101,7 @@ public:
    * \param dst 0: DMA, 1: SPAD
    * \param dim (dim+1)=dimensions of the stream.
    */
-  void WritePortToMemory(int port, int operation, int dst, int dim);
+  void WritePortToMemory(int port, int operation, int dst, int dim, int padding);
 
   /*!
    * \brief Read indirect memory to port.

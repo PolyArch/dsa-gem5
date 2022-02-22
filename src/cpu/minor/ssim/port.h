@@ -50,7 +50,7 @@ struct IVPState {
   /*!
    * \brief If this port will be broadcasted when instantiating the next stream.
    */
-  bool broadcast{false};
+  int64_t broadcast{-1};
   /*!
    * \brief The repeat time of each popped value.
    */
@@ -118,6 +118,10 @@ struct Port {
    * \brief The scalar data type of this port.
    */
   int scalarSizeInBytes() const;
+  /*
+   * \brief Total bytes of the vector.
+   */
+  int vectorBytes() const;
   /*!
    * \brief Bind stream to this port to execute.
    */
@@ -176,6 +180,10 @@ struct InPort : Port {
    * \brief The data in bytes that is in ongoing requests.
    */
   int ongoing{0};
+  /*!
+   * \brief The bytes to pop async.
+   */
+  int to_pop{0};
   /*!
    * \brief The data ready to be distributed by the crossbar.
    */

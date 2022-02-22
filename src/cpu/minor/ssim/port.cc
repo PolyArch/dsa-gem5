@@ -99,6 +99,10 @@ int Port::scalarSizeInBytes() const {
   return vp->bitwidth() / 8;
 }
 
+int Port::vectorBytes() const {
+  return scalarSizeInBytes() * vectorLanes();
+}
+
 int InPort::vectorLanes() const {
   DSA_CHECK(vp) << "vectorLanes() is only meaningful when configured.";
   return ivp()->vectorLanes();
