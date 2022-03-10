@@ -890,7 +890,6 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       if (to_pop + pop_pad > port_available) {
         return;
       }
-      DSA_INFO << ovp.vectorLanes() << " " << pop_pad;
     }
     DSA_CHECK(to_pop % ovp.scalarSizeInBytes() == 0)
       << to_pop << " % " << ovp.scalarSizeInBytes() << " != 0";
