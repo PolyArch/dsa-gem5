@@ -48,6 +48,7 @@
 #ifndef __CPU_MINOR_EXEC_CONTEXT_HH__
 #define __CPU_MINOR_EXEC_CONTEXT_HH__
 
+#include "sim/pseudo_inst.hh"
 #include "sim/root.hh"
 #include "cpu/base.hh"
 #include "cpu/exec_context.hh"
@@ -495,7 +496,8 @@ class ExecContext : public ::ExecContext
       ssim.inst = inst;
       switch(ss_func_opcode) {
         case SS_BEGIN_ROI:
-          Root::root()->resetStats();
+          PseudoInst::resetstats(thread.getTC(), 0, clock());
+          // Root::root()->resetStats();
           ssim.statistics.roi(true);
           ssim.roi_entry(true);
           return;
@@ -505,6 +507,8 @@ class ExecContext : public ::ExecContext
           return;
         case SS_STATS:
           ssim.print_stats();
+          PseudoInst::dumpstats(thread.getTC(), 0, clock());
+          Root::root()->resetStats();
           return;
         case SS_CFG:
           ssim.LoadBitstream();
