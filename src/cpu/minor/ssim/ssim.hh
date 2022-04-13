@@ -10,6 +10,18 @@
 #include "./statistics.h"
 #include "dsa-ext/spec.h"
 
+#include <string>
+
+namespace dsa {
+
+struct Specification {
+#define SPEC_ATTR(TY, ID, VAL) TY ID{VAL};
+#include "./spec.attr"
+#undef SPEC_ATTR
+};
+
+}
+
 namespace Minor {
 
 class ExecContext;

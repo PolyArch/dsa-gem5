@@ -66,7 +66,9 @@ void Bank::AccessData() {
   }
   DSA_LOG(READ) << " [Read] Execute " << read->request.addr;
   auto addr = read->cacheline();
-  DSA_CHECK(addr < data.size()) << read->cacheline();
+  DSA_CHECK(addr < data.size())
+    << "addr: " << read->request.addr << ", cacheline: "<< read->cacheline()
+    << ", size: " << data.size();
   read->result = std::vector<uint8_t>(data.begin() + addr, data.begin() + addr + parent->bank_width);
   (compute = read)->status = Entry::Status::Compute;
   read = nullptr;

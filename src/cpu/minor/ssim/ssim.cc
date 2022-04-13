@@ -43,7 +43,7 @@ ssim_t::ssim_t(Minor::LSQ *lsq_) : lsq_(lsq_), statistics(*this) {
     std::string dsa_spec(std::getenv("DSA_SPEC"));
     Json::Value raw_json = dsa::core::utils::LoadJsonFromFile(dsa_spec);
     #define SPEC_ATTR(TY, ID, VAL) if (raw_json.isMember(#ID)) { spec.ID = raw_json.as<TY>(); }
-    #include "dsa-ext/spec.attr"
+    #include "./spec.attr"
     #undef SPEC_ATTR
   }
 
@@ -539,6 +539,7 @@ void ssim_t::DispatchStream() {
     sd.emplace_back(lanes[i]);
   }
 
+  DSA_LOG(DISPATCH) << cmd_queue.size() << " streams to be dispatched!";
   for (int i = 0; i < (int) cmd_queue.size(); ++i) {
     bool retire = true;
     for (int j = 0; j < (int) lanes.size(); ++j) {

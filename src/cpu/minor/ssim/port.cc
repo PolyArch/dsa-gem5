@@ -23,7 +23,7 @@ std::string IVPState::toString() {
 
 bool PortExecState::tick() {
   if (exec_repeat()) {
-    DSA_LOG(REPEAT) << "++: " << repeat_counter << "/" << exec_repeat();
+    DSA_LOG(REPEAT) << "[" << port << "] ++: " << repeat_counter << "/" << exec_repeat();
     repeat_counter = (repeat_counter + 1) % exec_repeat();
   } else {
     // If it is zero, we should avoid dividen by zero,

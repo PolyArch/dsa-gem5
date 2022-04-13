@@ -2749,6 +2749,14 @@ bool accel_t::done(bool show, int mask) {
           return false;
         }
       }
+      if (auto *inst = dynamic_cast<dfg::Instruction*>(elem)) {
+        for (int i = 0; i < (int) inst->ops().size(); ++i) {
+          if (!inst->ops()[i].empty()) {
+            DSA_LOG(WAIT) << elem->name() << "'s " << i << " operand not fully consumed!";
+            return false;
+          }
+        }
+      }
     }
   }
   return true;
