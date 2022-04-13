@@ -1163,17 +1163,18 @@ void accel_t::cycle_cgra_backpressure() {
 
   int num_computed = 0;
 
-  auto vps = bsw.sched->ssModel()->subModel()->vport_list();
+  auto ivps = bsw.sched->ssModel()->subModel()->input_list();
+  DSA_CHECK(ivps.size() > 0) << "No input ports!";
   for (auto &elem : bsw.iports()) {
     int port_index = elem.port;
     auto &cur_in_port = input_ports[port_index];
-
-    auto vp_iter = std::find_if(vps.begin(), vps.end(), [port_index] (ssvport *vp) {
-      return vp->port() == port_index && vp->isInputPort();
+    
+    auto vp_iter = std::find_if(ivps.begin(), ivps.end(), [port_index] (ssivport *vp) {
+      return vp->port() == port_index;
     });
-    DSA_CHECK(vp_iter != vps.end()) << "Cannot find a mapping for port "
+    DSA_CHECK(vp_iter != ivps.end()) << "Cannot find a mapping for input port "
       << elem.port << " " << elem.vp->name();
-    ssvport *vp = *vp_iter;
+    ssivport *vp = *vp_iter;
     auto *vec_in = dynamic_cast<dsa::dfg::InputPort*>(bsw.sched->dfgNodeOf(vp));
 
     if (cur_in_port.lanesReady()) {
@@ -1235,15 +1236,19 @@ void accel_t::cycle_cgra_backpressure() {
     _stat_ss_dfg_util += (double)num_computed / _dfg->instructions.size();
   }
 
+  auto ovps = bsw.sched->ssModel()->subModel()->output_list();
+  DSA_CHECK(ovps.size() > 0) << "No output ports!";
   for (auto &elem : bsw.oports()) {
     int port_index = elem.port; 
     auto &cur_out_port = output_ports[port_index];
 
-    auto vp_iter = std::find_if(vps.begin(), vps.end(), [port_index] (ssvport *vp) {
-      return vp->port() == port_index && vp->isOutputPort();
+
+    auto vp_iter = std::find_if(ovps.begin(), ovps.end(), [port_index] (ssovport *vp) {
+      return vp->port() == port_index;
     });
-    DSA_CHECK(vp_iter != vps.end());
-    ssvport* vp = *vp_iter;
+    DSA_CHECK(vp_iter != ovps.end()) << "Cannot find a mapping for output port "
+      << elem.port << " " << elem.vp->name();
+    ssovport* vp = *vp_iter;
     auto *vec_output = dynamic_cast<dsa::dfg::OutputPort*>(bsw.sched->dfgNodeOf(vp));
 
     assert(vec_output != NULL && "output port pointer is null\n");

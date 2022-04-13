@@ -30,6 +30,6 @@ m5out
 configs/example/memcheck.cfg
 configs/dram/lowp_sweep.cfg
 compile_commands.*
-.vscode/*
+.vscode/
 .cache/*
 .ycm_extra_conf.py
