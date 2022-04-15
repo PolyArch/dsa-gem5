@@ -18,8 +18,8 @@ struct BitstreamWrapper {
 
   BitstreamWrapper() {}
 
-#define GATHER_PORTS(vp, res)                               \
-  for (auto &elem : sched->ssdfg()->vp) {                   \
+#define GATHER_PORTS(vp, res)                         \
+  for (auto &elem : sched->ssdfg()->vp) {             \
     res.emplace_back(&elem, sched->vecPortOf(&elem)); \
   }
   BitstreamWrapper(Schedule *sched_) : sched(sched_) {

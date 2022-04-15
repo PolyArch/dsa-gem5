@@ -1242,7 +1242,6 @@ void accel_t::cycle_cgra_backpressure() {
     int port_index = elem.port; 
     auto &cur_out_port = output_ports[port_index];
 
-
     auto vp_iter = std::find_if(ovps.begin(), ovps.end(), [port_index] (ssovport *vp) {
       return vp->port() == port_index;
     });
@@ -1251,7 +1250,8 @@ void accel_t::cycle_cgra_backpressure() {
     ssovport* vp = *vp_iter;
     auto *vec_output = dynamic_cast<dsa::dfg::OutputPort*>(bsw.sched->dfgNodeOf(vp));
 
-    assert(vec_output != NULL && "output port pointer is null\n");
+    DSA_CHECK(vec_output)
+      << vp->name() << ", " << vp->id() << " | " << elem.vp->name();
 
     if (vec_output->can_pop()) {
       if (!num_computed) {
