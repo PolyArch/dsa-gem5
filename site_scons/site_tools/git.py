@@ -102,11 +102,11 @@ def install_style_hooks(env):
         return
 
     print(git_style_message, end=' ')
-    try:
-        input()
-    except:
-        print("Input exception, exiting scons.\n")
-        sys.exit(1)
+    # try:
+    #     input()
+    # except:
+    #     print("Input exception, exiting scons.\n")
+    #     sys.exit(1)
 
     git_style_script = env.root.Dir("util").File("git-pre-commit.py")
     git_msg_script = env.root.Dir("ext").File("git-commit-msg")

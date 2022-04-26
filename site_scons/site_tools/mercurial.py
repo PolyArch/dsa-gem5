@@ -97,11 +97,11 @@ def install_style_hooks(env):
         # Try to upgrade the style hooks
         print(mercurial_style_upgrade_message)
         # continue unless user does ctrl-c/ctrl-d etc.
-        try:
-            raw_input()
-        except:
-            print("Input exception, exiting scons.\n")
-            sys.exit(1)
+        #try:
+        #    raw_input()
+        #except:
+        #    print("Input exception, exiting scons.\n")
+        #    sys.exit(1)
         shutil.copyfile(hgrc.abspath, hgrc_old.abspath)
         re_style_hook = re.compile(r"^([^=#]+)\.style\s*=\s*([^#\s]+).*")
         re_style_extension = re.compile("style\s*=\s*([^#\s]+).*")
@@ -125,11 +125,11 @@ def install_style_hooks(env):
     elif not style_hook:
         print(mercurial_style_message, end=' ')
         # continue unless user does ctrl-c/ctrl-d etc.
-        try:
-            raw_input()
-        except:
-            print("Input exception, exiting scons.\n")
-            sys.exit(1)
+        # try:
+        #     raw_input()
+        # except:
+        #     print("Input exception, exiting scons.\n")
+        #     sys.exit(1)
         hgrc_path = '%s/.hg/hgrc' % env.root.abspath
         print("Adding style hook to", hgrc_path, "\n")
         try:

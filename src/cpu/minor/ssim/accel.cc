@@ -183,6 +183,7 @@ accel_t::accel_t(int i, ssim_t *ssim)
       _dma_c(this, &_scr_r_c, &_scr_w_c, &_net_c), _scr_r_c(this, &_dma_c),
       _scr_w_c(this, &_dma_c), _net_c(this, &_dma_c) {
   spads.emplace_back(8, 8, SCRATCH_SIZE, 1, new dsa::sim::InputBuffer(4, 16, 1));
+  // spads.emplace_back(8, 8, SCRATCH_SIZE, 1, new dsa::sim::InputBuffer(4, 16, 1));
 
   ENFORCED_SYSTEM("mkdir -p stats/");
   ENFORCED_SYSTEM("mkdir -p viz/");
