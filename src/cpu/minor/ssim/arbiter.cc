@@ -55,8 +55,13 @@ std::vector<base_stream_t*> RoundRobin::Arbit(accel_t *accel) {
     for (int i = 0; i < (int) ports.size(); ++i) {
       if (auto *stream = accel->port(is_input, ports[i].port)->stream) {
         if (stream->stream_active()) {
-          int key =
-            (stream->side(is_input) != LOC::DMA) * is_input * LOC::TOTAL + stream->side(is_input);
+          bool allow_rw = (bool) getenv("RW_BUS");
+          int key = 0;
+          if (allow_rw) {
+            key = is_input * LOC::TOTAL + stream->side(is_input);
+          } else {
+            key = (stream->side(is_input) != LOC::DMA) * is_input * LOC::TOTAL + stream->side(is_input);
+          }
           stream_tables[key].push_back(stream);
         }
       }
@@ -72,10 +77,9 @@ std::vector<base_stream_t*> RoundRobin::Arbit(accel_t *accel) {
   std::sort(res.begin(), res.end());
   auto new_end = std::unique(res.begin(), res.end());
   res.resize(new_end - res.begin());
-  // DSA_INFO << accel->now();
-  // for (auto elem : res) {
-  //   DSA_INFO << elem->toString();
-  // }
+  for (auto elem : res) {
+    DSA_LOG(STREAM_SCHEDULE) << accel->now() << ": " << elem->toString();
+  }
   return res;
 }
 
