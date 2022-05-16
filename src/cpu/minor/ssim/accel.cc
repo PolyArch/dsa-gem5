@@ -517,11 +517,13 @@ struct StreamExecutor : dsa::sim::stream::Functor {
           accel->lsq()->canRequest()) {
         return accel->get_ssim()->spec.dma_bandwidth;
       }
+      accel->statistics.blame = dsa::stat::Accelerator::Blame::MEMORY_BW;
     } else {
       DSA_CHECK(loc == LOC::SCR);
       if (accel->spads[0].rb->Available()) {
         return accel->spads[0].bandwidth();
       }
+      accel->statistics.blame = dsa::stat::Accelerator::Blame::SPAD_BW;
     }
     return -1;
   }
@@ -858,6 +860,9 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       }
       return;
     }
+    // Prepare the data according to the port data availability and memory bandwidth
+    auto &ovp = out_port;
+    int port_available = ovp.raw.size();
     // Check if the write unit is available.
     int memory_bw = canRequest(lws->dest(), MEM_WR_STREAM);
     if (memory_bw == -1) {
@@ -868,9 +873,6 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       }
       return;
     }
-    // Prepare the data according to the port data availability and memory bandwidth
-    auto &ovp = out_port;
-    int port_available = ovp.raw.size();
     // Make sure the value requested does not exceed the buffet buffer.
     if (lws->be) {
       port_available = std::min(lws->be->SpaceAvailable(), port_available);
@@ -1255,8 +1257,12 @@ void accel_t::cycle_cgra_backpressure() {
       << vp->name() << ", " << vp->id() << " | " << elem.vp->name();
 
     if (vec_output->can_pop()) {
+      if (cur_out_port.bytesBuffered() > cur_out_port.vectorBytes()) {
+        // statistics.blame = dsa::stat::Accelerator::Blame::BACKPRESSURE;
+        continue;
+      }
       if (!num_computed) {
-        statistics.blame = dsa::stat::Accelerator::Blame::STREAMING;
+        statistics.blame = dsa::stat::Accelerator::Blame::DRAIN_PIPE;
       }
       vector<SBDT> data;
       vector<bool> data_valid;

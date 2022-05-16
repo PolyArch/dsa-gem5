@@ -137,8 +137,8 @@ void InPort::push(const std::vector<uint8_t> &raw, const stream::AffineStatus &a
   }
 
   // TODO(@were): Make sure this is correct!
-  // auto cpu_freq = parent->lsq()->get_cpu().clockDomain.clockPeriod();
-  auto aa = parent->now();// + cpu_freq;
+  auto cpu_freq = parent->lsq()->get_cpu().clockDomain.clockPeriod();
+  auto aa = parent->now() + cpu_freq;
 #define PADDING_IMPL(cond, zero_enum, predoff_enum)                \
   do {                                                             \
     if (cond) {                                                    \
