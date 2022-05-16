@@ -118,7 +118,7 @@ void Bank::InsituCompute() {
       std::vector<uint8_t> a(l + i, l + i + compute->request.data_size);
       std::vector<uint8_t> b(compute->request.operand.begin() + i,
                              compute->request.operand.begin() + i + compute->request.data_size);
-      int64_t res;
+      int64_t res = 0;
       switch (compute->request.data_size * 8) {
       #define BW_IMPL(bw)                                    \
         case bw:                                             \
