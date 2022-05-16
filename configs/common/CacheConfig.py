@@ -101,7 +101,7 @@ def config_cache(options, system):
                                    size=options.l2_size,
                                    assoc=options.l2_assoc)
 
-        system.tol2bus = L2XBar(clk_domain = system.cpu_clk_domain, width=128) #1024, response_latency=0, snoop_response_latency=0, frontend_latency=0)
+        system.tol2bus = L2XBar(clk_domain=system.cpu_clk_domain, width=128) #1024, response_latency=0, snoop_response_latency=0, frontend_latency=0)
         system.l2.cpu_side = system.tol2bus.master
         system.l2.mem_side = system.membus.slave
         if options.l2_hwp_type:

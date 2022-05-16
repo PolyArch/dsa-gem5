@@ -104,7 +104,8 @@ void Accelerator::blameCycle() {
           }
           DSA_LOG(BLAME_PORT)
             << "oi"[is_input] << " " << port.vp->name() << ": " << pi.bytesBuffered() << ", "
-            << pi.stream->toString();;
+            << pi.stream->toString() << ", available_at: "
+            << (is_input ? parent.input_ports[port.port].buffer[0].available_at : parent.now());
         }
       }
     }
@@ -121,6 +122,11 @@ void Accelerator::blameCycle() {
           }
         };
         f();
+        if (blame != Blame::DRAIN_PIPE) {
+          DSA_LOG(BLAME) << parent.now() << ": No computation!";
+        }
+      } else {
+        DSA_LOG(BLAME) << parent.now() << ": IO not empty!";
       }
     }
   }
@@ -141,6 +147,7 @@ void Accelerator::countMemoryLatency(int64_t request_cycle, int64_t *breakdown) 
 
 int64_t Accelerator::memoryWriteBoundByXfer(bool inc) {
   if (roi() && inc) {
+    blame = MEMORY_BW;
     write_unit_bubble++;
   }
   return write_unit_bubble;

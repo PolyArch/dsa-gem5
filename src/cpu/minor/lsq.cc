@@ -1566,6 +1566,7 @@ LSQ::LSQ(std::string name_, std::string dcache_port_name_,
     retryRequest(NULL),
     cacheBlockMask(~(cpu_.cacheLineSize() - 1))
 {
+  DSA_INFO << line_width;
     /*TODO:  Fix this to separate out:
      * 1. The number of streams supported (currently 100, too high)
      * 2. The size of each transfer queue (currently identical to transfers)
@@ -1573,7 +1574,7 @@ LSQ::LSQ(std::string name_, std::string dcache_port_name_,
     for(int i = 0; i <= 128; ++i) {
         //Logically this would be implemented with a single queue
       // sd_transfers.emplace_back(name_ + ".sd_transfers", "addr", 21);
-      sd_transfers.emplace_back(name_ + ".sd_transfers", "addr", 22);
+      sd_transfers.emplace_back(name_ + ".sd_transfers", "addr", 32);
 
     }
 
