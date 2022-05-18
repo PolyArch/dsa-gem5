@@ -2919,11 +2919,13 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
   bsw = dsa::sim::BitstreamWrapper(sched);
 
   for (auto &elem : bsw.iports()) {
+    DSA_CHECK(elem.port >= 0 && elem.port < input_ports.size());
     auto &vp = input_ports[elem.port];
     vp.vp = elem.vp;
   }
 
   for (auto &elem : bsw.oports()) {
+    DSA_CHECK(elem.port >= 0 && elem.port < output_ports.size());
     auto &vp = output_ports[elem.port];
     vp.vp = elem.vp;
   }
