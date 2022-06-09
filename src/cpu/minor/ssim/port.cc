@@ -198,14 +198,16 @@ bool InPort::lanesReady() {
     }
   }
   if (pes.exec_repeat() == 0) {
-    pop();
+    pop(false);
     return false;
   }
   return true;
 }
 
-void InPort::pop() {
-  DSA_CHECK(lanesReady());
+void InPort::pop(bool check) {
+  if (check) {
+    DSA_CHECK(lanesReady());
+  }
   if (pes.tick()) {
     int n = vectorLanes();
     if (ivp()->stationary_shift == -1) {

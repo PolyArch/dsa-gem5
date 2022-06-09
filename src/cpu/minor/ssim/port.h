@@ -208,9 +208,9 @@ struct InPort : Port {
   bool lanesReady();
   /*!
    * \brief Pop the data.
-   * \param n Pop n elements.
+   * \param n Check if ready.
    */
-  void pop();
+  void pop(bool check = true);
   /*!
    * \brief Get the data ready.
    * \param n Get n elements once.

@@ -542,26 +542,28 @@ void ssim_t::DispatchStream() {
   DSA_LOG(DISPATCH) << cmd_queue.size() << " streams to be dispatched!";
   for (int i = 0; i < (int) cmd_queue.size(); ++i) {
     bool retire = true;
-    for (int j = 0; j < (int) lanes.size(); ++j) {
-      if (cmd_queue[i]->context >> j & 1) {
-        cmd_queue[i]->Accept(&dc[j]);
-        retire = retire && dc[j].retire;
-        if (!retire) {
-          DSA_LOG(CMD_BLOCK) << "Cannot Issue Stream: " << cmd_queue[i]->toString();
-          break;
-        }
-      }
-    }
-    if (retire) {
+    if (cmd_queue[i]->stream_active()) {
       for (int j = 0; j < (int) lanes.size(); ++j) {
         if (cmd_queue[i]->context >> j & 1) {
-          cmd_queue[i]->Accept(&sd[j]);
+          cmd_queue[i]->Accept(&dc[j]);
+          retire = retire && dc[j].retire;
+          if (!retire) {
+            DSA_LOG(CMD_BLOCK) << "Cannot Issue Stream: " << cmd_queue[i]->toString();
+            break;
+          }
         }
       }
-    }
-    for (int j = 0; j < (int) lanes.size(); ++j) {
-      if (cmd_queue[i]->context >> j & 1) {
-        dc[j].Reset();
+      if (retire) {
+        for (int j = 0; j < (int) lanes.size(); ++j) {
+          if (cmd_queue[i]->context >> j & 1) {
+            cmd_queue[i]->Accept(&sd[j]);
+          }
+        }
+      }
+      for (int j = 0; j < (int) lanes.size(); ++j) {
+        if (cmd_queue[i]->context >> j & 1) {
+          dc[j].Reset();
+        }
       }
     }
     if (retire) {
