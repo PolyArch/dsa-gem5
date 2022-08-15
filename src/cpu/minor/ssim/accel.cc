@@ -51,6 +51,18 @@ dsa::sim::Port *accel_t::port(bool isInput, int id) {
   return output_ports.data() + id;
 }
 
+int accel_t::whichSPAD(int64_t &address) {
+  int64_t address_old = address;
+  for (int i = 0; i < (int) spads.size(); ++i) {
+    auto &elem = spads[i];
+    if (address < elem.num_bytes) {
+      return i;
+    }
+    address -= elem.num_bytes;
+  }
+  DSA_CHECK(false) << address_old << " exceeds the space of scratchpads!";
+  return -1;
+}
 
 void accel_t::sanity_check_stream(base_stream_t *s) {
 
@@ -182,8 +194,10 @@ accel_t::accel_t(int i, ssim_t *ssim)
       _ssim(ssim), _accel_index(i), _accel_mask(1 << i),
       _dma_c(this, &_scr_r_c, &_scr_w_c, &_net_c), _scr_r_c(this, &_dma_c),
       _scr_w_c(this, &_dma_c), _net_c(this, &_dma_c) {
+
+  spads.reserve(2);
   spads.emplace_back(8, 8, SCRATCH_SIZE, 1, new dsa::sim::InputBuffer(4, 16, 1));
-  // spads.emplace_back(8, 8, SCRATCH_SIZE, 1, new dsa::sim::InputBuffer(4, 16, 1));
+  spads.emplace_back(8, 8, SCRATCH_SIZE, 1, new dsa::sim::InputBuffer(4, 16, 1));
 
   ENFORCED_SYSTEM("mkdir -p stats/");
   ENFORCED_SYSTEM("mkdir -p viz/");
@@ -225,7 +239,7 @@ accel_t::accel_t(int i, ssim_t *ssim)
   // cout << "Came here to create a new configuration for a new accel\n";
   _ssconfig->setMaxEdgeDelay(_fu_fifo_len);
   // TODO(@were): This is hacky.
-  int buffer_size = get_ssim()->spec.dma_bandwidth * 2;
+  int buffer_size = get_ssim()->spec.dma_bandwidth * 4;
   auto in_list = _ssconfig->subModel()->input_list();
   for (int i = 0; i < (int) in_list.size(); ++i) {
     input_ports.emplace_back(this, buffer_size, i);
@@ -511,7 +525,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
    * \param loc Either DMA or SPAD.
    * \param port It is to comply the LSQ interface.
    */
-  int canRequest(LOC loc, int port) {
+  int canRequest(LOC loc, int port, int mem_idx) {
     if (loc == LOC::DMA) {
       if (accel->lsq()->sd_transfers[port].unreservedRemainingSpace() &&
           accel->lsq()->canRequest()) {
@@ -520,8 +534,9 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       accel->statistics.blame = dsa::stat::Accelerator::Blame::MEMORY_BW;
     } else {
       DSA_CHECK(loc == LOC::SCR);
-      if (accel->spads[0].rb->Available()) {
-        return accel->spads[0].bandwidth();
+      DSA_CHECK(mem_idx >= 0 && mem_idx < accel->spads.size()) << mem_idx;
+      if (accel->spads[mem_idx].rb->Available()) {
+        return accel->spads[mem_idx].bandwidth();
       }
       accel->statistics.blame = dsa::stat::Accelerator::Blame::SPAD_BW;
     }
@@ -529,7 +544,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
   }
 
   void makeMemoryRequest(base_stream_t *s, const std::vector<uint8_t> &data, const std::vector<int> &ports,
-                         const dsa::sim::stream::LinearStream::LineInfo &info, MemoryOperation mo) {
+                         dsa::sim::stream::LinearStream::LineInfo info, MemoryOperation mo) {
     accel->statistics.countDataTraffic(MemoryOperation::DMO_Read == mo, s->unit(), info.bytes_read());
     int read = mo == DMO_Read;
     if (read) {
@@ -543,7 +558,12 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       if (!padded.empty()) {
         padded = padData(data, info);
       }
-      accel->spads[0].rb->Decode(ports[0], mo, info, padded);
+      int spad_idx0 = accel->whichSPAD(info.linebase);
+      int spad_idx1 = accel->whichSPAD(info.start);
+      DSA_CHECK(spad_idx0 == spad_idx1);
+      int spad_idx = spad_idx0;
+      DSA_CHECK(spad_idx >= 0 && spad_idx < accel->spads.size());
+      accel->spads[spad_idx].rb->Decode(&accel->spads[spad_idx], ports[0], mo, info, padded);
     }
   }
 
@@ -630,7 +650,12 @@ struct StreamExecutor : dsa::sim::stream::Functor {
   void Visit(LinearReadStream *lrs) override {
     auto &stream = *lrs;
     DSA_CHECK(stream.stream_active());
-    int cacheline = canRequest(stream.src(), lrs->pes[0].port);
+    int spad_idx = -1;
+    if (lrs->src() == LOC::SCR) {
+      auto temp_addr = lrs->ls->poll(false);
+      spad_idx = lrs->parent->whichSPAD(temp_addr);
+    }
+    int cacheline = canRequest(stream.src(), lrs->pes[0].port, spad_idx);
     // If the request unit is not available just return.
     if (cacheline == -1) {
       return;
@@ -663,14 +688,14 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     for (auto &elem : irs->pes) {
       ports.push_back(elem.port);
     }
-    if (canRequest(irs->src(), irs->pes[0].port) == -1) {
-      DSA_LOG(DD) << "No resource to request!";
-      return;
-    }
     std::vector<int64_t> addrs;
     std::vector<int8_t> state;
     sim::stream::AffineStatus as;
     if (irs->src() == LOC::DMA) {
+      if (canRequest(irs->src(), irs->pes[0].port, -1) == -1) {
+        DSA_LOG(DD) << "No resource to request!";
+        return;
+      }
       uint64_t cacheline = accel->get_ssim()->spec.dma_bandwidth;
       uint64_t linebase = 0;
       for (int i = 0; ; ++i) {
@@ -720,7 +745,18 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       makeDMARequest(irs->id(), irs->inst, DMO_Read, ports, {}, info);
       accel->statistics.countDataTraffic(true, irs->unit(), info.bytes_read());
     } else {
-      int n = accel->spads[0].bandwidth() / irs->fsm.idx().dtype;
+      // TODO(@were): How can I know which spad in advance?
+      int spad_idx = -1;
+      if (irs->fsm.hasNext(accel) == 1) {
+        auto buffer = irs->fsm.poll(accel, false, as);
+        spad_idx = accel->whichSPAD(buffer[0]);
+        if (canRequest(irs->src(), irs->pes[0].port, spad_idx) == -1) {
+          DSA_LOG(DD) << "No resource to request!";
+          return;
+        }
+      }
+      auto &spad = accel->spads[spad_idx];
+      int n = spad.bandwidth() / irs->fsm.idx().dtype;
       for (int i = 0; i < n; ++i) {
         if (irs->fsm.hasNext(accel) != 1) {
           break;
@@ -743,10 +779,11 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       dsa::sim::stream::LinearStream::LineInfo meta(0, 0, {}, 0);
       for (int i = 0; i < addrs.size(); ++i) {
         auto addr = addrs[i];
+        DSA_CHECK(accel->whichSPAD(addr) == spad_idx);
         requests.emplace_back(irs->pes[0].port, addr, irs->dtype, MemoryOperation::DMO_Read);
         auto &mask = requests.back().mask;
-        mask.resize(accel->spads[0].bank_width, 0);
-        int offset = addr % accel->spads[0].bank_width;
+        mask.resize(spad.bank_width, 0);
+        int offset = addr % spad.bank_width;
         DSA_CHECK(offset % irs->dtype == 0) << addr << " is not aligned with " << irs->dtype;
         for (int j = 0; j < irs->dtype; ++j) {
           DSA_CHECK(offset + j < mask.size()) << "No bank straddle is allowed.";
@@ -761,7 +798,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       // as.stream_last = !irs->fsm.hasNext(accel);
       meta.as = as;
       meta.as.penetrate_state = state;
-      accel->spads[0].rb->Decode(requests, meta);
+      spad.rb->Decode(&spad, requests, meta);
     }
   }
 
@@ -769,10 +806,18 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     if (ias->fsm.hasNext(accel) != 1) {
       return;
     }
-    if (canRequest(ias->dest(), MEM_WR_STREAM) == -1) {
-      return;
+    int n = -1;
+    int spad_idx = -1;
+    if (ias->unit() == LOC::DMA) {
+      n = 1;
+      if (canRequest(ias->dest(), MEM_WR_STREAM, -1) == -1) {
+        return;
+      }
+    } else {
+      sim::stream::AffineStatus as;
+      auto buffer = ias->fsm.poll(accel, false, as);
+      spad_idx = accel->whichSPAD(buffer[0]);
     }
-    int n = ias->unit() == LOC::DMA ? 1 : accel->spads[0].bandwidth() / ias->dtype;
     std::vector<int64_t> addrs;
     std::vector<int64_t> data;
     sim::stream::AffineStatus as;
@@ -809,14 +854,17 @@ struct StreamExecutor : dsa::sim::stream::Functor {
         }
       }
     } else {
+      auto &spad = accel->spads[spad_idx];
+      n = ias->unit() == LOC::DMA ? 1 : spad.bandwidth() / ias->dtype;
       std::vector<dsa::sim::Request> requests;
       dsa::sim::stream::LinearStream::LineInfo meta(0, 0, {}, 0);
       for (int i = 0; i < addrs.size(); ++i) {
         auto addr = addrs[i];
+        DSA_CHECK(accel->whichSPAD(addr) == spad_idx);
         requests.emplace_back(MEM_WR_STREAM, addr, ias->dtype, ias->mo);
         auto &mask = requests.back().mask;
-        mask.resize(accel->spads[0].bank_width, 0);
-        int offset = addr % accel->spads[0].bank_width;
+        mask.resize(spad.bank_width, 0);
+        int offset = addr % spad.bank_width;
         DSA_CHECK(offset % ias->dtype == 0) << addr << " is not aligned with " << ias->dtype;
         for (int j = 0; j < ias->dtype; ++j) {
           DSA_CHECK(offset + j < mask.size()) << "No bank straddle is allowed.";
@@ -837,7 +885,7 @@ struct StreamExecutor : dsa::sim::stream::Functor {
       }
       as.stream_last = !ias->fsm.hasNext(accel);
       meta.as = as;
-      accel->spads[0].rb->Decode(requests, meta);
+      spad.rb->Decode(&spad, requests, meta);
     }
   }
 
@@ -864,7 +912,12 @@ struct StreamExecutor : dsa::sim::stream::Functor {
     auto &ovp = out_port;
     int port_available = ovp.raw.size();
     // Check if the write unit is available.
-    int memory_bw = canRequest(lws->dest(), MEM_WR_STREAM);
+    int spad_idx = -1;
+    if (stream.dest() == LOC::SCR) {
+      auto temp_addr = lws->ls->poll(false);
+      spad_idx = accel->whichSPAD(temp_addr);
+    }
+    int memory_bw = canRequest(lws->dest(), MEM_WR_STREAM, spad_idx);
     if (memory_bw == -1) {
       if (stream.dest() == LOC::DMA) {
         accel->statistics.memoryWriteBoundByXfer(true);
@@ -1074,16 +1127,18 @@ void accel_t::tick() {
     stream->Accept(&se);
   }
 
-  auto spad_response = spads[0].Step();
-  if (spad_response.id != -1) {
-    DSA_LOG(MEM_REQ) << "Responding port: " << spad_response.id;
-    if (spad_response.op == MemoryOperation::DMO_Read) {
-      auto &vp = input_ports[spad_response.id];
-      DSA_CHECK(vp.stream)
-        << "Stream affiliated with the port is no longer active! " << vp.id();
-      dsa::sim::SPADResponser pp(spad_response, this);
-      vp.stream->Accept(&pp);
-      DSA_CHECK(pp.is_is) << "Not a input stream!";
+  for (auto &elem : spads) {
+    auto spad_response = elem.Step();
+    if (spad_response.id != -1) {
+      DSA_LOG(MEM_REQ) << "Responding port: " << spad_response.id;
+      if (spad_response.op == MemoryOperation::DMO_Read) {
+        auto &vp = input_ports[spad_response.id];
+        DSA_CHECK(vp.stream)
+          << "Stream affiliated with the port is no longer active! " << vp.id();
+        dsa::sim::SPADResponser pp(spad_response, this);
+        vp.stream->Accept(&pp);
+        DSA_CHECK(pp.is_is) << "Not a input stream!";
+      }
     }
   }
 
@@ -2913,10 +2968,11 @@ void accel_t::configure(addr_t addr, int size, uint64_t *bits) {
     << addr << " " << std::dec << size;
 
   std::string basename = ((char*)(bits) + 9);
-  SSDfg *dfg = dsa::dfg::Import(".sched/" + basename + ".dfg.json");
-  auto sched = new Schedule(_ssconfig, dfg);
-  sched->LoadMappingInJson(".sched/" + basename + ".sched.json");
-  bsw = dsa::sim::BitstreamWrapper(sched);
+  dsa::dfg::Import(".sched/" + basename + ".dfg.json");
+  dfg = dsa::dfg::Import(".sched/" + basename + ".dfg.json");
+  sched = Schedule(_ssconfig, &dfg);
+  sched.LoadMappingInJson(".sched/" + basename + ".sched.json");
+  bsw = dsa::sim::BitstreamWrapper(&sched);
 
   for (auto &elem : bsw.iports()) {
     DSA_CHECK(elem.port >= 0 && elem.port < input_ports.size());

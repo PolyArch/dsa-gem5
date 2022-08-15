@@ -29,7 +29,7 @@ std::ostream &operator<<(std::ostream &os, const Request &req) {
   return os;
 }
 
-void RequestBuffer::Decode(int port, MemoryOperation op,
+void RequestBuffer::Decode(ScratchMemory *parent, int port, MemoryOperation op,
                            const stream::LinearStream::LineInfo &request,
                            const std::vector<uint8_t> &operands) {
   DSA_CHECK(Available()) << "No available slot in the reorder buffer!";
@@ -40,6 +40,7 @@ void RequestBuffer::Decode(int port, MemoryOperation op,
     if (!operands.empty()) {
       uop.operand = std::vector<uint8_t>(operands.begin() + l, operands.begin() + r);
     }
+    DSA_LOG(XBAR) << "Pushed to " << l << ", " << r;
     uop.mask = std::vector<bool>(request.mask.begin() + l, request.mask.begin() + r);
     scoreboard[tail].emplace_back(parent, uop);
   }
@@ -47,7 +48,8 @@ void RequestBuffer::Decode(int port, MemoryOperation op,
   tail = (tail + 1) % scoreboard.size();
 }
 
-void RequestBuffer::Decode(const std::vector<Request> &requests, const stream::LinearStream::LineInfo &meta) {
+void RequestBuffer::Decode(ScratchMemory *parent, const std::vector<Request> &requests,
+                           const stream::LinearStream::LineInfo &meta) {
   const int num_bytes = parent->num_bytes;
   const int bank_width = parent->bank_width;
   const int num_banks = parent->num_banks;
@@ -93,7 +95,7 @@ void RequestBuffer::Decode(const std::vector<Request> &requests, const stream::L
   tail = (tail + 1) % scoreboard.size();
 }
 
-void InputBuffer::PushRequests() {
+void InputBuffer::PushRequests(ScratchMemory *parent) {
   int num_banks = parent->num_banks;
   /* If two address go to the same bank, we only allow the first one. */
   std::vector<int> cnt(num_banks, 0);
@@ -192,7 +194,7 @@ bool RequestBuffer::Available() {
   return scoreboard[tail].empty();
 }
 
-void LinkBuffer::PushRequests() {
+void LinkBuffer::PushRequests(ScratchMemory *parent) {
   for (int i = 0, n = scoreboard.size(); i < n; ++i) {
     auto iter = (i + front) % scoreboard.size();
     auto &refer = scoreboard[iter];

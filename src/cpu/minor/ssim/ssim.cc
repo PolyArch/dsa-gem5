@@ -140,7 +140,7 @@ void ssim_t::LoadMemoryToPort(int port, int source, int dim, int padding) {
   s->dtype = s->ls->word_bytes();
   s->inst = inst;
   if (rf[DSARF::BR].value != -1) {
-    int begin = rf[DSARF::BR].value & 65535, end = (rf[DSARF::BR].value >> 16) & 65535;
+    int64_t begin = (rf[DSARF::BR].value << 32 >> 32), end = rf[DSARF::BR].value >> 32;
     RegisterBuffet(s, begin, end);
   }
   DSA_LOG(COMMAND) << now() << ": Linear Read Stream: " << s->toString();
@@ -160,7 +160,7 @@ void ssim_t::WritePortToMemory(int port, int operation, int dst, int dim, int pa
   s->inst = inst;
   s->padding = padding;
   if (rf[DSARF::BR].value != -1) {
-    int begin = rf[DSARF::BR].value & 65535, end = (rf[DSARF::BR].value >> 16) & 65535;
+    int64_t begin = (rf[DSARF::BR].value << 32 >> 32), end = rf[DSARF::BR].value >> 32;
     RegisterBuffet(s, begin, end);
   }
   DSA_LOG(COMMAND) << now() << ": Linear Write Stream: " << s->toString();
@@ -308,6 +308,12 @@ void ssim_t::DispatchStream() {
           DSA_LOG(CMD_BLOCK)
             << "ivp" << elem.port << " buffer not empty! Buffer: "
             << in.buffer.size();
+          if (in.pes.exec_repeat() == 1 && in.pes.stretch == 0) {
+            if (elem.repeat == in.pes.repeat && elem.stretch == in.pes.stretch) {
+              DSA_LOG(CMD_BLOCK) << "However, repeat matches, skip!";
+              continue;
+            }
+          }
           return false;
           // FIXME(@were): This can be more aggressive, but what should I do?
           // if (elem.repeat != in.pes.repeat ||
@@ -648,45 +654,51 @@ void ssim_t::step() {
 }
 
 void ssim_t::print_stats() {
-   auto& out = std::cout;
-   out.precision(4);
-   out << dec;
+  auto& out = std::cout;
+  out.precision(4);
+  out << dec;
 
-   out << "\n*** ROI STATISTICS for CORE ID: " << lsq()->getCpuId() << " ***\n";
-   out << "Simulator Time: " << statistics.timeElapsed() << " seconds" << std::endl;
+  out << "\n*** ROI STATISTICS for CORE ID: " << lsq()->getCpuId() << " ***\n";
+  out << "Simulator Time: " << statistics.timeElapsed() << " seconds" << std::endl;
 
-   out << "Cycles: " << (int) statistics.cycleElapsed() << "\n";
-   out << "Number of coalesced SPU requests: " << lanes[0]->_stat_num_spu_req_coalesced << "\n";
-   out << "Control Core Insts Issued: " << statistics.insts_issued << "\n";
-   out << "Control Core Discarded Insts Issued: " << statistics.insts_discarded << "\n";
-   out << "Control Core Intrinsics/Instruction Issued: " << statistics.ctrl_intrinsics << "/" << statistics.ctrl_instructions << "\n";
+  out << "Cycles: " << (int) statistics.cycleElapsed() << "\n";
+  out << "Number of coalesced SPU requests: " << lanes[0]->_stat_num_spu_req_coalesced << "\n";
+  out << "Control Core Insts Issued: " << statistics.insts_issued << "\n";
+  out << "Control Core Discarded Insts Issued: " << statistics.insts_discarded << "\n";
+  out << "Control Core Intrinsics/Instruction Issued: " << statistics.ctrl_intrinsics << "/" << statistics.ctrl_instructions << "\n";
 
-   out << "Control Core Discarded Inst Stalls: " << ((double)control_core_discarded_insts()/(double)control_core_insts()) << "\n";
-   // out << "Control Core Bubble Insts Issued: " << control_core_bubble_insts() << "\n";
-   out << "Control Core Config Stalls: "
-       << ((double)config_waits()/roi_cycles()) << "\n";
-   out << "Control Core Wait Stalls:   ";
-   for(auto& i : _wait_map) {
-     out << ((double)i.second/roi_cycles()) << " (";
-     uint64_t mask = i.first;
-     if(mask & GLOBAL_WAIT) {
-       out << "GLOBAL_WAIT";
-     }
-     if(mask == 0) {
-       out << "ALL";
-     }
-     if(mask & WAIT_SCR_RD) {
-       out << "SCR_RD";
-     }
-     if(mask & WAIT_SCR_WR) {
-       out << "SCR_WR";
-     }
-     if(mask & STREAM_WAIT) {
-       out << "STREAM_WAIT";
-     }
-     out << ")  ";
-   }
-   out << "\n";
+  out << "Control Core Discarded Inst Stalls: " << ((double)control_core_discarded_insts()/(double)control_core_insts()) << "\n";
+  // out << "Control Core Bubble Insts Issued: " << control_core_bubble_insts() << "\n";
+  out << "Control Core Config Stalls: "
+      << ((double)config_waits()/roi_cycles()) << "\n";
+  out << "Control Core Wait Stalls:   ";
+  for(auto& i : _wait_map) {
+    out << ((double)i.second/roi_cycles()) << " (";
+    uint64_t mask = i.first;
+    if(mask & GLOBAL_WAIT) {
+      out << "GLOBAL_WAIT";
+    }
+    if(mask == 0) {
+      out << "ALL";
+    }
+    if(mask & WAIT_SCR_RD) {
+      out << "SCR_RD";
+    }
+    if(mask & WAIT_SCR_WR) {
+      out << "SCR_WR";
+    }
+    if(mask & STREAM_WAIT) {
+      out << "STREAM_WAIT";
+    }
+    out << ")  ";
+  }
+  out << "\n";
+
+  out << "Undispatched Streams:\n";
+  for (auto elem : cmd_queue) {
+    out << elem->toString() << std::endl;
+  }
+
 
   int cores_used=0;
   for (int i = 0; i < (int) lanes.size(); ++i) {

@@ -101,7 +101,6 @@ struct Response {
 /* \brief The base class holds the pending requests */
 struct RequestBuffer {
 
-  ScratchMemory *parent{nullptr};
   /* \brief A repetitive queue for filling the requests */
   int front{0}, tail{0};
   std::vector<std::vector<Entry>> scoreboard;
@@ -110,7 +109,7 @@ struct RequestBuffer {
   RequestBuffer(int sb_size);
 
   /* \brief The strategy of pushing requests */
-  virtual void PushRequests() = 0;
+  virtual void PushRequests(ScratchMemory *parent) = 0;
 
   /*!
    * \brief If this request buffer is available to process requests.
@@ -118,10 +117,11 @@ struct RequestBuffer {
   bool Available();
 
   /* \brief Breaks all the indirect scalar requests to bank micro codes. */
-  void Decode(const std::vector<Request> &requests, const stream::LinearStream::LineInfo &meta);
+  void Decode(ScratchMemory *parent, const std::vector<Request> &requests,
+              const stream::LinearStream::LineInfo &meta);
 
   /* \brief Breaks a cacheline request to bank micro codes. */
-  void Decode(int port, MemoryOperation op,
+  void Decode(ScratchMemory *parent, int port, MemoryOperation op,
               const stream::LinearStream::LineInfo &request,
               const std::vector<uint8_t> &operands);
 
@@ -140,7 +140,7 @@ struct InputBuffer : RequestBuffer {
   InputBuffer(int size, int issue_width = INT_MAX, int provision = 1);
 
   /* \brief The strategy of pushing requests */
-  void PushRequests() override;
+  void PushRequests(ScratchMemory *parent) override;
 };
 
 /* \brief The LinkBuffer strategy */
@@ -154,7 +154,7 @@ struct LinkBuffer : RequestBuffer {
   LinkBuffer(int buffer);
 
   /* \brief The strategy of pushing requests */
-  void PushRequests() override;
+  void PushRequests(ScratchMemory *parent) override;
 };
 
 }

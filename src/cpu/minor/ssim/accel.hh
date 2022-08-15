@@ -654,6 +654,11 @@ public:
    */
   dsa::sim::BitstreamWrapper bsw;
 
+  // {
+  SSDfg dfg;
+  Schedule sched;
+  // }
+
   /*!
    * \brief The vector of input ports.
    */
@@ -676,10 +681,19 @@ public:
    */
   uint64_t now();
 
-  uint64_t freq(); 
+  /*!
+   * \brief Which scratchpad should this address goes to.
+   * \param address The given address. Modify this address into SPAD local address.
+   */
+  int whichSPAD(int64_t &address);
+
+  /*!
+   * \brief Helper functions for access GEM5 simulation info.
+   */
+  uint64_t freq();
+
 
   accel_t(int i, ssim_t* ssim);
-
   Minor::LSQ *lsq();
 
   bool in_use();
@@ -905,7 +919,7 @@ private:
   scratch_write_controller_t _scr_w_c;
   network_controller_t _net_c;
 
-  std::map<uint64_t,std::vector<int>> _cgra_output_ready;
+  std::map<uint64_t, std::vector<int>> _cgra_output_ready;
 
   //Stuff for tracking stats
   uint64_t _waiting_cycles=0;

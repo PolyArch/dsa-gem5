@@ -101,7 +101,7 @@ void base_stream_t::set_mem_map_config() {
 
 std::string BuffetEntry::toString() {
   std::ostringstream oss;
-  oss << "Alloc: [" << begin << ", " << end << "), Ptr: ("
+  oss << "Alloc: [" << begin << ", " << end << "), Ptr: ["
       << front << ", " << tail << "), Buffered: [" << address
       << ", " << address + occupied << "), occupied: "
       << occupied << ", space: " << SpaceAvailable();
@@ -474,7 +474,9 @@ struct IFSMTicker : Functor {
 };
 
 int IndirectFSM::hasNext(accel_t *accel) {
-  int ctx = 1 << accel->accel_index();
+  if (!accel) {
+    return true;
+  }
   auto hasNextIndex = [accel] (base_stream_t *index, base_stream_t *value) -> int {
     DSA_CHECK(index->stream_active() == value->stream_active())
       << "Two streams should be sync!";
@@ -495,13 +497,13 @@ int IndirectFSM::hasNext(accel_t *accel) {
     }
     return 1;
   };
-  auto renewStream = [ctx] (int port, int64_t n, int dtype) -> base_stream_t * {
+  auto renewStream = [] (int port, int64_t n, int dtype) -> base_stream_t * {
     base_stream_t *res;
     if (port == -1) {
       auto l1d = new Linear1D(1, 0, 0, n, 0);
-      res = new ConstPortStream(ctx, {}, l1d);
+      res = new ConstPortStream(0, {}, l1d);
     } else {
-      res = new RecurrentStream(ctx, port, {}, n);
+      res = new RecurrentStream(0, port, {}, n);
     }
     res->dtype = dtype;
     return res;

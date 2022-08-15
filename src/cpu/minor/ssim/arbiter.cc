@@ -55,14 +55,18 @@ std::vector<base_stream_t*> RoundRobin::Arbit(accel_t *accel) {
     for (int i = 0; i < (int) ports.size(); ++i) {
       if (auto *stream = accel->port(is_input, ports[i].port)->stream) {
         if (stream->stream_active()) {
-          bool allow_rw = (bool) getenv("RW_BUS");
-          int key = 0;
-          if (allow_rw) {
-            key = is_input * LOC::TOTAL + stream->side(is_input);
-          } else {
-            key = (stream->side(is_input) != LOC::DMA) * is_input * LOC::TOTAL + stream->side(is_input);
+          BuffetChecker bc;
+          stream->Accept(&bc);
+          if (bc.ok) {
+            bool allow_rw = (bool) getenv("RW_BUS");
+            int key = 0;
+            if (allow_rw) {
+              key = is_input * LOC::TOTAL + stream->side(is_input);
+            } else {
+              key = (stream->side(is_input) != LOC::DMA) * is_input * LOC::TOTAL + stream->side(is_input);
+            }
+            stream_tables[key].push_back(stream);
           }
-          stream_tables[key].push_back(stream);
         }
       }
     }

@@ -8,8 +8,6 @@ namespace sim {
 
 ScratchMemory::ScratchMemory(int line_size_, int num_banks_, int capacity_, int fifo_size_, RequestBuffer *rb_) :
   adg::ScratchMemory(line_size_, num_banks_, capacity_), rb(rb_) {
-  DSA_CHECK(!rb->parent) << "Already assigned to a indirect memory?";
-  rb->parent = this;
   DSA_CHECK(num_bytes % num_banks == 0) << "Memory size " << num_bytes << " is not divisible by #banks " << num_banks;
   DSA_CHECK((num_banks & -num_banks) == num_banks)
     << "#Banks is not a power of 2, " << num_banks << " " << (num_banks & -num_banks);
@@ -174,7 +172,7 @@ void Bank::WriteBack() {
 
 Response ScratchMemory::Step() {
   auto &memory = *this;
-  memory.rb->PushRequests();
+  memory.rb->PushRequests(this);
   for (int j = 0; j < (int) memory.banks.size(); ++j) {
     memory.banks[j].WriteBack();
   }
